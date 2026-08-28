@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Production build
+dist/
+dist-ssr/
+frontend/dist/
+
+# Large Archives & zips
+*.zip
+
+# Cache and temporary logs
+.vite/
+*.log
+backend/*.log
+
+# Environment variables & local configs
+*.local
+.env
+.env.local
+deploy_ready/
+deploy_ready/*
+
+
+# OS / Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Scratch debug scripts
+scratch/
+

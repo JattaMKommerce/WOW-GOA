@@ -1,0 +1,882 @@
+﻿{
+    "users":  [
+                  {
+                      "Field":  "id",
+                      "Type":  "varchar(50)",
+                      "Null":  "NO",
+                      "Key":  "PRI",
+                      "Default":  null,
+                      "Extra":  ""
+                  },
+                  {
+                      "Field":  "username",
+                      "Type":  "varchar(100)",
+                      "Null":  "NO",
+                      "Key":  "UNI",
+                      "Default":  null,
+                      "Extra":  ""
+                  },
+                  {
+                      "Field":  "email",
+                      "Type":  "varchar(100)",
+                      "Null":  "NO",
+                      "Key":  "UNI",
+                      "Default":  null,
+                      "Extra":  ""
+                  },
+                  {
+                      "Field":  "password_hash",
+                      "Type":  "varchar(255)",
+                      "Null":  "NO",
+                      "Key":  "",
+                      "Default":  null,
+                      "Extra":  ""
+                  },
+                  {
+                      "Field":  "role",
+                      "Type":  "varchar(50)",
+                      "Null":  "NO",
+                      "Key":  "",
+                      "Default":  null,
+                      "Extra":  ""
+                  },
+                  {
+                      "Field":  "created_at",
+                      "Type":  "datetime",
+                      "Null":  "NO",
+                      "Key":  "",
+                      "Default":  null,
+                      "Extra":  ""
+                  },
+                  {
+                      "Field":  "billing_price",
+                      "Type":  "int(11)",
+                      "Null":  "YES",
+                      "Key":  "",
+                      "Default":  "0",
+                      "Extra":  ""
+                  }
+              ],
+    "bookings":  [
+                     {
+                         "Field":  "id",
+                         "Type":  "varchar(50)",
+                         "Null":  "NO",
+                         "Key":  "PRI",
+                         "Default":  null,
+                         "Extra":  ""
+                     },
+                     {
+                         "Field":  "name",
+                         "Type":  "varchar(255)",
+                         "Null":  "NO",
+                         "Key":  "",
+                         "Default":  null,
+                         "Extra":  ""
+                     },
+                     {
+                         "Field":  "phone",
+                         "Type":  "varchar(50)",
+                         "Null":  "NO",
+                         "Key":  "",
+                         "Default":  null,
+                         "Extra":  ""
+                     },
+                     {
+                         "Field":  "license",
+                         "Type":  "varchar(100)",
+                         "Null":  "YES",
+                         "Key":  "",
+                         "Default":  null,
+                         "Extra":  ""
+                     },
+                     {
+                         "Field":  "pickup_loc",
+                         "Type":  "varchar(255)",
+                         "Null":  "NO",
+                         "Key":  "",
+                         "Default":  null,
+                         "Extra":  ""
+                     },
+                     {
+                         "Field":  "pickup_date",
+                         "Type":  "varchar(50)",
+                         "Null":  "NO",
+                         "Key":  "",
+                         "Default":  null,
+                         "Extra":  ""
+                     },
+                     {
+                         "Field":  "pickup_time",
+                         "Type":  "varchar(50)",
+                         "Null":  "NO",
+                         "Key":  "",
+                         "Default":  null,
+                         "Extra":  ""
+                     },
+                     {
+                         "Field":  "drop_date",
+                         "Type":  "varchar(50)",
+                         "Null":  "NO",
+                         "Key":  "",
+                         "Default":  null,
+                         "Extra":  ""
+                     },
+                     {
+                         "Field":  "drop_time",
+                         "Type":  "varchar(50)",
+                         "Null":  "NO",
+                         "Key":  "",
+                         "Default":  null,
+                         "Extra":  ""
+                     },
+                     {
+                         "Field":  "item_id",
+                         "Type":  "varchar(50)",
+                         "Null":  "NO",
+                         "Key":  "",
+                         "Default":  null,
+                         "Extra":  ""
+                     },
+                     {
+                         "Field":  "item_name",
+                         "Type":  "varchar(255)",
+                         "Null":  "NO",
+                         "Key":  "",
+                         "Default":  null,
+                         "Extra":  ""
+                     },
+                     {
+                         "Field":  "booking_days",
+                         "Type":  "int(11)",
+                         "Null":  "NO",
+                         "Key":  "",
+                         "Default":  null,
+                         "Extra":  ""
+                     },
+                     {
+                         "Field":  "total_paid",
+                         "Type":  "int(11)",
+                         "Null":  "NO",
+                         "Key":  "",
+                         "Default":  null,
+                         "Extra":  ""
+                     },
+                     {
+                         "Field":  "created_at",
+                         "Type":  "datetime",
+                         "Null":  "NO",
+                         "Key":  "",
+                         "Default":  null,
+                         "Extra":  ""
+                     },
+                     {
+                         "Field":  "customizations",
+                         "Type":  "text",
+                         "Null":  "YES",
+                         "Key":  "",
+                         "Default":  null,
+                         "Extra":  ""
+                     },
+                     {
+                         "Field":  "payment_method",
+                         "Type":  "varchar(50)",
+                         "Null":  "YES",
+                         "Key":  "",
+                         "Default":  null,
+                         "Extra":  ""
+                     },
+                     {
+                         "Field":  "payment_proof",
+                         "Type":  "varchar(255)",
+                         "Null":  "YES",
+                         "Key":  "",
+                         "Default":  null,
+                         "Extra":  ""
+                     },
+                     {
+                         "Field":  "status",
+                         "Type":  "varchar(50)",
+                         "Null":  "YES",
+                         "Key":  "",
+                         "Default":  "Draft",
+                         "Extra":  ""
+                     },
+                     {
+                         "Field":  "payment_status",
+                         "Type":  "varchar(50)",
+                         "Null":  "YES",
+                         "Key":  "",
+                         "Default":  "Pending",
+                         "Extra":  ""
+                     },
+                     {
+                         "Field":  "traveller_details_json",
+                         "Type":  "text",
+                         "Null":  "YES",
+                         "Key":  "",
+                         "Default":  null,
+                         "Extra":  ""
+                     },
+                     {
+                         "Field":  "price_breakdown_json",
+                         "Type":  "text",
+                         "Null":  "YES",
+                         "Key":  "",
+                         "Default":  null,
+                         "Extra":  ""
+                     },
+                     {
+                         "Field":  "total_amount",
+                         "Type":  "int(11)",
+                         "Null":  "YES",
+                         "Key":  "",
+                         "Default":  "0",
+                         "Extra":  ""
+                     },
+                     {
+                         "Field":  "amount_paid",
+                         "Type":  "int(11)",
+                         "Null":  "YES",
+                         "Key":  "",
+                         "Default":  "0",
+                         "Extra":  ""
+                     },
+                     {
+                         "Field":  "remaining_amount",
+                         "Type":  "int(11)",
+                         "Null":  "YES",
+                         "Key":  "",
+                         "Default":  "0",
+                         "Extra":  ""
+                     },
+                     {
+                         "Field":  "payment_due_date",
+                         "Type":  "date",
+                         "Null":  "YES",
+                         "Key":  "",
+                         "Default":  null,
+                         "Extra":  ""
+                     }
+                 ],
+    "hotels":  [
+                   {
+                       "Field":  "id",
+                       "Type":  "varchar(50)",
+                       "Null":  "NO",
+                       "Key":  "PRI",
+                       "Default":  null,
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "name",
+                       "Type":  "varchar(255)",
+                       "Null":  "NO",
+                       "Key":  "",
+                       "Default":  null,
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "area",
+                       "Type":  "varchar(255)",
+                       "Null":  "NO",
+                       "Key":  "",
+                       "Default":  null,
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "price",
+                       "Type":  "int(11)",
+                       "Null":  "NO",
+                       "Key":  "",
+                       "Default":  null,
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "stars",
+                       "Type":  "int(11)",
+                       "Null":  "NO",
+                       "Key":  "",
+                       "Default":  null,
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "amenities",
+                       "Type":  "text",
+                       "Null":  "NO",
+                       "Key":  "",
+                       "Default":  null,
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "rating",
+                       "Type":  "decimal(3,2)",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  "4.60",
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "badge",
+                       "Type":  "varchar(50)",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  "Premium",
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "image",
+                       "Type":  "text",
+                       "Null":  "NO",
+                       "Key":  "",
+                       "Default":  null,
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "vendor_id",
+                       "Type":  "varchar(100)",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  "admin",
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "description",
+                       "Type":  "text",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  null,
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "blocked_dates",
+                       "Type":  "text",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  null,
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "images_json",
+                       "Type":  "text",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  null,
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "location",
+                       "Type":  "varchar(255)",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  null,
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "hotel_status",
+                       "Type":  "varchar(50)",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  "Draft",
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "property_type",
+                       "Type":  "varchar(100)",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  "Hotel",
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "property_registration_no",
+                       "Type":  "varchar(100)",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  null,
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "gst_number",
+                       "Type":  "varchar(50)",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  null,
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "checkin_time",
+                       "Type":  "varchar(10)",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  "14:00",
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "checkout_time",
+                       "Type":  "varchar(10)",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  "12:00",
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "policies_json",
+                       "Type":  "text",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  null,
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "facilities_json",
+                       "Type":  "text",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  null,
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "wizard_step",
+                       "Type":  "int(11)",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  "1",
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "website",
+                       "Type":  "varchar(255)",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  null,
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "phone",
+                       "Type":  "varchar(20)",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  null,
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "email",
+                       "Type":  "varchar(100)",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  null,
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "total_rooms",
+                       "Type":  "int(11)",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  "0",
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "floors",
+                       "Type":  "int(11)",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  "1",
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "year_established",
+                       "Type":  "varchar(10)",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  null,
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "latitude",
+                       "Type":  "varchar(30)",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  null,
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "longitude",
+                       "Type":  "varchar(30)",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  null,
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "address",
+                       "Type":  "text",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  null,
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "city",
+                       "Type":  "varchar(100)",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  "Goa",
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "state",
+                       "Type":  "varchar(100)",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  "Goa",
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "country",
+                       "Type":  "varchar(100)",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  "India",
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "pincode",
+                       "Type":  "varchar(10)",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  null,
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "approval_remarks",
+                       "Type":  "text",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  null,
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "profile_completion",
+                       "Type":  "int(11)",
+                       "Null":  "YES",
+                       "Key":  "",
+                       "Default":  "20",
+                       "Extra":  ""
+                   },
+                   {
+                       "Field":  "updated_at",
+                       "Type":  "timestamp",
+                       "Null":  "NO",
+                       "Key":  "",
+                       "Default":  "current_timestamp()",
+                       "Extra":  "on update current_timestamp()"
+                   },
+                   {
+                       "Field":  "created_at",
+                       "Type":  "timestamp",
+                       "Null":  "NO",
+                       "Key":  "",
+                       "Default":  "current_timestamp()",
+                       "Extra":  ""
+                   }
+               ],
+    "cars":  [
+                 {
+                     "Field":  "id",
+                     "Type":  "varchar(50)",
+                     "Null":  "NO",
+                     "Key":  "PRI",
+                     "Default":  null,
+                     "Extra":  ""
+                 },
+                 {
+                     "Field":  "vendor_id",
+                     "Type":  "varchar(50)",
+                     "Null":  "YES",
+                     "Key":  "MUL",
+                     "Default":  null,
+                     "Extra":  ""
+                 },
+                 {
+                     "Field":  "name",
+                     "Type":  "varchar(255)",
+                     "Null":  "NO",
+                     "Key":  "",
+                     "Default":  null,
+                     "Extra":  ""
+                 },
+                 {
+                     "Field":  "category",
+                     "Type":  "varchar(100)",
+                     "Null":  "NO",
+                     "Key":  "",
+                     "Default":  null,
+                     "Extra":  ""
+                 },
+                 {
+                     "Field":  "price",
+                     "Type":  "int(11)",
+                     "Null":  "NO",
+                     "Key":  "",
+                     "Default":  null,
+                     "Extra":  ""
+                 },
+                 {
+                     "Field":  "seating",
+                     "Type":  "varchar(50)",
+                     "Null":  "NO",
+                     "Key":  "",
+                     "Default":  null,
+                     "Extra":  ""
+                 },
+                 {
+                     "Field":  "fuel",
+                     "Type":  "varchar(50)",
+                     "Null":  "NO",
+                     "Key":  "",
+                     "Default":  null,
+                     "Extra":  ""
+                 },
+                 {
+                     "Field":  "transmission",
+                     "Type":  "varchar(50)",
+                     "Null":  "NO",
+                     "Key":  "",
+                     "Default":  null,
+                     "Extra":  ""
+                 },
+                 {
+                     "Field":  "rating",
+                     "Type":  "decimal(3,2)",
+                     "Null":  "YES",
+                     "Key":  "",
+                     "Default":  "4.80",
+                     "Extra":  ""
+                 },
+                 {
+                     "Field":  "badge",
+                     "Type":  "varchar(50)",
+                     "Null":  "YES",
+                     "Key":  "",
+                     "Default":  "Popular",
+                     "Extra":  ""
+                 },
+                 {
+                     "Field":  "image",
+                     "Type":  "text",
+                     "Null":  "NO",
+                     "Key":  "",
+                     "Default":  null,
+                     "Extra":  ""
+                 },
+                 {
+                     "Field":  "is_available",
+                     "Type":  "tinyint(1)",
+                     "Null":  "YES",
+                     "Key":  "",
+                     "Default":  "1",
+                     "Extra":  ""
+                 },
+                 {
+                     "Field":  "location",
+                     "Type":  "varchar(100)",
+                     "Null":  "YES",
+                     "Key":  "",
+                     "Default":  "Goa",
+                     "Extra":  ""
+                 },
+                 {
+                     "Field":  "documents_json",
+                     "Type":  "text",
+                     "Null":  "YES",
+                     "Key":  "",
+                     "Default":  null,
+                     "Extra":  ""
+                 },
+                 {
+                     "Field":  "maintenance_dates_json",
+                     "Type":  "text",
+                     "Null":  "YES",
+                     "Key":  "",
+                     "Default":  null,
+                     "Extra":  ""
+                 },
+                 {
+                     "Field":  "vendor_blocked_dates_json",
+                     "Type":  "text",
+                     "Null":  "YES",
+                     "Key":  "",
+                     "Default":  null,
+                     "Extra":  ""
+                 }
+             ],
+    "bikes":  [
+                  {
+                      "Field":  "id",
+                      "Type":  "varchar(50)",
+                      "Null":  "NO",
+                      "Key":  "PRI",
+                      "Default":  null,
+                      "Extra":  ""
+                  },
+                  {
+                      "Field":  "vendor_id",
+                      "Type":  "varchar(50)",
+                      "Null":  "YES",
+                      "Key":  "MUL",
+                      "Default":  null,
+                      "Extra":  ""
+                  },
+                  {
+                      "Field":  "name",
+                      "Type":  "varchar(255)",
+                      "Null":  "NO",
+                      "Key":  "",
+                      "Default":  null,
+                      "Extra":  ""
+                  },
+                  {
+                      "Field":  "category",
+                      "Type":  "varchar(100)",
+                      "Null":  "NO",
+                      "Key":  "",
+                      "Default":  null,
+                      "Extra":  ""
+                  },
+                  {
+                      "Field":  "price",
+                      "Type":  "int(11)",
+                      "Null":  "NO",
+                      "Key":  "",
+                      "Default":  null,
+                      "Extra":  ""
+                  },
+                  {
+                      "Field":  "engine",
+                      "Type":  "varchar(50)",
+                      "Null":  "NO",
+                      "Key":  "",
+                      "Default":  null,
+                      "Extra":  ""
+                  },
+                  {
+                      "Field":  "fuel",
+                      "Type":  "varchar(50)",
+                      "Null":  "NO",
+                      "Key":  "",
+                      "Default":  null,
+                      "Extra":  ""
+                  },
+                  {
+                      "Field":  "mileage",
+                      "Type":  "varchar(50)",
+                      "Null":  "NO",
+                      "Key":  "",
+                      "Default":  null,
+                      "Extra":  ""
+                  },
+                  {
+                      "Field":  "rating",
+                      "Type":  "decimal(3,2)",
+                      "Null":  "YES",
+                      "Key":  "",
+                      "Default":  "4.70",
+                      "Extra":  ""
+                  },
+                  {
+                      "Field":  "badge",
+                      "Type":  "varchar(50)",
+                      "Null":  "YES",
+                      "Key":  "",
+                      "Default":  "Popular",
+                      "Extra":  ""
+                  },
+                  {
+                      "Field":  "image",
+                      "Type":  "text",
+                      "Null":  "NO",
+                      "Key":  "",
+                      "Default":  null,
+                      "Extra":  ""
+                  },
+                  {
+                      "Field":  "is_available",
+                      "Type":  "tinyint(1)",
+                      "Null":  "YES",
+                      "Key":  "",
+                      "Default":  "1",
+                      "Extra":  ""
+                  },
+                  {
+                      "Field":  "location",
+                      "Type":  "varchar(100)",
+                      "Null":  "YES",
+                      "Key":  "",
+                      "Default":  "Goa",
+                      "Extra":  ""
+                  },
+                  {
+                      "Field":  "documents_json",
+                      "Type":  "text",
+                      "Null":  "YES",
+                      "Key":  "",
+                      "Default":  null,
+                      "Extra":  ""
+                  },
+                  {
+                      "Field":  "maintenance_dates_json",
+                      "Type":  "text",
+                      "Null":  "YES",
+                      "Key":  "",
+                      "Default":  null,
+                      "Extra":  ""
+                  },
+                  {
+                      "Field":  "vendor_blocked_dates_json",
+                      "Type":  "text",
+                      "Null":  "YES",
+                      "Key":  "",
+                      "Default":  null,
+                      "Extra":  ""
+                  }
+              ],
+    "pms_rooms":  "Table does not exist",
+    "_all_tables":  [
+                        "add_ons",
+                        "ai_leads",
+                        "bikes",
+                        "booking_payments",
+                        "bookings",
+                        "cars",
+                        "coupons",
+                        "destinations",
+                        "documents",
+                        "flight_bookings",
+                        "flight_offers",
+                        "flight_passengers",
+                        "flight_payments",
+                        "flight_searches",
+                        "flight_services",
+                        "flight_webhook_events",
+                        "flights",
+                        "hotel_activity_log",
+                        "hotel_availability_calendar",
+                        "hotel_guests",
+                        "hotel_notifications",
+                        "hotel_rate_plans",
+                        "hotel_reviews",
+                        "hotel_room_types",
+                        "hotel_rooms",
+                        "hotel_staff",
+                        "hotel_support_tickets",
+                        "hotels",
+                        "markups",
+                        "package_reviews",
+                        "packages",
+                        "payment_settings",
+                        "users",
+                        "vehicle_holds",
+                        "vendors"
+                    ]
+}
