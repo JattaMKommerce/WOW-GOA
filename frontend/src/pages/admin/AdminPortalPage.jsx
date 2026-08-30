@@ -54,7 +54,7 @@ const SIDEBAR_GROUPS = [
       { id: 'bookings', label: 'Booking Management', icon: <Calendar size={15} /> },
       { id: 'leads', label: 'Lead Management', icon: <Users size={15} /> },
       { id: 'enquiries', label: 'Custom Enquiries', icon: <FileText size={15} /> },
-      { id: 'add_users', label: 'Add Users', icon: <UserPlus size={15} /> },
+      { id: 'add_users', label: 'Create Sub-Admin / Add Users', icon: <UserPlus size={15} /> },
     ]
   },
   {
@@ -88,7 +88,7 @@ const SIDEBAR_GROUPS = [
 ];
 
 function SidebarGroup({ group, activeTab, onSelect, defaultOpen }) {
-  const [open, setOpen] = useState(defaultOpen !== undefined ? defaultOpen : group.items.some(i => i.id === activeTab));
+  const [open, setOpen] = useState(group.label === 'Customers' || group.label === 'Overview' || defaultOpen || group.items.some(i => i.id === activeTab));
   return (
     <div className="mb-1">
       <button onClick={() => setOpen(!open)} className="btn w-100 d-flex align-items-center justify-content-between px-3 py-1 border-0" style={{ background: 'transparent', fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', color: 'rgba(255,255,255,0.3)' }}>

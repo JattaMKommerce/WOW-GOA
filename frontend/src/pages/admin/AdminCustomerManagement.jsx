@@ -531,6 +531,7 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
                           <th className="px-3 py-2.5 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>User / Name</th>
                           <th className="px-3 py-2.5 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Contact</th>
                           <th className="px-3 py-2.5 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Role</th>
+                          <th className="px-3 py-2.5 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Live Presence</th>
                           <th className="px-3 py-2.5 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Status</th>
                           <th className="px-3 py-2.5 fw-bold text-muted text-end" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Actions</th>
                         </tr>
@@ -548,6 +549,17 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
                             </td>
                             <td className="px-3 py-2.5">
                               <RoleBadge role={u.role} />
+                            </td>
+                            <td className="px-3 py-2.5">
+                              {Number(u.is_online) === 1 ? (
+                                <span className="badge rounded-pill bg-success-subtle text-success border border-success-subtle px-2 py-1 font-monospace fw-bold" style={{ fontSize: '0.68rem' }}>
+                                  🟢 ONLINE
+                                </span>
+                              ) : (
+                                <span className="badge rounded-pill bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1 font-monospace fw-normal" style={{ fontSize: '0.68rem' }}>
+                                  ⚪ OFFLINE
+                                </span>
+                              )}
                             </td>
                             <td className="px-3 py-2.5">
                               <StatusBadge status={u.status || 'active'} />
