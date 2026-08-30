@@ -19,6 +19,7 @@ export { default as HotelVendorPortalPage } from './vendor/HotelVendorPortalPage
 
 export { default as SuperAdminDashboard } from './superadmin/SuperAdminDashboard';
 export { default as SuperAdminPortalPage } from './superadmin/SuperAdminPortalPage';
+export { default as SubAdminPortalPage } from './subadmin/SubAdminPortalPage';
 
 export { default as AIPlannerPage } from './customer/AIPlannerPage';
 export { default as BikesPage } from './customer/BikesPage';

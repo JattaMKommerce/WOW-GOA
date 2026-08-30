@@ -67,6 +67,46 @@ export default function LeadManagement({ usersList = [], currentUser }) {
 
   const [assignableUsers, setAssignableUsers] = useState([]);
   
+  // Create Sub-Admin Modal state
+  const [showSubAdminModal, setShowSubAdminModal] = useState(false);
+  const [newSubAdmin, setNewSubAdmin] = useState({
+    name: '',
+    username: '',
+    email: '',
+    phone: '',
+    password: ''
+  });
+  const [creatingSubAdmin, setCreatingSubAdmin] = useState(false);
+
+  const handleCreateSubAdmin = async (e) => {
+    e.preventDefault();
+    if (!newSubAdmin.name.trim() || !newSubAdmin.email.trim()) {
+      alert("Sub-Admin Name and Email are required.");
+      return;
+    }
+    setCreatingSubAdmin(true);
+    try {
+      const payload = {
+        name: newSubAdmin.name.trim(),
+        username: (newSubAdmin.username.trim() || newSubAdmin.email.split('@')[0]).toLowerCase().replace(/[^a-z0-9_]/g, '_'),
+        email: newSubAdmin.email.trim(),
+        phone: newSubAdmin.phone.trim(),
+        role: 'subadmin',
+        password: newSubAdmin.password.trim() || 'Pass@123',
+        status: 'active'
+      };
+      await api.addUser(payload);
+      alert(`✅ Sub-Admin "${payload.name}" created successfully!\n\nSub-Admin Login URL: http://localhost:5173/sub-admin\nUsername/Email: ${payload.username}\nPassword: ${payload.password}`);
+      setNewSubAdmin({ name: '', username: '', email: '', phone: '', password: '' });
+      setShowSubAdminModal(false);
+      loadAssignableUsers();
+    } catch (err) {
+      alert("Failed to create Sub-Admin: " + err.message);
+    } finally {
+      setCreatingSubAdmin(false);
+    }
+  };
+  
   // Comments thread state
   const [comments, setComments] = useState([]);
   const [loadingComments, setLoadingComments] = useState(false);
@@ -98,21 +138,29 @@ export default function LeadManagement({ usersList = [], currentUser }) {
     nextAction: ''
   });
 
-  const isSubAdmin = currentUser?.role === 'subadmin' || currentUser?.role === 'agent';
+  const isSubAdmin = currentUser?.role === 'subadmin' || currentUser?.role === 'sub_admin' || currentUser?.role === 'agent';
   const currentUserName = currentUser?.name || currentUser?.username || 'Admin';
 
-  // Load assignable team members
+  // Load assignable team members (Sub-Admins ONLY)
   const loadAssignableUsers = useCallback(async () => {
     try {
       const users = await api.fetchAssignableUsers();
+      const isSubAdminRole = (u) => {
+        const r = (u.role || '').toLowerCase();
+        const n = (u.name || u.username || '').toLowerCase();
+        const excluded = ['admin', 'superadmin', 'super_admin', 'go_operator', 'goa_operator'];
+        return !excluded.includes(r) && !excluded.includes(n) && ['subadmin', 'sub_admin', 'agent'].includes(r);
+      };
+
       if (Array.isArray(users) && users.length > 0) {
-        setAssignableUsers(users);
+        setAssignableUsers(users.filter(isSubAdminRole));
       } else if (usersList && usersList.length > 0) {
-        setAssignableUsers(usersList.filter(u => ['admin', 'subadmin', 'agent'].includes(u.role)));
+        setAssignableUsers(usersList.filter(isSubAdminRole));
       }
     } catch (e) {
       if (usersList && usersList.length > 0) {
-        setAssignableUsers(usersList.filter(u => ['admin', 'subadmin', 'agent'].includes(u.role)));
+        const excluded = ['admin', 'superadmin', 'super_admin', 'go_operator', 'goa_operator'];
+        setAssignableUsers(usersList.filter(u => !excluded.includes((u.role || '').toLowerCase()) && ['subadmin', 'sub_admin', 'agent'].includes((u.role || '').toLowerCase())));
       }
     }
   }, [usersList]);
@@ -527,13 +575,23 @@ export default function LeadManagement({ usersList = [], currentUser }) {
           </button>
           
           {!isSubAdmin && (
-            <button 
-              onClick={() => setShowAddModal(true)}
-              className="btn px-3 py-2 rounded-3 fw-bold d-flex align-items-center gap-2 shadow-sm text-white" 
-              style={{ background: 'linear-gradient(135deg, #FF6333 0%, #FF8A00 100%)', fontSize: '0.82rem', border: 'none' }}
-            >
-              <Plus size={16} /> + Add Manual Lead
-            </button>
+            <>
+              <button 
+                onClick={() => setShowSubAdminModal(true)}
+                className="btn px-3 py-2 rounded-3 fw-bold d-flex align-items-center gap-2 shadow-sm text-white" 
+                style={{ background: 'linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)', fontSize: '0.82rem', border: 'none' }}
+              >
+                <UserPlus size={16} /> + Create Sub-Admin
+              </button>
+
+              <button 
+                onClick={() => setShowAddModal(true)}
+                className="btn px-3 py-2 rounded-3 fw-bold d-flex align-items-center gap-2 shadow-sm text-white" 
+                style={{ background: 'linear-gradient(135deg, #FF6333 0%, #FF8A00 100%)', fontSize: '0.82rem', border: 'none' }}
+              >
+                <Plus size={16} /> + Add Manual Lead
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -879,24 +937,24 @@ export default function LeadManagement({ usersList = [], currentUser }) {
             {/* Quick Contact Bar */}
             <div className="d-flex gap-2 mb-3">
               <a 
-                href={`https://wa.me/${String(selectedLead.phone).replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hi ${selectedLead.name}, this is ${currentUserName} from TripGalileo regarding your booking inquiry!`)}`} 
+                href={`https://wa.me/${String(selectedLead.phone).replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hi ${selectedLead.name}, this is ${currentUserName} from WOW GOA regarding your inquiry for ${selectedLead.service || 'your trip'}!`)}`} 
                 target="_blank" 
                 rel="noreferrer" 
                 className="btn btn-success btn-sm flex-grow-1 d-flex align-items-center justify-content-center gap-2 fw-bold"
               >
-                <MessageSquare size={14} /> WhatsApp
+                <MessageSquare size={14} /> Direct WhatsApp Chat
               </a>
               <a 
                 href={`tel:${selectedLead.phone}`} 
                 className="btn btn-primary btn-sm flex-grow-1 d-flex align-items-center justify-content-center gap-2 fw-bold"
               >
-                <PhoneCall size={14} /> Call
+                <PhoneCall size={14} /> Call Customer
               </a>
               {selectedLead.email && (
                 <a 
                   href={`mailto:${selectedLead.email}`} 
                   className="btn btn-outline-secondary btn-sm d-flex align-items-center justify-content-center p-2"
-                  title="Send Email"
+                  title="Send Email to Customer"
                 >
                   <Mail size={14} />
                 </a>
@@ -1032,6 +1090,7 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                 {comments.map((c, idx) => {
                   const isSys = c.user_role === 'system' || c.user_id === 'system';
                   const isAdm = c.user_role === 'admin' || c.user_role === 'superadmin';
+                  const isSub = c.user_role === 'subadmin' || c.user_role === 'agent';
 
                   if (isSys) {
                     return (
@@ -1048,16 +1107,16 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                       key={c.id || idx} 
                       className="p-2.5 rounded-3 shadow-none position-relative group"
                       style={{ 
-                        background: isAdm ? '#0D1B2E' : '#f5f3ff', 
+                        background: isAdm ? '#0D1B2E' : (isSub ? '#f5f3ff' : '#f8fafc'), 
                         color: isAdm ? '#fff' : '#1e1b4b',
-                        border: isAdm ? 'none' : '1px solid #ddd6fe',
+                        border: isAdm ? 'none' : (isSub ? '1px solid #ddd6fe' : '1px solid #e2e8f0'),
                         alignSelf: isAdm ? 'flex-end' : 'flex-start',
                         maxWidth: '90%'
                       }}
                     >
                       <div className="d-flex align-items-center justify-content-between gap-2 mb-1">
                         <span className="fw-bold" style={{ fontSize: '0.72rem', color: isAdm ? '#FF8A00' : '#7c3aed' }}>
-                          {c.user_name} ({c.user_role})
+                          {c.user_name} ({c.user_role === 'subadmin' ? 'Sub-Admin Response' : c.user_role})
                         </span>
                         <div className="d-flex align-items-center gap-1.5">
                           <span style={{ fontSize: '0.64rem', color: isAdm ? 'rgba(255,255,255,0.5)' : '#94a3b8' }}>
@@ -1088,7 +1147,7 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                 <input
                   type="text"
                   className="form-control form-control-sm"
-                  placeholder="Write an update, question, or note... (Press Enter)"
+                  placeholder={isSubAdmin ? "Write your work update or response to Admin..." : "Write an update, question, or note... (Press Enter)"}
                   value={newCommentText}
                   onChange={e => setNewCommentText(e.target.value)}
                   disabled={sendingComment}
@@ -1098,9 +1157,9 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                   type="submit" 
                   disabled={sendingComment || !newCommentText.trim()}
                   className="btn btn-sm text-white px-3 fw-bold d-flex align-items-center gap-1"
-                  style={{ background: 'linear-gradient(135deg, #FF6333 0%, #FF8A00 100%)', border: 'none' }}
+                  style={{ background: 'linear-gradient(135deg, #FF6333 0%, #FF8A00 100%)', border: 'none', whiteSpace: 'nowrap' }}
                 >
-                  <Send size={13} /> Send
+                  <Send size={13} /> {isSubAdmin ? 'Send Response to Admin' : 'Send'}
                 </button>
               </form>
             </div>
@@ -1148,11 +1207,18 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                   required
                 >
                   <option value="Unassigned">-- Unassigned --</option>
-                  {assignableUsers.map(u => (
-                    <option key={u.id || u.username} value={u.name || u.username}>
-                      {u.name || u.username} ({u.role}) — {u.status}
-                    </option>
-                  ))}
+                  {assignableUsers
+                    .filter(u => {
+                      const r = (u.role || '').toLowerCase();
+                      const n = (u.name || u.username || '').toLowerCase();
+                      const excluded = ['admin', 'superadmin', 'super_admin', 'go_operator', 'goa_operator'];
+                      return !excluded.includes(r) && !excluded.includes(n);
+                    })
+                    .map(u => (
+                      <option key={u.id || u.username} value={u.name || u.username}>
+                        {u.name || u.username} ({u.role || 'subadmin'}) — {u.status || 'active'}
+                      </option>
+                    ))}
                 </select>
                 <div className="text-muted mt-1" style={{ fontSize: '0.7rem' }}>
                   The selected team member will gain visibility in their Sub-Admin portal to contact the guest and manage pipeline progression.
@@ -1314,6 +1380,105 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                   style={{ background: 'linear-gradient(135deg, #FF6333 0%, #FF8A00 100%)', fontSize: '0.82rem', border: 'none' }}
                 >
                   <CheckCircle size={14} /> Create Lead
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* CREATE SUB-ADMIN MODAL */}
+      {showSubAdminModal && (
+        <div className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center" style={{ background: 'rgba(0,0,0,0.5)', zIndex: 2050, backdropFilter: 'blur(3px)' }}>
+          <div className="rounded-4 shadow-lg overflow-hidden animate__animated animate__fadeInUp" style={{ width: '100%', maxWidth: '480px', background: '#fff' }}>
+            <div className="px-4 py-3 d-flex align-items-center justify-content-between" style={{ background: '#0D1B2E', color: '#fff' }}>
+              <div className="d-flex align-items-center gap-2">
+                <UserPlus size={18} style={{ color: '#FF8A00' }} />
+                <h6 className="mb-0 fw-bold">Create Sub-Admin Login Credentials</h6>
+              </div>
+              <button className="btn p-0 text-white-50 border-0" onClick={() => setShowSubAdminModal(false)}><X size={18} /></button>
+            </div>
+
+            <form onSubmit={handleCreateSubAdmin} className="p-4">
+              <div className="p-3 rounded-3 mb-3" style={{ background: '#f5f3ff', border: '1px solid #e9d5ff', fontSize: '0.78rem', color: '#6b21a8' }}>
+                🔑 Creating a Sub-Admin grants access to the dedicated Sub-Admin Portal (<code className="fw-bold">/sub-admin</code>) to manage assigned leads and communicate with Admin.
+              </div>
+
+              <div className="row g-3">
+                <div className="col-md-6">
+                  <label className="form-label fw-bold" style={{ fontSize: '0.78rem', color: '#475569' }}>Full Name *</label>
+                  <input
+                    type="text"
+                    required
+                    className="form-control form-control-sm"
+                    placeholder="e.g. Karan Deshmukh"
+                    value={newSubAdmin.name}
+                    onChange={e => setNewSubAdmin({ ...newSubAdmin, name: e.target.value })}
+                    style={{ fontSize: '0.85rem' }}
+                  />
+                </div>
+                <div className="col-md-6">
+                  <label className="form-label fw-bold" style={{ fontSize: '0.78rem', color: '#475569' }}>Username</label>
+                  <input
+                    type="text"
+                    className="form-control form-control-sm"
+                    placeholder="e.g. karan_subadmin"
+                    value={newSubAdmin.username}
+                    onChange={e => setNewSubAdmin({ ...newSubAdmin, username: e.target.value })}
+                    style={{ fontSize: '0.85rem' }}
+                  />
+                </div>
+                <div className="col-md-6">
+                  <label className="form-label fw-bold" style={{ fontSize: '0.78rem', color: '#475569' }}>Email Address *</label>
+                  <input
+                    type="email"
+                    required
+                    className="form-control form-control-sm"
+                    placeholder="karan@wowgoa.com"
+                    value={newSubAdmin.email}
+                    onChange={e => setNewSubAdmin({ ...newSubAdmin, email: e.target.value })}
+                    style={{ fontSize: '0.85rem' }}
+                  />
+                </div>
+                <div className="col-md-6">
+                  <label className="form-label fw-bold" style={{ fontSize: '0.78rem', color: '#475569' }}>Phone Number</label>
+                  <input
+                    type="tel"
+                    className="form-control form-control-sm"
+                    placeholder="+91 98765 43210"
+                    value={newSubAdmin.phone}
+                    onChange={e => setNewSubAdmin({ ...newSubAdmin, phone: e.target.value })}
+                    style={{ fontSize: '0.85rem' }}
+                  />
+                </div>
+                <div className="col-md-12">
+                  <label className="form-label fw-bold" style={{ fontSize: '0.78rem', color: '#475569' }}>Login Password *</label>
+                  <input
+                    type="text"
+                    required
+                    className="form-control form-control-sm font-monospace fw-bold"
+                    placeholder="e.g. SubPass@2026"
+                    value={newSubAdmin.password}
+                    onChange={e => setNewSubAdmin({ ...newSubAdmin, password: e.target.value })}
+                    style={{ fontSize: '0.85rem' }}
+                  />
+                  <div className="text-muted mt-1" style={{ fontSize: '0.7rem' }}>
+                    The Sub-Admin will use this password to log in at <span className="fw-bold text-dark">http://localhost:5173/sub-admin</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="d-flex align-items-center justify-content-end gap-2 mt-4 pt-3 border-top">
+                <button type="button" className="btn btn-light px-3 py-2 fw-bold" style={{ fontSize: '0.82rem' }} onClick={() => setShowSubAdminModal(false)}>
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={creatingSubAdmin}
+                  className="btn text-white px-4 py-2 fw-bold d-flex align-items-center gap-2" 
+                  style={{ background: 'linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)', fontSize: '0.82rem', border: 'none' }}
+                >
+                  <CheckCircle size={14} /> {creatingSubAdmin ? 'Creating...' : 'Create Sub-Admin Credentials'}
                 </button>
               </div>
             </form>

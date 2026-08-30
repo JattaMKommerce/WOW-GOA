@@ -35,7 +35,8 @@ import {
   AIPlannerPage,
   FlightVendorPortalPage,
   HotelVendorPortalPage,
-  CustomerDashboard
+  CustomerDashboard,
+  SubAdminPortalPage
 } from './pages';
 import AIChatbot from './components/AIChatbot';
 import WhatsAppWidget from './components/WhatsAppWidget';
@@ -814,6 +815,16 @@ export default function App() {
         />
         <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLogin={handleLogin} />
       </>
+    );
+  }
+
+  if (path === '/sub-admin' || path.startsWith('/sub-admin') || path === '/subadmin' || path.startsWith('/subadmin')) {
+    return (
+      <SubAdminPortalPage
+        currentUser={currentUser}
+        onLogout={handleLogout}
+        usersList={usersList}
+      />
     );
   }
 

@@ -405,6 +405,20 @@ export async function loginUser(username, password) {
   throw new Error("Invalid username or password. Check credentials.");
 }
 
+export async function updateOnlineStatus(userId, isOnline = 1) {
+  try {
+    const res = await apiFetch(`${API_BASE}?action=update_online_status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId, is_online: isOnline })
+    });
+    return await res.json();
+  } catch (err) {
+    console.warn('[API] updateOnlineStatus error:', err.message);
+    return { success: false };
+  }
+}
+
 export async function registerUser(userData) {
   const newUserId = `u-${Date.now()}`;
   const password = userData.password || userData.plain_password || 'admin@2026';
@@ -644,9 +658,20 @@ export async function updateNextAction(leadId, nextAction) {
 }
 
 export async function fetchAssignableUsers() {
-  const res = await apiFetch(`${API_BASE}?resource=assignable_users`);
-  const data = await res.json();
-  return Array.isArray(data) ? data : [];
+  try {
+    const res = await apiFetch(`${API_BASE}?resource=assignable_users`);
+    const data = await res.json();
+    const list = Array.isArray(data) ? data : [];
+    return list.filter(u => {
+      const r = (u.role || '').toLowerCase();
+      const n = (u.name || u.username || '').toLowerCase();
+      const excluded = ['admin', 'superadmin', 'super_admin', 'go_operator', 'goa_operator'];
+      return !excluded.includes(r) && !excluded.includes(n);
+    });
+  } catch (err) {
+    console.warn('[API] fetchAssignableUsers fallback:', err.message);
+    return [];
+  }
 }
 
 export async function fetchLeadComments(leadId, userRole = '', username = '') {
