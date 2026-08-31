@@ -925,7 +925,7 @@ export default function LeadManagement({ usersList = [], currentUser }) {
           <div className="d-flex align-items-center justify-content-between px-4 py-3 flex-shrink-0" style={{ background: '#0D1B2E', color: '#fff' }}>
             <div>
               <div className="d-flex align-items-center gap-2">
-                <h6 className="mb-0 fw-bold">{selectedLead.name}</h6>
+                <h6 className="mb-0 fw-bold text-white">{selectedLead.name}</h6>
                 <span className="badge bg-secondary font-monospace" style={{ fontSize: '0.68rem' }}>#{selectedLead.id}</span>
               </div>
               <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.6)' }}>{selectedLead.source}</div>
@@ -935,31 +935,37 @@ export default function LeadManagement({ usersList = [], currentUser }) {
 
           <div className="flex-grow-1 overflow-auto p-4">
             {/* Quick Contact Bar */}
-            <div className="d-flex gap-2 mb-3">
-              <a 
-                href={`https://wa.me/${String(selectedLead.phone).replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hi ${selectedLead.name}, this is ${currentUserName} from WOW GOA regarding your inquiry for ${selectedLead.service || 'your trip'}!`)}`} 
-                target="_blank" 
-                rel="noreferrer" 
-                className="btn btn-success btn-sm flex-grow-1 d-flex align-items-center justify-content-center gap-2 fw-bold"
-              >
-                <MessageSquare size={14} /> Direct WhatsApp Chat
-              </a>
-              <a 
-                href={`tel:${selectedLead.phone}`} 
-                className="btn btn-primary btn-sm flex-grow-1 d-flex align-items-center justify-content-center gap-2 fw-bold"
-              >
-                <PhoneCall size={14} /> Call Customer
-              </a>
-              {selectedLead.email && (
-                <a 
-                  href={`mailto:${selectedLead.email}`} 
-                  className="btn btn-outline-secondary btn-sm d-flex align-items-center justify-content-center p-2"
-                  title="Send Email to Customer"
-                >
-                  <Mail size={14} />
-                </a>
-              )}
-            </div>
+            {(() => {
+              const rawPhone = String(selectedLead.phone || '').replace(/[^0-9]/g, '');
+              const waNumber = rawPhone.length === 10 ? '91' + rawPhone : rawPhone;
+              return (
+                <div className="d-flex gap-2 mb-3">
+                  <a 
+                    href={`https://wa.me/${waNumber}?text=${encodeURIComponent(`Hi ${selectedLead.name}, this is ${currentUserName} from WOW GOA regarding your inquiry for ${selectedLead.service || 'your trip'}!`)}`} 
+                    target="_blank" 
+                    rel="noreferrer" 
+                    className="btn btn-success btn-sm flex-grow-1 d-flex align-items-center justify-content-center gap-2 fw-bold"
+                  >
+                    <MessageSquare size={14} /> Direct WhatsApp Chat
+                  </a>
+                  <a 
+                    href={`tel:${selectedLead.phone}`} 
+                    className="btn btn-primary btn-sm flex-grow-1 d-flex align-items-center justify-content-center gap-2 fw-bold"
+                  >
+                    <PhoneCall size={14} /> Call Customer
+                  </a>
+                  {selectedLead.email && (
+                    <a 
+                      href={`mailto:${selectedLead.email}`} 
+                      className="btn btn-outline-secondary btn-sm d-flex align-items-center justify-content-center p-2"
+                      title="Send Email to Customer"
+                    >
+                      <Mail size={14} />
+                    </a>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* 1. LEAD ASSIGNMENT INFORMATION SECTION */}
             <div className="p-3 rounded-3 mb-3" style={{ background: '#f5f3ff', border: '1px solid #e9d5ff' }}>
