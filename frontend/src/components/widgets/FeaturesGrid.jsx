@@ -15,13 +15,13 @@ export default function FeaturesGrid({ config }) {
     <div className="py-5" style={{ background: '#0D1B2E', color: '#fff' }}>
       <div className="container">
         <div className="section-header text-center mb-5">
-          <span className="section-tagline text-warning fw-bold text-uppercase" style={{ letterSpacing: '2px', fontSize: '0.8rem' }}>
+          <div className="section-tagline text-warning fw-bold text-uppercase d-block mb-2" style={{ letterSpacing: '2px', fontSize: '0.85rem' }}>
             Our Guarantee
-          </span>
-          <h2 className="section-title fw-bold mt-2" style={{ fontSize: '2rem' }}>
+          </div>
+          <h2 className="section-title fw-bold text-white" style={{ fontSize: '2rem' }}>
             {config?.heading || 'Why Choose Us?'}
           </h2>
-          <p className="text-white-50 mt-2 mx-auto" style={{ maxWidth: '600px' }}>
+          <p className="text-white-50 mt-3 mx-auto" style={{ maxWidth: '600px' }}>
             {config?.subtext || 'We deliver excellence across all our services'}
           </p>
         </div>

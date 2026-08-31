@@ -39,8 +39,16 @@ const TYPE_FIELDS = {
 };
 
 function GatewayModal({ gateway, onClose, onSave }) {
+  const getInitialConfig = (gw) => {
+    if (!gw) return {};
+    if (typeof gw.config_json === 'string') {
+      try { return JSON.parse(gw.config_json || '{}'); } catch (e) { return {}; }
+    }
+    return gw.config || gw.config_json || {};
+  };
+
   const [form, setForm] = useState(gateway
-    ? { ...gateway, config: typeof gateway.config_json === 'string' ? JSON.parse(gateway.config_json || '{}') : (gateway.config || {}) }
+    ? { ...gateway, config: getInitialConfig(gateway) }
     : { name: '', type: 'bank_transfer', config: {}, instructions: '', is_active: 1 }
   );
   const [saving, setSaving] = useState(false);
@@ -58,7 +66,7 @@ function GatewayModal({ gateway, onClose, onSave }) {
       const res = await apiFetch(API_BASE, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, ...form, config_json: JSON.stringify(form.config) })
+        body: JSON.stringify({ action, ...form, config_json: JSON.stringify(form.config || {}) })
       });
       const data = await res.json();
       if (data.success) { onSave(); onClose(); }
@@ -68,25 +76,60 @@ function GatewayModal({ gateway, onClose, onSave }) {
   };
 
   return (
-    <div className="position-fixed top-0 start-0 end-0 bottom-0 d-flex align-items-center justify-content-center" style={{ background: 'rgba(13,27,46,0.7)', backdropFilter: 'blur(6px)', zIndex: 1060 }} onClick={onClose}>
-      <div className="rounded-4 overflow-hidden shadow-lg" style={{ width: '100%', maxWidth: '560px', maxHeight: '90vh', overflowY: 'auto', background: '#fff', margin: '0 16px' }} onClick={e => e.stopPropagation()}>
-        <div className="d-flex align-items-center justify-content-between px-4 py-3" style={{ background: COLORS.dark, borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-          <h6 className="mb-0 fw-bold text-white" style={{ fontSize: '14px' }}>{form.id ? 'Edit Payment Gateway' : 'Add Payment Gateway'}</h6>
-          <button className="btn p-1 border-0 text-white-50" onClick={onClose}><X size={16} /></button>
+    <div
+      className="position-fixed top-0 start-0 end-0 bottom-0 d-flex align-items-center justify-content-center"
+      style={{ background: 'rgba(13,27,46,0.7)', backdropFilter: 'blur(6px)', zIndex: 1060, padding: '16px' }}
+      onClick={onClose}
+    >
+      <div
+        className="rounded-4 overflow-hidden shadow-lg d-flex flex-column"
+        style={{ width: '100%', maxWidth: '580px', maxHeight: '90vh', background: '#fff' }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Fixed Header */}
+        <div
+          className="d-flex align-items-center justify-content-between px-4 py-3 flex-shrink-0"
+          style={{ background: COLORS.dark, borderBottom: '1px solid rgba(255,255,255,0.07)' }}
+        >
+          <h6 className="mb-0 fw-bold text-white" style={{ fontSize: '15px' }}>
+            {form.id ? 'Edit Payment Gateway' : 'Add Payment Gateway'}
+          </h6>
+          <button className="btn p-1 border-0 text-white-50" onClick={onClose}><X size={18} /></button>
         </div>
-        <form onSubmit={handleSubmit} className="p-4">
+
+        {/* Scrollable Body */}
+        <form id="gateway-form" onSubmit={handleSubmit} className="p-4 flex-grow-1" style={{ overflowY: 'auto' }}>
           <div className="mb-3">
             <label className="form-label fw-bold" style={{ fontSize: '0.78rem', color: '#475569' }}>Gateway Name *</label>
-            <input className="form-control" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required placeholder="e.g. HDFC Bank Transfer" />
+            <input
+              className="form-control"
+              value={form.name}
+              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              required
+              placeholder="e.g. HDFC Bank Transfer"
+            />
           </div>
+
           <div className="mb-3">
             <label className="form-label fw-bold" style={{ fontSize: '0.78rem', color: '#475569' }}>Gateway Type *</label>
             <div className="d-flex flex-wrap gap-2">
               {GATEWAY_TYPES.map(t => (
-                <button type="button" key={t.id}
+                <button
+                  type="button"
+                  key={t.id}
                   className="btn d-flex align-items-center gap-2 px-3 py-2 rounded-3 fw-bold"
-                  style={{ fontSize: '0.8rem', background: form.type === t.id ? t.color : '#f8fafc', color: form.type === t.id ? '#fff' : '#475569', border: `1.5px solid ${form.type === t.id ? t.color : '#e2e8f0'}` }}
-                  onClick={() => setForm(f => ({ ...f, type: t.id, config: {} }))}>
+                  style={{
+                    fontSize: '0.8rem',
+                    background: form.type === t.id ? t.color : '#f8fafc',
+                    color: form.type === t.id ? '#fff' : '#475569',
+                    border: `1.5px solid ${form.type === t.id ? t.color : '#e2e8f0'}`
+                  }}
+                  onClick={() => setForm(f => ({
+                    ...f,
+                    type: t.id,
+                    config: (gateway && gateway.type === t.id) ? getInitialConfig(gateway) : {}
+                  }))}
+                >
                   {t.icon} {t.label}
                 </button>
               ))}
@@ -99,32 +142,66 @@ function GatewayModal({ gateway, onClose, onSave }) {
               <div className="fw-bold mb-2" style={{ fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                 {selectedType.label} Configuration
               </div>
-              {fields.map(f => (
-                <div key={f.key} className="mb-2">
-                  <label className="form-label mb-1" style={{ fontSize: '0.75rem', color: '#475569' }}>{f.label}</label>
-                  <input type={f.type} className="form-control form-control-sm" value={form.config[f.key] || ''} onChange={e => handleConfigChange(f.key, e.target.value)} />
-                </div>
-              ))}
+              <div className="row g-2">
+                {fields.map(f => (
+                  <div key={f.key} className={form.type === 'bank_transfer' ? 'col-md-6' : 'col-12'}>
+                    <label className="form-label mb-1" style={{ fontSize: '0.75rem', color: '#475569' }}>{f.label}</label>
+                    <input
+                      type={f.type}
+                      className="form-control form-control-sm"
+                      value={form.config?.[f.key] || ''}
+                      onChange={e => handleConfigChange(f.key, e.target.value)}
+                      placeholder={f.label}
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
           <div className="mb-3">
             <label className="form-label fw-bold" style={{ fontSize: '0.78rem', color: '#475569' }}>Payment Instructions (shown to users)</label>
-            <textarea className="form-control" rows={3} value={form.instructions} onChange={e => setForm(f => ({ ...f, instructions: e.target.value }))} placeholder="Transfer to the above account and upload payment proof..." />
+            <textarea
+              className="form-control"
+              rows={3}
+              value={form.instructions}
+              onChange={e => setForm(f => ({ ...f, instructions: e.target.value }))}
+              placeholder="Transfer to the above account and upload payment proof..."
+            />
           </div>
 
-          <div className="mb-3 d-flex align-items-center gap-2">
-            <input type="checkbox" className="form-check-input" id="gw_active" checked={form.is_active == 1} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked ? 1 : 0 }))} />
-            <label htmlFor="gw_active" className="form-check-label fw-bold" style={{ fontSize: '0.82rem', color: '#475569' }}>Gateway Active (visible to users)</label>
-          </div>
-
-          <div className="d-flex gap-2 justify-content-end mt-3">
-            <button type="button" className="btn btn-light fw-bold px-4" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn fw-bold px-5 text-white" style={{ background: `linear-gradient(90deg,${COLORS.primary},#FF8A00)` }} disabled={saving}>
-              {saving ? 'Saving...' : (form.id ? 'Update Gateway' : 'Add Gateway')}
-            </button>
+          <div className="mb-2 d-flex align-items-center gap-2">
+            <input
+              type="checkbox"
+              className="form-check-input"
+              id="gw_active"
+              checked={form.is_active == 1}
+              onChange={e => setForm(f => ({ ...f, is_active: e.target.checked ? 1 : 0 }))}
+            />
+            <label htmlFor="gw_active" className="form-check-label fw-bold" style={{ fontSize: '0.82rem', color: '#475569' }}>
+              Gateway Active (visible to users)
+            </label>
           </div>
         </form>
+
+        {/* Fixed Footer */}
+        <div
+          className="d-flex gap-2 justify-content-end px-4 py-3 flex-shrink-0"
+          style={{ background: '#fff', borderTop: '1px solid #e2e8f0' }}
+        >
+          <button type="button" className="btn btn-light fw-bold px-4" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="submit"
+            form="gateway-form"
+            className="btn fw-bold px-5 text-white shadow-sm"
+            style={{ background: `linear-gradient(90deg,${COLORS.primary},#FF8A00)` }}
+            disabled={saving}
+          >
+            {saving ? 'Saving...' : (form.id ? 'Update Gateway' : 'Add Gateway')}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -141,9 +218,14 @@ export default function PaymentGatewayManager() {
     setLoading(true);
     try {
       const res = await apiFetch(`${API_BASE}?resource=payment_gateways`);
-      setGateways(await res.json());
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
+      const data = await res.json();
+      setGateways(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error(e);
+      setGateways([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { load(); }, []);
@@ -159,6 +241,8 @@ export default function PaymentGatewayManager() {
     await apiFetch(API_BASE, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'update_payment_gateway', ...gw, config_json: JSON.stringify(config), is_active: gw.is_active ? 0 : 1 }) });
     load();
   };
+
+  const gatewayList = Array.isArray(gateways) ? gateways : [];
 
   return (
     <div className="p-4">
@@ -176,9 +260,9 @@ export default function PaymentGatewayManager() {
         <div className="text-center py-5"><div className="spinner-border" style={{ color: COLORS.primary }} /></div>
       ) : (
         <div className="d-flex flex-column gap-3">
-          {gateways.map(gw => {
+          {gatewayList.map(gw => {
             const typeInfo = GATEWAY_TYPES.find(t => t.id === gw.type) || GATEWAY_TYPES[3];
-            const config = typeof gw.config_json === 'string' ? JSON.parse(gw.config_json || '{}') : {};
+            const config = typeof gw.config_json === 'string' ? JSON.parse(gw.config_json || '{}') : (gw.config || {});
             const isExp = expanded === gw.id;
             return (
               <div key={gw.id} className="rounded-3 overflow-hidden" style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.07)', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
@@ -215,7 +299,7 @@ export default function PaymentGatewayManager() {
                       {Object.entries(config).map(([k, v]) => v && (
                         <div key={k} className="col-md-6">
                           <div style={{ fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{k.replace(/_/g, ' ')}</div>
-                          <div style={{ fontSize: '0.82rem', color: COLORS.dark, fontWeight: 600 }}>{k.includes('secret') ? '••••••••' : v}</div>
+                          <div style={{ fontSize: '0.82rem', color: COLORS.dark, fontWeight: 600 }}>{k.includes('secret') ? '••••••••' : String(v)}</div>
                         </div>
                       ))}
                     </div>
@@ -231,7 +315,7 @@ export default function PaymentGatewayManager() {
             );
           })}
 
-          {gateways.length === 0 && (
+          {gatewayList.length === 0 && (
             <div className="rounded-3 text-center p-5" style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.07)' }}>
               <Globe size={40} className="mb-3" style={{ color: '#94a3b8' }} />
               <h6 className="fw-bold" style={{ color: COLORS.dark }}>No Payment Gateways Configured</h6>

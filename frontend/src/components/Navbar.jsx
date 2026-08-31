@@ -2,9 +2,10 @@ import React from 'react';
 import { Compass, LogOut, User } from 'lucide-react';
 import { useSiteConfig } from '../context/SiteConfigContext';
 
-export default function Navbar({ activeTab, setActiveTab, currentUser, triggerOpenLogin, onLogout }) {
+export default function Navbar({ activeTab, setActiveTab, currentUser, triggerOpenLogin, onOpenLogin, onLogout }) {
   const { liveConfig } = useSiteConfig();
   const headerLinks = liveConfig?.menus?.header || [];
+  const handleOpenLogin = triggerOpenLogin || onOpenLogin;
   return (
     <nav className="navbar navbar-expand-lg navbar-dark premium-navbar">
       <div className="container">
@@ -91,7 +92,7 @@ export default function Navbar({ activeTab, setActiveTab, currentUser, triggerOp
                 <button
                   type="button"
                   className="btn btn-premium-nav"
-                  onClick={triggerOpenLogin}
+                  onClick={handleOpenLogin}
                 >
                   Sign In
                 </button>

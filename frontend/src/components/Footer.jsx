@@ -18,9 +18,9 @@ export default function Footer({ setActiveTab }) {
               TripGalileo is Goa's leading luxury vehicle rental and curated holiday booking portal. Experience seamless self-drive freedom.
             </p>
             <div className="d-flex gap-3 mt-3">
-              <a href="#" className="text-white opacity-75 hover-opacity-100"><i className="bi bi-facebook fs-5 text-white"></i></a>
-              <a href="#" className="text-white opacity-75 hover-opacity-100"><i className="bi bi-instagram fs-5 text-white"></i></a>
-              <a href="#" className="text-white opacity-75 hover-opacity-100"><i className="bi bi-twitter fs-5 text-white"></i></a>
+              <a href="#" aria-label="Facebook" className="text-white opacity-75 hover-opacity-100"><i className="bi bi-facebook fs-5 text-white"></i></a>
+              <a href="#" aria-label="Instagram" className="text-white opacity-75 hover-opacity-100"><i className="bi bi-instagram fs-5 text-white"></i></a>
+              <a href="https://www.youtube.com" target="_blank" rel="noopener noreferrer" aria-label="YouTube" className="text-white opacity-75 hover-opacity-100"><i className="bi bi-youtube fs-5 text-white"></i></a>
             </div>
           </div>
           <div className="col-6 col-lg-2 text-start">

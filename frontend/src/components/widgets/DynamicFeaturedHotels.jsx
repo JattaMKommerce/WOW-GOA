@@ -1,8 +1,15 @@
 import React from 'react';
 import { Star, MapPin } from 'lucide-react';
 
-export default function DynamicFeaturedHotels({ config, hotels = [], onBook, onViewDetails }) {
+export default function DynamicFeaturedHotels({ config, hotels = [], onBook, onBookHotel, onViewDetails, onViewHotel }) {
   if (config && !config.visible) return null;
+
+  const handleAction = (hotel) => {
+    if (onViewHotel) onViewHotel(hotel);
+    else if (onViewDetails) onViewDetails(hotel);
+    else if (onBookHotel) onBookHotel(hotel);
+    else if (onBook) onBook(hotel);
+  };
 
   // Real data: take top 4 highest rated or cheapest
   const topHotels = hotels.slice(0, 4);
@@ -11,13 +18,13 @@ export default function DynamicFeaturedHotels({ config, hotels = [], onBook, onV
     <div className="py-5 bg-white">
       <div className="container">
         <div className="section-header text-center mb-5">
-          <span className="section-tagline text-primary fw-bold text-uppercase" style={{ letterSpacing: '2px', fontSize: '0.8rem' }}>
+          <div className="section-tagline text-primary fw-bold text-uppercase d-block mb-2" style={{ letterSpacing: '2px', fontSize: '0.85rem' }}>
             Luxury Stays
-          </span>
-          <h2 className="section-title fw-bold mt-2" style={{ color: '#0D1B2E', fontSize: '2rem' }}>
+          </div>
+          <h2 className="section-title fw-bold" style={{ color: '#0D1B2E', fontSize: '2rem' }}>
             {config?.heading || 'Premium Luxury Stays'}
           </h2>
-          <p className="text-muted mt-2 mx-auto" style={{ maxWidth: '600px' }}>
+          <p className="text-muted mt-3 mx-auto" style={{ maxWidth: '600px' }}>
             {config?.subtext || 'Handpicked hotels and resorts in prime locations'}
           </p>
         </div>
@@ -25,8 +32,8 @@ export default function DynamicFeaturedHotels({ config, hotels = [], onBook, onV
         <div className="row g-4 justify-content-center">
           {topHotels.map(hotel => (
             <div key={hotel.id} className="col-md-6 col-lg-3">
-              <div className="card h-100 border-0 shadow-sm rounded-4 overflow-hidden" style={{ transition: 'transform 0.3s ease' }}>
-                <div style={{ height: '200px', overflow: 'hidden', position: 'relative' }}>
+              <div className="card h-100 border-0 shadow-sm rounded-4 overflow-hidden cursor-pointer" style={{ transition: 'transform 0.3s ease' }}>
+                <div style={{ height: '200px', overflow: 'hidden', position: 'relative' }} onClick={() => handleAction(hotel)}>
                   <img 
                     src={hotel.image || hotel.image_url || 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=500'} 
                     alt={hotel.name} 
@@ -44,7 +51,7 @@ export default function DynamicFeaturedHotels({ config, hotels = [], onBook, onV
                       <Star key={i} size={14} fill="currentColor" />
                     ))}
                   </div>
-                  <h5 className="fw-bold mb-1" style={{ color: '#0D1B2E', fontSize: '1.1rem' }}>{hotel.name}</h5>
+                  <h5 className="fw-bold mb-1" style={{ color: '#0D1B2E', fontSize: '1.1rem' }} onClick={() => handleAction(hotel)}>{hotel.name}</h5>
                   <div className="d-flex align-items-center text-muted mb-3" style={{ fontSize: '0.85rem' }}>
                     <MapPin size={14} className="me-1" /> {hotel.area}
                   </div>
@@ -53,7 +60,7 @@ export default function DynamicFeaturedHotels({ config, hotels = [], onBook, onV
                       <div className="text-muted" style={{ fontSize: '0.75rem' }}>Starts from</div>
                       <div className="fw-bold text-primary" style={{ fontSize: '1.2rem' }}>₹{parseFloat(hotel.price).toLocaleString()}</div>
                     </div>
-                    <button className="btn btn-outline-primary btn-sm rounded-pill px-3 fw-bold" onClick={() => onViewDetails(hotel)}>
+                    <button className="btn btn-outline-primary btn-sm rounded-pill px-3 fw-bold" onClick={() => handleAction(hotel)}>
                       Explore
                     </button>
                   </div>

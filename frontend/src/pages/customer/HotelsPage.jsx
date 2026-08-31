@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Star, MapPin, Check, ChevronRight, AlertCircle, RotateCcw } from 'lucide-react';
 import HotelImageGallery from '../../components/HotelImageGallery';
+import ImageCarousel from '../../components/common/ImageCarousel';
 import UnifiedGalleryViewer from '../../components/UnifiedGalleryViewer';
 
 export default function HotelsPage({
@@ -16,26 +17,40 @@ export default function HotelsPage({
   hotelAdults,
   hotelPriceRange,
   setHotelPriceRange,
-  markups = []
+  markups = [],
+  appliedFilters = {},
+  setAppliedFilters
 }) {
   // Local state for advanced filters
-  const [selectedStars, setSelectedStars] = useState([]);
+  const [selectedStars, setSelectedStars] = useState(() => appliedFilters?.hotelStars || []);
   const [galleryHotel, setGalleryHotel] = useState(null);
+
+  // Sync when appliedFilters changes
+  React.useEffect(() => {
+    if (appliedFilters?.hotelStars && appliedFilters.hotelStars.length > 0) {
+      setSelectedStars(appliedFilters.hotelStars);
+    }
+  }, [appliedFilters?.hotelStars]);
   
   // Calculate mock original prices (MakeMyTrip shows strikethrough prices)
   const getOriginalPrice = (price) => Math.round(price * 1.35); // 35% markup
 
   const handleStarToggle = (star) => {
-    setSelectedStars(prev => 
-      prev.includes(star) 
-        ? prev.filter(s => s !== star)
-        : [...prev, star]
-    );
+    setSelectedStars(prev => {
+      const next = prev.includes(star) ? prev.filter(s => s !== star) : [...prev, star];
+      if (setAppliedFilters) {
+        setAppliedFilters(old => ({ ...(old || {}), hotelStars: next }));
+      }
+      return next;
+    });
   };
 
   const handleResetAllFilters = () => {
     setSelectedStars([]);
     if (setHotelPriceRange) setHotelPriceRange('All');
+    if (setAppliedFilters) {
+      setAppliedFilters(old => ({ ...(old || {}), hotelStars: [], priceRanges: [] }));
+    }
   };
 
   const getMarkupPrice = (basePrice, vendorId, entityType, itemId = 'all') => {
@@ -75,7 +90,9 @@ export default function HotelsPage({
 
   // Non-destructive, flexible filtering logic
   const filteredHotels = useMemo(() => {
-    const results = displayHotels.filter(hotel => {
+    const activePrices = appliedFilters?.priceRanges || [];
+
+    return displayHotels.filter(hotel => {
       const hotelName = (hotel.name || '').toLowerCase();
       const hotelArea = (hotel.area || '').toLowerCase();
       const hotelLoc = (hotel.location || '').toLowerCase();
@@ -95,20 +112,27 @@ export default function HotelsPage({
       const hotelStarsStr = String(hotel.stars || hotel.star_rating || 3);
       const starsMatch = selectedStars.length === 0 || selectedStars.includes(hotelStarsStr);
       
-      // Price filter
+      // Price filter from sidebar or appliedFilters
       let priceMatch = true;
       if (hotelPriceRange === 'under-10000') priceMatch = hotel.price < 10000;
       else if (hotelPriceRange === '10000-20000') priceMatch = hotel.price >= 10000 && hotel.price <= 20000;
       else if (hotelPriceRange === 'over-20000') priceMatch = hotel.price > 20000;
+      else if (activePrices.length > 0) {
+        priceMatch = activePrices.some(rangeId => {
+          if (rangeId === '< 15000') return hotel.price < 15000;
+          if (rangeId === '15000-25000') return hotel.price >= 15000 && hotel.price <= 25000;
+          if (rangeId === '> 25000') return hotel.price > 25000;
+          return true;
+        });
+      }
 
       // Flexible Location matching:
-      // If location is 'Goa', 'All Goa', 'India', '', or departure cities (Hubli, Delhi, Mumbai, etc.), match all Goa properties!
       const loc = (pickupLoc || '').toLowerCase().trim();
       let locMatch = true;
       const genericCities = ['goa', 'all goa', 'india', 'all', '', 'hubli', 'delhi', 'new delhi', 'mumbai', 'bengaluru', 'bangalore', 'pune', 'hyderabad', 'chennai', 'kolkata', 'ahmedabad', 'jaipur', 'kochi'];
       
       if (loc && !genericCities.includes(loc)) {
-        const cleanLoc = loc.replace(/,.*$/, '').trim(); // e.g. "Calangute, Goa" -> "calangute"
+        const cleanLoc = loc.replace(/,.*$/, '').trim();
         locMatch = hotelArea.includes(cleanLoc) || 
                    cleanLoc.includes(hotelArea) || 
                    hotelName.includes(cleanLoc) || 
@@ -118,7 +142,7 @@ export default function HotelsPage({
                    loc.includes('south');
       }
 
-      // Guest / Room capacity check: Only filter out if max_guests is explicitly defined and strictly < hotelAdults
+      // Guest / Room capacity check
       let capacityMatch = true;
       if (hotel.max_guests && parseInt(hotel.max_guests, 10) > 0 && hotelAdults) {
         capacityMatch = parseInt(hotel.max_guests, 10) >= parseInt(hotelAdults, 10);
@@ -126,23 +150,9 @@ export default function HotelsPage({
 
       return searchMatch && starsMatch && priceMatch && locMatch && capacityMatch;
     });
+  }, [displayHotels, searchQuery, selectedStars, hotelPriceRange, appliedFilters?.priceRanges, pickupLoc, hotelAdults]);
 
-    console.log('[HotelsPage Filter Evaluation]', {
-      totalHotels: displayHotels.length,
-      matchedHotels: results.length,
-      pickupLoc,
-      searchQuery,
-      hotelPriceRange,
-      selectedStars,
-      hotelAdults
-    });
-
-    return results;
-  }, [displayHotels, searchQuery, selectedStars, hotelPriceRange, pickupLoc, hotelAdults]);
-
-  // If filteredHotels is empty due to restrictive filter, display fallback items gracefully
-  const hotelsToRender = filteredHotels.length > 0 ? filteredHotels : displayHotels;
-  const isFallbackView = filteredHotels.length === 0 && displayHotels.length > 0;
+  const hotelsToRender = filteredHotels;
 
   return (
     <div className="animate-fade-in-up">
@@ -153,25 +163,6 @@ export default function HotelsPage({
           {pickupLoc && <span className="ms-1 text-primary fw-semibold">({pickupLoc})</span>}
         </p>
       </div>
-
-      {/* Fallback Notice Banner if strict filter returned 0 */}
-      {isFallbackView && (
-        <div className="alert alert-info d-flex align-items-center justify-content-between p-3 rounded-4 mb-4 border-0 shadow-sm" style={{ background: '#f0fdf4', borderLeft: '4px solid #10b981' }}>
-          <div className="d-flex align-items-center gap-2">
-            <AlertCircle size={20} className="text-success flex-shrink-0" />
-            <span className="text-dark small fw-semibold">
-              No hotels matched all strict filter parameters for "{pickupLoc || searchQuery || 'your search'}". Showing all available verified stays in Goa.
-            </span>
-          </div>
-          <button 
-            type="button" 
-            className="btn btn-sm btn-outline-success rounded-pill px-3 d-flex align-items-center gap-1"
-            onClick={handleResetAllFilters}
-          >
-            <RotateCcw size={14} /> Reset Filters
-          </button>
-        </div>
-      )}
 
       <div className="mmt-layout-container">
         {/* Left Sidebar - Filters */}
@@ -280,10 +271,10 @@ export default function HotelsPage({
                 <div key={hotel.id} className="mmt-hotel-card">
                   <div className="mmt-hotel-img-wrapper p-2 bg-light">
                     <div className="position-relative w-100 h-100">
-                      <UnifiedGalleryViewer
+                      <ImageCarousel
                         images={validHotelImages}
-                        variant="compact"
-                        compactHeight="185px"
+                        height="190px"
+                        rounded="12px"
                         alt={hotel.name}
                       />
                       <span className="position-absolute top-0 start-0 m-2 badge bg-dark text-white rounded-pill shadow-sm" style={{ zIndex: 6, pointerEvents: 'none' }}>

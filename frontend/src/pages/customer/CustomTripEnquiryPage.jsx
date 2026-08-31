@@ -1,13 +1,13 @@
-import React, { useState } from 'react';
-import { Send, Upload, MapPin, Calendar, Users, DollarSign, Hotel, Utensils, Plane, Train, Car, Bike, Info, CheckCircle2, User, Compass } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Send, Upload, MapPin, Calendar, Users, DollarSign, Hotel, Utensils, Plane, Train, Car, Bike, Info, CheckCircle2, User, Compass, AlertCircle, Loader2 } from 'lucide-react';
 import * as api from '../../services/api';
 
-export default function CustomTripEnquiryPage({ setActiveTab }) {
+export default function CustomTripEnquiryPage({ setActiveTab, currentUser }) {
   const [formData, setFormData] = useState({
-    customer_name: '',
-    phone: '',
-    email: '',
-    whatsapp: '',
+    customer_name: currentUser?.name || currentUser?.username || '',
+    phone: currentUser?.phone || '',
+    email: currentUser?.email || '',
+    whatsapp: currentUser?.phone || '',
     departure_city: '',
     destinations: '',
     travel_dates: '',
@@ -31,11 +31,25 @@ export default function CustomTripEnquiryPage({ setActiveTab }) {
   });
   const [documents, setDocuments] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [validationError, setValidationError] = useState('');
   const [success, setSuccess] = useState(false);
   const [enquiryId, setEnquiryId] = useState('');
 
+  useEffect(() => {
+    if (currentUser) {
+      setFormData(prev => ({
+        ...prev,
+        customer_name: prev.customer_name || currentUser.name || currentUser.username || '',
+        email: prev.email || currentUser.email || '',
+        phone: prev.phone || currentUser.phone || '',
+        whatsapp: prev.whatsapp || currentUser.phone || ''
+      }));
+    }
+  }, [currentUser]);
+
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
+    setValidationError('');
     setFormData(prev => ({
       ...prev,
       [name]: type === 'checkbox' ? checked : value
@@ -53,12 +67,48 @@ export default function CustomTripEnquiryPage({ setActiveTab }) {
     }
   };
 
+  const validateForm = () => {
+    if (!formData.customer_name.trim() || formData.customer_name.trim().length < 2) {
+      return 'Please enter your full name (at least 2 characters).';
+    }
+    const cleanPhone = formData.phone.replace(/[^0-9]/g, '');
+    if (!cleanPhone || cleanPhone.length < 10) {
+      return 'Please enter a valid 10-digit mobile number.';
+    }
+    if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
+      return 'Please enter a valid email address.';
+    }
+    if (formData.whatsapp) {
+      const cleanWa = formData.whatsapp.replace(/[^0-9]/g, '');
+      if (cleanWa.length < 10) {
+        return 'Please enter a valid 10-digit WhatsApp number or leave it blank.';
+      }
+    }
+    if (!formData.destinations.trim()) {
+      return 'Please enter your preferred destination(s).';
+    }
+    return null;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setValidationError('');
+
+    const error = validateForm();
+    if (error) {
+      setValidationError(error);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const payload = {
         ...formData,
+        customer_name: formData.customer_name.trim(),
+        phone: formData.phone.trim(),
+        email: formData.email.trim(),
+        whatsapp: (formData.whatsapp || formData.phone).trim(),
         flexible_dates: formData.flexible_dates ? 1 : 0,
         req_flight: formData.req_flight ? 1 : 0,
         req_train: formData.req_train ? 1 : 0,
@@ -71,16 +121,17 @@ export default function CustomTripEnquiryPage({ setActiveTab }) {
         action: 'save_custom_enquiry'
       };
       const res = await api.makeApiCall('/api.php', { method: 'POST', body: JSON.stringify(payload) });
-      if (res.success) {
-        setEnquiryId(res.enquiry_id);
+      if (res && res.success) {
+        setEnquiryId(res.enquiry_id || 'ENQ-CONFIRMED');
         setSuccess(true);
       } else {
-        throw new Error(res.error || 'Failed to submit');
+        throw new Error(res?.error || res?.message || 'Failed to submit enquiry. Please try again.');
       }
     } catch (err) {
-      alert(err.message);
+      setValidationError(err.message || 'Something went wrong while submitting your enquiry. Please try again.');
+    } finally {
+      setIsSubmitting(false);
     }
-    setIsSubmitting(false);
   };
 
   if (success) {
@@ -88,16 +139,33 @@ export default function CustomTripEnquiryPage({ setActiveTab }) {
       <div className="container py-5 text-center min-vh-100 d-flex flex-column justify-content-center align-items-center">
         <CheckCircle2 size={80} className="text-success mb-4" />
         <h2 className="fw-bold mb-3">Enquiry Submitted Successfully!</h2>
-        <p className="text-muted fs-5 mb-4">
-          Your custom trip request has been recorded. Our travel experts will get back to you shortly.
+        <p className="text-muted fs-5 mb-4" style={{ maxWidth: '560px' }}>
+          Your custom enquiry has been submitted successfully. Our team will review your requirements and contact you shortly.
         </p>
-        <div className="bg-light p-4 rounded shadow-sm d-inline-block mb-4">
-          <p className="mb-0 text-secondary fw-semibold">Your Enquiry ID</p>
-          <h3 className="fw-black text-primary mb-0">{enquiryId}</h3>
+        <div className="bg-light p-4 rounded-4 border shadow-sm d-inline-block mb-4 text-center" style={{ minWidth: '320px' }}>
+          <p className="mb-1 text-secondary small fw-semibold text-uppercase" style={{ letterSpacing: '1px' }}>Enquiry Reference ID</p>
+          <h3 className="fw-bold text-primary mb-2">{enquiryId}</h3>
+          <div className="text-muted small">
+            <span>Primary Contact: <strong>{formData.phone}</strong></span>
+            {formData.email && <span className="ms-2">| <strong>{formData.email}</strong></span>}
+          </div>
         </div>
-        <div>
-          <button className="btn btn-outline-primary px-4 py-2 me-3 rounded-pill" onClick={() => setActiveTab('packages')}>Explore Packages</button>
-          <button className="btn btn-primary px-4 py-2 rounded-pill shadow-sm" onClick={() => window.location.reload()}>Submit Another Request</button>
+        <div className="d-flex gap-3 flex-wrap justify-content-center">
+          <button className="btn btn-outline-primary px-4 py-2.5 rounded-pill fw-bold" onClick={() => setActiveTab('packages')}>
+            Explore Packages
+          </button>
+          <button className="btn btn-primary px-4 py-2.5 rounded-pill fw-bold shadow-sm" onClick={() => {
+            setSuccess(false);
+            setEnquiryId('');
+            setFormData(prev => ({
+              ...prev,
+              destinations: '',
+              travel_dates: '',
+              special_requests: ''
+            }));
+          }}>
+            Submit Another Enquiry
+          </button>
         </div>
       </div>
     );
@@ -112,7 +180,13 @@ export default function CustomTripEnquiryPage({ setActiveTab }) {
             <p className="text-muted fs-5">Tell us what you're looking for, and we'll craft the perfect itinerary just for you.</p>
           </div>
 
-          <form onSubmit={handleSubmit} className="bg-white p-5 rounded-4 shadow-sm border border-light">
+          <form onSubmit={handleSubmit} className="bg-white p-4 p-md-5 rounded-4 shadow-sm border border-light">
+            {validationError && (
+              <div className="alert alert-danger d-flex align-items-center gap-2 rounded-3 mb-4 py-2.5 px-3" role="alert">
+                <AlertCircle size={18} className="text-danger flex-shrink-0" />
+                <span className="small fw-semibold">{validationError}</span>
+              </div>
+            )}
             
             {/* Section 1: Contact Details */}
             <h4 className="fw-bold mb-4 border-bottom pb-2 text-primary"><User size={24} className="me-2"/> Contact Information</h4>
@@ -273,8 +347,22 @@ export default function CustomTripEnquiryPage({ setActiveTab }) {
             </div>
 
             <div className="text-center pt-4 border-top mt-5">
-              <button type="submit" disabled={isSubmitting} className="btn btn-primary btn-lg px-5 py-3 rounded-pill fw-black w-100 shadow-sm" style={{ maxWidth: '400px' }}>
-                {isSubmitting ? 'Submitting Request...' : 'Submit Custom Enquiry'} <Send size={20} className="ms-2"/>
+              <button 
+                type="submit" 
+                disabled={isSubmitting} 
+                className="btn btn-primary btn-lg px-5 py-3 rounded-pill fw-bold w-100 shadow-sm d-flex align-items-center justify-content-center mx-auto" 
+                style={{ maxWidth: '400px', background: 'linear-gradient(135deg, #FF6333 0%, #FF8A00 100%)', borderColor: '#FF6333' }}
+              >
+                {isSubmitting ? (
+                  <>
+                    <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                    Submitting Enquiry...
+                  </>
+                ) : (
+                  <>
+                    Submit Custom Enquiry <Send size={18} className="ms-2"/>
+                  </>
+                )}
               </button>
             </div>
           </form>

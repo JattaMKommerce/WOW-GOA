@@ -1,6 +1,21 @@
 import React, { useState, useMemo } from 'react';
 import { Star, Users, TrendingUp, ShieldCheck, Award, Filter, AlertCircle, RotateCcw } from 'lucide-react';
 
+const BIKE_CATEGORIES = new Set([
+  'scooter', 'scooter / moped', 'sports bike', 'cruiser', 'tourer / adventure',
+  'electric scooter (ev)', 'superbike', 'dirt / off-road', 'cafe racer', 'standard / commuter', 'bike'
+]);
+
+function isBikeItem(item) {
+  if (!item) return false;
+  if (item._type === 'bike' || item.type === 'bike') return true;
+  const cat = (item.category || '').toLowerCase().trim();
+  if (BIKE_CATEGORIES.has(cat) || cat.includes('bike') || cat.includes('scooter') || cat.includes('moped')) return true;
+  const name = (item.name || '').toLowerCase().trim();
+  if (name.includes('ninja') || name.includes('kavasaki') || name.includes('kawasaki') || name.includes('activa') || name.includes('jupiter') || name.includes('bullet') || name.includes('ktm') || name.includes('duke') || name.includes('r15') || name.includes('pulsar')) return true;
+  return false;
+}
+
 export default function CarsPage({
   carFilterFuel = 'All',
   setCarFilterFuel,
@@ -39,7 +54,7 @@ export default function CarsPage({
   };
 
   const displayCars = useMemo(() => {
-    return (cars || []).map(car => ({
+    return (cars || []).filter(c => !isBikeItem(c)).map(car => ({
       ...car,
       price: getMarkupPrice(parseFloat(car.price || 0), car.vendor_id || 'global', 'cars', car.id)
     }));
@@ -72,8 +87,7 @@ export default function CarsPage({
     return results;
   }, [displayCars, carFilterFuel, carFilterTrans, searchQuery, cars]);
 
-  const carsToRender = filteredCars.length > 0 ? filteredCars : displayCars;
-  const isFallbackView = filteredCars.length === 0 && displayCars.length > 0;
+  const carsToRender = filteredCars;
 
   const [activeMediaIndexes, setActiveMediaIndexes] = useState({});
 
@@ -111,24 +125,6 @@ export default function CarsPage({
         </p>
       </div>
 
-      {/* Fallback Banner */}
-      {isFallbackView && (
-        <div className="alert alert-info d-flex align-items-center justify-content-between p-3 rounded-4 mb-4 border-0 shadow-sm" style={{ background: '#f0fdf4', borderLeft: '4px solid #10b981' }}>
-          <div className="d-flex align-items-center gap-2">
-            <AlertCircle size={20} className="text-success flex-shrink-0" />
-            <span className="text-dark small fw-semibold">
-              No cars matched strict filter criteria for "{searchQuery || 'your filter'}". Showing all available rental cars.
-            </span>
-          </div>
-          <button 
-            type="button" 
-            className="btn btn-sm btn-outline-success rounded-pill px-3 d-flex align-items-center gap-1"
-            onClick={handleResetFilters}
-          >
-            <RotateCcw size={14} /> Reset Filters
-          </button>
-        </div>
-      )}
 
       {/* Filter Bar */}
       <div className="d-flex flex-wrap gap-3 align-items-center justify-content-between mb-4 bg-white p-3 rounded-4 shadow-sm border">

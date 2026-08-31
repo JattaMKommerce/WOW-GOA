@@ -156,10 +156,8 @@ CREATE TABLE IF NOT EXISTS `packages` (
 
 -- Dumping data for table `packages`
 INSERT INTO `packages` (`id`, `name`, `duration`, `car_included`, `hotel_included`, `price`, `description`, `tag`, `image`) VALUES
-('package-1', 'Coastal Goa Explorer Pack', '4 Days / 3 Nights', 'Mahindra Thar or Similar', '4-Star Candolim Beach Resort', 14999, 'Explore the sun-kissed beaches of North Goa with a premium 4x4 Thar at your disposal and stays next to the lively coast.', 'Most Popular', 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80'),
-('package-2', 'Romantic Sunset Escape', '3 Days / 2 Nights', 'Audi Cabriolet Convertible', 'W Goa Luxury Resort (Vagator)', 29999, 'Drive in style under the open skies with a luxury convertible. Includes a candlelight beach dinner and a couples spa.', 'Luxury Honeymoon', 'https://images.unsplash.com/photo-1533759413974-9e15f3b745ac?auto=format&fit=crop&w=800&q=80'),
-('package-3', 'Bike & Backpack Heritage Trail', '3 Days / 2 Nights', 'Royal Enfield Himalayan (x2)', 'Cidade de Goa Boutique Stay', 5499, 'Embark on a rustic heritage ride through ancient forts, Latin quarters, and spice plantations on classic motorbikes.', 'Adventure Seekers', 'https://images.unsplash.com/photo-1558981806-ec527fa84c39?auto=format&fit=crop&w=800&q=80'),
-('package-4', 'Ultimate Goa Cruise & Drive', '5 Days / 4 Nights', 'Toyota Fortuner automatic', 'Taj Exotica Resort & Spa', 64999, 'The peak Goa vacation. Large premium SUV, 5-Star beach resort, and a private 2-hour yacht cruise over the Chapora River.', 'Elite VVIP', 'https://images.unsplash.com/photo-1567818735868-e71b99932e29?auto=format&fit=crop&w=800&q=80')
+('package-1', 'Coastal Goa Explorer Pack', '4 Days / 3 Nights', 'Mahindra Thar 4x4', '4-Star Candolim Beach Resort', 14999, 'Explore the sun-kissed beaches of North Goa with a premium 4x4 Thar at your disposal and stays next to the lively coast.', 'Most Popular', 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=1200&q=80'),
+('package-2', 'Romantic Sunset Escape', '3 Days / 2 Nights', 'Audi Cabriolet Convertible', 'W Goa Luxury Resort (Vagator)', 29999, 'Drive in style under the open skies with a luxury convertible. Includes a candlelight beach dinner and a couples spa.', 'Luxury Honeymoon', 'https://images.unsplash.com/photo-1510414842594-a61c69b5ae57?auto=format&fit=crop&w=1200&q=80')
 ON DUPLICATE KEY UPDATE id=id;
 
 -- --------------------------------------------------------

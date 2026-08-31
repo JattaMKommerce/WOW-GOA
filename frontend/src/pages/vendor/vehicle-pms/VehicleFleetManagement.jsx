@@ -172,6 +172,21 @@ function getSuggestedCategories(name, type) {
   return ['Hatchback', 'Sedan', 'SUV', 'Compact SUV', 'MUV / 7-Seater'];
 }
 
+const BIKE_CATEGORIES_SET = new Set([
+  'scooter', 'scooter / moped', 'sports bike', 'cruiser', 'tourer / adventure',
+  'electric scooter (ev)', 'superbike', 'dirt / off-road', 'cafe racer', 'standard / commuter', 'bike'
+]);
+
+function isBikeItem(item) {
+  if (!item) return false;
+  if (item._type === 'bike' || item.type === 'bike') return true;
+  const cat = (item.category || '').toLowerCase().trim();
+  if (BIKE_CATEGORIES_SET.has(cat) || cat.includes('bike') || cat.includes('scooter') || cat.includes('moped')) return true;
+  const name = (item.name || '').toLowerCase().trim();
+  if (name.includes('ninja') || name.includes('kavasaki') || name.includes('kawasaki') || name.includes('activa') || name.includes('jupiter') || name.includes('bullet') || name.includes('ktm') || name.includes('duke') || name.includes('r15') || name.includes('pulsar')) return true;
+  return false;
+}
+
 export default function VehicleFleetManagement({ currentUser, cars = [], bikes = [], onAddCar, onAddBike, onUpdateCar, onUpdateBike, onDeleteCar, onDeleteBike }) {
   const [activeTab, setActiveTab] = useState('all');
   const [search, setSearch] = useState('');
@@ -210,8 +225,11 @@ export default function VehicleFleetManagement({ currentUser, cars = [], bikes =
   const addFileInputRef = useRef(null);
   const editFileInputRef = useRef(null);
 
-  const displayCars = cars || [];
-  const displayBikes = bikes || [];
+  const displayCars = (cars || []).filter(c => !isBikeItem(c));
+  const displayBikes = [
+    ...(bikes || []),
+    ...(cars || []).filter(c => isBikeItem(c))
+  ];
 
   const filtered = (() => {
     const src = activeTab === 'cars' ? displayCars.map(v => ({ ...v, _type: 'car' }))

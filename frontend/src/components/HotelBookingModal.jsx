@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { X, CheckCircle, ShieldCheck, User, Users, BedDouble, Calendar, ArrowRight, ArrowLeft, Download, MessageCircle, Info } from 'lucide-react';
 import * as api from '../services/api';
 import { validateBookingDates } from '../utils/dateUtils';
+import ImageCarousel from './common/ImageCarousel';
 import UnifiedGalleryViewer from './UnifiedGalleryViewer';
 
 export default function HotelBookingModal({
@@ -577,10 +578,10 @@ export default function HotelBookingModal({
                         
                         <div className="card shadow-sm border mb-4 overflow-hidden">
                             <div className="p-2 bg-light border-bottom">
-                              <UnifiedGalleryViewer
+                              <ImageCarousel
                                 images={hotelAllImages}
-                                variant="compact"
-                                compactHeight="160px"
+                                height="175px"
+                                rounded="10px"
                                 alt={selectedBookingItem.name}
                               />
                             </div>

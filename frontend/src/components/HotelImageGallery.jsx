@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, ChevronLeft, ChevronRight, Star, MapPin, ArrowLeft, CheckCircle } from 'lucide-react';
+import ImageCarousel from './common/ImageCarousel';
 
 export default function HotelImageGallery({ hotel, nights = 1, onClose, onSelect }) {
   const [viewMode, setViewMode] = useState('details'); // 'details' or 'gallery'
@@ -24,7 +25,7 @@ export default function HotelImageGallery({ hotel, nights = 1, onClose, onSelect
 
   // Fallback if no images
   if (images.length === 0) {
-    images.push('https://placehold.co/800x600?text=No+Image+Available');
+    images.push('https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1200&q=80');
   }
 
   // Escape to close
@@ -79,28 +80,14 @@ export default function HotelImageGallery({ hotel, nights = 1, onClose, onSelect
               </div>
             </div>
 
-            {/* Hero Images Grid */}
-            <div className="row g-2 mb-4" style={{ height: '400px' }}>
-              <div className="col-12 col-md-8 h-100 cursor-pointer" onClick={() => { setViewMode('gallery'); setCurrentIndex(0); }}>
-                <img 
-                  src={images[0]} 
-                  alt={hotel.name} 
-                  className="w-100 h-100 object-fit-cover rounded-start-4"
-                  style={{ transition: 'transform 0.3s' }}
-                />
-              </div>
-              <div className="col-12 col-md-4 d-none d-md-flex flex-column gap-2 h-100">
-                <div className="h-50 w-100 cursor-pointer overflow-hidden rounded-end-top" onClick={() => { setViewMode('gallery'); setCurrentIndex(1); }}>
-                  <img src={images[1] || images[0]} alt="Room view" className="w-100 h-100 object-fit-cover" />
-                </div>
-                <div className="h-50 w-100 cursor-pointer position-relative overflow-hidden rounded-end-bottom" onClick={() => setViewMode('gallery')}>
-                  <img src={images[2] || images[0]} alt="Amenities view" className="w-100 h-100 object-fit-cover" />
-                  <div className="position-absolute top-0 start-0 w-100 h-100 d-flex flex-column align-items-center justify-content-center bg-dark bg-opacity-50 text-white" style={{ transition: 'background 0.3s' }}>
-                    <span className="fw-bold fs-5">+{images.length} Photos</span>
-                    <span className="small">Property & Guest Photos</span>
-                  </div>
-                </div>
-              </div>
+            {/* Hero Interactive Image Carousel & Lightbox */}
+            <div className="mb-4">
+              <ImageCarousel
+                images={images}
+                alt={hotel.name}
+                height="420px"
+                rounded="20px"
+              />
             </div>
 
             {/* Content Split */}

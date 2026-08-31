@@ -2,24 +2,31 @@ import React, { useState, useEffect } from 'react';
 import './App.css';
 import { useSiteConfig } from './context/SiteConfigContext';
 
-// Import Shared Components
+// Import Components
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
-import CustomTripEnquiryPage from './pages/customer/CustomTripEnquiryPage';
 import SearchWidget from './components/SearchWidget';
 import Footer from './components/Footer';
 import LoginModal from './components/LoginModal';
 import BookingModal from './components/BookingModal';
 import HotelBookingModal from './components/HotelBookingModal';
 import PackageDetailsModal from './components/PackageDetailsModal';
+import AIChatbot from './components/AIChatbot';
+import WhatsAppWidget from './components/WhatsAppWidget';
+import PopupRenderer from './components/website/PopupRenderer';
+
 import DynamicFeaturedHotels from './components/widgets/DynamicFeaturedHotels';
 import DynamicFeaturedVehicles from './components/widgets/DynamicFeaturedVehicles';
 import DynamicPopularPackages from './components/widgets/DynamicPopularPackages';
 import FeaturesGrid from './components/widgets/FeaturesGrid';
+
+// Import Pages
 import {
   FlightBookingFlow,
   AdminPortalPage,
   VendorPortalPage,
+  FlightVendorPortalPage,
+  HotelVendorPortalPage,
   SuperAdminPortalPage,
   HotelsPage,
   CarsPage,
@@ -33,16 +40,11 @@ import {
   PackageCustomizationPage,
   CraftMyTripPage,
   AIPlannerPage,
-  FlightVendorPortalPage,
-  HotelVendorPortalPage,
   CustomerDashboard
 } from './pages';
-import AIChatbot from './components/AIChatbot';
-import WhatsAppWidget from './components/WhatsAppWidget';
-import WebsiteRenderer from './components/website/WebsiteRenderer';
-import PopupRenderer from './components/website/PopupRenderer';
+import CustomTripEnquiryPage from './pages/customer/CustomTripEnquiryPage';
 
-// Import API Service & Icons
+// Import Mock Data & API Service
 import { 
   locationsList, 
   hotelsData as defaultHotels, 
@@ -59,16 +61,10 @@ import { getTodayDateStr, addDays, validateBookingDates } from './utils/dateUtil
 
 export default function App() {
   const { liveConfig } = useSiteConfig();
-  // Navigation & Tabs state
-  const [activeTab, setActiveTab] = useState(() => {
-    try {
-      const saved = localStorage.getItem('currentUser');
-      return saved ? 'portal' : 'packages';
-    } catch (e) {
-      return 'packages';
-    }
-  });
   
+  // Navigation & Tabs state (Default to public storefront packages view)
+  const [activeTab, setActiveTab] = useState('packages');
+
   // Search Widget form fields
   const [pickupLoc, setPickupLoc] = useState('');
   const [dropLoc, setDropLoc] = useState('');
@@ -93,34 +89,23 @@ export default function App() {
   const [appliedFilters, setAppliedFilters] = useState({});
   const [hotelFilterStars, setHotelFilterStars] = useState('All');
   const [packageFilterDuration, setPackageFilterDuration] = useState('All');
+  const [carFilterFuel, setCarFilterFuel] = useState('All');
+  const [carFilterTrans, setCarFilterTrans] = useState('All');
+  const [bikeFilterType, setBikeFilterType] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Checkout Modal state
   const [selectedBookingItem, setSelectedBookingItem] = useState(null);
   const [selectedPackageModal, setSelectedPackageModal] = useState(null);
-  
-  // Detail Modal state
-  const handleOpenDetails = (item, type = 'hotel') => {
-    if (type === 'package') {
-      setSelectedPackageModal(item);
-    } else {
-      setSelectedDetailItem(item);
-      setSearchTriggered(true);
-      if (type === 'hotel') setActiveTab('hotel-details');
-      else if (type === 'vehicle') setActiveTab('vehicle-details');
-      window.scrollTo(0, 0);
-    }
-  };
   const [selectedDetailItem, setSelectedDetailItem] = useState(null);
+  const [showLoginModal, setShowLoginModal] = useState(false);
   const [bookingDays, setBookingDays] = useState(2);
   const [userName, setUserName] = useState('');
   const [userPhone, setUserPhone] = useState('');
   const [userLicense, setUserLicense] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
 
-  // ==========================================
-  // USERS & ROLE-BASED AUTH STATES
-  // ==========================================
+  // Users & Role-Based Auth States
   const [currentUser, setCurrentUser] = useState(() => {
     try {
       const saved = localStorage.getItem('currentUser');
@@ -129,12 +114,9 @@ export default function App() {
       return null;
     }
   });
-  const [showLoginModal, setShowLoginModal] = useState(false);
   const [usersList, setUsersList] = useState(defaultUsers);
 
-  // ==========================================
-  // DATABASE-DRIVEN DATA STATES (WITH DEFAULT INVENTORY)
-  // ==========================================
+  // Database-driven data states
   const [vendors, setVendors] = useState(defaultVendors);
   const [hotels, setHotels] = useState(defaultHotels);
   const [destinations, setDestinations] = useState(defaultDestinations);
@@ -146,16 +128,13 @@ export default function App() {
   const [markups, setMarkups] = useState([]);
   const [dataLoaded, setDataLoaded] = useState(false);
 
-  // ==========================================
-  // LOAD ALL DATA FROM BACKEND ON MOUNT
-  // ==========================================
+  // Load backend data on mount
   useEffect(() => {
     let safetyTimer = setTimeout(() => {
       setDataLoaded(true);
     }, 1500);
 
     async function loadAllData() {
-      // Check for unique tenant URL and persist it
       const urlParams = new URLSearchParams(window.location.search);
       const urlTenant = urlParams.get('tenant');
       if (urlTenant) {
@@ -177,33 +156,17 @@ export default function App() {
         ]);
         
         if (Array.isArray(hotelsData)) setHotels(hotelsData);
-        else setHotels(defaultHotels);
-
         if (Array.isArray(destinationsData)) setDestinations(destinationsData);
-        else setDestinations(defaultDestinations);
-
         if (Array.isArray(packagesData)) setPackages(packagesData);
-        else setPackages(defaultPackages);
-
         if (Array.isArray(vendorsData)) setVendors(vendorsData);
-        else setVendors(defaultVendors);
-
         if (Array.isArray(usersData)) setUsersList(usersData);
-        else setUsersList(defaultUsers);
-
         if (Array.isArray(carsData)) setCars(carsData);
-        else setCars(defaultCars);
-
         if (Array.isArray(bikesData)) setBikes(bikesData);
-        else setBikes(defaultBikes);
-
         if (Array.isArray(bookingsData)) setBookingsList(bookingsData);
-        else setBookingsList(defaultBookings);
-
         if (flightsData) setFlights(flightsData);
         if (markupsData) setMarkups(markupsData);
       } catch (err) {
-        console.warn("Using default verified inventory data:", err);
+        console.warn("Using fallback inventory data:", err);
       } finally {
         clearTimeout(safetyTimer);
         setDataLoaded(true);
@@ -216,586 +179,434 @@ export default function App() {
         setBookingsList(prev => [e.detail, ...prev.filter(b => String(b.id) !== String(e.detail.id))]);
       }
     };
+
+    const handlePackagesSync = () => {
+      api.fetchPackages().then(fresh => {
+        if (Array.isArray(fresh) && fresh.length > 0) setPackages(fresh);
+      }).catch(console.error);
+    };
+
+    const handleHotelsSync = () => {
+      api.fetchHotels().then(fresh => {
+        if (Array.isArray(fresh) && fresh.length > 0) setHotels(fresh);
+      }).catch(console.error);
+    };
+
     window.addEventListener('new-booking-created', handleNewBooking);
-    return () => window.removeEventListener('new-booking-created', handleNewBooking);
+    window.addEventListener('tripPackagesUpdated', handlePackagesSync);
+    window.addEventListener('hotelsUpdated', handleHotelsSync);
+
+    let bc;
+    let bcHotels;
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        bc = new BroadcastChannel('tripgalileo_packages_sync');
+        bc.onmessage = (event) => {
+          if (event.data && event.data.type === 'PACKAGES_CHANGED') {
+            api.fetchPackages().then(fresh => {
+              if (Array.isArray(fresh) && fresh.length > 0) setPackages(fresh);
+            }).catch(console.error);
+          }
+        };
+
+        bcHotels = new BroadcastChannel('tripgalileo_hotels_sync');
+        bcHotels.onmessage = (event) => {
+          if (event.data && event.data.type === 'HOTELS_CHANGED') {
+            api.fetchHotels().then(fresh => {
+              if (Array.isArray(fresh) && fresh.length > 0) setHotels(fresh);
+            }).catch(console.error);
+          }
+        };
+      }
+    } catch (e) {}
+
+    return () => {
+      window.removeEventListener('new-booking-created', handleNewBooking);
+      window.removeEventListener('tripPackagesUpdated', handlePackagesSync);
+      window.removeEventListener('hotelsUpdated', handleHotelsSync);
+      if (bc) bc.close();
+      if (bcHotels) bcHotels.close();
+    };
   }, []);
 
-  // ==========================================
-  // AUTH HANDLERS (Database-driven)
-  // ==========================================
-  const handleLogin = async (identifier, password) => {
-    try {
-      const user = await api.loginUser(identifier, password);
-      setCurrentUser(user);
-      localStorage.setItem('currentUser', JSON.stringify(user));
-      
-      // Multi-tenancy: set tenant_id based on role
-      let tenantId = 'admin';
-      if (user.role === 'superadmin') {
-        tenantId = 'superadmin';
-      } else if (user.role === 'admin') {
-        tenantId = user.username; // Admin is the tenant owner
-      } else {
-        tenantId = user.admin_id || 'admin'; // Vendors/Customers belong to an admin
-      }
-      localStorage.setItem('tenant_id', tenantId);
-      
-      if (user.role === 'admin') window.location.href = '/admin';
-      else if (user.role === 'superadmin') window.location.href = '/superadmin';
-      else if (user.role === 'vendor') window.location.href = '/vendor';
-      else if (user.role === 'flight_vendor') window.location.href = '/flight-vendor';
-      else if (user.role === 'hotel_vendor') window.location.href = '/hotel-vendor';
-      else window.location.href = '/';
-      
-      return true;
-    } catch (err) {
-      console.error("Login failed:", err.message);
-      return false;
+  // Sync tab with browser URL and history navigation
+  useEffect(() => {
+    const syncTabFromUrl = () => {
+      const path = window.location.pathname.toLowerCase().replace('/', '');
+      if (path === 'packages') setActiveTab('packages');
+      else if (path === 'self-drive' || path === 'selfdrive') setActiveTab('selfdrive');
+      else if (path === 'hotels') setActiveTab('hotels');
+      else if (path === 'cars') setActiveTab('cars');
+      else if (path === 'bikes') setActiveTab('bikes');
+      else if (path === 'flights') setActiveTab('flights');
+      else if (path === 'craft' || path === 'craftmytrip') setActiveTab('craftmytrip');
+      else if (path === 'custom-trip') setActiveTab('custom-trip');
+      else if (path === 'admin' || path === 'portal' || path === 'superadmin' || path === 'vendor' || path === 'hotel-vendor' || path === 'hotel-pms' || path === 'flight-vendor') setActiveTab('portal');
+      else if (path === 'dashboard' || path === 'my-bookings') setActiveTab('dashboard');
+    };
+
+    syncTabFromUrl();
+    window.addEventListener('popstate', syncTabFromUrl);
+    return () => window.removeEventListener('popstate', syncTabFromUrl);
+  }, []);
+
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    window.scrollTo(0, 0);
+    const pathMap = {
+      'packages': '/packages',
+      'selfdrive': '/self-drive',
+      'hotels': '/hotels',
+      'cars': '/cars',
+      'bikes': '/bikes',
+      'flights': '/flights',
+      'craftmytrip': '/craft',
+      'custom-trip': '/custom-trip',
+      'portal': currentUser?.role === 'hotel_vendor' ? '/hotel-vendor' : (currentUser?.role === 'flight_vendor' ? '/flight-vendor' : (currentUser?.role === 'vendor' ? '/vendor' : (currentUser?.role === 'superadmin' ? '/superadmin' : '/admin'))),
+      'dashboard': '/dashboard'
+    };
+    if (pathMap[tab]) {
+      window.history.pushState({}, '', pathMap[tab]);
     }
+  };
+
+  const handleOpenBooking = (item, isCustomization = false) => {
+    if (item.pickupDate) setPickupDate(item.pickupDate);
+    if (item.dropDate) setDropDate(item.dropDate);
+    if (item.departureDate) setPickupDate(item.departureDate);
+    if (item.returnDate) setDropDate(item.returnDate);
+
+    if (item.package_type || item.duration || isCustomization) {
+      setSelectedBookingItem(item);
+      setActiveTab('customize');
+      window.scrollTo(0, 0);
+    } else {
+      setSelectedBookingItem(item);
+      setBookingDays(2);
+    }
+  };
+
+  const handleOpenHotelBooking = (hotel) => {
+    setSelectedBookingItem(hotel);
+    setBookingDays(2);
+  };
+
+  const handleOpenDetails = (item, type = 'hotel') => {
+    if (type === 'package') {
+      setSelectedPackageModal(item);
+    } else {
+      setSelectedDetailItem(item);
+      setSearchTriggered(true);
+      if (type === 'hotel') setActiveTab('hotel-details');
+      else if (type === 'vehicle') setActiveTab('vehicle-details');
+      window.scrollTo(0, 0);
+    }
+  };
+
+  const handleLogin = async (usernameOrUser, password) => {
+    // If called with a user object directly
+    if (typeof usernameOrUser === 'object' && usernameOrUser !== null) {
+      const user = usernameOrUser;
+      setCurrentUser(user);
+      try {
+        localStorage.setItem('currentUser', JSON.stringify(user));
+      } catch (e) {}
+      setShowLoginModal(false);
+      if (user.role === 'customer' || user.role === 'user') {
+        setActiveTab('dashboard');
+      } else {
+        setActiveTab('portal');
+      }
+      return true;
+    }
+
+    // If called with (username, password)
+    try {
+      const res = await api.loginUser(usernameOrUser, password);
+      const user = (res && res.user) ? res.user : res;
+      if (user && (user.id || user.username || user.role)) {
+        setCurrentUser(user);
+        try {
+          localStorage.setItem('currentUser', JSON.stringify(user));
+        } catch (e) {}
+        setShowLoginModal(false);
+        if (user.role === 'customer' || user.role === 'user') {
+          setActiveTab('dashboard');
+        } else {
+          setActiveTab('portal');
+        }
+        return true;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return false;
   };
 
   const handleLogout = () => {
     setCurrentUser(null);
-    localStorage.removeItem('currentUser');
-    window.location.href = '/';
-  };
-
-  const handleAddUser = async (newUser) => {
     try {
-      await api.registerUser({
-        username: newUser.username,
-        email: newUser.email,
-        password: newUser.password || 'Password123',
-        role: newUser.role,
-        billing_price: newUser.billingPrice
-      });
-      // Refresh users list from DB
-      const freshUsers = await api.fetchUsers();
-      setUsersList(freshUsers);
-    } catch (err) {
-      console.error("Failed to register user:", err.message);
-    }
+      localStorage.removeItem('currentUser');
+    } catch (e) {}
+    setActiveTab('packages');
   };
 
-  const handleUpdateUser = async (user) => {
-    try {
-      await api.updateUser(user);
-      const freshUsers = await api.fetchUsers();
-      setUsersList(freshUsers);
-    } catch (err) {
-      console.error("Failed to update user:", err.message);
-      throw err;
-    }
-  };
-
-  const handleDeleteUser = async (userId) => {
-    try {
-      await api.deleteUser(userId);
-      const freshUsers = await api.fetchUsers();
-      setUsersList(freshUsers);
-    } catch (err) {
-      console.error("Failed to delete user:", err.message);
-      throw err;
-    }
-  };
-
-  // ==========================================
-  // VENDOR & LISTING HANDLERS (Database-driven)
-  // ==========================================
-  const handleAddVendor = async (newVendor) => {
-    try {
-      await api.addVendor(newVendor);
-      const freshVendors = await api.fetchVendors();
-      setVendors(freshVendors);
-    } catch (err) {
-      console.error("Failed to add vendor:", err.message);
-    }
-  };
-
-  const handleUpdateVendor = async (vendorData) => {
-    try {
-      await api.updateVendor(vendorData);
-      const freshVendors = await api.fetchVendors();
-      setVendors(freshVendors);
-    } catch (err) {
-      console.error("Failed to update vendor:", err.message);
-    }
-  };
-
-  const handleDeleteVendor = async (id) => {
-    try {
-      await api.deleteVendor(id);
-      const freshVendors = await api.fetchVendors();
-      setVendors(freshVendors);
-      alert("Vendor deleted successfully!");
-    } catch (err) {
-      console.error("Failed to delete vendor:", err.message);
-      alert("Failed to delete vendor: " + err.message);
-    }
-  };
-
-  const handleSetVendorPassword = async (id, password) => {
-    try {
-      await api.setVendorPassword(id, password);
-      // We don't strictly need to refresh vendors here since password isn't displayed, but we can alert success in the UI.
-    } catch (err) {
-      console.error("Failed to set vendor password:", err.message);
-      throw err;
-    }
-  };
-
-  const handleAddCar = async (newCar) => {
-    try {
-      await api.addVehicle({
-        type: 'car',
-        id: newCar.id,
-        vendorId: newCar.vendorId,
-        name: newCar.name,
-        category: newCar.category,
-        price: newCar.price,
-        seating: newCar.seating,
-        fuel: newCar.fuel,
-        transmission: newCar.transmission,
-        image: newCar.image,
-        images: newCar.images,
-        images_json: newCar.images_json || (newCar.images ? JSON.stringify(newCar.images) : (newCar.mediaList ? JSON.stringify(newCar.mediaList.map(m => m.url || m)) : null)),
-        mediaList: newCar.mediaList,
-        documents: newCar.documents,
-        location: newCar.location,
-        mileage: newCar.mileage
-      });
-      // Refresh cars from DB
-      const freshCars = await api.fetchCars();
-      setCars(freshCars);
-    } catch (err) {
-      console.error("Failed to add car:", err.message);
-      throw err;
-    }
-  };
-
-  const handleAddBike = async (newBike) => {
-    try {
-      await api.addVehicle({
-        type: 'bike',
-        id: newBike.id,
-        vendorId: newBike.vendorId,
-        name: newBike.name,
-        category: newBike.category,
-        price: newBike.price,
-        engine: newBike.engine,
-        fuel: newBike.fuel,
-        mileage: newBike.mileage,
-        image: newBike.image,
-        images: newBike.images,
-        images_json: newBike.images_json || (newBike.images ? JSON.stringify(newBike.images) : (newBike.mediaList ? JSON.stringify(newBike.mediaList.map(m => m.url || m)) : null)),
-        mediaList: newBike.mediaList,
-        documents: newBike.documents,
-        location: newBike.location
-      });
-      const freshBikes = await api.fetchBikes();
-      setBikes(freshBikes);
-    } catch (err) {
-      console.error("Failed to add bike:", err.message);
-      throw err;
-    }
-  };
-
-  const handleUpdateCar = async (updatedCar) => {
-    try {
-      await api.updateVehicle({ action: 'update_vehicle', type: 'car', ...updatedCar });
-      const freshCars = await api.fetchCars();
-      setCars(freshCars);
-    } catch (err) {
-      console.error("Failed to update car:", err.message);
-      throw err;
-    }
-  };
-
-  const handleDeleteCar = async (carId) => {
-    try {
-      await api.deleteVehicle(carId, 'car');
-      setCars(cars.filter(c => c.id !== carId));
-    } catch (err) {
-      console.error("Failed to delete car:", err.message);
-      throw err;
-    }
-  };
-
-  const handleUpdateBike = async (updatedBike) => {
-    try {
-      await api.updateVehicle({ action: 'update_vehicle', type: 'bike', ...updatedBike });
-      const freshBikes = await api.fetchBikes();
-      setBikes(freshBikes);
-    } catch (err) {
-      console.error("Failed to update bike:", err.message);
-      throw err;
-    }
-  };
-
-  const handleDeleteBike = async (bikeId) => {
-    try {
-      await api.deleteVehicle(bikeId, 'bike');
-      setBikes(bikes.filter(b => b.id !== bikeId));
-    } catch (err) {
-      console.error("Failed to delete bike:", err.message);
-      throw err;
-    }
-  };
-
+  // Inventory CRUD handlers
   const handleAddPackage = async (newPkg) => {
-    try {
-      await api.addPackage(newPkg);
-      const freshPackages = await api.fetchPackages();
-      setPackages(freshPackages);
-    } catch (err) {
-      console.error("Failed to add package:", err.message);
-    }
+    const res = await api.addPackage(newPkg);
+    const fresh = await api.fetchPackages();
+    setPackages(fresh);
+    return res;
   };
 
   const handleUpdatePackage = async (pkg) => {
-    try {
-      await api.updatePackage(pkg);
-      const freshPackages = await api.fetchPackages();
-      setPackages(freshPackages);
-    } catch (err) {
-      console.error("Failed to update package:", err.message);
-      throw err;
-    }
+    const res = await api.updatePackage(pkg);
+    const fresh = await api.fetchPackages();
+    setPackages(fresh);
+    return res;
   };
 
   const handleDeletePackage = async (pkgId) => {
-    try {
-      await api.deletePackage(pkgId);
-      const freshPackages = await api.fetchPackages();
-      setPackages(freshPackages);
-    } catch (err) {
-      console.error("Failed to delete package:", err.message);
-      throw err;
-    }
+    await api.deletePackage(pkgId);
+    const fresh = await api.fetchPackages();
+    setPackages(fresh);
   };
 
   const handleAddHotel = async (hotelData) => {
-    try {
-      await api.addMasterHotel(hotelData);
-      const freshHotels = await api.fetchHotels();
-      setHotels(freshHotels);
-    } catch (err) {
-      console.error("Failed to add hotel:", err.message);
-      throw err;
-    }
+    await api.addMasterHotel(hotelData);
+    const fresh = await api.fetchHotels();
+    setHotels(fresh);
   };
 
   const handleUpdateHotel = async (hotelData) => {
-    try {
-      await api.updateHotel(hotelData);
-      const freshHotels = await api.fetchHotels();
-      setHotels(freshHotels);
-    } catch (err) {
-      console.error("Failed to update hotel:", err.message);
-      throw err;
-    }
+    await api.updateHotel(hotelData);
+    const fresh = await api.fetchHotels();
+    setHotels(fresh);
   };
 
   const handleDeleteHotel = async (hotelId) => {
-    try {
-      await api.deleteHotel(hotelId);
-      const freshHotels = await api.fetchHotels();
-      setHotels(freshHotels);
-    } catch (err) {
-      console.error("Failed to delete hotel:", err.message);
-      throw err;
-    }
+    await api.deleteHotel(hotelId);
+    const fresh = await api.fetchHotels();
+    setHotels(fresh);
   };
 
-  const handleAddFlight = async (flightData) => {
-    try {
-      await api.createFlight(flightData);
-      const freshFlights = await api.fetchFlights();
-      setFlights(freshFlights);
-    } catch (err) {
-      console.error("Failed to add flight:", err.message);
-      throw err;
-    }
+  const handleAddCar = async (carData) => {
+    await api.addCar(carData);
+    const fresh = await api.fetchCars();
+    setCars(fresh);
   };
 
-  const handleUpdateFlight = async (flightData) => {
-    try {
-      await api.updateFlight(flightData);
-      const freshFlights = await api.fetchFlights();
-      setFlights(freshFlights);
-    } catch (err) {
-      console.error("Failed to update flight:", err.message);
-      throw err;
-    }
+  const handleUpdateCar = async (carData) => {
+    await api.updateCar(carData);
+    const fresh = await api.fetchCars();
+    setCars(fresh);
   };
 
-  const handleDeleteFlight = async (flightId) => {
-    try {
-      await api.deleteFlight(flightId);
-      const freshFlights = await api.fetchFlights();
-      setFlights(freshFlights);
-    } catch (err) {
-      console.error("Failed to delete flight:", err.message);
-      throw err;
-    }
+  const handleDeleteCar = async (carId) => {
+    await api.deleteCar(carId);
+    const fresh = await api.fetchCars();
+    setCars(fresh);
   };
 
-
-
-
-  const handleSaveMarkup = async (markupData) => {
-    try {
-      await api.saveMarkup(markupData);
-      const freshMarkups = await api.fetchMarkups();
-      setMarkups(freshMarkups);
-    } catch (err) {
-      console.error("Failed to save markup:", err.message);
-      throw err;
-    }
+  const handleAddBike = async (bikeData) => {
+    await api.addBike(bikeData);
+    const fresh = await api.fetchBikes();
+    setBikes(fresh);
   };
 
-  // ==========================================
-  // BOOKING HANDLERS
-  // ==========================================
-  const calculateDays = (start, end) => {
-    const sDate = new Date(start);
-    const eDate = new Date(end);
-    const diffTime = Math.abs(eDate - sDate);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays > 0 ? diffDays : 1;
+  const handleUpdateBike = async (bikeData) => {
+    await api.updateBike(bikeData);
+    const fresh = await api.fetchBikes();
+    setBikes(fresh);
   };
 
-  const handleOpenBooking = (item, withFlight = false) => {
-    if (!item) return;
-    setShowSuccess(false);
-
-    // If logged in, prefill user details if not yet entered
-    if (currentUser) {
-      if (!userName && (currentUser.name || currentUser.username)) {
-        setUserName(currentUser.name || currentUser.username);
-      }
-      if (!userPhone && currentUser.phone) {
-        setUserPhone(currentUser.phone);
-      }
-    }
-
-    // Determine item type
-    let finalItem = { ...item };
-
-    // Robust type detection for cars, bikes, flights, hotels, and packages
-    const isCar = String(item?.id).startsWith('car-') || item.type === 'car' || item.vehicle_type === 'car' || 
-                  item.category === 'Hatchback' || item.category === 'SUV' || item.category === 'Sedan' || 
-                  item.category === 'Luxury SUV' || item.category === 'MUV / 7-Seater' || item.seating || Boolean(item.transmission);
-
-    const isBike = String(item?.id).startsWith('bike-') || item.type === 'bike' || item.vehicle_type === 'bike' || 
-                   item.category === 'Scooter' || item.category === 'Cruiser' || item.category === 'Sports' || 
-                   item.category === 'Adventure' || item.engine || item.mileage;
-
-    const isFlight = String(item?.id).startsWith('FL-') || String(item?.id).startsWith('fl-') || String(item?.id).startsWith('flt-') || 
-                     item.type === 'flight' || Boolean(item.airline) || Boolean(item.flight_number);
-
-    const isOffer = String(item?.id).startsWith('off_');
-    const isHotel = String(item?.id).startsWith('hotel-') || String(item?.id).startsWith('HTL-') || item.property_type || item.stars;
-
-    if (!isCar && !isBike && !isFlight && !isHotel && !isOffer) {
-       // Package
-       finalItem.isCustomized = false;
-       finalItem.selectedWithFlight = withFlight;
-       setActiveTab('customize');
-       setSelectedBookingItem(finalItem);
-    } else {
-       // Direct car/bike/hotel/flight
-       finalItem.isCustomized = false;
-       setSelectedBookingItem(finalItem);
-    }
+  const handleDeleteBike = async (bikeId) => {
+    await api.deleteBike(bikeId);
+    const fresh = await api.fetchBikes();
+    setBikes(fresh);
   };
 
-  const handleConfirmBooking = async (e, paymentMethod = null, overrides = {}) => {
-    if (e && e.preventDefault) e.preventDefault();
-    if (!userName || !userPhone) {
-      alert("Please fill in your name and contact details to complete the booking.");
-      return;
-    }
-
-    const actualPickupDate = overrides.pickupDate || pickupDate || new Date().toISOString().slice(0, 10);
-    const actualDropDate = overrides.dropDate || dropDate || new Date().toISOString().slice(0, 10);
-    const actualPickupTime = overrides.pickupTime || pickupTime || '10:00 AM';
-    const actualDropTime = overrides.dropTime || dropTime || '10:00 AM';
-    const actualPickupLoc = overrides.pickupLoc || pickupLoc || 'Goa Airport';
-    const actualDays = Number(overrides.bookingDays || bookingDays || 1);
-
-    let finalAmountPaid = 0;
-    let finalTotalAmount = 0;
-    
-    if (overrides.total) {
-        finalTotalAmount = Number(overrides.total);
-        finalAmountPaid = finalTotalAmount;
-    } else if (selectedBookingItem.package_type && selectedBookingItem.traveller_details) {
-        const serverPriceData = selectedBookingItem.price_breakdown || {};
-        finalTotalAmount = serverPriceData.total_price || Number(selectedBookingItem.price || 0);
-        finalAmountPaid = selectedBookingItem.payment_mode === 'advance' ? (serverPriceData.advance_amount || finalTotalAmount) : finalTotalAmount;
-    } else {
-        const itemPrice = Number(selectedBookingItem.price || 0);
-        finalTotalAmount = Math.round((itemPrice * actualDays) * 1.18) + 250;
-        finalAmountPaid = finalTotalAmount;
-    }
-
-    try {
-      await api.createBooking({
-        name: userName,
-        phone: userPhone,
-        license: userLicense,
-        pickup_loc: actualPickupLoc,
-        pickup_date: actualPickupDate,
-        pickup_time: actualPickupTime,
-        drop_date: actualDropDate,
-        drop_time: actualDropTime,
-        item_id: selectedBookingItem.id,
-        item_name: selectedBookingItem.name,
-        booking_days: actualDays,
-        total_paid: finalAmountPaid,
-        total_amount: finalTotalAmount,
-        amount_paid: finalAmountPaid,
-        remaining_amount: finalTotalAmount - finalAmountPaid,
-        status: 'Confirmed',
-        payment_status: finalAmountPaid < finalTotalAmount ? 'Partial' : 'Full',
-        traveller_details_json: selectedBookingItem.traveller_details || null,
-        price_breakdown_json: selectedBookingItem.price_breakdown || null,
-        customizations: selectedBookingItem.customizations || null,
-        payment_method: paymentMethod || 'Direct',
-        payment_proof: null
-      });
-      
-      setShowSuccess(true);
-      // Refresh bookings after successful booking
-      const newBookings = await api.fetchBookings();
-      if (newBookings && newBookings.length > 0) {
-        setBookingsList(newBookings);
-      }
-    } catch (err) {
-      console.error("Failed to save booking:", err.message);
-      setShowSuccess(true);
-    }
+  const handleAddVendor = async (v) => {
+    await api.addVendor(v);
+    const fresh = await api.fetchVendors();
+    setVendors(fresh);
   };
 
-  const handleSearchSubmit = (e) => {
-    if (e && e.preventDefault) e.preventDefault();
-    const todayStr = getTodayDateStr();
+  const handleUpdateVendor = async (v) => {
+    await api.updateVendor(v);
+    const fresh = await api.fetchVendors();
+    setVendors(fresh);
+  };
 
-    if (activeTab === 'hotels' || activeTab === 'packages' || activeTab === 'craftmytrip') {
-      const val = validateBookingDates(pickupDate, dropDate, { allowSameDay: false });
-      if (!val.valid) {
-        alert(val.error);
-        return;
-      }
-    } else if (activeTab === 'selfdrive') {
-      const val = validateBookingDates(pickupDate, dropDate, { allowSameDay: true });
-      if (!val.valid) {
-        alert(val.error);
-        return;
-      }
-    } else if (activeTab === 'flights') {
-      if (!pickupDate || pickupDate < todayStr) {
-        alert("Flight departure date cannot be in the past.");
-        return;
-      }
-    }
+  const handleDeleteVendor = async (vId) => {
+    await api.deleteVendor(vId);
+    const fresh = await api.fetchVendors();
+    setVendors(fresh);
+  };
 
-    console.log('[TripGalileo Search Submit]', {
-      activeTab,
-      pickupLoc,
-      dropLoc,
-      pickupDate,
-      dropDate,
-      hotelRooms,
-      hotelAdults,
-      hotelChildren,
-      hotelPriceRange,
-      flightAdults,
-      flightChildren,
-      flightInfants,
-      flightClass,
-      appliedFilters
-    });
+  const handleSetVendorPassword = async (vId, pwd) => {
+    await api.setVendorPassword(vId, pwd);
+  };
+
+  const handleAddFlight = async (f) => {
+    await api.addFlight(f);
+    const fresh = await api.fetchFlights();
+    setFlights(fresh);
+  };
+
+  const handleUpdateFlight = async (f) => {
+    await api.updateFlight(f);
+    const fresh = await api.fetchFlights();
+    setFlights(fresh);
+  };
+
+  const handleDeleteFlight = async (fId) => {
+    await api.deleteFlight(fId);
+    const fresh = await api.fetchFlights();
+    setFlights(fresh);
+  };
+
+  const handleSaveMarkup = async (m) => {
+    await api.saveMarkup(m);
+    const fresh = await api.fetchMarkups();
+    setMarkups(fresh);
+  };
+
+  const handleAddUser = async (u) => {
+    await api.superadminCreateUser(u);
+    const fresh = await api.fetchUsers();
+    setUsersList(fresh);
+  };
+
+  const handleUpdateUser = async (id, u) => {
+    await api.superadminUpdateUser(id, u);
+    const fresh = await api.fetchUsers();
+    setUsersList(fresh);
+  };
+
+  const handleDeleteUser = async (id) => {
+    await api.superadminDeleteUser(id);
+    const fresh = await api.fetchUsers();
+    setUsersList(fresh);
+  };
+
+  const handleSearchSubmit = (tab) => {
     setSearchTriggered(true);
-    // Smooth scroll down to result anchor
+    const targetTab = (typeof tab === 'string' && tab) ? tab : (typeof activeTab === 'string' ? activeTab : 'packages');
+    handleTabChange(targetTab);
     setTimeout(() => {
       document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
     }, 100);
+  };
+
+  const handleConfirmBooking = async () => {
+    if (!userName || !userPhone) {
+      alert("Please fill in Name and Phone Number");
+      return;
+    }
+    const val = validateBookingDates(pickupDate, dropDate);
+    if (!val.valid) {
+      alert(val.error);
+      return;
+    }
+    try {
+      const days = bookingDays || val.days || 1;
+      const totalCost = (selectedBookingItem.price || 0) * days;
+      
+      const payload = {
+        name: userName,
+        phone: userPhone,
+        license: userLicense,
+        pickup_loc: pickupLoc || 'Goa Airport',
+        pickup_date: pickupDate,
+        pickup_time: pickupTime,
+        drop_date: dropDate,
+        drop_time: dropTime,
+        item_id: selectedBookingItem.id || 'custom',
+        item_name: selectedBookingItem.name || 'Trip Booking',
+        booking_days: days,
+        total_amount: totalCost,
+        total_paid: totalCost,
+        status: 'Confirmed'
+      };
+
+      const res = await api.createBooking(payload);
+      setShowSuccess(true);
+      const freshBookings = await api.fetchBookings();
+      setBookingsList(freshBookings);
+      setTimeout(() => {
+        setShowSuccess(false);
+        setSelectedBookingItem(null);
+      }, 2000);
+    } catch (e) {
+      alert("Failed to submit booking. Please try again.");
+    }
   };
 
   if (!dataLoaded) {
     return (
       <div className="d-flex w-100 vh-100 align-items-center justify-content-center bg-light">
         <div className="text-center">
-          <div className="spinner-border text-primary mb-3" style={{width: '3rem', height: '3rem'}} role="status">
+          <div className="spinner-border text-primary mb-3" style={{ width: '3rem', height: '3rem' }} role="status">
             <span className="visually-hidden">Loading...</span>
           </div>
           <h4 className="fw-bold text-dark font-heading tracking-wider">Starting WOW GOA Platform...</h4>
-          <p className="text-muted small">Loading packages and fleet data</p>
+          <p className="text-muted small">Loading packages and verified inventory</p>
         </div>
       </div>
     );
   }
 
-  const path = window.location.pathname;
-
-  if (path === '/admin' || path.startsWith('/admin/')) {
-    const adminTab = 
-      path === '/admin/leads' ? 'leads' :
-      path === '/admin/custom-enquiries' ? 'enquiries' :
-      path === '/admin/customers' ? 'customers' :
-      path === '/admin/add-users' ? 'add_users' :
-      path === '/admin/bookings' ? 'bookings' :
-      path === '/admin/hotels' ? 'admin_hotels' :
-      path === '/admin/vehicles' ? 'admin_vehicles' :
-      null;
-
-    return (
-      <>
-        <AdminPortalPage
-          initialTab={adminTab}
+  // ─── ADMIN / SUPERADMIN / VENDOR PORTALS ──────────────────────────────────
+  if (activeTab === 'portal') {
+    if (currentUser?.role === 'superadmin') {
+      return (
+        <SuperAdminPortalPage
           currentUser={currentUser}
           triggerOpenLogin={() => setShowLoginModal(true)}
+          usersList={usersList}
           vendors={vendors}
-          allPackages={packages}
           cars={cars}
           bikes={bikes}
-          onAddVendor={handleAddVendor}
-          onUpdateVendor={handleUpdateVendor}
-          onDeleteVendor={handleDeleteVendor}
-          onSetVendorPassword={handleSetVendorPassword}
-          onAddPackage={handleAddPackage}
-          onUpdatePackage={handleUpdatePackage}
-          onDeletePackage={handleDeletePackage}
-          onAddCar={handleAddCar}
-          onUpdateCar={handleUpdateCar}
-          onDeleteCar={handleDeleteCar}
-          onAddBike={handleAddBike}
-          onUpdateBike={handleUpdateBike}
-          onDeleteBike={handleDeleteBike}
+          hotels={hotels}
+          bookings={bookings}
+          onAddUser={handleAddUser}
+          onUpdateUser={handleUpdateUser}
+          onDeleteUser={handleDeleteUser}
           onLogout={handleLogout}
-          flights={flights}
-          onAddFlight={handleAddFlight}
-          onUpdateFlight={handleUpdateFlight}
-          onDeleteFlight={handleDeleteFlight}
+        />
+      );
+    }
+    if (currentUser?.role === 'hotel_vendor') {
+      return (
+        <HotelVendorPortalPage
+          currentUser={currentUser}
+          triggerOpenLogin={() => setShowLoginModal(true)}
           hotels={hotels}
           onAddHotel={handleAddHotel}
           onUpdateHotel={handleUpdateHotel}
           onDeleteHotel={handleDeleteHotel}
-          markups={markups}
-          onSaveMarkup={handleSaveMarkup}
+          onLogout={handleLogout}
           bookings={bookings}
-          usersList={usersList}
         />
-        <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLogin={handleLogin} />
-      </>
-    );
-  }
-
-  if (path === '/vendor') {
-    return (
-      <>
+      );
+    }
+    if (currentUser?.role === 'flight_vendor') {
+      return (
+        <FlightVendorPortalPage
+          currentUser={currentUser}
+          triggerOpenLogin={() => setShowLoginModal(true)}
+          flights={flights}
+          onAddFlight={handleAddFlight}
+          onUpdateFlight={handleUpdateFlight}
+          onDeleteFlight={handleDeleteFlight}
+          onLogout={handleLogout}
+          bookings={bookings}
+        />
+      );
+    }
+    if (currentUser?.role === 'vendor') {
+      return (
         <VendorPortalPage
           currentUser={currentUser}
           triggerOpenLogin={() => setShowLoginModal(true)}
@@ -812,351 +623,201 @@ export default function App() {
           bookings={bookings}
           setBookingsList={setBookingsList}
         />
-        <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLogin={handleLogin} />
-      </>
-    );
-  }
-
-  // --- Dynamic Route Matching ---
-  const dynamicPage = Object.values(liveConfig?.pages || {}).find(p => p.slug === path);
-
-  if (path === '/superadmin') {
-    return (
-      <>
-        <SuperAdminPortalPage
-          currentUser={currentUser}
-          triggerOpenLogin={() => setShowLoginModal(true)}
-          usersList={usersList}
-          vendors={vendors}
-          cars={cars}
-          bikes={bikes}
-          hotels={hotels}
-          bookings={bookings}
-          onAddUser={handleAddUser}
-          onUpdateUser={handleUpdateUser}
-          onDeleteUser={handleDeleteUser}
-          onLogout={handleLogout}
-        />
-        <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLogin={handleLogin} />
-      </>
-    );
-  }
-
-  if (path === '/customer') {
-    return (
-      <>
-        <CustomerDashboard
-          currentUser={currentUser}
-          triggerOpenLogin={() => setShowLoginModal(true)}
-          bookings={bookings}
-          hotels={hotels}
-          cars={cars}
-          bikes={bikes}
-          onLogout={handleLogout}
-        />
-        <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLogin={handleLogin} />
-      </>
-    );
-  }
-
-  if (path === '/flight-vendor') {
-    return (
-      <>
-        <FlightVendorPortalPage
-          currentUser={currentUser}
-          triggerOpenLogin={() => setShowLoginModal(true)}
-          flights={flights}
-          onAddFlight={handleAddFlight}
-          onUpdateFlight={handleUpdateFlight}
-          onDeleteFlight={handleDeleteFlight}
-          onLogout={handleLogout}
-          bookings={bookings}
-        />
-        <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLogin={handleLogin} />
-      </>
-    );
-  }
-
-  if (path === '/hotel-vendor') {
-    return (
-      <>
-        <HotelVendorPortalPage
-          currentUser={currentUser}
-          triggerOpenLogin={() => setShowLoginModal(true)}
-          hotels={hotels}
-          onAddHotel={handleAddHotel}
-          onUpdateHotel={handleUpdateHotel}
-          onDeleteHotel={handleDeleteHotel}
-          onLogout={handleLogout}
-          bookings={bookings}
-        />
-        <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLogin={handleLogin} />
-      </>
-    );
-  }
-
-  const handleTabChange = (newTab) => {
-    let normalizedTab = newTab;
-    if (normalizedTab === 'self drive') normalizedTab = 'selfdrive';
-    if (normalizedTab === 'trip packages') normalizedTab = 'packages';
-
-    if (activeTab === 'customize' && normalizedTab !== 'customize') {
-      setSelectedBookingItem(null);
+      );
     }
-    setActiveTab(normalizedTab);
-    
-    // Ensure navbar links and tab changes trigger the respective page views, except for home
-    if (normalizedTab === 'home' || normalizedTab === 'packages' || normalizedTab === 'cars') {
-      // If we are navigating to home, we should set searchTriggered to false
-      setSearchTriggered(false);
-    } else {
-      setSearchTriggered(true);
-    }
-  };
-
-  // --- Builder Action Handler ---
-  const handleBuilderAction = (action, data) => {
-    if (!action) return;
-    
-    switch (action) {
-      // Navigation
-      case 'internal':
-        if (data?.url) {
-          if (data.url.startsWith('/')) {
-            window.history.pushState({}, '', data.url);
-            window.dispatchEvent(new PopStateEvent('popstate'));
-          } else {
-            setActiveTab(data.url);
-          }
-        }
-        break;
-      case 'external':
-        if (data?.url) window.open(data.url, data.newTab ? '_blank' : '_self');
-        break;
-      case 'scroll-to-search':
-        document.getElementById('search-widget')?.scrollIntoView({ behavior: 'smooth' });
-        break;
-      case 'scroll-to-section':
-        if (data?.url) {
-          const id = data.url.replace('#', '');
-          document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
-        }
-        break;
-      
-      // Search Pages
-      case 'hotel-search':
-        if (data?.dest) setDropLoc(data.dest);
-        setSearchTriggered(true);
-        setActiveTab('hotels');
-        break;
-      case 'vehicle-search':
-        if (data?.pickup) setPickupLoc(data.pickup);
-        if (data?.pdate) setPickupDate(data.pdate);
-        if (data?.ddate) setDropDate(data.ddate);
-        setSearchTriggered(true);
-        setActiveTab('cars');
-        break;
-      case 'package-search':
-        if (data?.dest) setDropLoc(data.dest);
-        setSearchTriggered(true);
-        setActiveTab('packages');
-        break;
-      case 'flight-search':
-        setSearchTriggered(true);
-        setActiveTab('flights');
-        break;
-      
-      // Details & Booking
-      case 'hotel-details':
-      case 'vehicle-details':
-      case 'package-details':
-      case 'book-now':
-        if (data?.item) {
-          handleOpenBooking(data.item);
-        } else {
-          // If no specific item, open search or generic modal
-          setActiveTab('selfdrive');
-        }
-        break;
-      
-      // Portals
-      case 'customer-dashboard': window.location.href = '/customer'; break;
-      case 'vendor-login': window.location.href = '/vendor'; break;
-      case 'admin-login': window.location.href = '/admin'; break;
-      case 'customer-login': setShowLoginModal(true); break;
-      
-      // Static pages (routed via tabs)
-      case 'contact': setActiveTab('contact'); break;
-      case 'about': setActiveTab('about'); break;
-      case 'faq': setActiveTab('faq'); break;
-      case 'blog': setActiveTab('blog'); break;
-      case 'privacy': setActiveTab('privacy'); break;
-      case 'terms': setActiveTab('terms'); break;
-      
-      // Interaction
-      case 'open-popup':
-        // Popups will be handled globally by a PopupRenderer, but we can set active popup id
-        if (data?.popupId) {
-          window.dispatchEvent(new CustomEvent('open-builder-popup', { detail: data.popupId }));
-        }
-        break;
-      case 'whatsapp':
-        if (data?.phone) window.open(`https://wa.me/${data.phone}`, '_blank');
-        break;
-      case 'phone':
-        if (data?.phone) window.location.href = `tel:${data.phone}`;
-        break;
-      case 'email':
-        if (data?.email) window.location.href = `mailto:${data.email}`;
-        break;
-      case 'download':
-        if (data?.fileUrl) {
-          const a = document.createElement('a');
-          a.href = data.fileUrl;
-          a.download = data.url || 'download';
-          a.click();
-        }
-        break;
-      case 'dynamic-url':
-        if (data?.url) window.location.href = data.url;
-        break;
-      default:
-        console.warn('Unknown action:', action, data);
-    }
-  };
-
-  return (
-    <div className="animate-fade-in">
-      {/* Premium Navbar */}
-      <Navbar 
-        activeTab={activeTab} 
-        setActiveTab={handleTabChange} 
+    return (
+      <AdminPortalPage
         currentUser={currentUser}
         triggerOpenLogin={() => setShowLoginModal(true)}
+        vendors={vendors}
+        allPackages={packages}
+        cars={cars}
+        bikes={bikes}
+        onAddVendor={handleAddVendor}
+        onUpdateVendor={handleUpdateVendor}
+        onDeleteVendor={handleDeleteVendor}
+        onSetVendorPassword={handleSetVendorPassword}
+        onAddPackage={handleAddPackage}
+        onUpdatePackage={handleUpdatePackage}
+        onDeletePackage={handleDeletePackage}
+        onAddCar={handleAddCar}
+        onUpdateCar={handleUpdateCar}
+        onDeleteCar={handleDeleteCar}
+        onAddBike={handleAddBike}
+        onUpdateBike={handleUpdateBike}
+        onDeleteBike={handleDeleteBike}
+        onLogout={handleLogout}
+        flights={flights}
+        onAddFlight={handleAddFlight}
+        onUpdateFlight={handleUpdateFlight}
+        onDeleteFlight={handleDeleteFlight}
+        hotels={hotels}
+        onAddHotel={handleAddHotel}
+        onUpdateHotel={handleUpdateHotel}
+        onDeleteHotel={handleDeleteHotel}
+        markups={markups}
+        onSaveMarkup={handleSaveMarkup}
+        bookings={bookings}
+        usersList={usersList}
+      />
+    );
+  }
+
+  // ─── CUSTOMER DASHBOARD ──────────────────────────────────────────────────
+  if (activeTab === 'dashboard') {
+    return (
+      <div className="d-flex flex-column min-vh-100 bg-light">
+        <Navbar
+          activeTab={activeTab}
+          setActiveTab={handleTabChange}
+          currentUser={currentUser}
+          triggerOpenLogin={() => setShowLoginModal(true)}
+          onOpenLogin={() => setShowLoginModal(true)}
+          onLogout={handleLogout}
+        />
+        <CustomerDashboard
+          currentUser={currentUser}
+          bookings={bookings}
+          onOpenLogin={() => setShowLoginModal(true)}
+        />
+        <Footer setActiveTab={handleTabChange} />
+      </div>
+    );
+  }
+
+  // ─── MAIN PUBLIC STOREFRONT VIEW ──────────────────────────────────────────
+  return (
+    <div className="d-flex flex-column min-vh-100 bg-white">
+      {/* Public Navbar */}
+      <Navbar
+        activeTab={activeTab}
+        setActiveTab={handleTabChange}
+        currentUser={currentUser}
+        triggerOpenLogin={() => setShowLoginModal(true)}
+        onOpenLogin={() => setShowLoginModal(true)}
         onLogout={handleLogout}
       />
 
-      {/* Dynamic Layout Engine */}
-      {!searchTriggered ? (
-        <>
-          <Hero setActiveTab={setActiveTab} />
-          <SearchWidget 
-            activeTab={activeTab} 
-            setActiveTab={setActiveTab} 
-            pickupLoc={pickupLoc} 
-            setPickupLoc={setPickupLoc} 
-            dropLoc={dropLoc} 
-            setDropLoc={setDropLoc} 
-            pickupDate={pickupDate} 
-            setPickupDate={setPickupDate} 
-            dropDate={dropDate}
-            setDropDate={setDropDate}
-            pickupTime={pickupTime} 
-            setPickupTime={setPickupTime} 
-            dropTime={dropTime} 
-            setDropTime={setDropTime} 
-            handleSearchSubmit={handleSearchSubmit} 
-            setSearchTriggered={setSearchTriggered}
-            searchQuery={searchQuery}
-            setSearchQuery={setSearchQuery}
-            hotelRooms={hotelRooms}
-            setHotelRooms={setHotelRooms}
-            hotelAdults={hotelAdults}
-            setHotelAdults={setHotelAdults}
-            hotelChildren={hotelChildren}
-            setHotelChildren={setHotelChildren}
-            hotelPriceRange={hotelPriceRange}
-            setHotelPriceRange={setHotelPriceRange}
-            flightAdults={flightAdults}
-            setFlightAdults={setFlightAdults}
-            flightChildren={flightChildren}
-            setFlightChildren={setFlightChildren}
-            flightInfants={flightInfants}
-            setFlightInfants={setFlightInfants}
-            flightClass={flightClass}
-            setFlightClass={setFlightClass}
-            appliedFilters={appliedFilters}
-            setAppliedFilters={setAppliedFilters}
-          />
-          <main>
-            <DynamicPopularPackages packages={packages} onBook={handleOpenBooking} onViewDetails={(item) => handleOpenDetails(item, 'package')} />
-            <DynamicFeaturedHotels hotels={hotels} onBook={handleOpenBooking} onViewDetails={(item) => handleOpenDetails(item, 'hotel')} />
-            <DynamicFeaturedVehicles cars={cars} bikes={bikes} onBook={handleOpenBooking} />
-            <FeaturesGrid />
-          </main>
-        </>
-      ) : (
-        <>
-          <SearchWidget 
-            activeTab={activeTab} 
-            setActiveTab={setActiveTab} 
-            pickupLoc={pickupLoc} 
-            setPickupLoc={setPickupLoc} 
-            dropLoc={dropLoc} 
-            setDropLoc={setDropLoc} 
-            pickupDate={pickupDate} 
-            setPickupDate={setPickupDate} 
-            dropDate={dropDate}
-            setDropDate={setDropDate}
-            pickupTime={pickupTime} 
-            setPickupTime={setPickupTime} 
-            dropTime={dropTime} 
-            setDropTime={setDropTime} 
-            handleSearchSubmit={handleSearchSubmit} 
-            setSearchTriggered={setSearchTriggered}
-            searchQuery={searchQuery}
-            setSearchQuery={setSearchQuery}
-            hotelRooms={hotelRooms}
-            setHotelRooms={setHotelRooms}
-            hotelAdults={hotelAdults}
-            setHotelAdults={setHotelAdults}
-            hotelChildren={hotelChildren}
-            setHotelChildren={setHotelChildren}
-            hotelPriceRange={hotelPriceRange}
-            setHotelPriceRange={setHotelPriceRange}
-            flightAdults={flightAdults}
-            setFlightAdults={setFlightAdults}
-            flightChildren={flightChildren}
-            setFlightChildren={setFlightChildren}
-            flightInfants={flightInfants}
-            setFlightInfants={setFlightInfants}
-            flightClass={flightClass}
-            setFlightClass={setFlightClass}
-            appliedFilters={appliedFilters}
-            setAppliedFilters={setAppliedFilters}
-          />
-          <main className="py-5" id="results-section">
-            <div className="container">
+      {/* Hero and Search Widget Container */}
+      <Hero />
+      <SearchWidget
+        activeTab={activeTab}
+        setActiveTab={handleTabChange}
+        pickupLoc={pickupLoc} 
+        setPickupLoc={setPickupLoc} 
+        dropLoc={dropLoc} 
+        setDropLoc={setDropLoc} 
+        pickupDate={pickupDate} 
+        setPickupDate={setPickupDate} 
+        dropDate={dropDate}
+        setDropDate={setDropDate}
+        pickupTime={pickupTime} 
+        setPickupTime={setPickupTime} 
+        dropTime={dropTime} 
+        setDropTime={setDropTime} 
+        handleSearchSubmit={handleSearchSubmit} 
+        setSearchTriggered={setSearchTriggered}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        hotelRooms={hotelRooms}
+        setHotelRooms={setHotelRooms}
+        hotelAdults={hotelAdults}
+        setHotelAdults={setHotelAdults}
+        hotelChildren={hotelChildren}
+        setHotelChildren={setHotelChildren}
+        hotelPriceRange={hotelPriceRange}
+        setHotelPriceRange={setHotelPriceRange}
+        flightAdults={flightAdults}
+        setFlightAdults={setFlightAdults}
+        flightChildren={flightChildren}
+        setFlightChildren={setFlightChildren}
+        flightInfants={flightInfants}
+        setFlightInfants={setFlightInfants}
+        flightClass={flightClass}
+        setFlightClass={setFlightClass}
+        appliedFilters={appliedFilters}
+        setAppliedFilters={setAppliedFilters}
+      />
 
+      {/* Dynamic Results & Content Section */}
+      <main className="py-5" id="results-section">
+        <div className="container">
           
           {activeTab === 'packages' && (
-            <SelfDrivePage
-              packageFilterDuration={packageFilterDuration}
-              setPackageFilterDuration={setPackageFilterDuration}
-              handleOpenBooking={handleOpenBooking}
-              onViewDetails={(item) => handleOpenDetails(item, 'package')}
-              packages={packages.filter(p => p.package_type === 'Trip Package' || p.package_type === 'FIT Package' || p.package_type === 'GIT Package').length > 0
-                ? packages.filter(p => p.package_type === 'Trip Package' || p.package_type === 'FIT Package' || p.package_type === 'GIT Package')
-                : packages}
-              searchQuery={dropLoc || searchQuery}
-              onClearSearch={() => { setDropLoc(''); setSearchQuery(''); }}
-              markups={markups}
-            />
+            <>
+              <SelfDrivePage
+                packageFilterDuration={packageFilterDuration}
+                setPackageFilterDuration={setPackageFilterDuration}
+                handleOpenBooking={handleOpenBooking}
+                onViewDetails={(item) => handleOpenDetails(item, 'package')}
+                packages={packages.filter(p => p.package_type !== 'Self Drive Package').length > 0
+                  ? packages.filter(p => p.package_type !== 'Self Drive Package')
+                  : packages}
+                searchQuery={dropLoc || searchQuery}
+                onClearSearch={() => { setDropLoc(''); setSearchQuery(''); }}
+                markups={markups}
+                appliedFilters={appliedFilters}
+                setAppliedFilters={setAppliedFilters}
+              />
+              <DynamicPopularPackages
+                packages={packages}
+                onBookPackage={(pkg) => handleOpenBooking(pkg, true)}
+                onViewPackage={(pkg) => handleOpenDetails(pkg, 'package')}
+                onBook={(pkg) => handleOpenBooking(pkg, true)}
+                onViewDetails={(pkg) => handleOpenDetails(pkg, 'package')}
+              />
+              <DynamicFeaturedHotels
+                hotels={hotels}
+                onBookHotel={handleOpenHotelBooking}
+                onViewHotel={(hotel) => handleOpenDetails(hotel, 'hotel')}
+                onBook={handleOpenHotelBooking}
+                onViewDetails={(hotel) => handleOpenDetails(hotel, 'hotel')}
+              />
+              <DynamicFeaturedVehicles
+                cars={cars}
+                bikes={bikes}
+                onBookVehicle={handleOpenBooking}
+                onViewVehicle={(veh) => handleOpenDetails(veh, 'vehicle')}
+                onBook={handleOpenBooking}
+                onViewDetails={(veh) => handleOpenDetails(veh, 'vehicle')}
+              />
+              <FeaturesGrid />
+            </>
           )}
 
           {activeTab === 'selfdrive' && (
-            <SelfDrivePage
-              packageFilterDuration={packageFilterDuration}
-              setPackageFilterDuration={setPackageFilterDuration}
-              handleOpenBooking={handleOpenBooking}
-              onViewDetails={(item) => handleOpenDetails(item, 'package')}
-              packages={packages.filter(p => p.package_type === 'Self Drive Package').length > 0
-                ? packages.filter(p => p.package_type === 'Self Drive Package')
-                : packages}
-              searchQuery={dropLoc || searchQuery}
-              onClearSearch={() => { setDropLoc(''); setSearchQuery(''); }}
-              markups={markups}
-            />
+            <>
+              <SelfDrivePage
+                packageFilterDuration={packageFilterDuration}
+                setPackageFilterDuration={setPackageFilterDuration}
+                handleOpenBooking={handleOpenBooking}
+                onViewDetails={(item) => handleOpenDetails(item, 'package')}
+                packages={packages.filter(p => p.package_type === 'Self Drive Package').length > 0
+                  ? packages.filter(p => p.package_type === 'Self Drive Package')
+                  : packages}
+                searchQuery={dropLoc || searchQuery}
+                onClearSearch={() => { setDropLoc(''); setSearchQuery(''); }}
+                markups={markups}
+                appliedFilters={appliedFilters}
+                setAppliedFilters={setAppliedFilters}
+              />
+              <DynamicPopularPackages
+                packages={packages}
+                onBookPackage={(pkg) => handleOpenBooking(pkg, true)}
+                onViewPackage={(pkg) => handleOpenDetails(pkg, 'package')}
+                onBook={(pkg) => handleOpenBooking(pkg, true)}
+                onViewDetails={(pkg) => handleOpenDetails(pkg, 'package')}
+              />
+              <DynamicFeaturedVehicles
+                cars={cars}
+                bikes={bikes}
+                onBookVehicle={handleOpenBooking}
+                onViewVehicle={(veh) => handleOpenDetails(veh, 'vehicle')}
+                onBook={handleOpenBooking}
+                onViewDetails={(veh) => handleOpenDetails(veh, 'vehicle')}
+              />
+              <FeaturesGrid />
+            </>
           )}
 
           {activeTab === 'craftmytrip' && (
@@ -1180,8 +841,13 @@ export default function App() {
               handleOpenBooking={handleOpenBooking}
               onViewDetails={(item) => handleOpenDetails(item, 'vehicle')}
               cars={cars}
+              pickupDate={pickupDate}
+              dropDate={dropDate}
               searchQuery={searchQuery}
+              onClearSearch={() => setSearchQuery('')}
               markups={markups}
+              appliedFilters={appliedFilters}
+              setAppliedFilters={setAppliedFilters}
             />
           )}
 
@@ -1192,13 +858,18 @@ export default function App() {
               handleOpenBooking={handleOpenBooking}
               onViewDetails={(item) => handleOpenDetails(item, 'vehicle')}
               bikes={bikes}
+              pickupDate={pickupDate}
+              dropDate={dropDate}
               searchQuery={searchQuery}
+              onClearSearch={() => setSearchQuery('')}
               markups={markups}
+              appliedFilters={appliedFilters}
+              setAppliedFilters={setAppliedFilters}
             />
           )}
 
           {activeTab === 'custom-trip' && (
-            <CustomTripEnquiryPage setActiveTab={setActiveTab} />
+            <CustomTripEnquiryPage setActiveTab={setActiveTab} currentUser={currentUser} />
           )}
 
           {activeTab === 'customize' && (
@@ -1211,30 +882,16 @@ export default function App() {
               bookings={bookings}
               onBack={() => {
                 if (selectedBookingItem?.package_type === 'Self Drive Package') {
-                    setActiveTab('selfdrive');
+                  setActiveTab('selfdrive');
                 } else {
-                    setActiveTab('packages');
+                  setActiveTab('packages');
                 }
                 setSelectedBookingItem(null);
               }}
-              onConfirmBooking={(pkg, customizations, totalPrice) => {
-                const customizedPkg = {
-                  ...pkg,
-                  price: totalPrice,
-                  customizations: JSON.stringify(customizations)
-                };
-                
-                // Prefill user details from traveller details if available
-                if (pkg.traveller_details) {
-                    const lead = pkg.traveller_details.list[0];
-                    setUserName(lead ? `${lead.firstName} ${lead.lastName}` : '');
-                    setUserPhone(pkg.traveller_details.contactPhone || '');
-                }
-
-                setBookingDays(calculateDays(pickupDate, dropDate));
-                setSelectedBookingItem(customizedPkg);
-                setShowSuccess(false);
-                setActiveTab('packages'); // Go back to original tab but BookingModal will popup
+              onConfirmBooking={(createdRecord) => {
+                api.fetchBookings().then(fresh => {
+                  if (Array.isArray(fresh) && fresh.length > 0) setBookingsList(fresh);
+                }).catch(console.error);
               }}
             />
           )}
@@ -1256,6 +913,8 @@ export default function App() {
               hotelPriceRange={hotelPriceRange}
               setHotelPriceRange={setHotelPriceRange}
               markups={markups}
+              appliedFilters={appliedFilters}
+              setAppliedFilters={setAppliedFilters}
             />
           )}
 
@@ -1311,22 +970,32 @@ export default function App() {
           )}
 
           {activeTab === 'flight-booking' && selectedFlightOffer && (
-             <FlightBookingFlow 
-               offer={selectedFlightOffer} 
-               onBack={() => {
-                 setSelectedFlightOffer(null);
-                 setActiveTab('flights');
-               }}
-               onComplete={(data) => {
-                 // Optionally route to a confirmation page here
-               }}
-             />
+            <FlightBookingFlow 
+              offer={selectedFlightOffer} 
+              onBack={() => {
+                setSelectedFlightOffer(null);
+                setActiveTab('flights');
+              }}
+              onComplete={() => {}}
+            />
+          )}
+
+          {activeTab === 'explore' && (
+            <ExplorePage 
+              destinations={destinations} 
+              onSelectDestination={(dest) => { 
+                setDropLoc(dest.name); 
+                setActiveTab('packages'); 
+              }} 
+            />
+          )}
+
+          {activeTab === 'ai-planner' && (
+            <AIPlannerPage onNavigate={(t) => setActiveTab(t)} />
           )}
 
         </div>
       </main>
-      </>
-      )}
 
       {/* Footer */}
       <Footer setActiveTab={handleTabChange} />
@@ -1384,10 +1053,10 @@ export default function App() {
         onLogin={handleLogin}
       />
 
-      {/* Floating AI Chatbot Widget */}
+      {/* Floating AI Chatbot & Widgets */}
       {activeTab !== 'portal' && <WhatsAppWidget />}
       <AIChatbot />
-      <PopupRenderer popups={liveConfig?.popups || []} onAction={handleBuilderAction} />
+      <PopupRenderer popups={liveConfig?.popups || []} onAction={() => {}} />
     </div>
   );
 }

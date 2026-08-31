@@ -284,23 +284,16 @@ export default function HotelVendorPortalPage({
 
   if (!currentUser || currentUser.role !== 'hotel_vendor') {
     return (
-      <div className="container py-5 my-5 animate-fade-in-up">
-        <div className="row justify-content-center">
-          <div className="col-lg-5 col-md-8">
-            <div className="card border-0 shadow-lg overflow-hidden" style={{ borderRadius: '24px' }}>
-              <div style={{ height: '5px', background: 'linear-gradient(90deg, #FF6333, #00B8D9)' }}></div>
-              <div className="card-body p-5 text-center bg-white">
-                <div className="mx-auto mb-4 rounded-circle d-flex align-items-center justify-content-center" style={{ width: '80px', height: '80px', background: 'rgba(255, 107, 53, 0.08)' }}>
-                  <Shield size={38} className="text-warning" />
-                </div>
-                <h3 className="fw-bold text-primary mb-2">Hotel Operator Console</h3>
-                <p className="text-muted small mb-4">Unauthorized access. Please log in with a hotel vendor account.</p>
-                <button type="button" className="btn btn-warning py-2 px-5 fw-bold text-white rounded-pill w-100" onClick={triggerOpenLogin}>
-                  Sign In to Hotel Console
-                </button>
-              </div>
-            </div>
+      <div className="d-flex align-items-center justify-content-center" style={{ minHeight: '100vh', background: 'linear-gradient(135deg,#0D1B2E 0%,#1a3050 100%)' }}>
+        <div className="text-center p-5">
+          <div className="mx-auto mb-4 rounded-circle d-flex align-items-center justify-content-center" style={{ width: '90px', height: '90px', background: 'rgba(255,99,51,0.15)', border: '2px solid rgba(255,99,51,0.3)' }}>
+            <Building size={42} style={{ color: '#FF6333' }} />
           </div>
+          <h3 className="fw-bold text-white mb-2">Hotel Operator Console</h3>
+          <p className="mb-4" style={{ color: 'rgba(255,255,255,0.5)' }}>Sign in with your hotel vendor account to continue</p>
+          <button type="button" className="btn px-5 py-2 fw-bold text-white rounded-pill" style={{ background: 'linear-gradient(90deg,#FF6333,#FF8A00)' }} onClick={triggerOpenLogin}>
+            Sign In to Hotel Console
+          </button>
         </div>
       </div>
     );

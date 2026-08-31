@@ -35,6 +35,7 @@ const SIDEBAR_GROUPS = [
   {
     label: 'Inventory',
     items: [
+      { id: 'packages', label: 'Manage Packages', icon: <Compass size={15} /> },
       { id: 'admin_hotels', label: 'Manage Hotel', icon: <Hotel size={15} /> },
       { id: 'admin_vehicles', label: 'Manage Vehicle', icon: <Shield size={15} /> },
       { id: 'availability', label: 'Availability Calendar', icon: <Calendar size={15} /> },

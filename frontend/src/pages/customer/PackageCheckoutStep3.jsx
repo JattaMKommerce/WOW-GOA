@@ -15,16 +15,25 @@ export default function PackageCheckoutStep3({
   const advancePercent = serverPriceData.advance_percentage || 25;
   const advance = serverPriceData.advance_amount || Math.round((total * advancePercent) / 100);
 
+  const handleCheckoutClick = (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    onCheckout(e);
+  };
+
   return (
     <div className="container py-4" style={{ fontFamily: "'Inter', sans-serif" }}>
-      <button onClick={onBack} className="btn btn-link text-dark text-decoration-none p-0 mb-4 d-flex align-items-center gap-2 fw-bold">
+      <button 
+        type="button" 
+        onClick={onBack} 
+        className="btn btn-link text-dark text-decoration-none p-0 mb-4 d-flex align-items-center gap-2 fw-bold"
+      >
         <ArrowLeft size={18} /> Back to Travellers
       </button>
 
       <div className="row justify-content-center">
         <div className="col-lg-8">
           <div className="mb-4">
-            <h2 className="fw-extrabold text-dark mb-1">Review & Pay</h2>
+            <h2 className="fw-extrabold text-dark mb-1">Review &amp; Pay</h2>
             <p className="text-muted small">You're almost there! Review your booking and choose a payment option.</p>
           </div>
 
@@ -66,7 +75,7 @@ export default function PackageCheckoutStep3({
                          <div className="flex-grow-1">
                              <div className="fw-bold d-flex justify-content-between">
                                  <span>Pay Full Amount</span>
-                                 <span>₹{total}</span>
+                                 <span>₹{total.toLocaleString('en-IN')}</span>
                              </div>
                              <div className="small text-muted mt-1">Pay the complete amount now and travel hassle-free.</div>
                          </div>
@@ -85,9 +94,9 @@ export default function PackageCheckoutStep3({
                          <div className="flex-grow-1">
                              <div className="fw-bold d-flex justify-content-between">
                                  <span>Pay To Hold ({advancePercent}%)</span>
-                                 <span>₹{advance}</span>
+                                 <span>₹{advance.toLocaleString('en-IN')}</span>
                              </div>
-                             <div className="small text-muted mt-1">Pay ₹{advance} now to confirm your booking. The remaining ₹{total - advance} must be paid before travel.</div>
+                             <div className="small text-muted mt-1">Pay ₹{advance.toLocaleString('en-IN')} now to confirm your booking. The remaining ₹{(total - advance).toLocaleString('en-IN')} must be paid before travel.</div>
                          </div>
                      </div>
                   </div>
@@ -102,21 +111,26 @@ export default function PackageCheckoutStep3({
                      
                      <div className="d-flex justify-content-between mb-2 small">
                          <span className="text-muted">Total Package Cost</span>
-                         <span className="fw-bold">₹{total}</span>
+                         <span className="fw-bold">₹{total.toLocaleString('en-IN')}</span>
                      </div>
                      
                      <hr className="my-3 text-muted"/>
                      
                      <div className="d-flex justify-content-between mb-3">
                          <span className="fw-bold fs-5 text-dark">Amount Payable</span>
-                         <span className="fw-bold fs-5 text-primary">₹{paymentMode === 'full' ? total : advance}</span>
+                         <span className="fw-bold fs-5 text-primary">₹{(paymentMode === 'full' ? total : advance).toLocaleString('en-IN')}</span>
                      </div>
 
-                     <button className="btn btn-primary w-100 py-3 rounded-pill fw-bold text-white shadow d-flex justify-content-between align-items-center px-4 mt-2" onClick={onCheckout}>
-                         <span>Proceed to Pay</span>
+                     <button 
+                       type="button" 
+                       className="btn btn-primary w-100 py-3 rounded-pill fw-bold text-white shadow d-flex justify-content-between align-items-center px-4 mt-2" 
+                       onClick={handleCheckoutClick}
+                       style={{ background: 'linear-gradient(90deg, #FF6333, #FF8A00)', borderColor: '#FF6333' }}
+                     >
+                         <span>Confirm &amp; Pay ₹{(paymentMode === 'full' ? total : advance).toLocaleString('en-IN')}</span>
                          <ChevronRight size={18}/>
                      </button>
-                     <p className="text-center text-muted mt-3 mb-0" style={{fontSize: '11px'}}>By proceeding, you agree to our Terms & Conditions.</p>
+                     <p className="text-center text-muted mt-3 mb-0" style={{fontSize: '11px'}}>By proceeding, you agree to our Terms &amp; Conditions.</p>
                   </div>
                </div>
             </div>

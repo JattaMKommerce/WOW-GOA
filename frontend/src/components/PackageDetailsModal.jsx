@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   X, Star, MapPin, Clock, CheckCircle, XCircle, 
   Car, Hotel, Compass, Info, Plane, Utensils, Shield, 
   Sparkles, Calendar, ChevronRight, Image as ImageIcon,
-  Check, FileText, PhoneCall, RefreshCw, ChevronDown, ChevronUp
+  Check, FileText, PhoneCall, RefreshCw, ChevronDown, ChevronUp, ArrowRight
 } from 'lucide-react';
+import ImageCarousel from './common/ImageCarousel';
+import { getTodayDateStr, addDays, formatDisplayDate } from '../utils/dateUtils';
 
 export default function PackageDetailsModal({ pkg, isOpen, onClose, onBook }) {
   if (!isOpen || !pkg) return null;
@@ -13,7 +15,7 @@ export default function PackageDetailsModal({ pkg, isOpen, onClose, onBook }) {
   const [expandedDay, setExpandedDay] = useState(0); // for accordion
 
   const price = parseFloat(pkg.price) || 0;
-  const coverImg = pkg.image || pkg.image_url || pkg.cover_image || 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=1000&q=80';
+  const coverImg = pkg.imageUrl || pkg.image || pkg.image_url || pkg.cover_image || 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=1000&q=80';
 
   // Strictly relevant contextual fallbacks based on package theme
   const getThemeFallbacks = () => {
@@ -98,9 +100,10 @@ export default function PackageDetailsModal({ pkg, isOpen, onClose, onBook }) {
   // Duration Parsing
   const getPackageNights = () => {
     let nights = 0;
-    if (pkg.day_wise_itinerary) {
+    const rawItinerary = pkg.day_wise_itinerary || pkg.itinerary || pkg.day_plan || pkg.dayPlan || pkg.dayWiseItinerary;
+    if (rawItinerary) {
       try {
-        const parsed = typeof pkg.day_wise_itinerary === 'string' ? JSON.parse(pkg.day_wise_itinerary) : pkg.day_wise_itinerary;
+        const parsed = typeof rawItinerary === 'string' ? JSON.parse(rawItinerary) : rawItinerary;
         if (Array.isArray(parsed) && parsed.length > 0) {
           nights = Math.max(1, parsed.length - 1);
         }
@@ -112,6 +115,10 @@ export default function PackageDetailsModal({ pkg, isOpen, onClose, onBook }) {
        else {
            const dMatch = String(pkg.duration).match(/(\d+)\s*Days?/i);
            if (dMatch) nights = Math.max(1, parseInt(dMatch[1]) - 1);
+           else {
+             const shortMatch = String(pkg.duration).match(/(\d+)\s*N/i);
+             if (shortMatch) nights = parseInt(shortMatch[1]);
+           }
        }
     }
     return nights || 3;
@@ -120,40 +127,48 @@ export default function PackageDetailsModal({ pkg, isOpen, onClose, onBook }) {
   const nights = getPackageNights();
   const days = nights + 1;
 
-  // Itinerary parsing
+  // Itinerary parsing with full fallbacks
   let itinerary = [];
-  try {
-    itinerary = typeof pkg.day_wise_itinerary === 'string' 
-      ? JSON.parse(pkg.day_wise_itinerary) 
-      : (pkg.day_wise_itinerary || []);
-  } catch (e) {
-    itinerary = [];
+  const rawItinerary = pkg.day_wise_itinerary || pkg.itinerary || pkg.day_plan || pkg.dayPlan || pkg.dayWiseItinerary;
+  if (rawItinerary) {
+    try {
+      itinerary = typeof rawItinerary === 'string' 
+        ? JSON.parse(rawItinerary) 
+        : rawItinerary;
+    } catch (e) {
+      itinerary = [];
+    }
   }
 
   if (!Array.isArray(itinerary) || itinerary.length === 0) {
+    const destName = pkg.destination || 'Goa';
+    const hotelName = pkg.hotel_included || 'Luxury Beach Resort';
+    const carName = pkg.car_included || 'Dedicated Vehicle / Self-Drive';
+    const places = (pkg.places_included || 'Calangute, Baga, Fort Aguada, Panaji Latin Quarter, Vagator, Miramar').split(',').map(s => s.trim()).filter(Boolean);
+
     itinerary = [
       {
         day: 1,
-        title: 'Arrival in Goa, Private Airport Transfer & Hotel Check-in',
-        description: 'Warm greeting by your private chauffeur at Goa Airport/Railway Station. Enjoy a scenic drive to your luxury resort, welcome drinks on arrival, and evening relaxation by the beach or infinity pool.',
+        title: `Day 1: Arrival in ${destName}, Private Airport Transfer & Hotel Check-in`,
+        description: `Warm greeting by your private chauffeur at ${destName} Airport / Railway Station. Enjoy a scenic drive to ${hotelName}, welcome drinks on arrival, and evening beach relaxation.`,
         inclusions: ['Airport Pickup', 'Welcome Drink', 'Resort Check-in', 'Buffet Dinner']
       },
       {
         day: 2,
-        title: 'North Goa Coastal Explorer & Thrilling Water Sports',
-        description: 'Head out in your dedicated vehicle to Calangute, Baga, and Vagator beaches. Explore historic Fort Aguada lighthouse with panoramic Arabian Sea views and partake in exciting water sports.',
-        inclusions: ['Breakfast', 'Dedicated Vehicle', 'Fort Aguada Pass', 'Water Sports']
+        title: `Day 2: North ${destName} Coastal Explorer & Thrilling Water Sports`,
+        description: `Head out in your dedicated vehicle to ${places[0] || 'Calangute'} and ${places[1] || 'Baga'} beaches. Explore historic Fort Aguada lighthouse with sweeping sea views and partake in exciting water sports.`,
+        inclusions: ['Breakfast', carName, 'Fort Aguada Pass', 'Water Sports']
       },
       {
         day: 3,
-        title: 'South Goa Heritage Trail, Latin Quarter & Sunset River Cruise',
-        description: 'Discover the colorful heritage houses of Fontainhas in Panaji, visit ancient Basilica of Bom Jesus, and embark on a mesmerizing 1-hour Mandovi River sunset cruise with Goan cultural dance.',
+        title: `Day 3: South ${destName} Heritage Trail, Latin Quarter & Sunset River Cruise`,
+        description: `Discover the colorful Portuguese villas of Fontainhas in Panaji, visit ancient Basilica of Bom Jesus, and embark on a mesmerizing 1-hour Mandovi River sunset cruise with Goan cultural dance.`,
         inclusions: ['Breakfast', 'Heritage Guide', 'Sunset Cruise Ticket', 'Buffet Dinner']
       },
       {
         day: days,
-        title: 'Leisure Morning & Departure Transfer',
-        description: 'Savor a leisurely breakfast by the pool. Enjoy last-minute shopping at local flea markets before your private drop-off at Goa Airport or Railway Station with unforgettable memories.',
+        title: `Day ${days}: Leisure Morning & Departure Transfer`,
+        description: `Savor a leisurely breakfast by the pool. Enjoy last-minute shopping at local flea markets before your private drop-off at ${destName} Airport or Railway Station with unforgettable memories.`,
         inclusions: ['Breakfast', 'Airport Drop Transfer']
       }
     ];
@@ -229,9 +244,30 @@ export default function PackageDetailsModal({ pkg, isOpen, onClose, onBook }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
+  const [departureDate, setDepartureDate] = useState(pkg.pickupDate || pkg.departureDate || getTodayDateStr());
+  const returnDate = useMemo(() => addDays(departureDate, nights), [departureDate, nights]);
+
+  // Sync departure date if pkg changes
+  useEffect(() => {
+    if (pkg?.pickupDate || pkg?.departureDate) {
+      setDepartureDate(pkg.pickupDate || pkg.departureDate);
+    }
+  }, [pkg?.id, pkg?.pickupDate, pkg?.departureDate]);
+
   const handleBookClick = () => {
     onClose();
-    onBook(pkg);
+    onBook({
+      ...pkg,
+      departureDate,
+      returnDate,
+      pickupDate: departureDate,
+      dropDate: returnDate,
+      pickup_date: departureDate,
+      drop_date: returnDate,
+      duration: `${nights} Nights / ${days} Days`,
+      duration_nights: nights,
+      duration_days: days
+    });
   };
 
   return (
@@ -254,18 +290,19 @@ export default function PackageDetailsModal({ pkg, isOpen, onClose, onBook }) {
         className="modal-content-custom bg-white rounded-4 shadow-lg overflow-hidden d-flex flex-column animate-fade-in-up"
         style={{
           width: '100%',
-          maxWidth: '1050px',
-          maxHeight: '90vh',
-          position: 'relative',
-          border: '1px solid rgba(255,255,255,0.2)'
+          maxWidth: '1000px',
+          maxHeight: '92vh',
+          display: 'flex',
+          flexDirection: 'column'
         }}
-        onClick={(e) => e.stopPropagation()}
+        onClick={e => e.stopPropagation()}
       >
+        
         {/* Modal Header */}
-        <div className="px-4 py-3 bg-white border-bottom d-flex align-items-center justify-content-between sticky-top" style={{ zIndex: 10 }}>
-          <div className="d-flex align-items-center gap-3">
-            <span className="badge px-3 py-1.5 rounded-pill fw-bold text-uppercase" style={{ background: 'rgba(255, 99, 51, 0.12)', color: '#FF6333', fontSize: '0.72rem', letterSpacing: '0.5px' }}>
-              {pkg.package_type || 'Tour Package'}
+        <div className="px-4 py-3 border-bottom d-flex align-items-center justify-content-between bg-light">
+          <div className="d-flex align-items-center gap-2">
+            <span className="p-1.5 bg-primary bg-opacity-10 text-primary rounded-2">
+              <Compass size={18} />
             </span>
             <h5 className="mb-0 fw-bold text-dark" style={{ fontSize: '1.2rem' }}>{pkg.name || pkg.package_name}</h5>
           </div>
@@ -283,61 +320,105 @@ export default function PackageDetailsModal({ pkg, isOpen, onClose, onBook }) {
         {/* Modal Scrollable Body */}
         <div className="p-4 overflow-y-auto" style={{ flexGrow: 1 }}>
           
-          {/* ─── GALLERY & HERO SECTION ────────────────────────────────────────── */}
-          <div className="row g-3 mb-4">
-            {/* Main Featured Hero Preview */}
-            <div className="col-12 col-md-8">
-              <div className="rounded-4 overflow-hidden shadow-sm position-relative" style={{ height: '360px', background: '#0f172a' }}>
-                <img 
-                  src={selectedPhoto} 
-                  alt={pkg.name} 
-                  className="w-100 h-100 object-fit-cover"
-                  style={{ transition: 'opacity 0.3s ease' }}
-                />
-                <div className="position-absolute bottom-0 start-0 w-100 p-3 text-white" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.85), transparent)' }}>
-                  <span className="badge bg-warning text-dark fw-bold px-2.5 py-1 rounded-pill mb-1.5" style={{ fontSize: '0.72rem' }}>
-                    {pkg.tag || 'Special Holiday Deal'}
+          {/* ─── IMAGE CAROUSEL & TOP INFO ────────────────────────────────────────── */}
+          <div className="row g-4 mb-4">
+            <div className="col-12 col-lg-7">
+              <ImageCarousel 
+                images={galleryImages} 
+                alt={pkg.name || pkg.package_name} 
+                height="340px" 
+                rounded="14px"
+              />
+            </div>
+            <div className="col-12 col-lg-5 d-flex flex-column justify-content-between">
+              <div>
+                <span className="badge bg-warning text-dark fw-bold px-2.5 py-1 rounded-pill mb-2" style={{ fontSize: '0.72rem' }}>
+                  {pkg.tag || 'Special Holiday Deal'}
+                </span>
+                <h4 className="fw-bold mb-2 text-dark" style={{ fontSize: '1.25rem' }}>{pkg.name || pkg.package_name}</h4>
+                <div className="d-flex flex-wrap gap-2 align-items-center small text-muted mb-2">
+                  <span className="badge bg-light text-dark border px-2.5 py-1.5 rounded-pill d-flex align-items-center gap-1">
+                    <Clock size={13} className="text-primary" /> {nights} Nights / {days} Days
                   </span>
-                  <h4 className="fw-bold mb-1" style={{ fontSize: '1.35rem' }}>{pkg.name || pkg.package_name}</h4>
-                  <div className="d-flex flex-wrap gap-3 align-items-center small text-white-50">
-                    <span className="d-flex align-items-center gap-1 text-white"><Clock size={14} /> {nights} Nights / {days} Days</span>
-                    <span className="d-flex align-items-center gap-1 text-white"><MapPin size={14} /> {pkg.destinations || pkg.location || 'Goa, India'}</span>
-                    <span className="d-flex text-warning"><Star size={14} fill="currentColor" /> 4.9 (142 Reviews)</span>
+                  <span className="badge bg-light text-dark border px-2.5 py-1.5 rounded-pill d-flex align-items-center gap-1">
+                    <MapPin size={13} className="text-danger" /> {pkg.destinations || pkg.location || 'Goa, India'}
+                  </span>
+                </div>
+                <div className="d-flex align-items-center gap-2 mb-2">
+                  <div className="d-flex text-warning">
+                    {[...Array(5)].map((_, i) => <Star key={i} size={15} fill="currentColor" />)}
+                  </div>
+                  <span className="fw-bold text-dark small">4.9</span>
+                  <span className="text-muted small">(142 Reviews)</span>
+                </div>
+                <p className="text-secondary small lh-base mb-3" style={{ fontSize: '0.85rem' }}>
+                  {pkg.description || `Experience the ultimate Goan vacation with our ${nights} Nights / ${days} Days curated package.`}
+                </p>
+              </div>
+
+              {/* ─── DATE SELECTION & AUTO RETURN DATE CALCULATION ─────────── */}
+              <div className="p-3 bg-light rounded-3 border mb-2" style={{ backgroundColor: '#f8fafc' }}>
+                <div className="d-flex align-items-center justify-content-between mb-2 pb-1 border-bottom">
+                  <span className="fw-bold text-dark small d-flex align-items-center gap-1.5">
+                    <Calendar size={15} className="text-primary" /> Trip Dates &amp; Duration
+                  </span>
+                  <span className="badge bg-primary bg-opacity-10 text-primary fw-bold" style={{ fontSize: '0.7rem' }}>
+                    {nights}N / {days}D
+                  </span>
+                </div>
+
+                <div className="row g-2">
+                  <div className="col-6">
+                    <label className="form-label text-muted small fw-bold mb-1" style={{ fontSize: '0.72rem' }}>
+                      Start / Departure Date:
+                    </label>
+                    <input 
+                      type="date" 
+                      className="form-control form-control-sm fw-bold border bg-white" 
+                      min={getTodayDateStr()} 
+                      value={departureDate} 
+                      onChange={(e) => setDepartureDate(e.target.value)} 
+                      style={{ fontSize: '0.82rem', borderRadius: '8px' }}
+                    />
+                    <span className="text-muted text-xxs d-block mt-1" style={{ fontSize: '10.5px' }}>
+                      {formatDisplayDate(departureDate)}
+                    </span>
+                  </div>
+
+                  <div className="col-6">
+                    <label className="form-label text-muted small fw-bold mb-1 d-flex align-items-center justify-content-between" style={{ fontSize: '0.72rem' }}>
+                      <span>End / Check-Out:</span>
+                      <span className="badge bg-success bg-opacity-10 text-success p-0" style={{ fontSize: '9px' }}>Auto</span>
+                    </label>
+                    <div 
+                      className="p-1.5 px-2 bg-white rounded border fw-bold text-success text-truncate d-flex align-items-center justify-content-between"
+                      style={{ fontSize: '0.82rem', height: '31px', backgroundColor: '#f0fdf4' }}
+                      title={`${formatDisplayDate(returnDate)} (${nights} Nights / ${days} Days)`}
+                    >
+                      <span className="text-truncate">{formatDisplayDate(returnDate)}</span>
+                    </div>
+                    <span className="text-success fw-semibold text-xxs d-block mt-1" style={{ fontSize: '10.5px' }}>
+                      ({nights} Nights / {days} Days)
+                    </span>
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* Thumbnail Strip (Interactive) */}
-            <div className="col-12 col-md-4">
-              <div className="d-flex flex-column gap-2 h-100">
-                <div className="fw-bold small text-muted text-uppercase d-flex align-items-center gap-1" style={{ fontSize: '0.72rem' }}>
-                  <ImageIcon size={13} /> Photo Gallery ({galleryImages.length} Photos)
-                </div>
-                <div className="d-grid gap-2" style={{ gridTemplateColumns: 'repeat(2, 1fr)', flexGrow: 1 }}>
-                  {galleryImages.slice(0, 4).map((img, idx) => (
-                    <div 
-                      key={idx} 
-                      onClick={() => setSelectedPhoto(img)}
-                      className="rounded-3 overflow-hidden position-relative shadow-sm"
-                      style={{ 
-                        height: '155px', 
-                        cursor: 'pointer',
-                        border: selectedPhoto === img ? '3px solid #FF6333' : '2px solid transparent',
-                        transition: 'transform 0.15s, border-color 0.2s'
-                      }}
-                      onMouseOver={e => e.currentTarget.style.transform = 'scale(0.97)'}
-                      onMouseOut={e => e.currentTarget.style.transform = 'scale(1)'}
-                      title="Click to preview as main image"
-                    >
-                      <img src={img} alt={`Gallery ${idx + 1}`} className="w-100 h-100 object-fit-cover" />
-                      {selectedPhoto === img && (
-                        <span className="position-absolute top-0 end-0 m-1.5 badge bg-primary text-white rounded-circle p-1" style={{ background: '#FF6333' }}>
-                          <Check size={10} />
-                        </span>
-                      )}
-                    </div>
-                  ))}
+              <div className="p-3 bg-white rounded-3 border">
+                <div className="d-flex justify-content-between align-items-center">
+                  <div>
+                    <div className="text-muted small" style={{ fontSize: '0.75rem' }}>Package Price / person</div>
+                    <div className="fw-black text-primary fs-4" style={{ color: '#FF6333' }}>₹{price.toLocaleString('en-IN')}</div>
+                  </div>
+                  <button 
+                    type="button" 
+                    onClick={handleBookClick} 
+                    className="btn btn-primary px-4 py-2 rounded-pill fw-bold shadow-sm d-flex align-items-center gap-1.5"
+                    style={{ background: 'linear-gradient(135deg, #FF6333 0%, #FF8A00 100%)', borderColor: '#FF6333', fontSize: '0.85rem' }}
+                  >
+                    <span>Proceed to Book</span>
+                    <ChevronRight size={16} />
+                  </button>
                 </div>
               </div>
             </div>
@@ -448,9 +529,56 @@ export default function PackageDetailsModal({ pkg, isOpen, onClose, onBook }) {
 
                     {isExp && (
                       <div className="p-3 border-top bg-light" style={{ fontSize: '0.84rem' }}>
-                        <p className="text-muted lh-base mb-2.5">{day.description}</p>
+                        {day.description && <p className="text-muted lh-base mb-2.5">{day.description}</p>}
+
+                        {/* Structured Activities */}
+                        {(day.morning || day.afternoon || day.evening || day.night || day.activities) && (
+                          <div className="d-flex flex-column gap-2 my-2.5">
+                            {day.morning && (
+                              <div className="p-2 bg-white rounded border-start border-3 border-warning shadow-xs">
+                                <span className="badge bg-warning text-dark fw-bold me-1.5" style={{ fontSize: '9px' }}>MORNING</span>
+                                <span className="text-dark small">{day.morning}</span>
+                              </div>
+                            )}
+                            {day.afternoon && (
+                              <div className="p-2 bg-white rounded border-start border-3 border-primary shadow-xs">
+                                <span className="badge bg-primary text-white fw-bold me-1.5" style={{ fontSize: '9px' }}>AFTERNOON</span>
+                                <span className="text-dark small">{day.afternoon}</span>
+                              </div>
+                            )}
+                            {day.evening && (
+                              <div className="p-2 bg-white rounded border-start border-3 border-info shadow-xs">
+                                <span className="badge bg-info text-dark fw-bold me-1.5" style={{ fontSize: '9px' }}>EVENING</span>
+                                <span className="text-dark small">{day.evening}</span>
+                              </div>
+                            )}
+                            {day.night && (
+                              <div className="p-2 bg-white rounded border-start border-3 border-dark shadow-xs">
+                                <span className="badge bg-dark text-white fw-bold me-1.5" style={{ fontSize: '9px' }}>NIGHT</span>
+                                <span className="text-dark small">{day.night}</span>
+                              </div>
+                            )}
+                            {day.activities && !day.morning && !day.afternoon && (
+                              <div className="p-2 bg-white rounded border-start border-3 border-success shadow-xs">
+                                <span className="badge bg-success text-white fw-bold me-1.5" style={{ fontSize: '9px' }}>ACTIVITIES</span>
+                                <span className="text-dark small">{day.activities}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {day.sightseeing_locations && day.sightseeing_locations.length > 0 && (
+                          <div className="d-flex flex-wrap gap-1.5 my-2">
+                            {day.sightseeing_locations.map((loc, i) => (
+                              <span key={i} className="badge bg-white text-dark border px-2 py-1" style={{ fontSize: '0.72rem' }}>
+                                📍 {typeof loc === 'string' ? loc : loc.name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
                         {day.inclusions && day.inclusions.length > 0 && (
-                          <div className="d-flex flex-wrap gap-1.5">
+                          <div className="d-flex flex-wrap gap-1.5 mt-2">
                             {day.inclusions.map((inc, i) => (
                               <span key={i} className="badge bg-white text-secondary border px-2 py-1" style={{ fontSize: '0.68rem' }}>
                                 ✓ {inc}
@@ -569,7 +697,12 @@ export default function PackageDetailsModal({ pkg, isOpen, onClose, onBook }) {
         {/* Modal Sticky Footer CTA */}
         <div className="px-4 py-3 bg-white border-top d-flex align-items-center justify-content-between sticky-bottom" style={{ zIndex: 10 }}>
           <div>
-            <span className="text-muted small d-block" style={{ fontSize: '0.72rem' }}>Total Package Rate</span>
+            <div className="d-flex align-items-center gap-2 mb-1">
+              <span className="text-muted small" style={{ fontSize: '0.72rem' }}>Total Package Rate</span>
+              <span className="badge bg-light text-dark border d-flex align-items-center gap-1" style={{ fontSize: '0.72rem' }}>
+                <Calendar size={12} className="text-primary" /> {formatDisplayDate(departureDate)} → {formatDisplayDate(returnDate)} ({nights}N/{days}D)
+              </span>
+            </div>
             <div className="d-flex align-items-baseline gap-1.5">
               <h3 className="fw-bold text-dark mb-0" style={{ color: '#FF6333' }}>
                 ₹{price.toLocaleString('en-IN')}
@@ -593,7 +726,9 @@ export default function PackageDetailsModal({ pkg, isOpen, onClose, onBook }) {
               className="btn btn-primary rounded-pill px-4 py-2 fw-bold shadow d-flex align-items-center gap-2"
               style={{ background: 'linear-gradient(90deg, #FF6333, #FF8A00)', borderColor: '#FF6333', fontSize: '0.92rem' }}
             >
-              Book This Package <ChevronRight size={16} />
+              <span>Book This Package</span>
+              <span className="badge bg-white text-dark rounded-pill py-1 px-2 fw-bold" style={{ fontSize: '0.75rem' }}>{nights}N / {days}D</span>
+              <ChevronRight size={16} />
             </button>
           </div>
         </div>
