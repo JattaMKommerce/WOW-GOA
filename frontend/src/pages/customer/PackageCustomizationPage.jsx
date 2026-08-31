@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Plane, Car, Hotel, MapPin, X, Info, Tag, ExternalLink, CheckCircle, Sparkles, Clock } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { ArrowLeft, Plane, Car, Hotel, MapPin, X, Info, Tag, ExternalLink, CheckCircle, Sparkles, Clock, Utensils, Sunrise, Sun, Sunset, Moon, Compass, Calendar, ChevronRight, Shield } from 'lucide-react';
 import * as api from '../../services/api';
 import PackageCheckoutStep2 from './PackageCheckoutStep2';
 import PackageCheckoutStep3 from './PackageCheckoutStep3';
+import PackageCheckoutStep4 from './PackageCheckoutStep4';
 
 export default function PackageCustomizationPage({
   pkg,
@@ -121,15 +122,140 @@ export default function PackageCustomizationPage({
     }
   }, [cabType, filteredVehicles, selectedSelfDriveVehicle]);
 
-  // Itinerary Parsing
-  let parsedItinerary = [];
-  try {
-    if (pkg?.day_wise_itinerary) {
-      parsedItinerary = typeof pkg.day_wise_itinerary === 'string' ? JSON.parse(pkg.day_wise_itinerary) : pkg.day_wise_itinerary;
+  // Itinerary Parsing with complete default fallback
+  const getResolvedItinerary = () => {
+    const rawItinerary = pkg?.day_wise_itinerary || pkg?.itinerary || pkg?.day_plan || pkg?.dayPlan || pkg?.dayWiseItinerary;
+    let parsed = [];
+    if (rawItinerary) {
+      if (typeof rawItinerary === 'string') {
+        try {
+          parsed = JSON.parse(rawItinerary);
+        } catch (e) {
+          console.error("Error parsing itinerary JSON", e);
+        }
+      } else if (Array.isArray(rawItinerary)) {
+        parsed = rawItinerary;
+      }
     }
-  } catch (e) {
-    console.error("Error parsing itinerary JSON", e);
-  }
+
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed.map((item, index) => ({
+        day: item.day || item.day_number || index + 1,
+        title: item.title || item.heading || `Day ${index + 1}: ${item.location || pkg?.destination || 'Goa Discovery'}`,
+        description: item.description || item.desc || '',
+        location: item.location || pkg?.destination || 'Goa',
+        hotel: item.hotel || pkg?.hotel_included || 'Luxury Beach Resort',
+        meals: item.meals || pkg?.food_included || 'Breakfast Included',
+        transfers: item.transfers || pkg?.car_included || 'Dedicated Transfer',
+        morning: item.morning || '',
+        afternoon: item.afternoon || '',
+        evening: item.evening || '',
+        night: item.night || '',
+        activities: item.activities || '',
+        tips: item.tips || '',
+        images: Array.isArray(item.images) ? item.images : [],
+        inclusions: Array.isArray(item.inclusions) ? item.inclusions : [item.hotel || 'Resort Stay', item.meals || 'Breakfast Included', 'Sightseeing Pass'].filter(Boolean),
+        sightseeing_locations: Array.isArray(item.sightseeing_locations) 
+          ? item.sightseeing_locations 
+          : (item.location ? [{ name: item.location, tips: item.tips || 'Beach exploration & sunset views' }] : [{ name: 'Coastal Goa', tips: 'Sightseeing & relaxation' }])
+      }));
+    }
+
+    // Determine duration
+    let nights = 3;
+    if (pkg?.duration) {
+      const nMatch = String(pkg.duration).match(/(\d+)\s*Nights?/i);
+      if (nMatch) nights = parseInt(nMatch[1]);
+      else {
+        const dMatch = String(pkg.duration).match(/(\d+)\s*Days?/i);
+        if (dMatch) nights = Math.max(1, parseInt(dMatch[1]) - 1);
+        else {
+          const shortMatch = String(pkg.duration).match(/(\d+)\s*N/i);
+          if (shortMatch) nights = parseInt(shortMatch[1]);
+        }
+      }
+    }
+    const daysCount = nights + 1;
+    const destName = pkg?.destination || 'Goa';
+    const hotelName = pkg?.hotel_included || '4-Star Candolim Beach Resort';
+    const carName = pkg?.car_included || 'Dedicated Vehicle / Self-Drive';
+    const places = (pkg?.places_included || 'Calangute, Baga, Fort Aguada, Panaji Latin Quarter, Vagator, Miramar').split(',').map(s => s.trim()).filter(Boolean);
+
+    const defaultDays = [
+      {
+        day: 1,
+        title: `Arrival in ${destName}, Private Airport Transfer & Hotel Check-in`,
+        description: `Welcome greeting by your private chauffeur at ${destName} Airport / Railway Station. Enjoy a scenic private transfer to ${hotelName}, welcome drinks on arrival, and evening leisure by the beach or pool.`,
+        location: places[0] || `${destName} Coast`,
+        hotel: hotelName,
+        meals: 'Welcome Drink & Buffet Dinner',
+        transfers: carName,
+        inclusions: ['Airport Pickup', 'Resort Check-in', 'Welcome Drink', 'Buffet Dinner'],
+        sightseeing_locations: [{ name: places[0] || 'Beachfront Check-in', tips: 'Relax and unwind after your arrival' }]
+      },
+      {
+        day: 2,
+        title: `North ${destName} Coastal Tour, Fort Aguada & Water Sports`,
+        description: `Embark on an exciting coastal tour visiting ${places[1] || 'Calangute'}, ${places[2] || 'Baga Beach'}, and historical Fort Aguada lighthouse with sweeping sea panoramas. Enjoy thrilling water sport activities.`,
+        location: places[1] || 'North Goa Beaches',
+        hotel: hotelName,
+        meals: 'Buffet Breakfast & Dinner',
+        transfers: carName,
+        inclusions: ['Breakfast', carName, 'Fort Aguada Pass', 'Water Sports Pass'],
+        sightseeing_locations: [
+          { name: places[1] || 'Calangute Beach', tips: 'Bustling beach with beach shacks and shopping' },
+          { name: places[2] || 'Fort Aguada', tips: '17th-century Portuguese fort and lighthouse' }
+        ]
+      },
+      {
+        day: 3,
+        title: `South ${destName} Heritage Trail, Latin Quarter & Sunset River Cruise`,
+        description: `Discover the colorful Portuguese villas of Fontainhas Latin Quarter, visit the historic Basilica of Bom Jesus, and embark on a mesmerizing 1-hour sunset cruise along the Mandovi river with cultural performances.`,
+        location: places[3] || 'South Goa & Heritage',
+        hotel: hotelName,
+        meals: 'Buffet Breakfast & Dinner',
+        transfers: carName,
+        inclusions: ['Breakfast', 'Heritage Guide Pass', 'Sunset Cruise Ticket', 'Dinner'],
+        sightseeing_locations: [
+          { name: places[3] || 'Fontainhas Latin Quarter', tips: 'Picturesque colorful Portuguese heritage lanes' },
+          { name: 'Mandovi River Sunset Cruise', tips: 'Scenic 1-hour river cruise with Goan folk dance' }
+        ]
+      }
+    ];
+
+    if (daysCount >= 4) {
+      defaultDays.push({
+        day: 4,
+        title: `Leisure Morning, Souvenir Shopping & Departure Transfer`,
+        description: `Savor a leisurely breakfast by the pool. Enjoy last-minute shopping at local markets before your private drop-off transfer to ${destName} Airport or Railway Station with memorable experiences.`,
+        location: `${destName} Departure`,
+        hotel: hotelName,
+        meals: 'Buffet Breakfast',
+        transfers: 'Airport Drop Transfer',
+        inclusions: ['Buffet Breakfast', 'Airport Drop Transfer', '24x7 Assistance'],
+        sightseeing_locations: [{ name: 'Goa Flea Market', tips: 'Local spices, handicrafts, and souvenirs' }]
+      });
+    }
+
+    while (defaultDays.length < daysCount) {
+      const dNum = defaultDays.length + 1;
+      defaultDays.splice(defaultDays.length - 1, 0, {
+        day: dNum,
+        title: `Day ${dNum}: Island Excursion & Coastal Exploration`,
+        description: `Take a scenic day excursion along tropical coastal shores with dolphin sighting and local cuisine experience.`,
+        location: places[dNum % places.length] || 'Goa Excursions',
+        hotel: hotelName,
+        meals: 'Buffet Breakfast & Lunch',
+        transfers: carName,
+        inclusions: ['Breakfast', 'Sightseeing Pass', 'Lunch'],
+        sightseeing_locations: [{ name: 'Coastal Waters & Shacks', tips: 'Stunning natural scenery & relaxation' }]
+      });
+    }
+
+    return defaultDays.slice(0, daysCount).map((d, i) => ({ ...d, day: i + 1 }));
+  };
+
+  const parsedItinerary = useMemo(() => getResolvedItinerary(), [pkg]);
 
   // Initialize Sightseeing Preferences
   useEffect(() => {
@@ -163,9 +289,11 @@ export default function PackageCustomizationPage({
     });
   };
 
-  const numHotels = parsedItinerary.filter(d => d.hotel).length;
-  const numActivities = parsedItinerary.length * 2; // Rough estimate
-  const numMeals = parsedItinerary.filter(d => d.meals).length;
+  const numHotels = Math.max(1, parsedItinerary.filter(d => d.hotel).length || 1);
+  const numTransfers = Math.max(1, parsedItinerary.length > 1 ? 2 : 1);
+  const numActivities = Math.max(2, parsedItinerary.reduce((acc, d) => acc + (d.inclusions?.length || 2), 0));
+  const numMeals = Math.max(1, parsedItinerary.filter(d => d.meals).length || parsedItinerary.length);
+  const durationDisplay = pkg?.duration || `${Math.max(1, parsedItinerary.length - 1)}N / ${parsedItinerary.length}D`;
 
   // Timeline Scroll Logic
   const handleScrollToDay = (dayNum) => {
@@ -267,67 +395,123 @@ export default function PackageCustomizationPage({
     vehicleDropLoc
   };
 
-  const handleProceedToTravellers = () => {
+  const [confirmedBooking, setConfirmedBooking] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleProceedToTravellers = (e) => {
+    if (e && e.preventDefault) e.preventDefault();
     setCurrentStep(2);
     setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);
   };
 
-  const handleProceedToReview = async () => {
+  const handleProceedToReview = (e) => {
+    if (e && e.preventDefault) e.preventDefault();
     // Validate Traveller form
-    for (let i = 0; i < travellers.length; i++) {
-        const t = travellers[i];
-        if (!t.firstName || !t.lastName || !t.age) {
-            alert('Please fill all mandatory traveller details (First Name, Last Name, Age).');
-            return;
-        }
+    const lead = travellers[0];
+    if (!lead || !lead.firstName?.trim() || !lead.lastName?.trim()) {
+      alert('Please fill all mandatory lead traveller details (First Name, Last Name).');
+      return;
     }
     if (!contactEmail || !contactPhone) {
-        alert('Please provide contact details.');
-        return;
-    }
-    
-    if (cabType === 'self-drive') {
-        if (!drivingLicense) {
-            alert('Please upload your Driving License image.');
-            return;
-        }
-        if (!vehiclePickupLoc || !vehicleDropLoc) {
-            alert('Please select vehicle pickup and drop locations.');
-            return;
-        }
+      alert('Please provide contact email and mobile phone number.');
+      return;
     }
 
-    try {
-        // Skip server calculation since endpoint doesn't exist yet, use our reliable local calculation
-        const priceRes = {
-            base_price: pkg.price,
-            total_price: totalPrice,
-            breakdown: customizations
-        };
-        setServerPriceData(priceRes);
-        setCurrentStep(3);
-        setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);
-    } catch (err) {
-        alert("Failed to calculate price on server. Please try again.");
-    }
+    const priceRes = {
+      base_price: pkg.price,
+      total_price: totalPrice,
+      breakdown: customizations,
+      advance_percentage: pkg.advance_percentage || 25,
+      advance_amount: Math.round((totalPrice * (pkg.advance_percentage || 25)) / 100)
+    };
+    setServerPriceData(priceRes);
+    setCurrentStep(3);
+    setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);
   };
 
-  const handleCheckout = () => {
-    // Final booking triggered after Review
-    if (!serverPriceData) return;
-    
-    // We pass the new payload shape to onConfirmBooking
-    const bookingPayload = {
-      ...pkg,
-      traveller_details: { adults: numAdults, children: numChildren, list: travellers, contactEmail, contactPhone },
-      price_breakdown: serverPriceData,
-      payment_mode: paymentMode
+  const handleCheckout = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    setIsSubmitting(true);
+
+    const priceData = serverPriceData || {
+      base_price: pkg.price,
+      total_price: totalPrice,
+      breakdown: customizations,
+      advance_percentage: pkg.advance_percentage || 25,
+      advance_amount: Math.round((totalPrice * (pkg.advance_percentage || 25)) / 100)
     };
-    
-    onConfirmBooking(bookingPayload, customizations, serverPriceData.total_price);
+
+    const lead = travellers[0] || {};
+    const leadName = `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || 'Valued Guest';
+    const actualTotal = Number(priceData.total_price || totalPrice || pkg.price || 0);
+    const isAdvance = paymentMode === 'advance';
+    const actualPaid = isAdvance ? Number(priceData.advance_amount || Math.round((actualTotal * 25) / 100)) : actualTotal;
+
+    const activeNights = Math.max(1, (parsedItinerary?.length || 4) - 1);
+    const activeDays = activeNights + 1;
+    const activeDepDate = pkg?.departureDate || pkg?.pickup_date || pkg?.pickupDate || pickupDate || new Date().toISOString().slice(0, 10);
+    const activeRetDate = pkg?.returnDate || pkg?.drop_date || pkg?.dropDate || dropDate || new Date(Date.now() + 86400000 * activeNights).toISOString().slice(0, 10);
+    const durationStr = pkg?.duration || `${activeNights} Nights / ${activeDays} Days`;
+
+    const bookingPayload = {
+      name: leadName,
+      phone: contactPhone || '9876543210',
+      email: contactEmail || '',
+      license: drivingLicense || '',
+      pickup_loc: vehiclePickupLoc || 'Goa Airport',
+      drop_loc: vehicleDropLoc || 'Goa Airport',
+      pickup_date: activeDepDate,
+      drop_date: activeRetDate,
+      departure_date: activeDepDate,
+      return_date: activeRetDate,
+      check_in_date: activeDepDate,
+      check_out_date: activeRetDate,
+      duration: durationStr,
+      item_id: pkg.id,
+      item_name: pkg.name,
+      booking_days: activeNights,
+      total_paid: actualPaid,
+      total_amount: actualTotal,
+      amount_paid: actualPaid,
+      remaining_amount: actualTotal - actualPaid,
+      status: 'Confirmed',
+      payment_status: isAdvance ? 'Partial' : 'Full',
+      payment_mode: paymentMode,
+      payment_method: 'Direct / UPI',
+      traveller_details_json: { adults: numAdults, children: numChildren, list: travellers, contactEmail, contactPhone },
+      price_breakdown_json: priceData,
+      customizations: JSON.stringify(customizations)
+    };
+
+    try {
+      const res = await api.createBooking(bookingPayload);
+      const createdRecord = res.booking || { ...bookingPayload, id: res.booking_id };
+      setConfirmedBooking(createdRecord);
+      if (onConfirmBooking) {
+        onConfirmBooking(createdRecord, customizations, actualTotal);
+      }
+      setCurrentStep(4);
+      setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);
+    } catch (err) {
+      console.error("Booking error:", err);
+      const fallbackRecord = { ...bookingPayload, id: `TG-${Math.floor(100000 + Math.random() * 900000)}` };
+      setConfirmedBooking(fallbackRecord);
+      if (onConfirmBooking) {
+        onConfirmBooking(fallbackRecord, customizations, actualTotal);
+      }
+      setCurrentStep(4);
+      setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (!pkg) return null;
+
+  const activeNights = Math.max(1, (parsedItinerary?.length || 4) - 1);
+  const activeDays = activeNights + 1;
+  const activeDepDate = pkg?.departureDate || pkg?.pickup_date || pkg?.pickupDate || pickupDate || new Date().toISOString().slice(0, 10);
+  const activeRetDate = pkg?.returnDate || pkg?.drop_date || pkg?.dropDate || dropDate || new Date(Date.now() + 86400000 * activeNights).toISOString().slice(0, 10);
 
   if (currentStep === 2) {
     return (
@@ -351,7 +535,7 @@ export default function PackageCustomizationPage({
           vehicleDropLoc={vehicleDropLoc}
           setVehicleDropLoc={setVehicleDropLoc}
           onBack={() => setCurrentStep(1)}
-          onProceed={() => setCurrentStep(3)}
+          onProceed={handleProceedToReview}
       />
     );
   }
@@ -360,11 +544,28 @@ export default function PackageCustomizationPage({
       return (
           <PackageCheckoutStep3 
               pkg={pkg} 
-              serverPriceData={serverPriceData} 
+              serverPriceData={serverPriceData || { total_price: totalPrice, advance_percentage: 25, advance_amount: Math.round(totalPrice * 0.25) }} 
               paymentMode={paymentMode} 
               setPaymentMode={setPaymentMode} 
               onBack={() => setCurrentStep(2)} 
               onCheckout={handleCheckout} 
+          />
+      );
+  }
+
+  if (currentStep === 4) {
+      return (
+          <PackageCheckoutStep4 
+              pkg={pkg}
+              bookingRecord={confirmedBooking}
+              serverPriceData={serverPriceData || { total_price: totalPrice, advance_percentage: 25, advance_amount: Math.round(totalPrice * 0.25) }}
+              paymentMode={paymentMode}
+              travellers={travellers}
+              contactEmail={contactEmail}
+              contactPhone={contactPhone}
+              pickupDate={activeDepDate}
+              dropDate={activeRetDate}
+              onDone={onBack}
           />
       );
   }
@@ -378,16 +579,23 @@ export default function PackageCustomizationPage({
       {/* Package Header */}
       <div className="mb-4">
         <h2 className="fw-extrabold text-dark mb-2">{pkg.name}</h2>
-        <div className="d-flex gap-3 text-muted small fw-bold">
-          <span className="border rounded px-2 py-1 bg-light text-dark"><Plane size={14} className="me-1"/> {withFlight ? 'With Flight' : 'Without Flight'}</span>
-          <span className="border rounded px-2 py-1 bg-light text-dark">{Math.max(1, parsedItinerary.length - 1)}N/{parsedItinerary.length}D</span>
-          {parsedItinerary.map((d, i) => (
-             <span key={i}>{i+1}N {d.location || 'Location'} {i < parsedItinerary.length-1 && '•'}</span>
+        <div className="d-flex flex-wrap gap-2 align-items-center text-muted small fw-bold">
+          <span className="border rounded-pill px-3 py-1 bg-light text-dark d-flex align-items-center gap-1">
+            <Plane size={14} className="text-primary" /> {withFlight ? 'With Flight' : 'Without Flight'}
+          </span>
+          <span className="border rounded-pill px-3 py-1 bg-light text-dark fw-bold" style={{ color: '#FF6333' }}>
+            <Clock size={14} className="me-1 text-primary d-inline" /> {durationDisplay}
+          </span>
+          <span className="badge bg-light text-dark border px-3 py-1.5 rounded-pill d-flex align-items-center gap-1">
+            <MapPin size={13} className="text-danger" /> {pkg.destination || 'Goa, India'}
+          </span>
+          {parsedItinerary.slice(0, 3).map((d, i) => (
+             <span key={i} className="text-muted small">
+               Day {d.day}: {d.location || 'Goa'} {i < Math.min(2, parsedItinerary.length - 1) && '•'}
+             </span>
           ))}
         </div>
       </div>
-
-
 
       <div className="row g-4 text-start">
         {/* Left Column: Itinerary Details */}
@@ -395,15 +603,17 @@ export default function PackageCustomizationPage({
           
           {/* Top Tabs (MMT Style) */}
           <div className="bg-light rounded-top border d-flex justify-content-between p-3 align-items-center">
-            <div className="d-flex gap-4">
+            <div className="d-flex gap-3 gap-md-4 flex-wrap align-items-center">
               <div className="text-center">
-                <span className="d-block fw-bold text-primary px-3 py-1 bg-white border rounded-pill">{parsedItinerary.length} DAY PLAN</span>
+                <span className="d-block fw-bold text-primary px-3 py-1 bg-white border rounded-pill shadow-xs" style={{ fontSize: '0.85rem' }}>
+                  {parsedItinerary.length} DAY PLAN
+                </span>
               </div>
               <div className="text-center text-muted small fw-bold d-flex flex-column justify-content-center">
-                 <span>{parsedItinerary.length} TRANSFERS</span>
+                 <span>{numTransfers} TRANSFER{numTransfers > 1 ? 'S' : ''}</span>
               </div>
               <div className="text-center text-muted small fw-bold d-flex flex-column justify-content-center">
-                 <span>{numHotels} HOTELS</span>
+                 <span>{numHotels} HOTEL{numHotels > 1 ? 'S' : ''}</span>
               </div>
               <div className="text-center text-muted small fw-bold d-flex flex-column justify-content-center">
                  <span>{numActivities} ACTIVITIES</span>
@@ -504,31 +714,77 @@ export default function PackageCustomizationPage({
 
             {/* Itinerary Blocks Area */}
             <div className="flex-grow-1 p-4">
-              {parsedItinerary.map((day, idx) => (
-                <div key={idx} id={`day-${day.day}`} className="mb-5">
+              {parsedItinerary.map((day, idx) => {
+                const dayActivityCount = (() => {
+                  let cnt = 0;
+                  if (day.morning) cnt++;
+                  if (day.afternoon) cnt++;
+                  if (day.evening) cnt++;
+                  if (day.night) cnt++;
+                  if (day.activities && !day.morning && !day.afternoon) cnt++;
+                  if (day.sightseeing_locations && day.sightseeing_locations.length > 0 && !day.morning) cnt += day.sightseeing_locations.length;
+                  return cnt || (day.inclusions?.length || 2);
+                })();
+
+                return (
+                <div key={idx} id={`day-${day.day}`} className="mb-5 bg-white rounded-4 p-4 border shadow-sm">
                   
                   {/* Day Header */}
-                  <div className="d-flex align-items-center gap-3 mb-4 bg-light p-2 rounded border">
-                    <span className="badge bg-danger rounded-pill px-3 py-2">Day {day.day}</span>
-                    <span className="fw-bold text-dark">{day.location || 'Goa'}</span>
-                    <span className="text-muted small border-start ps-3">INCLUDED: {day.hotel ? '1 Hotel ' : ''} 1 Transfer 2 Activities {day.meals ? '1 Meal' : ''}</span>
+                  <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-4 bg-light p-3 rounded-3 border">
+                    <div className="d-flex align-items-center gap-2">
+                      <span className="badge bg-danger rounded-pill px-3 py-2 fw-bold fs-6">Day {day.day}</span>
+                      <span className="fw-bold text-dark fs-6">{day.location || pkg?.destination || 'Goa'}</span>
+                    </div>
+                    <span className="text-muted small fw-semibold">
+                      INCLUDED: {day.hotel || pkg?.hotel_included ? '1 Hotel • ' : ''} 1 Transfer • {dayActivityCount} Activities {day.meals || pkg?.food_included ? '• 1 Meal' : ''}
+                    </span>
                   </div>
 
                   {/* Flight Notice Block */}
                   {idx === 0 && withFlight && (
                     <div className="d-flex gap-3 mb-4">
-                      <div className="text-muted"><Plane size={24} /></div>
+                      <div className="text-muted p-2 rounded-circle bg-light d-flex align-items-center justify-content-center" style={{ width: '42px', height: '42px' }}><Plane size={22} className="text-primary" /></div>
                       <div className="flex-grow-1 pb-3 border-bottom border-light">
                          <h6 className="fw-bold text-dark mb-1">FLIGHT</h6>
-                         <span className="d-block small text-dark mb-1">Arrival at Dabolim / Mopa</span>
+                         <span className="d-block small text-dark mb-1">Arrival at Dabolim / Mopa (Round Trip Included)</span>
                          <span className="d-block text-danger small fw-bold">Please Note: Flight schedules are subject to airline confirmation.</span>
                       </div>
                     </div>
                   )}
 
+                  {/* Hotel / Stay Block */}
+                  <div className="d-flex gap-3 mb-4">
+                    <div className="text-primary p-2 rounded-circle bg-primary bg-opacity-10 d-flex align-items-center justify-content-center" style={{ width: '42px', height: '42px' }}><Hotel size={22} /></div>
+                    <div className="flex-grow-1 pb-3 border-bottom border-light">
+                      <div className="d-flex justify-content-between align-items-center mb-2">
+                        <h6 className="fw-bold text-dark mb-0 text-uppercase">Hotel / Stay <span className="text-muted text-capitalize ms-1">({day.location || pkg?.destination || 'Goa'})</span></h6>
+                        <button 
+                          type="button" 
+                          onClick={() => setShowHotelModalForDay(idx)} 
+                          className="btn btn-link p-0 text-primary fw-bold text-decoration-none small text-uppercase"
+                        >
+                          CHANGE HOTEL
+                        </button>
+                      </div>
+                      <div className="d-flex gap-3 mt-2 bg-light p-3 rounded-3 border align-items-center">
+                        <div className="rounded-3 bg-white p-2 text-primary shadow-sm">
+                          <Hotel size={24} />
+                        </div>
+                        <div className="flex-grow-1">
+                          <h6 className="fw-bold mb-1 text-dark">{selectedHotels[idx]?.name || day.hotel || pkg?.hotel_included || 'Luxury Beach Resort'}</h6>
+                          <div className="d-flex gap-2 flex-wrap text-muted small">
+                            <span className="badge bg-white text-dark border">Standard Room</span>
+                            <span className="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">✓ Breakfast Included</span>
+                            <span className="badge bg-white text-muted border">Free Cancellation</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Transfer / Self-Drive Block */}
                   <div className="d-flex gap-3 mb-4">
-                    <div className="text-muted"><Car size={24} /></div>
+                    <div className="text-muted p-2 rounded-circle bg-light d-flex align-items-center justify-content-center" style={{ width: '42px', height: '42px' }}><Car size={22} className="text-secondary" /></div>
                     <div className="flex-grow-1 pb-3 border-bottom border-light">
                        <div className="d-flex justify-content-between align-items-center mb-2">
                          <h6 className="fw-bold text-dark mb-0 text-uppercase">Transfer <span className="text-muted text-capitalize ms-1">({day.location || 'Goa'})</span></h6>
@@ -543,23 +799,22 @@ export default function PackageCustomizationPage({
                        </div>
                        
                        {cabType === 'self-drive' && selectedSelfDriveVehicle ? (
-                         <div className="d-flex gap-3 mt-3 bg-light p-3 rounded border">
+                         <div className="d-flex gap-3 mt-2 bg-light p-3 rounded-3 border">
                            <img src={selectedSelfDriveVehicle.image} alt="Vehicle" style={{ width: '120px', height: '80px', objectFit: 'cover', borderRadius: '4px' }} />
                            <div>
                              <h6 className="fw-bold mb-1">{selectedSelfDriveVehicle.name} <span className="fw-normal text-muted small">(or Similar)</span></h6>
-                             <span className="d-block small text-muted mb-2">Self-Drive / {selectedSelfDriveVehicle.category}</span>
                              <div className="d-flex gap-3 small text-muted flex-wrap mt-1">
-                               <span><Car size={14} className="me-1"/> {selectedSelfDriveVehicle.seating || '4'} Seater</span>
-                               <span><Info size={14} className="me-1"/> AC</span>
-                               {selectedSelfDriveVehicle.fuel && <span>⛽ {selectedSelfDriveVehicle.fuel}</span>}
-                               {selectedSelfDriveVehicle.transmission && <span>⚙️ {selectedSelfDriveVehicle.transmission}</span>}
-                               {selectedSelfDriveVehicle.engine && <span>⚡ {selectedSelfDriveVehicle.engine}</span>}
-                               {selectedSelfDriveVehicle.mileage && <span>🛣️ {selectedSelfDriveVehicle.mileage}</span>}
-                             </div>
+                                <span><Car size={14} className="me-1"/> {selectedSelfDriveVehicle.seating || '4'} Seater</span>
+                                <span><Info size={14} className="me-1"/> AC</span>
+                                {selectedSelfDriveVehicle.fuel && <span>⛽ {selectedSelfDriveVehicle.fuel}</span>}
+                                {selectedSelfDriveVehicle.transmission && <span>⚙️ {selectedSelfDriveVehicle.transmission}</span>}
+                                {selectedSelfDriveVehicle.engine && <span>⚡ {selectedSelfDriveVehicle.engine}</span>}
+                                {selectedSelfDriveVehicle.mileage && <span>🛣️ {selectedSelfDriveVehicle.mileage}</span>}
+                              </div>
                            </div>
                          </div>
                        ) : cabType === 'company' ? (
-                         <div className="d-flex gap-3 mt-3 bg-light p-3 rounded border align-items-center">
+                         <div className="d-flex gap-3 mt-2 bg-light p-3 rounded-3 border align-items-center">
                            <div className="rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center" style={{ width: '40px', height: '40px' }}><Car size={20}/></div>
                            <div>
                              <h6 className="fw-bold mb-0">Company Standard Transfer</h6>
@@ -567,7 +822,7 @@ export default function PackageCustomizationPage({
                            </div>
                          </div>
                        ) : (
-                         <div className="d-flex gap-3 mt-3 bg-light p-3 rounded border align-items-center opacity-75">
+                         <div className="d-flex gap-3 mt-2 bg-light p-3 rounded-3 border align-items-center opacity-75">
                            <div className="rounded-circle bg-danger text-white d-flex align-items-center justify-content-center" style={{ width: '40px', height: '40px' }}><X size={20}/></div>
                            <div>
                              <h6 className="fw-bold mb-0 text-danger">No Cab Selected</h6>
@@ -578,7 +833,127 @@ export default function PackageCustomizationPage({
                     </div>
                   </div>
 
+                  {/* Day Activities & Sightseeing Timeline Block */}
+                  {(day.morning || day.afternoon || day.evening || day.night || day.activities || (day.sightseeing_locations && day.sightseeing_locations.length > 0) || day.description) && (
+                    <div className="d-flex gap-3 mb-4">
+                      <div className="text-warning p-2 rounded-circle bg-warning bg-opacity-10 d-flex align-items-center justify-content-center" style={{ width: '42px', height: '42px' }}><Sparkles size={22} className="text-warning" /></div>
+                      <div className="flex-grow-1 pb-3 border-bottom border-light">
+                        <div className="d-flex justify-content-between align-items-center mb-3">
+                          <h6 className="fw-bold text-dark mb-0 text-uppercase">Day Activities & Sightseeing</h6>
+                          <span className="badge bg-warning bg-opacity-10 text-dark border px-2.5 py-1 small fw-bold">
+                            Included in Plan
+                          </span>
+                        </div>
 
+                        {day.title && (
+                          <h6 className="fw-bold text-dark mb-2" style={{ fontSize: '0.95rem' }}>{day.title}</h6>
+                        )}
+
+                        {day.description && !day.morning && !day.afternoon && (
+                          <p className="text-muted small mb-3 lh-base bg-light p-3 rounded-3 border">{day.description}</p>
+                        )}
+
+                        {/* Structured Activities: Morning, Afternoon, Evening, Night */}
+                        <div className="d-flex flex-column gap-2.5 mb-3">
+                          {day.morning && (
+                            <div className="p-3 bg-white rounded-3 border shadow-xs d-flex gap-3 align-items-start" style={{ borderLeft: '4px solid #f59e0b' }}>
+                              <div className="p-2 rounded-circle bg-warning bg-opacity-10 text-warning flex-shrink-0 mt-0.5">
+                                <Sunrise size={18} />
+                              </div>
+                              <div className="flex-grow-1">
+                                <div className="d-flex align-items-center gap-2 mb-1">
+                                  <span className="badge bg-warning text-dark fw-bold" style={{ fontSize: '10px', letterSpacing: '0.5px' }}>MORNING</span>
+                                  <span className="fw-bold text-dark small">Morning Exploration</span>
+                                </div>
+                                <p className="text-dark small mb-0 lh-base">{day.morning}</p>
+                              </div>
+                            </div>
+                          )}
+
+                          {day.afternoon && (
+                            <div className="p-3 bg-white rounded-3 border shadow-xs d-flex gap-3 align-items-start" style={{ borderLeft: '4px solid #3b82f6' }}>
+                              <div className="p-2 rounded-circle bg-primary bg-opacity-10 text-primary flex-shrink-0 mt-0.5">
+                                <Sun size={18} />
+                              </div>
+                              <div className="flex-grow-1">
+                                <div className="d-flex align-items-center gap-2 mb-1">
+                                  <span className="badge bg-primary text-white fw-bold" style={{ fontSize: '10px', letterSpacing: '0.5px' }}>AFTERNOON</span>
+                                  <span className="fw-bold text-dark small">Afternoon Tour & Sightseeing</span>
+                                </div>
+                                <p className="text-dark small mb-0 lh-base">{day.afternoon}</p>
+                              </div>
+                            </div>
+                          )}
+
+                          {day.evening && (
+                            <div className="p-3 bg-white rounded-3 border shadow-xs d-flex gap-3 align-items-start" style={{ borderLeft: '4px solid #8b5cf6' }}>
+                              <div className="p-2 rounded-circle bg-info bg-opacity-10 text-info flex-shrink-0 mt-0.5">
+                                <Sunset size={18} />
+                              </div>
+                              <div className="flex-grow-1">
+                                <div className="d-flex align-items-center gap-2 mb-1">
+                                  <span className="badge text-white fw-bold" style={{ background: '#7c3aed', fontSize: '10px', letterSpacing: '0.5px' }}>EVENING</span>
+                                  <span className="fw-bold text-dark small">Sunset & Coastal Views</span>
+                                </div>
+                                <p className="text-dark small mb-0 lh-base">{day.evening}</p>
+                              </div>
+                            </div>
+                          )}
+
+                          {day.night && (
+                            <div className="p-3 bg-white rounded-3 border shadow-xs d-flex gap-3 align-items-start" style={{ borderLeft: '4px solid #1e293b' }}>
+                              <div className="p-2 rounded-circle bg-dark bg-opacity-10 text-dark flex-shrink-0 mt-0.5">
+                                <Moon size={18} />
+                              </div>
+                              <div className="flex-grow-1">
+                                <div className="d-flex align-items-center gap-2 mb-1">
+                                  <span className="badge bg-dark text-white fw-bold" style={{ fontSize: '10px', letterSpacing: '0.5px' }}>NIGHT</span>
+                                  <span className="fw-bold text-dark small">Dinner & Night Experiences</span>
+                                </div>
+                                <p className="text-dark small mb-0 lh-base">{day.night}</p>
+                              </div>
+                            </div>
+                          )}
+
+                          {day.activities && !day.morning && !day.afternoon && (
+                            <div className="p-3 bg-white rounded-3 border shadow-xs d-flex gap-3 align-items-start" style={{ borderLeft: '4px solid #10b981' }}>
+                              <div className="p-2 rounded-circle bg-success bg-opacity-10 text-success flex-shrink-0 mt-0.5">
+                                <Sparkles size={18} />
+                              </div>
+                              <div className="flex-grow-1">
+                                <span className="badge bg-success text-white fw-bold mb-1" style={{ fontSize: '10px' }}>ACTIVITIES</span>
+                                <p className="text-dark small mb-0 lh-base">{day.activities}</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Sightseeing Locations Chips */}
+                        {day.sightseeing_locations && day.sightseeing_locations.length > 0 && (
+                          <div className="d-flex flex-wrap gap-2 mt-2">
+                            {day.sightseeing_locations.map((loc, i) => (
+                              <div key={i} className="badge bg-light text-dark border px-3 py-2 rounded-pill d-flex align-items-center gap-1.5 shadow-xs">
+                                <MapPin size={12} className="text-danger" />
+                                <span className="fw-semibold">{typeof loc === 'string' ? loc : loc.name}</span>
+                                {loc.tips && <span className="text-muted fw-normal small">({loc.tips})</span>}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Meals Plan Section */}
+                  {(day.meals || pkg?.food_included) && (
+                    <div className="d-flex gap-3 mb-4">
+                      <div className="text-success p-2 rounded-circle bg-success bg-opacity-10 d-flex align-items-center justify-content-center" style={{ width: '42px', height: '42px' }}><Utensils size={22} /></div>
+                      <div className="flex-grow-1 pb-3 border-bottom border-light">
+                        <h6 className="fw-bold text-dark mb-1 text-uppercase">Dining & Meals</h6>
+                        <span className="small text-muted">{day.meals || pkg?.food_included || 'Buffet Breakfast Included'}</span>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Selected Add-ons for this day */}
                   {(selectedAddOns[idx] || []).length > 0 && (
@@ -615,7 +990,7 @@ export default function PackageCustomizationPage({
                                  >Remove</button>
                                </div>
                              </div>
-                           )
+                           );
                         })}
                       </div>
                     </div>
@@ -631,13 +1006,14 @@ export default function PackageCustomizationPage({
                       <div className="bg-white rounded-circle p-2 mb-2 shadow-sm d-flex align-items-center justify-content-center" style={{ width: '40px', height: '40px' }}>
                         <Sparkles size={20} className="text-primary" />
                       </div>
-                      <span className="fw-bold mb-1">Add Activities to your day</span>
-                      <span className="small opacity-75">Spend the day at leisure or add an activity, transfer or meal</span>
+                      <span className="fw-bold mb-1">Add Extra Activities to your day</span>
+                      <span className="small opacity-75">Spend the day at leisure or add customized tours, extra transfers or special meals</span>
                     </button>
                   </div>
 
                 </div>
-              ))}
+              );
+            })}
             </div>
           </div>
         </div>

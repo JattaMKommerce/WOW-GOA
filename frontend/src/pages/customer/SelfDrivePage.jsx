@@ -1,17 +1,16 @@
-import React, { useState, useMemo } from 'react';
-import { Filter, Car, Hotel, Plane, Utensils, MapPin, Check, ChevronDown, ChevronRight, ChevronLeft, AlertCircle, RotateCcw } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Filter, Car, Hotel, Plane, Utensils, MapPin, Check, ChevronDown, ChevronRight, ChevronLeft, AlertCircle, RotateCcw, X, Sparkles, SlidersHorizontal } from 'lucide-react';
 
 export default function SelfDrivePage({
   handleOpenBooking,
   onViewDetails,
   packages = [],
-  searchQuery,
+  searchQuery = '',
   onClearSearch,
-  markups = []
+  markups = [],
+  appliedFilters = {},
+  setAppliedFilters
 }) {
-  const [selectedPriceRanges, setSelectedPriceRanges] = useState([]);
-  const [selectedFlightStatus, setSelectedFlightStatus] = useState(null); // 'with', 'without', null
-  const [selectedHotelCategories, setSelectedHotelCategories] = useState([]);
   const [activeTab, setActiveTab] = useState('ALL PACKAGES');
 
   const normalizePrice = (priceStr) => {
@@ -38,37 +37,18 @@ export default function SelfDrivePage({
       } catch (e) {}
     }
     if (nights === 0 && pkg.duration) {
-       const nMatch = pkg.duration.match(/(\d+)\s*Nights?/i);
-       if (nMatch) nights = parseInt(nMatch[1]);
-       else {
-           const dMatch = pkg.duration.match(/(\d+)\s*Days?/i);
-           if (dMatch) nights = Math.max(1, parseInt(dMatch[1]) - 1);
-       }
+      const nMatch = pkg.duration.match(/(\d+)\s*Nights?/i);
+      if (nMatch) nights = parseInt(nMatch[1]);
+      else {
+        const dMatch = pkg.duration.match(/(\d+)\s*Days?/i);
+        if (dMatch) nights = Math.max(1, parseInt(dMatch[1]) - 1);
+      }
     }
     return nights || 3;
   };
 
-  // 1. Filter packages by TAB (Theme) first
-  const tabFilteredPackages = useMemo(() => {
-    if (!packages || packages.length === 0) return [];
-    if (activeTab === 'ALL PACKAGES') return packages;
-    return packages.filter(pkg => {
-      const tagUpper = (pkg.tag || '').toUpperCase();
-      const typeUpper = (pkg.package_type || '').toUpperCase();
-      const catUpper = (pkg.category || '').toUpperCase();
-      return tagUpper.includes(activeTab) || typeUpper.includes(activeTab) || catUpper.includes(activeTab);
-    });
-  }, [packages, activeTab]);
-
-  // Calculate dynamic max bounds based on data
-  const maxDataNightsRaw = Math.max(10, ...tabFilteredPackages.map(getPackageNights));
-  const maxDataPriceRaw = Math.max(60000, ...tabFilteredPackages.map(p => normalizePrice(p.price)));
-  
-  const maxDataNights = maxDataNightsRaw;
-  const maxDataPrice = Math.ceil(maxDataPriceRaw / 1000) * 1000;
-
   const getMarkupPrice = (basePrice, vendorId, entityType, itemId = 'all') => {
-    if (!markups) return basePrice;
+    if (!markups || !Array.isArray(markups)) return basePrice;
     
     // 1. Item-specific markup for this vendor
     let applicableMarkup = markups.find(m => m.entity_type === entityType && m.vendor_id == vendorId && m.item_id == itemId);
@@ -93,45 +73,15 @@ export default function SelfDrivePage({
     return basePrice;
   };
 
+  // Base list of packages with markup prices applied
   const displayPackages = useMemo(() => {
-    return tabFilteredPackages.map(pkg => ({
+    return (packages || []).map(pkg => ({
       ...pkg,
       price: getMarkupPrice(normalizePrice(pkg.price), pkg.vendor_id || 'global', 'packages', pkg.id)
     }));
-  }, [tabFilteredPackages, markups]);
+  }, [packages, markups]);
 
-  const [durationRange, setDurationRange] = useState({ min: 1, max: 15 });
-  const [budgetRange, setBudgetRange] = useState({ min: 0, max: 100000 });
-
-  // Update max values when data changes
-  React.useEffect(() => {
-     setDurationRange({ min: 1, max: Math.max(15, maxDataNights) });
-     setBudgetRange({ min: 0, max: Math.max(100000, maxDataPrice) });
-  }, [maxDataNights, maxDataPrice]);
-
-  // Price ranges definition
-  const priceRanges = [
-    { id: '< ₹15,000', label: '< ₹15,000', match: (p) => p < 15000 },
-    { id: '₹15,000 - ₹20,000', label: '₹15,000 - ₹20,000', match: (p) => p >= 15000 && p <= 20000 },
-    { id: '> ₹20,000', label: '> ₹20,000', match: (p) => p > 20000 }
-  ];
-
-  // Hotel categories
-  const hotelCategories = [
-    { id: '3', label: '3★' },
-    { id: '4', label: '4★' },
-    { id: '5', label: '5★' }
-  ];
-
-  const handleResetFilters = () => {
-    setSelectedPriceRanges([]);
-    setSelectedFlightStatus(null);
-    setSelectedHotelCategories([]);
-    setActiveTab('ALL PACKAGES');
-    if (onClearSearch) onClearSearch();
-  };
-
-  // 2. Extract unique themes for Tabs WITH counts
+  // Extract unique themes for Tabs WITH counts
   const tabs = useMemo(() => {
     const counts = { 'ALL PACKAGES': (packages || []).length };
     (packages || []).forEach(pkg => {
@@ -143,18 +93,112 @@ export default function SelfDrivePage({
     return Object.keys(counts).map(t => ({ id: t, label: t, count: counts[t] }));
   }, [packages]);
 
-  // Compute counts for Sidebar Filters based on current TAB filter
-  const flightWithCount = tabFilteredPackages.filter(p => hasFlight(p)).length;
-  const flightWithoutCount = tabFilteredPackages.filter(p => !hasFlight(p)).length;
+  // Extract filter parameters from appliedFilters prop
+  const activePriceRanges = appliedFilters?.priceRanges || [];
+  const activeHotelStars = appliedFilters?.hotelStars || [];
+  const activeTripTypes = appliedFilters?.tripTypes || [];
+  const activeDurations = appliedFilters?.durations || [];
+  const activeInclusions = appliedFilters?.inclusions || [];
 
-  const getPriceCount = (range) => displayPackages.filter(p => {
-     const price = normalizePrice(p.price);
-     return range.match(price);
-  }).length;
+  const totalActiveFiltersCount = 
+    activePriceRanges.length +
+    activeHotelStars.length +
+    activeTripTypes.length +
+    activeDurations.length +
+    activeInclusions.length +
+    (activeTab !== 'ALL PACKAGES' ? 1 : 0);
 
-  // Flexible and forgiving filter execution
+  // Helper matching functions
+  const checkPriceRange = (price, rangeId) => {
+    if (rangeId === '< 15000' || rangeId === '< ₹15,000' || rangeId === '< 15k') {
+      return price < 15000;
+    }
+    if (rangeId === '15000-25000' || rangeId === '₹15,000 - ₹20,000' || rangeId === '₹15,000 - ₹25,000' || rangeId === '15k - 25k') {
+      return price >= 15000 && price <= 25000;
+    }
+    if (rangeId === '> 25000' || rangeId === '> ₹20,000' || rangeId === '> ₹25k') {
+      return price > 25000 || price > 20000;
+    }
+    return true;
+  };
+
+  const checkHotelStar = (pkg, starId) => {
+    const s = String(starId).replace(/[^\d]/g, '') || String(starId);
+    const hotelStr = `${pkg.hotel_included || ''} ${pkg.hotel_category || ''} ${pkg.hotel_stars || ''} ${pkg.tag || ''}`.toLowerCase();
+    
+    if (s === '5') {
+      return hotelStr.includes('5') || hotelStr.includes('5-star') || hotelStr.includes('5 star') || hotelStr.includes('5★') || hotelStr.includes('luxury') || hotelStr.includes('w goa') || hotelStr.includes('marriott') || hotelStr.includes('taj');
+    }
+    if (s === '4') {
+      return hotelStr.includes('4') || hotelStr.includes('4-star') || hotelStr.includes('4 star') || hotelStr.includes('4★') || hotelStr.includes('premium') || hotelStr.includes('resort');
+    }
+    if (s === '3') {
+      return hotelStr.includes('3') || hotelStr.includes('3-star') || hotelStr.includes('3 star') || hotelStr.includes('3★') || hotelStr.includes('standard') || (!hotelStr.includes('5') && !hotelStr.includes('4'));
+    }
+    return true;
+  };
+
+  const checkThemeMatch = (pkg, theme) => {
+    const t = theme.toLowerCase();
+    const pkgText = `${pkg.name || ''} ${pkg.tag || ''} ${pkg.category || ''} ${pkg.package_type || ''} ${pkg.description || ''} ${pkg.places_included || ''}`.toLowerCase();
+
+    if (t === 'family') {
+      return pkgText.includes('family') || pkgText.includes('popular') || pkgText.includes('explorer') || pkgText.includes('sightseeing') || !pkgText.includes('honeymoon');
+    }
+    if (t === 'couple') {
+      return pkgText.includes('couple') || pkgText.includes('romantic') || pkgText.includes('honeymoon') || pkgText.includes('sunset') || pkgText.includes('candlelight');
+    }
+    if (t === 'honeymoon') {
+      return pkgText.includes('honeymoon') || pkgText.includes('romantic') || pkgText.includes('couple') || pkgText.includes('candlelight');
+    }
+    if (t === 'adventure') {
+      return pkgText.includes('adventure') || pkgText.includes('water sports') || pkgText.includes('sports') || pkgText.includes('scuba') || pkgText.includes('trek') || pkgText.includes('thar') || pkgText.includes('4x4') || pkgText.includes('explorer');
+    }
+    if (t === 'luxury') {
+      return pkgText.includes('luxury') || pkgText.includes('audi') || pkgText.includes('cabriolet') || pkgText.includes('convertible') || pkgText.includes('5-star') || pkgText.includes('5★') || pkgText.includes('w goa') || pkgText.includes('marriott') || normalizePrice(pkg.price) >= 20000;
+    }
+    if (t === 'self drive') {
+      return (pkg.package_type || '').toLowerCase().includes('self drive') || !!pkg.car_included || !!pkg.self_drive_included;
+    }
+    return pkgText.includes(t);
+  };
+
+  const checkDurationMatch = (pkg, durLabel) => {
+    const nights = getPackageNights(pkg);
+    const days = nights + 1;
+    if (durLabel.includes('1-3')) {
+      return days <= 3 || nights <= 2;
+    }
+    if (durLabel.includes('4-6')) {
+      return (days >= 4 && days <= 6) || (nights >= 3 && nights <= 5);
+    }
+    if (durLabel.includes('7+')) {
+      return days >= 7 || nights >= 6;
+    }
+    return true;
+  };
+
+  const checkInclusionMatch = (pkg, incLabel) => {
+    const inc = incLabel.toLowerCase();
+    if (inc.includes('flight')) {
+      return hasFlight(pkg);
+    }
+    if (inc.includes('cab') || inc.includes('car') || inc.includes('drive')) {
+      return !!pkg.car_included || !!pkg.self_drive_included || !!pkg.is_cab_customizable || !!pkg.pickup_drop_included;
+    }
+    if (inc.includes('meal') || inc.includes('food')) {
+      const foodStr = (pkg.food_included || pkg.meals_included || '').toLowerCase();
+      return !!pkg.food_included || !!pkg.meals_included || (foodStr && !foodStr.includes('no meal'));
+    }
+    return true;
+  };
+
+  // Filter packages based on all active criteria
   const filteredPackages = useMemo(() => {
-    const results = displayPackages.filter(pkg => {
+    return displayPackages.filter(pkg => {
+      const pkgPrice = normalizePrice(pkg.price);
+
+      // 1. Destination / Search query matching
       const q = (searchQuery || '').toLowerCase().trim();
       const searchMatch = !q || 
                           q === 'goa' || 
@@ -172,128 +216,216 @@ export default function SelfDrivePage({
 
       if (!searchMatch) return false;
 
-      const pkgPrice = normalizePrice(pkg.price);
-      const nights = getPackageNights(pkg);
-
-      // Filter by actual Slider Range (Inclusive Bounds)
-      if (durationRange?.max && (nights < durationRange.min || nights > durationRange.max)) return false;
-      if (budgetRange?.max && (pkgPrice < budgetRange.min || pkgPrice > budgetRange.max)) return false;
-
-      // Checkboxes Budget Filter (if any selected, must match at least one)
-      if (selectedPriceRanges.length > 0) {
-        const matchesPriceCheckbox = selectedPriceRanges.some(id => {
-          const range = priceRanges.find(r => r.id === id);
-          return range && range.match(pkgPrice);
-        });
-        if (!matchesPriceCheckbox) return false;
+      // 2. Top Tab theme filter (if not ALL PACKAGES)
+      if (activeTab !== 'ALL PACKAGES') {
+        const tagUpper = (pkg.tag || '').toUpperCase();
+        const typeUpper = (pkg.package_type || '').toUpperCase();
+        const catUpper = (pkg.category || '').toUpperCase();
+        const nameUpper = (pkg.name || '').toUpperCase();
+        const tabMatch = tagUpper.includes(activeTab) || typeUpper.includes(activeTab) || catUpper.includes(activeTab) || nameUpper.includes(activeTab);
+        if (!tabMatch) return false;
       }
 
-      // Flights
-      if (selectedFlightStatus === 'with' && !hasFlight(pkg)) return false;
-      if (selectedFlightStatus === 'without' && hasFlight(pkg)) return false;
+      // 3. Price Ranges filter (OR logic: matches if price falls in any selected range)
+      if (activePriceRanges.length > 0) {
+        const matchesPrice = activePriceRanges.some(rangeId => checkPriceRange(pkgPrice, rangeId));
+        if (!matchesPrice) return false;
+      }
 
-      // Hotels
-      if (selectedHotelCategories.length > 0) {
-        if (!pkg.hotel_included) return true; // Don't strictly discard if not specified
-        const matchesHotel = selectedHotelCategories.some(cat => 
-          String(pkg.hotel_included).includes(`${cat} Star`) || 
-          String(pkg.hotel_included).includes(`${cat}★`) ||
-          String(pkg.hotel_category || '').includes(cat)
-        );
-        if (!matchesHotel) return false;
+      // 4. Hotel Stars filter (OR logic: matches if hotel fits any selected star category)
+      if (activeHotelStars.length > 0) {
+        const matchesStars = activeHotelStars.some(starId => checkHotelStar(pkg, starId));
+        if (!matchesStars) return false;
+      }
+
+      // 5. Trip Theme / Types filter (OR logic: matches if package fits any selected theme)
+      if (activeTripTypes.length > 0) {
+        const matchesTheme = activeTripTypes.some(theme => checkThemeMatch(pkg, theme));
+        if (!matchesTheme) return false;
+      }
+
+      // 6. Duration filter (OR logic)
+      if (activeDurations.length > 0) {
+        const matchesDur = activeDurations.some(dur => checkDurationMatch(pkg, dur));
+        if (!matchesDur) return false;
+      }
+
+      // 7. Inclusions filter (AND logic: package must include all selected inclusions)
+      if (activeInclusions.length > 0) {
+        const matchesIncs = activeInclusions.every(inc => checkInclusionMatch(pkg, inc));
+        if (!matchesIncs) return false;
       }
 
       return true;
     });
+  }, [displayPackages, searchQuery, activeTab, activePriceRanges, activeHotelStars, activeTripTypes, activeDurations, activeInclusions]);
 
-    console.log('[SelfDrivePage Filter Evaluation]', {
-      totalPackages: (packages || []).length,
-      tabFiltered: tabFilteredPackages.length,
-      matchedPackages: results.length,
-      searchQuery,
-      activeTab
-    });
+  // Handler to remove a specific filter
+  const removeFilter = (type, value) => {
+    if (!setAppliedFilters) return;
+    const current = { ...appliedFilters };
+    if (type === 'priceRanges') {
+      current.priceRanges = (current.priceRanges || []).filter(v => v !== value);
+    } else if (type === 'hotelStars') {
+      current.hotelStars = (current.hotelStars || []).filter(v => v !== value);
+    } else if (type === 'tripTypes') {
+      current.tripTypes = (current.tripTypes || []).filter(v => v !== value);
+    } else if (type === 'durations') {
+      current.durations = (current.durations || []).filter(v => v !== value);
+    } else if (type === 'inclusions') {
+      current.inclusions = (current.inclusions || []).filter(v => v !== value);
+    }
+    setAppliedFilters(current);
+  };
 
-    return results;
-  }, [displayPackages, searchQuery, durationRange, budgetRange, selectedPriceRanges, selectedFlightStatus, selectedHotelCategories]);
-
-  // Fallback to displayPackages if strict criteria returned 0
-  const packagesToRender = filteredPackages.length > 0 ? filteredPackages : displayPackages;
-  const isFallbackView = filteredPackages.length === 0 && displayPackages.length > 0;
+  const handleClearAllFilters = () => {
+    setActiveTab('ALL PACKAGES');
+    if (setAppliedFilters) {
+      setAppliedFilters({
+        priceRanges: [],
+        hotelStars: [],
+        tripTypes: [],
+        durations: [],
+        inclusions: []
+      });
+    }
+    if (onClearSearch) onClearSearch();
+  };
 
   return (
-    <div className="animate-fade-in-up container px-3 px-md-0 pt-4" style={{ minHeight: '100vh' }}>
+    <div className="animate-fade-in-up container px-3 px-md-0 pt-4" style={{ minHeight: '80vh' }}>
       
       {/* TOP TABS BAR */}
-      <div className="d-flex align-items-center mb-4 border-bottom pb-2">
-         <h4 className="fw-bold text-dark mb-0 me-4">Holiday Packages</h4>
-         <div className="d-flex gap-4 overflow-auto no-scrollbar">
-            {tabs.map(tab => (
-              <button 
-                key={tab.id}
-                type="button"
-                className={`btn btn-link text-decoration-none fw-bold p-0 position-relative tab-mmt ${activeTab === tab.id ? 'active' : ''}`}
-                onClick={() => setActiveTab(tab.id)}
-                style={{ fontSize: '14px' }}
-              >
-                {tab.label} <span className="text-muted fw-normal">({tab.count})</span>
-              </button>
-            ))}
-         </div>
+      <div className="d-flex align-items-center mb-3 border-bottom pb-2">
+        <h4 className="fw-bold text-dark mb-0 me-4 d-flex align-items-center gap-2">
+          <Sparkles size={20} className="text-primary" /> Holiday Packages
+        </h4>
+        <div className="d-flex gap-4 overflow-auto no-scrollbar py-1">
+          {tabs.map(tab => (
+            <button 
+              key={tab.id}
+              type="button"
+              className={`btn btn-link text-decoration-none fw-bold p-0 position-relative tab-mmt ${activeTab === tab.id ? 'active' : ''}`}
+              onClick={() => setActiveTab(tab.id)}
+              style={{ fontSize: '14px', whiteSpace: 'nowrap' }}
+            >
+              {tab.label} <span className="text-muted fw-normal">({tab.count})</span>
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Fallback Notice Banner */}
-      {isFallbackView && (
-        <div className="alert alert-info d-flex align-items-center justify-content-between p-3 rounded-4 mb-4 border-0 shadow-sm" style={{ background: '#f0fdf4', borderLeft: '4px solid #10b981' }}>
-          <div className="d-flex align-items-center gap-2">
-            <AlertCircle size={20} className="text-success flex-shrink-0" />
-            <span className="text-dark small fw-semibold">
-              No packages matched all strict filter parameters for "{searchQuery || activeTab}". Showing all available curated Goa packages.
+      {/* ACTIVE FILTERS CHIPS BAR */}
+      {totalActiveFiltersCount > 0 && (
+        <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4 p-3 bg-light rounded-4 border">
+          <div className="d-flex align-items-center flex-wrap gap-2">
+            <span className="small text-muted fw-bold d-flex align-items-center gap-1">
+              <SlidersHorizontal size={14} className="text-primary" /> Active Filters:
             </span>
+            
+            {activeTab !== 'ALL PACKAGES' && (
+              <span className="badge bg-white text-dark border px-3 py-2 rounded-pill d-flex align-items-center gap-1 shadow-xs">
+                Theme: {activeTab}
+                <button type="button" className="btn-close btn-close-xs ms-1" style={{ fontSize: '9px' }} onClick={() => setActiveTab('ALL PACKAGES')}></button>
+              </span>
+            )}
+
+            {activePriceRanges.map(pr => (
+              <span key={pr} className="badge bg-white text-dark border px-3 py-2 rounded-pill d-flex align-items-center gap-1 shadow-xs">
+                Budget: {pr.replace('< 15000', '< ₹15k').replace('15000-25000', '₹15k - ₹25k').replace('> 25000', '> ₹25k')}
+                <button type="button" className="btn-close btn-close-xs ms-1" style={{ fontSize: '9px' }} onClick={() => removeFilter('priceRanges', pr)}></button>
+              </span>
+            ))}
+
+            {activeHotelStars.map(st => (
+              <span key={st} className="badge bg-white text-dark border px-3 py-2 rounded-pill d-flex align-items-center gap-1 shadow-xs">
+                Hotel: {st}★
+                <button type="button" className="btn-close btn-close-xs ms-1" style={{ fontSize: '9px' }} onClick={() => removeFilter('hotelStars', st)}></button>
+              </span>
+            ))}
+
+            {activeTripTypes.map(tt => (
+              <span key={tt} className="badge bg-white text-dark border px-3 py-2 rounded-pill d-flex align-items-center gap-1 shadow-xs">
+                Theme: {tt}
+                <button type="button" className="btn-close btn-close-xs ms-1" style={{ fontSize: '9px' }} onClick={() => removeFilter('tripTypes', tt)}></button>
+              </span>
+            ))}
+
+            {activeDurations.map(dur => (
+              <span key={dur} className="badge bg-white text-dark border px-3 py-2 rounded-pill d-flex align-items-center gap-1 shadow-xs">
+                Duration: {dur}
+                <button type="button" className="btn-close btn-close-xs ms-1" style={{ fontSize: '9px' }} onClick={() => removeFilter('durations', dur)}></button>
+              </span>
+            ))}
+
+            {activeInclusions.map(inc => (
+              <span key={inc} className="badge bg-white text-dark border px-3 py-2 rounded-pill d-flex align-items-center gap-1 shadow-xs">
+                {inc}
+                <button type="button" className="btn-close btn-close-xs ms-1" style={{ fontSize: '9px' }} onClick={() => removeFilter('inclusions', inc)}></button>
+              </span>
+            ))}
           </div>
+
           <button 
             type="button" 
-            className="btn btn-sm btn-outline-success rounded-pill px-3 d-flex align-items-center gap-1"
-            onClick={handleResetFilters}
+            className="btn btn-sm btn-link text-danger fw-bold p-0 text-decoration-none d-flex align-items-center gap-1"
+            onClick={handleClearAllFilters}
           >
-            <RotateCcw size={14} /> Reset Filters
+            <RotateCcw size={13} /> Clear All Filters
           </button>
         </div>
       )}
 
-      {/* FULL WIDTH RESULTS GRID */}
+      {/* RESULTS COUNT & STATUS */}
+      <div className="d-flex justify-content-between align-items-center mb-3">
+        <span className="text-muted small fw-semibold">
+          Showing <strong className="text-dark">{filteredPackages.length}</strong> package{filteredPackages.length !== 1 ? 's' : ''}
+          {searchQuery && <span> matching "<strong className="text-primary">{searchQuery}</strong>"</span>}
+        </span>
+      </div>
+
+      {/* FULL WIDTH RESULTS GRID OR CLEAN EMPTY STATE */}
       <div className="row g-4 mb-5">
-        {packagesToRender.length === 0 ? (
-          <div className="col-12 text-center py-5 bg-white rounded-4 border shadow-sm">
-            <h4 className="text-muted mb-2">No packages available in this category.</h4>
-            <button 
-              type="button"
-              className="btn btn-primary rounded-pill px-4 py-2 mt-2"
-              onClick={handleResetFilters}
-            >
-              View All Packages
-            </button>
+        {filteredPackages.length === 0 ? (
+          <div className="col-12">
+            <div className="text-center py-5 px-3 bg-white rounded-4 border shadow-sm my-4">
+              <div className="d-inline-flex p-4 rounded-circle bg-light text-muted mb-3">
+                <SlidersHorizontal size={36} className="text-muted opacity-75" />
+              </div>
+              <h4 className="fw-bold text-dark mb-2">No Packages Found Matching Your Filters</h4>
+              <p className="text-muted small mx-auto mb-4" style={{ maxWidth: '480px' }}>
+                We couldn't find any packages matching all your active filter criteria. Try clearing some filters or searching for another theme or destination.
+              </p>
+              <button 
+                type="button" 
+                className="btn btn-primary rounded-pill px-4 py-2 fw-bold d-inline-flex align-items-center gap-2"
+                style={{ background: '#FF6333', borderColor: '#FF6333' }}
+                onClick={handleClearAllFilters}
+              >
+                <RotateCcw size={15} /> Clear All Filters
+              </button>
+            </div>
           </div>
         ) : (
-          packagesToRender.map((pkg) => {
+          filteredPackages.map((pkg) => {
             let dynamicDuration = pkg.duration || '3N/4D';
             const nights = getPackageNights(pkg);
             if (nights > 0) {
-               dynamicDuration = `${nights}N/${nights+1}D`;
+              dynamicDuration = `${nights}N/${nights+1}D`;
             }
             
             return (
-              <div key={pkg.id} className="col-md-6 col-lg-12">
-                <div className="premium-card bg-white rounded-4 overflow-hidden shadow-sm border-0 position-relative transition-all hover-lift" style={{ transition: 'transform 0.3s ease, box-shadow 0.3s ease' }}>
+              <div key={pkg.id} className="col-12">
+                <div className="premium-card bg-white rounded-4 overflow-hidden shadow-sm border position-relative transition-all hover-lift" style={{ transition: 'transform 0.3s ease, box-shadow 0.3s ease' }}>
                   <div className="row g-0">
                     {/* Image Section */}
-                    <div className="col-sm-4 position-relative min-h-200" style={{ minHeight: '260px' }}>
+                    <div className="col-md-4 position-relative" style={{ minHeight: '250px' }}>
                       <img 
-                        src={pkg.image || 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=600&q=80'} 
+                        src={pkg.imageUrl || pkg.image || pkg.image_url || 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=800&q=80'} 
                         alt={pkg.name} 
                         className="w-100 h-100 object-fit-cover"
-                        style={{ minHeight: '260px', maxHeight: '320px' }}
-                        onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=600&q=80'; }}
+                        style={{ minHeight: '250px', maxHeight: '300px' }}
+                        onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=800&q=80'; }}
                       />
                       {pkg.tag && (
                         <span className="badge bg-dark bg-opacity-75 text-white position-absolute top-0 start-0 m-3 px-3 py-2 rounded-pill shadow-sm" style={{ backdropFilter: 'blur(4px)', fontSize: '11px', letterSpacing: '0.5px' }}>
@@ -306,7 +438,7 @@ export default function SelfDrivePage({
                     </div>
 
                     {/* Content Section */}
-                    <div className="col-sm-8 p-4 d-flex flex-column justify-content-between">
+                    <div className="col-md-8 p-4 d-flex flex-column justify-content-between">
                       <div>
                         <div className="d-flex justify-content-between align-items-start mb-2">
                           <h4 className="fw-bold text-dark mb-0 hover-primary cursor-pointer" onClick={() => onViewDetails(pkg)}>

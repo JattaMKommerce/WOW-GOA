@@ -45,7 +45,16 @@ export default function BikesPage({
 
   const filteredBikes = useMemo(() => {
     const results = displayBikes.filter(bike => {
-      const typeMatch = !bikeFilterType || bikeFilterType === 'All' || bike.category === bikeFilterType;
+      const bCat = (bike.category || '').toLowerCase();
+      const selCat = (bikeFilterType || 'All').toLowerCase();
+      const typeMatch = selCat === 'all' 
+        || bCat === selCat 
+        || bCat.includes(selCat) 
+        || selCat.includes(bCat)
+        || (selCat.includes('scooter') && bCat.includes('scooter'))
+        || (selCat.includes('sports') && bCat.includes('sports'))
+        || (selCat.includes('cruiser') && bCat.includes('cruiser'));
+
       const q = (searchQuery || '').toLowerCase().trim();
       const searchMatch = !q || 
                           q === 'goa' || 
@@ -58,18 +67,10 @@ export default function BikesPage({
       return typeMatch && searchMatch;
     });
 
-    console.log('[BikesPage Filter Evaluation]', {
-      totalBikes: (bikes || []).length,
-      matchedBikes: results.length,
-      searchQuery,
-      bikeFilterType
-    });
-
     return results;
   }, [displayBikes, bikeFilterType, searchQuery, bikes]);
 
-  const bikesToRender = filteredBikes.length > 0 ? filteredBikes : displayBikes;
-  const isFallbackView = filteredBikes.length === 0 && displayBikes.length > 0;
+  const bikesToRender = filteredBikes;
 
   const [activeMediaIndexes, setActiveMediaIndexes] = useState({});
 
@@ -106,29 +107,10 @@ export default function BikesPage({
         </p>
       </div>
 
-      {/* Fallback Banner */}
-      {isFallbackView && (
-        <div className="alert alert-info d-flex align-items-center justify-content-between p-3 rounded-4 mb-4 border-0 shadow-sm" style={{ background: '#f0fdf4', borderLeft: '4px solid #10b981' }}>
-          <div className="d-flex align-items-center gap-2">
-            <AlertCircle size={20} className="text-success flex-shrink-0" />
-            <span className="text-dark small fw-semibold">
-              No bikes matched strict filter criteria for "{searchQuery || 'your filter'}". Showing all available rental bikes.
-            </span>
-          </div>
-          <button 
-            type="button" 
-            className="btn btn-sm btn-outline-success rounded-pill px-3 d-flex align-items-center gap-1"
-            onClick={handleResetFilters}
-          >
-            <RotateCcw size={14} /> Reset Filters
-          </button>
-        </div>
-      )}
-
       {/* Filter Bar */}
       <div className="d-flex flex-wrap gap-2 align-items-center mb-4 bg-white p-3 rounded-4 shadow-sm border">
         <span className="text-muted small fw-bold me-2">Category:</span>
-        {['All', 'Scooter', 'Cruiser', 'Sports', 'Standard'].map(cat => (
+        {['All', 'Scooter / Moped', 'Sports Bike', 'Cruiser', 'Standard'].map(cat => (
           <button
             key={cat}
             type="button"

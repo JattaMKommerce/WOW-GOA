@@ -70,9 +70,31 @@ export default function PackageCheckoutStep2({
     setTravellers(updated);
   };
 
+  const handleProceedClick = (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    const lead = travellers[0];
+    if (!lead || !lead.firstName?.trim() || !lead.lastName?.trim()) {
+      alert("Please enter First and Last Name for Lead Traveller.");
+      return;
+    }
+    if (!contactEmail || !contactEmail.includes('@')) {
+      alert("Please enter a valid email address to receive your trip voucher.");
+      return;
+    }
+    if (!contactPhone || contactPhone.trim().length < 10) {
+      alert("Please enter a valid 10-digit mobile phone number for trip updates.");
+      return;
+    }
+    onProceed(e);
+  };
+
   return (
     <div className="container py-4" style={{ fontFamily: "'Inter', sans-serif" }}>
-      <button onClick={onBack} className="btn btn-link text-dark text-decoration-none p-0 mb-4 d-flex align-items-center gap-2 fw-bold">
+      <button 
+        type="button" 
+        onClick={onBack} 
+        className="btn btn-link text-dark text-decoration-none p-0 mb-4 d-flex align-items-center gap-2 fw-bold"
+      >
         <ArrowLeft size={18} /> Back to Itinerary
       </button>
 
@@ -91,17 +113,17 @@ export default function PackageCheckoutStep2({
                  <div className="d-flex align-items-center justify-content-between flex-grow-1" style={{maxWidth: '250px'}}>
                      <span className="fw-bold">Adults (12+ yrs)</span>
                      <div className="d-flex align-items-center border rounded">
-                         <button className="btn btn-sm btn-light px-3 fw-bold" onClick={() => updateTravellerCount('adults', -1)}>-</button>
+                         <button type="button" className="btn btn-sm btn-light px-3 fw-bold" onClick={() => updateTravellerCount('adults', -1)}>-</button>
                          <span className="px-3 fw-bold">{numAdults}</span>
-                         <button className="btn btn-sm btn-light px-3 fw-bold" onClick={() => updateTravellerCount('adults', 1)}>+</button>
+                         <button type="button" className="btn btn-sm btn-light px-3 fw-bold" onClick={() => updateTravellerCount('adults', 1)}>+</button>
                      </div>
                  </div>
                  <div className="d-flex align-items-center justify-content-between flex-grow-1" style={{maxWidth: '250px'}}>
                      <span className="fw-bold">Children (2-11 yrs)</span>
                      <div className="d-flex align-items-center border rounded">
-                         <button className="btn btn-sm btn-light px-3 fw-bold" onClick={() => updateTravellerCount('children', -1)}>-</button>
+                         <button type="button" className="btn btn-sm btn-light px-3 fw-bold" onClick={() => updateTravellerCount('children', -1)}>-</button>
                          <span className="px-3 fw-bold">{numChildren}</span>
-                         <button className="btn btn-sm btn-light px-3 fw-bold" onClick={() => updateTravellerCount('children', 1)}>+</button>
+                         <button type="button" className="btn btn-sm btn-light px-3 fw-bold" onClick={() => updateTravellerCount('children', 1)}>+</button>
                      </div>
                  </div>
              </div>
@@ -130,11 +152,11 @@ export default function PackageCheckoutStep2({
                           </div>
                           <div className="col-md-5">
                              <label className="form-label small fw-bold text-secondary">First & Middle Name *</label>
-                             <input type="text" className="form-control" placeholder="e.g. John" value={traveller.firstName} onChange={(e) => handleTravellerChange(idx, 'firstName', e.target.value)} />
+                             <input type="text" className="form-control" placeholder="e.g. John" value={traveller.firstName} onChange={(e) => handleTravellerChange(idx, 'firstName', e.target.value)} required />
                           </div>
                           <div className="col-md-5">
                              <label className="form-label small fw-bold text-secondary">Last Name *</label>
-                             <input type="text" className="form-control" placeholder="e.g. Doe" value={traveller.lastName} onChange={(e) => handleTravellerChange(idx, 'lastName', e.target.value)} />
+                             <input type="text" className="form-control" placeholder="e.g. Doe" value={traveller.lastName} onChange={(e) => handleTravellerChange(idx, 'lastName', e.target.value)} required />
                           </div>
                           <div className="col-md-4">
                              <label className="form-label small fw-bold text-secondary">Age *</label>
@@ -152,7 +174,7 @@ export default function PackageCheckoutStep2({
               </div>
               <div className="p-4 row g-3">
                   <div className="col-md-6">
-                      <label className="form-label small fw-bold text-secondary">Upload Driving License *</label>
+                      <label className="form-label small fw-bold text-secondary">Upload Driving License</label>
                       <div className="d-flex align-items-center gap-2">
                         <input type="file" className="form-control" accept="image/*" onChange={(e) => {
                             const file = e.target.files[0];
@@ -165,19 +187,19 @@ export default function PackageCheckoutStep2({
                             }
                         }} />
                         {drivingLicense ? (
-                          <span className="badge bg-warning text-dark border p-2">Pending Verification</span>
+                          <span className="badge bg-warning text-dark border p-2">Uploaded</span>
                         ) : (
-                          <span className="badge bg-secondary p-2">Not Uploaded</span>
+                          <span className="badge bg-secondary p-2">Optional Now</span>
                         )}
                       </div>
-                      <small className="text-muted" style={{fontSize:'11px'}}>Required for self-drive vehicle handover. Vendor will verify.</small>
+                      <small className="text-muted" style={{fontSize:'11px'}}>Required for self-drive vehicle handover. Can also verify on delivery.</small>
                   </div>
                   <div className="col-md-3">
-                      <label className="form-label small fw-bold text-secondary">Pickup Location *</label>
+                      <label className="form-label small fw-bold text-secondary">Pickup Location</label>
                       <input type="text" className="form-control" placeholder="e.g. Goa Airport" value={vehiclePickupLoc} onChange={(e) => setVehiclePickupLoc(e.target.value)} />
                   </div>
                   <div className="col-md-3">
-                      <label className="form-label small fw-bold text-secondary">Drop Location *</label>
+                      <label className="form-label small fw-bold text-secondary">Drop Location</label>
                       <input type="text" className="form-control" placeholder="e.g. Calangute" value={vehicleDropLoc} onChange={(e) => setVehicleDropLoc(e.target.value)} />
                   </div>
               </div>
@@ -193,7 +215,7 @@ export default function PackageCheckoutStep2({
                      <label className="form-label small fw-bold text-secondary">Email Address *</label>
                      <div className="input-group">
                          <span className="input-group-text bg-white text-muted"><Mail size={16}/></span>
-                         <input type="email" className="form-control" placeholder="john@example.com" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} />
+                         <input type="email" className="form-control" placeholder="john@example.com" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} required />
                      </div>
                      <small className="text-muted" style={{fontSize:'11px'}}>Your booking voucher will be sent here.</small>
                  </div>
@@ -201,7 +223,7 @@ export default function PackageCheckoutStep2({
                      <label className="form-label small fw-bold text-secondary">Mobile Number *</label>
                      <div className="input-group">
                          <span className="input-group-text bg-white text-muted"><Phone size={16}/></span>
-                         <input type="tel" className="form-control" placeholder="9876543210" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} />
+                         <input type="tel" className="form-control" placeholder="9876543210" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} required />
                      </div>
                      <small className="text-muted" style={{fontSize:'11px'}}>For trip updates and driver details.</small>
                  </div>
@@ -209,8 +231,12 @@ export default function PackageCheckoutStep2({
           </div>
 
           <div className="d-flex justify-content-end">
-              <button className="btn btn-primary btn-lg fw-bold px-5 rounded-pill shadow" onClick={onProceed}>
-                  Review & Pay Details
+              <button 
+                type="button" 
+                className="btn btn-primary btn-lg fw-bold px-5 rounded-pill shadow" 
+                onClick={handleProceedClick}
+              >
+                  Review &amp; Pay Details →
               </button>
           </div>
         </div>

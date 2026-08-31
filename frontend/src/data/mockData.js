@@ -13,185 +13,74 @@ export const locationsList = [
 
 export const hotelsData = [
   {
-    id: 'HTL-75215',
-    name: 'JW Marriott Goa',
-    area: 'Goa (Vagator)',
-    location: 'Vagator, Goa',
-    price: 60545,
-    stars: 5,
-    amenities: ['Free breakfast', 'Free Wi-Fi', 'Free parking', 'Outdoor pool', 'Hot tub', 'Luxury Spa'],
-    rating: 4.60,
-    badge: 'Live Search',
-    image: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=800&q=80',
-    description: 'Iconic 5-star luxury by Marriott overlooking the tropical Goan coastline with pristine amenities.'
-  },
-  {
-    id: 'HTL-28566',
-    name: 'Moustache Goa Luxuria',
-    area: 'Goa (Anjuna)',
-    location: 'Anjuna, Goa',
-    price: 4145,
+    id: 'hotel-3star',
+    name: 'Casa Baga Boutique Resort',
+    area: 'Baga (North Goa)',
+    location: 'Baga Beach, North Goa',
+    price: 3499,
     stars: 3,
-    amenities: ['Breakfast ($)', 'Free Wi-Fi', 'Free parking', 'Outdoor pool', 'Air conditioning'],
+    amenities: ['Swimming Pool', 'Free High-Speed Wi-Fi', 'Complimentary Breakfast', 'Air Conditioning', 'Restaurant & Bar', '24/7 Front Desk'],
     rating: 4.40,
-    badge: 'Live Search',
-    image: 'https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=800&q=80',
-    description: 'Vibrant boutique resort close to Anjuna beach with outdoor pool and lively traveler ambiance.'
+    badge: '3-Star Value',
+    image: 'https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=1200&q=80',
+    image_url: 'https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=1200&q=80',
+    imageUrl: 'https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=1200&q=80',
+    images: [
+      'https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1618773928121-c32242e63f39?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1200&q=80'
+    ],
+    description: 'A charming boutique tropical getaway nestled moments away from vibrant Baga Beach, featuring serene palm courtyards, an outdoor pool, and modern air-conditioned guest rooms.'
   },
   {
-    id: 'hotel-1',
-    name: 'Taj Exotica Resort & Spa',
-    area: 'South Goa (Benaulim)',
-    location: 'Benaulim, Goa',
-    price: 18000,
+    id: 'hotel-4star',
+    name: 'The Grand Candolim Beachfront Resort',
+    area: 'Candolim (North Goa)',
+    location: 'Candolim Beach, North Goa',
+    price: 7999,
+    stars: 4,
+    amenities: ['Lagoon Pool', 'Free Buffet Breakfast', 'Beach Access', 'Spa & Wellness Centre', 'Cocktail Bar', 'Free High-Speed Wi-Fi', 'Airport Shuttle', 'Fitness Center'],
+    rating: 4.70,
+    badge: '4-Star Premium',
+    image: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=1200&q=80',
+    image_url: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=1200&q=80',
+    imageUrl: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=1200&q=80',
+    images: [
+      'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1591088398332-8a7791972843?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1584132967334-10e028bd69f7?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1578683010236-d716f9a3f461?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?auto=format&fit=crop&w=1200&q=80'
+    ],
+    description: 'An exquisite 4-star coastal sanctuary overlooking Candolim beachfront with expansive lagoon pools, sunset cocktail lounges, multisport amenities, and plush private balconies.'
+  },
+  {
+    id: 'hotel-5star',
+    name: 'Taj Exotica Resort & Spa Goa',
+    area: 'Benaulim (South Goa)',
+    location: 'Benaulim Beach, South Goa',
+    price: 17500,
     stars: 5,
-    amenities: ['Private Beach', 'Infinity Pool', 'Luxury Spa', '24x7 Dining', 'Free WiFi'],
+    amenities: ['Private Beach Front', 'Olympic Infinity Pool', 'Jiva Luxury Spa', 'Fine Dining Pavilions', '24/7 Butler Service', 'Golf Course', 'Tennis Courts', 'Valet Parking'],
     rating: 4.90,
     badge: '5-Star Luxury',
-    image: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80',
-    description: 'Mediterranean-style resort sprawled across 56 acres of lush gardens along Benaulim beach.'
-  },
-  {
-    id: 'hotel-2',
-    name: 'W Goa',
-    area: 'North Goa (Vagator)',
-    location: 'Vagator, Goa',
-    price: 22000,
-    stars: 5,
-    amenities: ['Rock Pool', 'Premium Club', 'Ocean View', 'Vibrant Vibe', 'Spa by Clarins'],
-    rating: 4.80,
-    badge: 'Ultra Premium',
-    image: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=800&q=80',
-    description: 'Chic beachfront luxury resort situated right on Vagator Beach overlooking the Arabian Sea.'
-  },
-  {
-    id: 'hotel-3',
-    name: 'Whispering Palms Beach Resort',
-    area: 'North Goa (Candolim)',
-    location: 'Candolim, Goa',
-    price: 7500,
-    stars: 4,
-    amenities: ['Close to Beach', 'Swimming Pool', 'All-Inclusive Plan', 'Bar', 'Gym'],
-    rating: 4.50,
-    badge: 'Best Family Choice',
-    image: 'https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?auto=format&fit=crop&w=800&q=80',
-    description: 'Boutique beach resort situated 300 meters from Candolim beach with tropical landscaping.'
-  },
-  {
-    id: 'hotel-4',
-    name: 'Lemon Tree Amarante Beach Resort',
-    area: 'North Goa (Candolim)',
-    location: 'Candolim, Goa',
-    price: 6800,
-    stars: 4,
-    amenities: ['Heritage Architecture', 'Spa', 'Poolside Bar', 'Wi-Fi', 'Multi-cuisine Restaurant'],
-    rating: 4.40,
-    badge: 'Highly Rated',
-    image: 'https://images.unsplash.com/photo-1584132967334-10e028bd69f7?auto=format&fit=crop&w=800&q=80',
-    description: 'Portuguese heritage styled luxury resort close to Candolim coastline.'
-  },
-  {
-    id: 'hotel-5',
-    name: 'Cidade de Goa - IHCL SeleQtions',
-    area: 'Central Goa (Dona Paula)',
-    location: 'Panaji, Goa',
-    price: 12500,
-    stars: 5,
-    amenities: ['Oceanfront', 'Water Sports', 'Kids Play Area', 'Fine Dining', 'Private Beach'],
-    rating: 4.70,
-    badge: 'Beachfront View',
-    image: 'https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=800&q=80',
-    description: 'Designed by Charles Correa, a Portuguese village style beach resort in Dona Paula.'
-  },
-  {
-    id: 'hotel-6',
-    name: 'Alila Diwa Goa',
-    area: 'South Goa (Majorda)',
-    location: 'Majorda, Goa',
-    price: 14000,
-    stars: 5,
-    amenities: ['Paddy Field View', 'Infinity Pool', 'Spa Alila', 'Kids Club', 'Mini Cinema'],
-    rating: 4.80,
-    badge: 'Luxury Eco Resort',
-    image: 'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=800&q=80',
-    description: 'Surrounded by lush paddy fields with breathtaking sunset infinity pool.'
-  },
-  {
-    id: 'hotel-7',
-    name: 'Fairfield by Marriott Goa Anjuna',
-    area: 'North Goa (Anjuna)',
-    location: 'Anjuna, Goa',
-    price: 5500,
-    stars: 4,
-    amenities: ['Outdoor Pool', 'Fitness Center', 'Kava Restaurant', 'Free WiFi'],
-    rating: 4.40,
-    badge: 'Great Value',
-    image: 'https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=800&q=80',
-    description: 'Contemporary comfort nestled near Anjuna and Baga beaches.'
-  },
-  {
-    id: 'hotel-8',
-    name: 'The Leela Goa',
-    area: 'South Goa (Cavelossim)',
-    location: 'Cavelossim, Goa',
-    price: 24000,
-    stars: 5,
-    amenities: ['12-Hole Golf Course', 'Private Lagoon', '7 Dining Venues', 'Spa', 'Beach Access'],
-    rating: 4.95,
-    badge: 'Ultra Luxury',
-    image: 'https://images.unsplash.com/photo-1578683010236-d716f9a3f461?auto=format&fit=crop&w=800&q=80',
-    description: '75-acre riverside luxury haven where the Sal river meets the Arabian Sea.'
+    image: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1200&q=80',
+    image_url: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1200&q=80',
+    imageUrl: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1200&q=80',
+    images: [
+      'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1571003123894-1f0594d2b5d9?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1582719508461-905c673771fd?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1544984243-ec57ea16fe25?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1576013551627-0cc20b96c2a7?auto=format&fit=crop&w=1200&q=80'
+    ],
+    description: 'Mediterranean-inspired 5-star palatial oasis sprawled over 56 landscaped oceanfront acres on the pristine sands of Benaulim Beach with royal private plunge pools, world-class Jiva Spa, and fine-dining.'
   }
 ];
 
 export const packagesData = [
-  {
-    id: '6a561d8cc7b12',
-    name: 'Ultimate Goa Premium Experience',
-    duration: '4 Days / 3 Nights',
-    car_included: 'Mahindra Thar or Similar',
-    hotel_included: 'JW Marriott Goa',
-    price: 25999,
-    description: 'Experience complete luxury across North and South Goa with sightseeing, private transfers, and premier hotel stay.',
-    tag: 'Featured Experience',
-    image: 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=800&q=80',
-    images: [
-      'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1582719508461-905c673771fd?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1544551763-46a013bb70d5?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1000&q=80'
-    ],
-    package_type: 'Complete Package',
-    flights_included: '1',
-    food_included: 'Breakfast & Dinner Included',
-    pickup_drop_included: 'Free Airport Pickup & Drop',
-    places_included: 'Calangute, Baga, Candolim, Fort Aguada, Panaji Latin Quarter',
-    price_with_flight: 31999
-  },
-  {
-    id: 'pkg-1784183801030',
-    name: 'tets',
-    duration: '1 Nights / 1 Days',
-    car_included: 'Self Drive Car / Cab',
-    hotel_included: 'JW Marriott Goa',
-    price: 3999,
-    description: 'Original customized Goa getaway with hotel and sightseeing passes.',
-    tag: 'New Package',
-    image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80',
-    images: [
-      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1582719508461-905c673771fd?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1544551763-46a013bb70d5?auto=format&fit=crop&w=1000&q=80'
-    ],
-    package_type: 'Self Drive Package',
-    flights_included: 'IndiGo Round Trip',
-    food_included: 'Breakfast & Dinner Included',
-    places_included: 'Baga Beach, Calangute, Goa Catholic Church',
-    price_with_flight: 14999
-  },
   {
     id: 'package-1',
     name: 'Coastal Goa Explorer Pack',
@@ -201,20 +90,85 @@ export const packagesData = [
     price: 14999,
     description: 'Explore the sun-kissed beaches of North Goa with a premium 4x4 Thar at your disposal and stays next to the lively coast.',
     tag: 'Most Popular',
-    image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80',
+    image: 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=1200&q=80',
+    imageUrl: 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=1200&q=80',
+    image_url: 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=1200&q=80',
     images: [
-      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1544551763-46a013bb70d5?auto=format&fit=crop&w=1000&q=80'
+      'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1544551763-46a013bb70d5?auto=format&fit=crop&w=1200&q=80'
     ],
     package_type: 'Trip Package',
     flights_included: '1',
     food_included: 'Breakfast Included',
     pickup_drop_included: 'Free Airport Pickup & Drop',
     places_included: 'Calangute, Baga, Candolim, Fort Aguada',
-    price_with_flight: 18999
+    price_with_flight: 18999,
+    destination: 'North Goa',
+    is_flight_customizable: 1,
+    base_flight_price: 4000,
+    is_cab_customizable: 1,
+    company_cab_price: 2500,
+    day_wise_itinerary: [
+      {
+        day: 1,
+        title: 'Arrival in Goa, Private Airport Transfer & Hotel Check-in',
+        description: 'Warm greeting by your private chauffeur at Goa Airport/Railway Station. Scenic drive to your 4-Star Candolim Beach Resort, welcome drinks on arrival, and evening beach leisure.',
+        location: 'Candolim',
+        hotel: '4-Star Candolim Beach Resort',
+        meals: 'Welcome Drinks & Buffet Dinner',
+        transfers: 'Mahindra Thar 4x4 Handover',
+        inclusions: ['Airport Pickup', 'Resort Check-in', 'Welcome Drink', 'Dinner'],
+        sightseeing_locations: [{ name: 'Candolim Beach', tips: 'Serene beach with relaxed beach shacks' }]
+      },
+      {
+        day: 2,
+        title: 'North Goa Coastal Explorer, Fort Aguada & Water Sports',
+        description: 'Head out in your dedicated Thar 4x4 to Calangute and Baga beaches. Explore historic Fort Aguada lighthouse with sweeping sea views and partake in exciting watersports.',
+        location: 'Calangute & Baga',
+        hotel: '4-Star Candolim Beach Resort',
+        meals: 'Buffet Breakfast & Dinner',
+        transfers: 'Mahindra Thar 4x4',
+        inclusions: ['Breakfast', 'Dedicated Vehicle', 'Fort Aguada Pass', 'Water Sports Pass'],
+        sightseeing_locations: [
+          { name: 'Fort Aguada', tips: '17th-century Portuguese fort and lighthouse' },
+          { name: 'Baga Beach', tips: 'Famous for water sports and vibrant shacks' }
+        ]
+      },
+      {
+        day: 3,
+        title: 'South Goa Heritage Trail, Latin Quarter & Sunset River Cruise',
+        description: 'Discover the colorful heritage houses of Fontainhas in Panaji, visit ancient Basilica of Bom Jesus, and embark on a mesmerizing 1-hour Mandovi River sunset cruise with Goan cultural dance.',
+        location: 'Panaji & Old Goa',
+        hotel: '4-Star Candolim Beach Resort',
+        meals: 'Buffet Breakfast & Dinner',
+        transfers: 'Mahindra Thar 4x4',
+        inclusions: ['Breakfast', 'Heritage Guide', 'Sunset Cruise Ticket', 'Dinner'],
+        sightseeing_locations: [
+          { name: 'Fontainhas Latin Quarter', tips: 'Historic Portuguese neighborhood with bright villas' },
+          { name: 'Mandovi River Sunset Cruise', tips: '1-hour sunset cruise with live folk music' }
+        ]
+      },
+      {
+        day: 4,
+        title: 'Leisure Morning & Airport Departure Transfer',
+        description: 'Savor a leisurely breakfast by the pool. Enjoy last-minute shopping at local flea markets before your private drop-off at Goa Airport or Railway Station.',
+        location: 'Goa Airport',
+        hotel: '4-Star Candolim Beach Resort',
+        meals: 'Buffet Breakfast',
+        transfers: 'Airport Drop Transfer',
+        inclusions: ['Breakfast', 'Airport Drop Transfer'],
+        sightseeing_locations: [{ name: 'Goa Flea Market', tips: 'Handicrafts, spices, and souvenirs' }]
+      }
+    ],
+    itinerary: [
+      { day: 1, title: 'Day 1: Arrival & Candolim Beach Check-in', description: 'Airport pickup and resort check-in with welcome drink and evening leisure.', inclusions: ['Airport Transfer', 'Welcome Drinks', 'Dinner'] },
+      { day: 2, title: 'Day 2: North Goa Coastal Tour & Water Sports', description: 'Explore Calangute, Baga beach and historical Fort Aguada in your 4x4 Thar.', inclusions: ['Breakfast', 'Dedicated Thar 4x4', 'Water Sports'] },
+      { day: 3, title: 'Day 3: South Goa Heritage & Mandovi River Cruise', description: 'Visit Fontainhas Latin Quarter, Old Goa churches, and sunset cruise.', inclusions: ['Breakfast', 'River Cruise Pass', 'Dinner'] },
+      { day: 4, title: 'Day 4: Souvenir Shopping & Departure Transfer', description: 'Poolside breakfast and private transfer to airport with wonderful memories.', inclusions: ['Breakfast', 'Airport Drop Transfer'] }
+    ]
   },
   {
     id: 'package-2',
@@ -225,111 +179,70 @@ export const packagesData = [
     price: 29999,
     description: 'Drive in style under the open skies with a luxury convertible. Includes a candlelight beach dinner and a couples spa.',
     tag: 'Luxury Honeymoon',
-    image: 'https://images.unsplash.com/photo-1533759413974-9e15f3b745ac?auto=format&fit=crop&w=800&q=80',
+    image: 'https://images.unsplash.com/photo-1510414842594-a61c69b5ae57?auto=format&fit=crop&w=1200&q=80',
+    imageUrl: 'https://images.unsplash.com/photo-1510414842594-a61c69b5ae57?auto=format&fit=crop&w=1200&q=80',
+    image_url: 'https://images.unsplash.com/photo-1510414842594-a61c69b5ae57?auto=format&fit=crop&w=1200&q=80',
     images: [
-      'https://images.unsplash.com/photo-1533759413974-9e15f3b745ac?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1544551763-46a013bb70d5?auto=format&fit=crop&w=1000&q=80'
+      'https://images.unsplash.com/photo-1510414842594-a61c69b5ae57?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1515238152791-8216bfdf89a7?auto=format&fit=crop&w=1200&q=80'
     ],
     package_type: 'Trip Package',
     flights_included: '1',
     food_included: 'All Meals & Candlelight Dinner',
+    pickup_drop_included: 'Free Airport Pickup & Drop',
     places_included: 'Vagator, Anjuna, Chapora Fort',
-    price_with_flight: 34999
-  },
-  {
-    id: 'package-3',
-    name: 'Bike & Backpack Heritage Trail',
-    duration: '3 Days / 2 Nights',
-    car_included: 'Royal Enfield Classic 350',
-    hotel_included: 'Cidade de Goa Boutique Stay',
-    price: 5499,
-    description: 'Embark on a rustic heritage ride through ancient forts, Latin quarters, and spice plantations on classic motorbikes.',
-    tag: 'Adventure Seekers',
-    image: 'https://images.unsplash.com/photo-1558981806-ec527fa84c39?auto=format&fit=crop&w=800&q=80',
-    images: [
-      'https://images.unsplash.com/photo-1558981806-ec527fa84c39?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1000&q=80'
+    price_with_flight: 34999,
+    destination: 'Vagator, Goa',
+    is_flight_customizable: 1,
+    base_flight_price: 5000,
+    is_cab_customizable: 1,
+    company_cab_price: 3500,
+    day_wise_itinerary: [
+      {
+        day: 1,
+        title: 'VIP Arrival & Luxury Convertible Handover at W Goa',
+        description: 'Airport greeting with your Audi Cabriolet convertible. Check-in to oceanfront suite at W Goa, Vagator. Evening romantic sunset drinks by the rock pool.',
+        location: 'Vagator',
+        hotel: 'W Goa Luxury Resort',
+        meals: 'Welcome Champagne & 4-Course Dinner',
+        transfers: 'Audi Cabriolet Convertible',
+        inclusions: ['VIP Airport Pickup', 'W Goa Suite Check-in', 'Couples Welcome Drink', 'Gourmet Dinner'],
+        sightseeing_locations: [{ name: 'Vagator Beach', tips: 'Red cliffs and iconic sunset views' }]
+      },
+      {
+        day: 2,
+        title: 'Anjuna & Vagator Cliffside Tour, Couples Spa & Beach Candlelight Dinner',
+        description: 'Cruise along the scenic coastal road to Chapora Fort overlooking the Arabian Sea. Enjoy a signature 90-minute couples therapy spa followed by an exclusive candlelight beach dinner.',
+        location: 'Anjuna & Chapora',
+        hotel: 'W Goa Luxury Resort',
+        meals: 'Champagne Breakfast & Candlelight Dinner',
+        transfers: 'Audi Cabriolet Convertible',
+        inclusions: ['Breakfast', 'Couples Spa Session', 'Convertible Car', 'Candlelight Dinner'],
+        sightseeing_locations: [
+          { name: 'Chapora Fort', tips: 'Panoramic sunset view over Ozran and Vagator' },
+          { name: 'Anjuna Beach', tips: 'Bohemian vibe with beach cafes and sunset shacks' }
+        ]
+      },
+      {
+        day: 3,
+        title: 'Lazy Morning & Chauffeur Airport Drop-off',
+        description: 'Enjoy breakfast in bed or poolside lounge. Smooth vehicle return and private drop transfer to Goa International Airport.',
+        location: 'Goa Airport',
+        hotel: 'W Goa Luxury Resort',
+        meals: 'Gourmet Breakfast',
+        transfers: 'Airport Drop Transfer',
+        inclusions: ['Breakfast', 'Airport Drop Transfer'],
+        sightseeing_locations: [{ name: 'Vagator Coastline', tips: 'Morning coastal stroll and photography' }]
+      }
     ],
-    package_type: 'Self Drive Package',
-    flights_included: '0',
-    food_included: 'Breakfast Included',
-    places_included: 'Panaji Latin Quarter, Old Goa Churches, Reis Magos',
-    price_with_flight: 8999
-  },
-  {
-    id: 'package-4',
-    name: 'Ultimate Goa Cruise & Drive',
-    duration: '5 Days / 4 Nights',
-    car_included: 'Toyota Fortuner Automatic',
-    hotel_included: 'Taj Exotica Resort & Spa',
-    price: 64999,
-    description: 'The peak Goa vacation. Large premium SUV, 5-Star beach resort, and a private 2-hour yacht cruise over the Chapora River.',
-    tag: 'Elite VVIP',
-    image: 'https://images.unsplash.com/photo-1567818735868-e71b99932e29?auto=format&fit=crop&w=800&q=80',
-    images: [
-      'https://images.unsplash.com/photo-1567818735868-e71b99932e29?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1582719508461-905c673771fd?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1544551763-46a013bb70d5?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1000&q=80'
-    ],
-    package_type: 'Trip Package',
-    flights_included: '1',
-    food_included: 'All Inclusive Luxury Dining',
-    places_included: 'Benaulim, Colva, Palolem, Panaji Yacht Marina',
-    price_with_flight: 74999
-  },
-  {
-    id: 'package-5',
-    name: 'Self Drive Beach Hopper Goa',
-    duration: '4 Days / 3 Nights',
-    car_included: 'Hyundai Creta Automatic',
-    hotel_included: 'Whispering Palms Beach Stay',
-    price: 12499,
-    description: 'Enjoy complete freedom exploring both North and South Goa at your own pace with a comfortable SUV.',
-    tag: 'Self Drive',
-    image: 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=800&q=80',
-    images: [
-      'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1544551763-46a013bb70d5?auto=format&fit=crop&w=1000&q=80'
-    ],
-    package_type: 'Self Drive Package',
-    flights_included: '1',
-    food_included: 'Breakfast Included',
-    places_included: 'Morjim, Ashwem, Arambol, Sinquerim',
-    price_with_flight: 16499
-  },
-  {
-    id: 'package-6',
-    name: 'South Goa Serenity & Watersports',
-    duration: '4 Days / 3 Nights',
-    car_included: 'Maruti Suzuki Swift',
-    hotel_included: 'Alila Diwa 5-Star Resort',
-    price: 17999,
-    description: 'Relax on pristine white sand beaches of South Goa with jet skiing, parasailing, and dolphin spotting included.',
-    tag: 'Family Fun',
-    image: 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?auto=format&fit=crop&w=800&q=80',
-    images: [
-      'https://images.unsplash.com/photo-1544551763-46a013bb70d5?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1582719508461-905c673771fd?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=1000&q=80',
-      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1000&q=80'
-    ],
-    package_type: 'Trip Package',
-    flights_included: '1',
-    food_included: 'Breakfast & Watersports Pass',
-    places_included: 'Majorda, Cavelossim, Benaulim',
-    price_with_flight: 21999
+    itinerary: [
+      { day: 1, title: 'Day 1: VIP Arrival & Oceanfront Check-in', description: 'Convertible handover, W Goa check-in, and sunset cocktails.', inclusions: ['VIP Pickup', 'Welcome Drinks', 'Dinner'] },
+      { day: 2, title: 'Day 2: Coastal Drive, Couples Spa & Candlelight Dinner', description: 'Chapora Fort drive, relaxing spa treatment, and private candlelight dining.', inclusions: ['Breakfast', 'Couples Spa', 'Candlelight Dinner'] },
+      { day: 3, title: 'Day 3: Poolside Leisure & Departure', description: 'Gourmet breakfast and luxury transfer to airport.', inclusions: ['Breakfast', 'Airport Drop Transfer'] }
+    ]
   }
 ];
 

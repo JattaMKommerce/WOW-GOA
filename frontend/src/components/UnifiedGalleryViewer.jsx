@@ -578,25 +578,36 @@ export default function UnifiedGalleryViewer({
                   onClick={prevLightboxImage}
                   style={{
                     position: 'absolute',
-                    left: '12px',
+                    left: '16px',
                     top: '50%',
                     transform: 'translateY(-50%)',
                     zIndex: 10001,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    width: '42px',
-                    height: '42px',
+                    width: '46px',
+                    height: '46px',
                     borderRadius: '50%',
-                    backgroundColor: 'rgba(0,0,0,0.7)',
+                    backgroundColor: 'rgba(13, 27, 46, 0.9)',
                     color: '#fff',
-                    border: '1px solid rgba(255,255,255,0.25)',
+                    border: '2px solid rgba(255,255,255,0.65)',
                     cursor: 'pointer',
-                    boxShadow: '0 4px 15px rgba(0,0,0,0.5)',
-                    backdropFilter: 'blur(8px)'
+                    boxShadow: '0 6px 20px rgba(0,0,0,0.6)',
+                    backdropFilter: 'blur(8px)',
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.backgroundColor = '#00B8D9';
+                    e.currentTarget.style.borderColor = '#ffffff';
+                    e.currentTarget.style.transform = 'translateY(-50%) scale(1.12)';
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(13, 27, 46, 0.9)';
+                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.65)';
+                    e.currentTarget.style.transform = 'translateY(-50%) scale(1)';
                   }}
                 >
-                  <ChevronLeft size={24} />
+                  <ChevronLeft size={28} strokeWidth={2.8} />
                 </button>
                 <button
                   type="button"
@@ -604,25 +615,36 @@ export default function UnifiedGalleryViewer({
                   onClick={nextLightboxImage}
                   style={{
                     position: 'absolute',
-                    right: '12px',
+                    right: '16px',
                     top: '50%',
                     transform: 'translateY(-50%)',
                     zIndex: 10001,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    width: '42px',
-                    height: '42px',
+                    width: '46px',
+                    height: '46px',
                     borderRadius: '50%',
-                    backgroundColor: 'rgba(0,0,0,0.7)',
+                    backgroundColor: 'rgba(13, 27, 46, 0.9)',
                     color: '#fff',
-                    border: '1px solid rgba(255,255,255,0.25)',
+                    border: '2px solid rgba(255,255,255,0.65)',
                     cursor: 'pointer',
-                    boxShadow: '0 4px 15px rgba(0,0,0,0.5)',
-                    backdropFilter: 'blur(8px)'
+                    boxShadow: '0 6px 20px rgba(0,0,0,0.6)',
+                    backdropFilter: 'blur(8px)',
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.backgroundColor = '#00B8D9';
+                    e.currentTarget.style.borderColor = '#ffffff';
+                    e.currentTarget.style.transform = 'translateY(-50%) scale(1.12)';
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(13, 27, 46, 0.9)';
+                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.65)';
+                    e.currentTarget.style.transform = 'translateY(-50%) scale(1)';
                   }}
                 >
-                  <ChevronRight size={24} />
+                  <ChevronRight size={28} strokeWidth={2.8} />
                 </button>
               </>
             )}

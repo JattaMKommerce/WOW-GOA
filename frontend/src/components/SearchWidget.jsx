@@ -316,10 +316,12 @@ export default function SearchWidget({
       setAppliedFilters(localFilters);
     }
 
-    if (handleSearchSubmit) {
-      handleSearchSubmit(e);
-    } else {
+    if (setSearchTriggered) {
       setSearchTriggered(true);
+    }
+
+    if (handleSearchSubmit) {
+      handleSearchSubmit(activeTab);
     }
 
     // Auto-scroll to results
@@ -1205,7 +1207,11 @@ export default function SearchWidget({
                         style={{ background: '#FF6333', borderColor: '#FF6333' }}
                         onClick={() => {
                           if (setAppliedFilters) setAppliedFilters(localFilters);
+                          if (setSearchTriggered) setSearchTriggered(true);
                           setActiveDropdown(null);
+                          setTimeout(() => {
+                            document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+                          }, 100);
                         }}
                       >
                         Apply Filters

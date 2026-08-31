@@ -97,6 +97,9 @@ export default function AdminDashboard({
   const [pkgHotelIncluded, setPkgHotelIncluded] = useState('');
   const [pkgDescription, setPkgDescription] = useState('');
   const [pkgImage, setPkgImage] = useState('');
+  const [pkgImages, setPkgImages] = useState([]);
+  const [customImageUrl, setCustomImageUrl] = useState('');
+  const [isUploadingImages, setIsUploadingImages] = useState(false);
   
   // New Premium Fields
   const [pkgCancellationPolicy, setPkgCancellationPolicy] = useState('');
@@ -291,12 +294,62 @@ export default function AdminDashboard({
     setEditingVendorId(null);
   };
 
-  const handleCreatePackage = (e) => {
+  const resetPackageForm = () => {
+    setEditingPackageId(null);
+    setPkgName('');
+    setPkgType('Trip Package');
+    setPkgCurrency('INR');
+    setPkgCostingType('Service Wise Cost');
+    setPkgNights(4);
+    setPkgPaxAdult(2);
+    setPkgPaxChild(0);
+    setPkgPaxInfant(0);
+    setPkgDestination('');
+    setPkgPrice('');
+    setWithFlight(false);
+    setPkgPriceWithFlight('');
+    setPkgFlights('');
+    setPkgFood('Breakfast & Dinner Included');
+    setPkgPickupDrop('');
+    setPkgPlaces([]);
+    setPkgPlacesSearch('');
+    setPkgCarIncluded('');
+    setPkgHotelIncluded('');
+    setPkgDescription('');
+    setPkgImage('');
+    setPkgImages([]);
+    setCustomImageUrl('');
+    setPkgCancellationPolicy('');
+    setPkgHighlights('');
+    setPkgInclusionsExclusions('');
+    setPkgAdvancePercentage(25);
+    setDayWiseItinerary([{ day: 1, title: '', activities: '', morning: '', afternoon: '', evening: '', night: '', meals: '', hotel: '', images: [], location: '', tips: '' }]);
+    setPkgAddOns([]);
+    setIsFlightCustomizable(false);
+    setBaseFlightPrice('');
+    setIsCabCustomizable(false);
+    setCompanyCabPrice('');
+    setPickupDropPrice('');
+    setPickupDropImage('');
+  };
+
+  const handleCreatePackage = async (e) => {
     e.preventDefault();
-    if (!pkgName || !pkgPrice) {
-      alert("Please fill out package name and price.");
+    if (!pkgName.trim() || !pkgPrice) {
+      alert("Please fill out all required fields marked with * (Package Name, Destination, Price).");
       return;
     }
+    if (!pkgDestination.trim()) {
+      alert("Please specify the Package Destination.");
+      return;
+    }
+
+    const allImagesList = pkgImages.length > 0 
+      ? pkgImages 
+      : (pkgImage ? [pkgImage] : ['https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=1200&q=80']);
+
+    const primaryImage = allImagesList[0] || pkgImage || '';
+
     const payload = {
       id: editingPackageId || ('pkg-' + Date.now()),
       name: pkgName,
@@ -315,7 +368,11 @@ export default function AdminDashboard({
       car_included: pkgType.includes('Self-Drive') ? (pkgCarIncluded || 'Mahindra Thar') : null,
       hotel_included: pkgHotelIncluded || 'W Goa Resort',
       description: pkgDescription || 'Explore Goa on your own terms with this premium package deal.',
-      image: pkgImage || 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80',
+      image: primaryImage,
+      imageUrl: primaryImage,
+      image_url: primaryImage,
+      images_json: JSON.stringify(allImagesList),
+      images: allImagesList,
       tag: 'New Package',
       is_flight_customizable: isFlightCustomizable ? 1 : 0,
       base_flight_price: baseFlightPrice ? parseInt(baseFlightPrice, 10) : 0,
@@ -331,36 +388,19 @@ export default function AdminDashboard({
       package_addons_json: JSON.stringify(pkgAddOns)
     };
 
-    if (editingPackageId) {
-      onUpdatePackage(payload).then(() => {
+    try {
+      if (editingPackageId) {
+        await onUpdatePackage(payload);
         alert(`Package "${pkgName}" updated successfully!`);
-      }).catch(err => alert("Error updating package: " + err.message));
-    } else {
-      onAddPackage(payload);
-      alert(`Goa Tour Package "${pkgName}" created successfully!`);
+      } else {
+        await onAddPackage(payload);
+        alert(`Goa Tour Package "${pkgName}" created successfully!`);
+      }
+      resetPackageForm();
+      setShowPackageForm(false);
+    } catch (err) {
+      alert("Error saving package: " + err.message);
     }
-    
-    setPkgName('');
-    setPkgPrice('');
-    setPkgPriceWithFlight('');
-    setWithFlight(false);
-    setPkgDestination('');
-    setPkgDescription('');
-    setPkgImage('');
-    setIsFlightCustomizable(false);
-    setBaseFlightPrice('');
-    setIsCabCustomizable(false);
-    setCompanyCabPrice('');
-    setPkgDescription('');
-    setPkgImage('');
-    setPkgPlaces([]);
-    setPkgPlacesSearch('');
-    setPkgCancellationPolicy('');
-    setPkgHighlights('');
-    setPkgInclusionsExclusions('');
-    setPkgAdvancePercentage(25);
-    setDayWiseItinerary([{ day: 1, title: '', location: '', morning: '', afternoon: '', evening: '', night: '', meals: '', hotel: '', tips: '', images: [] }]);
-    setEditingPackageId(null);
   };
 
   const handleEditPackageClick = (pkg) => {
@@ -375,7 +415,26 @@ export default function AdminDashboard({
     setWithFlight(!!pkg.price_with_flight);
     setPkgDestination(pkg.destination || '');
     setPkgDescription(pkg.description || '');
-    setPkgImage(pkg.image || '');
+    const pkgImg = pkg.imageUrl || pkg.image || pkg.image_url || '';
+    setPkgImage(pkgImg);
+
+    // Parse existing multiple images
+    let existingImages = [];
+    if (pkg.images && Array.isArray(pkg.images)) {
+      existingImages = pkg.images;
+    } else if (pkg.images_json) {
+      try {
+        const raw = pkg.images_json;
+        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (Array.isArray(parsed)) existingImages = parsed;
+      } catch (e) {}
+    } else if (pkgImg && pkgImg.includes(',')) {
+      existingImages = pkgImg.split(',').map(s => s.trim()).filter(Boolean);
+    } else if (pkgImg) {
+      existingImages = [pkgImg];
+    }
+    setPkgImages(existingImages);
+
     setPkgCancellationPolicy(pkg.cancellation_policy || '');
     setPkgHighlights(pkg.highlights_json || '');
     setPkgInclusionsExclusions(pkg.inclusions_exclusions_json || '');
@@ -398,7 +457,7 @@ export default function AdminDashboard({
     if (parsed && parsed.length > 0) {
       setDayWiseItinerary(parsed);
     } else {
-      setDayWiseItinerary([{ day: 1, title: '', activities: '', meals: '', hotel: '', images: [], location: '', tips: '' }]);
+      setDayWiseItinerary([{ day: 1, title: '', activities: '', morning: '', afternoon: '', evening: '', night: '', meals: '', hotel: '', images: [], location: '', tips: '' }]);
     }
     setShowPackageForm(true);
   };
@@ -444,7 +503,7 @@ export default function AdminDashboard({
             <button 
               type="button"
               className="btn btn-outline-secondary px-4 py-2 rounded-pill fw-bold"
-              onClick={() => { setShowPackageForm(false); setEditingPackageId(null); }}
+              onClick={() => { resetPackageForm(); setShowPackageForm(false); }}
             >
               Cancel
             </button>
@@ -457,11 +516,15 @@ export default function AdminDashboard({
             </div>
             
             <div className="col-md-6">
-              <label className="form-label small fw-bold text-secondary">Package Name</label>
-              <input type="text" className="form-control premium-input-field" placeholder="e.g. Manali, Sissu Package" value={pkgName} onChange={(e) => setPkgName(e.target.value)} required />
+              <label className="form-label small fw-bold text-secondary">
+                Package Name <span className="text-danger">*</span>
+              </label>
+              <input type="text" className="form-control premium-input-field" placeholder="e.g. Goa Luxury Beach & Sunset Explorer" value={pkgName} onChange={(e) => setPkgName(e.target.value)} required />
             </div>
             <div className="col-md-6">
-              <label className="form-label small fw-bold text-secondary">Package Type</label>
+              <label className="form-label small fw-bold text-secondary">
+                Package Type <span className="text-danger">*</span>
+              </label>
               <select className="form-select premium-input-field fw-medium text-dark" value={pkgType} onChange={(e) => setPkgType(e.target.value)}>
                 <option>Trip Package</option>
                 <option>Self Drive Package</option>
@@ -482,11 +545,12 @@ export default function AdminDashboard({
                 <option>One Time Package Cost</option>
               </select>
             </div>
-            {/* Nights Input Removed - Derived from Day-Wise Itinerary */}
 
             <div className="col-md-12">
-              <label className="form-label small fw-bold text-secondary">Destination (Live Location Fetch)</label>
-              <input type="text" list="destinationsDataList" className="form-control premium-input-field" placeholder="Search exact location..." value={pkgDestination} onChange={(e) => setPkgDestination(e.target.value)} required />
+              <label className="form-label small fw-bold text-secondary">
+                Destination (Live Location Fetch) <span className="text-danger">*</span>
+              </label>
+              <input type="text" list="destinationsDataList" className="form-control premium-input-field" placeholder="Search exact location... (e.g. North Goa, South Goa, Calangute)" value={pkgDestination} onChange={(e) => setPkgDestination(e.target.value)} required />
               <datalist id="destinationsDataList">
                 {destSuggestions.map(dest => (
                   <option key={dest.place_id} value={dest.display_name} />
@@ -520,32 +584,153 @@ export default function AdminDashboard({
             </div>
             
             <div className="col-md-6">
-              <label className="form-label small fw-bold text-secondary">Price (Without Flight) ₹</label>
-              <input type="number" className="form-control premium-input-field fw-bold text-primary" placeholder="e.g. 5104" value={pkgPrice} onChange={(e) => setPkgPrice(e.target.value)} required />
+              <label className="form-label small fw-bold text-secondary">
+                Price (Without Flight) ₹ <span className="text-danger">*</span>
+              </label>
+              <input type="number" className="form-control premium-input-field fw-bold text-primary" placeholder="e.g. 14999" value={pkgPrice} onChange={(e) => setPkgPrice(e.target.value)} required />
             </div>
             
             {withFlight && (
               <div className="col-md-6">
-                <label className="form-label small fw-bold text-secondary">Price (With Flight) ₹</label>
-                <input type="number" className="form-control premium-input-field fw-bold text-primary" placeholder="e.g. 19791" value={pkgPriceWithFlight} onChange={(e) => setPkgPriceWithFlight(e.target.value)} required />
+                <label className="form-label small fw-bold text-secondary">
+                  Price (With Flight) ₹ <span className="text-danger">*</span>
+                </label>
+                <input type="number" className="form-control premium-input-field fw-bold text-primary" placeholder="e.g. 19999" value={pkgPriceWithFlight} onChange={(e) => setPkgPriceWithFlight(e.target.value)} required />
               </div>
             )}
             
+            {/* ─── MULTIPLE IMAGE GALLERY UPLOAD & URL MANAGER ─── */}
             <div className="col-md-12">
-              <label className="form-label small fw-bold text-secondary">Cover Image (URL or File Upload)</label>
-              <div className="d-flex gap-2">
-                <input type="url" className="form-control premium-input-field" style={{ width: '45%' }} placeholder="Paste image URL..." value={pkgImage} onChange={(e) => setPkgImage(e.target.value)} />
-                <span className="align-self-center text-muted fw-bold">OR</span>
-                <input type="file" accept="image/*" className="form-control premium-input-field" style={{ width: '45%' }} onChange={async (e) => {
-                  if (e.target.files && e.target.files[0]) {
-                    try {
-                      const url = await api.uploadImage(e.target.files[0]);
-                      setPkgImage(url);
-                    } catch (err) {
-                      alert("Failed to upload image. " + err.message);
-                    }
-                  }
-                }} />
+              <div className="p-3 bg-light rounded-3 border">
+                <div className="d-flex justify-content-between align-items-center mb-2">
+                  <label className="form-label small fw-bold text-secondary mb-0">
+                    Package Photo Gallery & Images (Multiple Supported) <span className="text-danger">*</span>
+                  </label>
+                  <span className="badge bg-primary rounded-pill small">
+                    {pkgImages.length} Photos Selected
+                  </span>
+                </div>
+                
+                {/* Multi-file Upload and URL Paste Input */}
+                <div className="row g-2 mb-3">
+                  <div className="col-md-6">
+                    <label className="form-label text-muted text-xxs mb-1 fw-bold">Upload Image Files (Select Multiple)</label>
+                    <input 
+                      type="file" 
+                      multiple 
+                      accept="image/*" 
+                      className="form-control" 
+                      disabled={isUploadingImages}
+                      onChange={async (e) => {
+                        if (e.target.files && e.target.files.length > 0) {
+                          setIsUploadingImages(true);
+                          try {
+                            const newUploadedUrls = [];
+                            for (let i = 0; i < e.target.files.length; i++) {
+                              const url = await api.uploadImage(e.target.files[i]);
+                              if (url) newUploadedUrls.push(url);
+                            }
+                            const updated = [...pkgImages, ...newUploadedUrls];
+                            setPkgImages(updated);
+                            if (!pkgImage && updated.length > 0) {
+                              setPkgImage(updated[0]);
+                            }
+                          } catch (err) {
+                            alert("Failed to upload images: " + err.message);
+                          } finally {
+                            setIsUploadingImages(false);
+                          }
+                        }
+                      }} 
+                    />
+                  </div>
+                  
+                  <div className="col-md-6">
+                    <label className="form-label text-muted text-xxs mb-1 fw-bold">Or Add Photo by URL</label>
+                    <div className="d-flex gap-2">
+                      <input 
+                        type="url" 
+                        className="form-control" 
+                        placeholder="https://images.unsplash.com/..." 
+                        value={customImageUrl} 
+                        onChange={(e) => setCustomImageUrl(e.target.value)} 
+                      />
+                      <button 
+                        type="button" 
+                        className="btn btn-outline-primary btn-sm px-3 fw-bold text-nowrap"
+                        onClick={() => {
+                          if (customImageUrl.trim()) {
+                            const updated = [...pkgImages, customImageUrl.trim()];
+                            setPkgImages(updated);
+                            if (!pkgImage) setPkgImage(customImageUrl.trim());
+                            setCustomImageUrl('');
+                          }
+                        }}
+                      >
+                        + Add
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {isUploadingImages && (
+                  <div className="text-primary small mb-2 d-flex align-items-center gap-2">
+                    <span className="spinner-border spinner-border-sm" role="status"></span>
+                    Uploading images to server...
+                  </div>
+                )}
+
+                {/* Thumbnail Previews with Cover badge and remove button */}
+                {pkgImages.length > 0 && (
+                  <div className="d-flex flex-wrap gap-2 pt-2 border-top">
+                    {pkgImages.map((imgUrl, idx) => (
+                      <div 
+                        key={idx} 
+                        className="position-relative rounded-2 overflow-hidden border shadow-sm"
+                        style={{ width: '80px', height: '60px', backgroundColor: '#000' }}
+                      >
+                        <img src={imgUrl} alt={`Thumb ${idx + 1}`} className="w-100 h-100 object-fit-cover" />
+                        {idx === 0 ? (
+                          <span 
+                            className="position-absolute top-0 start-0 badge bg-primary text-white"
+                            style={{ fontSize: '9px', padding: '2px 4px', borderRadius: '0 0 4px 0' }}
+                          >
+                            Cover
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            title="Make Cover"
+                            onClick={() => {
+                              const reordered = [imgUrl, ...pkgImages.filter((_, i) => i !== idx)];
+                              setPkgImages(reordered);
+                              setPkgImage(imgUrl);
+                            }}
+                            className="position-absolute top-0 start-0 badge bg-dark bg-opacity-75 text-white border-0 cursor-pointer"
+                            style={{ fontSize: '9px', padding: '2px 4px' }}
+                          >
+                            Set Cover
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          title="Remove Photo"
+                          onClick={() => {
+                            const filtered = pkgImages.filter((_, i) => i !== idx);
+                            setPkgImages(filtered);
+                            if (pkgImage === imgUrl) {
+                              setPkgImage(filtered[0] || '');
+                            }
+                          }}
+                          className="position-absolute top-0 end-0 btn btn-sm btn-danger p-0 d-flex align-items-center justify-content-center"
+                          style={{ width: '18px', height: '18px', borderRadius: '50%', transform: 'translate(2px, -2px)' }}
+                        >
+                          <X size={11} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -554,7 +739,9 @@ export default function AdminDashboard({
             </div>
 
             <div className="col-md-6">
-              <label className="form-label small fw-bold text-secondary">Stay Included (Hotel)</label>
+              <label className="form-label small fw-bold text-secondary">
+                Stay Included (Hotel) <span className="text-danger">*</span>
+              </label>
               <select className="form-select premium-input-field" value={pkgHotelIncluded} onChange={(e) => setPkgHotelIncluded(e.target.value)}>
                 {hotelsList.length > 0 ? hotelsList.map(h => (
                   <option key={h.id} value={h.name}>{h.name}</option>
@@ -955,7 +1142,7 @@ export default function AdminDashboard({
             <button 
               type="button"
               className="btn px-4 py-2.5 rounded-pill fw-bold text-white shadow hover-scale d-flex align-items-center gap-2"
-              onClick={() => setShowPackageForm(true)}
+              onClick={() => { resetPackageForm(); setShowPackageForm(true); }}
               style={{ background: 'linear-gradient(90deg, #FF6333, #FF8A00)', border: 'none' }}
             >
               <span style={{ fontSize: '1.2rem', lineHeight: 1 }}>+</span> Add New Package
@@ -1025,7 +1212,12 @@ export default function AdminDashboard({
             >
               {/* Package Image */}
               <div className="position-relative overflow-hidden rounded-3 shadow-sm flex-shrink-0" style={{ width: '220px', height: '160px' }}>
-                <img src={pkg.image} alt={pkg.name} className="w-100 h-100 object-fit-cover" />
+                <img 
+                  src={pkg.imageUrl || pkg.image || pkg.image_url || 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=800&q=80'} 
+                  alt={pkg.name} 
+                  className="w-100 h-100 object-fit-cover"
+                  onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=800&q=80'; }}
+                />
                 <div className="position-absolute top-0 start-0 m-2">
                   <span className="badge shadow-sm" style={{ background: '#0D1B2E', color: '#00B8D9', fontSize: '0.7rem', padding: '6px 10px', borderRadius: '8px' }}>
                     {pkg.tag || 'Holiday Package'}

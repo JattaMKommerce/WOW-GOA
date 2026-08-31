@@ -8,7 +8,7 @@ export default function LoginModal({ isOpen, onClose, onLogin }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
-  const [showQuickDemo, setShowQuickDemo] = useState(false);
+  const [showQuickDemo, setShowQuickDemo] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
 
   if (!isOpen) return null;
@@ -36,16 +36,14 @@ export default function LoginModal({ isOpen, onClose, onLogin }) {
     setPassword(p);
     setErrorMsg('');
     
-    setTimeout(async () => {
-      const success = await onLogin(u, p);
-      if (success) {
-        setUsername('');
-        setPassword('');
-        onClose();
-      } else {
-        setErrorMsg("Invalid username or password. Check credentials.");
-      }
-    }, 100);
+    const success = await onLogin(u, p);
+    if (success) {
+      setUsername('');
+      setPassword('');
+      onClose();
+    } else {
+      setErrorMsg("Invalid username or password. Check credentials.");
+    }
   };
 
   return (
@@ -271,8 +269,26 @@ export default function LoginModal({ isOpen, onClose, onLogin }) {
                   style={{ background: '#f1f5f9' }}
                   onClick={() => handleQuickLogin('vendor@tripgalileo.com', 'admin@2026')}
                 >
-                  <span className="fw-bold small" style={{ fontSize: '11px' }}>Vendor (Fleet Listings)</span>
+                  <span className="fw-bold small" style={{ fontSize: '11px' }}>Vehicle Vendor (Fleet Listings)</span>
                   <span className="text-xxs text-muted">vendor / admin@2026</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-xs btn-outline-secondary text-start d-flex justify-content-between align-items-center py-1.5 px-2.5 rounded-2 border-0 small text-dark"
+                  style={{ background: '#f1f5f9' }}
+                  onClick={() => handleQuickLogin('hotel_vendor@tripgalileo.com', 'admin@2026')}
+                >
+                  <span className="fw-bold small" style={{ fontSize: '11px' }}>Hotel Vendor (Hotel PMS)</span>
+                  <span className="text-xxs text-muted">hotel_vendor / admin@2026</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-xs btn-outline-secondary text-start d-flex justify-content-between align-items-center py-1.5 px-2.5 rounded-2 border-0 small text-dark"
+                  style={{ background: '#f1f5f9' }}
+                  onClick={() => handleQuickLogin('flight_vendor@tripgalileo.com', 'admin@2026')}
+                >
+                  <span className="fw-bold small" style={{ fontSize: '11px' }}>Flight Vendor (Flight PMS)</span>
+                  <span className="text-xxs text-muted">flight_vendor / admin@2026</span>
                 </button>
               </div>
             )}

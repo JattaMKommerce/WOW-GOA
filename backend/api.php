@@ -279,12 +279,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
             echo json_encode($data);
             exit;} elseif ($resource === 'hotels') {
-            $stmt = $pdo->prepare("SELECT * FROM hotels WHERE (admin_id = ? OR admin_id IS NULL OR admin_id = '' OR admin_id = 'admin' OR ? = 'superadmin' OR ? = 'admin')");
+            $stmt = $pdo->prepare("SELECT * FROM hotels WHERE (admin_id = ? OR admin_id IS NULL OR admin_id = '' OR admin_id = 'admin' OR ? = 'superadmin' OR ? = 'admin') ORDER BY stars ASC, price ASC");
             $stmt->execute([$tenant_id, $tenant_id, $tenant_id]);
             $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
             foreach ($data as &$hotel) {
                 if (isset($hotel['amenities']) && is_string($hotel['amenities'])) {
                     $hotel['amenities'] = array_map('trim', explode(',', str_replace(['[', ']', '"'], '', $hotel['amenities'])));
+                }
+                if (!empty($hotel['images_json'])) {
+                    $parsed = is_string($hotel['images_json']) ? json_decode($hotel['images_json'], true) : $hotel['images_json'];
+                    if (is_array($parsed) && count($parsed) > 0) {
+                        $hotel['images'] = $parsed;
+                        if (empty($hotel['image'])) {
+                            $hotel['image'] = $parsed[0];
+                        }
+                    }
+                }
+                if (empty($hotel['images']) && !empty($hotel['image'])) {
+                    $hotel['images'] = [$hotel['image']];
                 }
             }
             echo json_encode($data);
@@ -294,9 +306,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
             echo json_encode($data);
             exit;} elseif ($resource === 'packages') {
-            $stmt = $pdo->prepare("SELECT * FROM packages WHERE (admin_id = ? OR admin_id IS NULL OR admin_id = '' OR admin_id = 'admin' OR ? = 'superadmin' OR ? = 'admin')");
+            $stmt = $pdo->prepare("SELECT * FROM packages WHERE (admin_id = ? OR admin_id IS NULL OR admin_id = '' OR admin_id = 'admin' OR ? = 'superadmin' OR ? = 'admin') ORDER BY id ASC");
             $stmt->execute([$tenant_id, $tenant_id, $tenant_id]);
             $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($data as &$pkg) {
+                $mainImg = $pkg['image'] ?? ($pkg['image_url'] ?? ($pkg['imageUrl'] ?? ''));
+                if (!$mainImg && !empty($pkg['images_json'])) {
+                    $parsedImgs = json_decode($pkg['images_json'], true);
+                    if (is_array($parsedImgs) && count($parsedImgs) > 0) {
+                        $mainImg = $parsedImgs[0];
+                    }
+                }
+                $pkg['image'] = $mainImg;
+                $pkg['image_url'] = $mainImg;
+                $pkg['imageUrl'] = $mainImg;
+                if (!empty($pkg['images_json'])) {
+                    $parsed = json_decode($pkg['images_json'], true);
+                    if (is_array($parsed)) {
+                        $pkg['images'] = $parsed;
+                    }
+                }
+                if (empty($pkg['images']) && $mainImg) {
+                    $pkg['images'] = [$mainImg];
+                }
+                if (!empty($pkg['day_wise_itinerary']) && is_string($pkg['day_wise_itinerary'])) {
+                    $parsedItin = json_decode($pkg['day_wise_itinerary'], true);
+                    if (is_array($parsedItin)) {
+                        $pkg['itinerary'] = $parsedItin;
+                    }
+                }
+            }
             echo json_encode($data);
             exit;} elseif ($resource === 'vendors') {
             $stmt = $pdo->prepare("SELECT * FROM vendors WHERE (admin_id = ? OR admin_id IS NULL OR admin_id = '' OR admin_id = 'admin' OR ? = 'superadmin' OR ? = 'admin')");
@@ -317,6 +356,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $stmt = $pdo->prepare("SELECT * FROM bookings WHERE (admin_id = ? OR admin_id IS NULL OR admin_id = '' OR admin_id = 'admin' OR ? = 'superadmin' OR ? = 'admin') ORDER BY created_at DESC");
             $stmt->execute([$tenant_id, $tenant_id, $tenant_id]);
             $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($data as &$b) {
+                $depDate = $b['departure_date'] ?? ($b['pickup_date'] ?? '');
+                $retDate = $b['return_date'] ?? ($b['drop_date'] ?? '');
+                $b['departure_date'] = $depDate;
+                $b['pickup_date'] = $depDate;
+                $b['check_in_date'] = $depDate;
+                $b['return_date'] = $retDate;
+                $b['drop_date'] = $retDate;
+                $b['check_out_date'] = $retDate;
+                if (empty($b['duration']) && !empty($b['booking_days'])) {
+                    $b['duration'] = intval($b['booking_days']) . ' Nights / ' . (intval($b['booking_days']) + 1) . ' Days';
+                }
+            }
             echo json_encode($data);
             exit;} elseif ($resource === 'leads') {
             try {
@@ -888,7 +940,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             echo json_encode(["success" => true, "message" => "AI Lead captured successfully."]);
             exit;
         } elseif ($action === 'add_vehicle' || $action === 'add_car' || $action === 'add_bike') {
-            $isCar = ($action === 'add_car') || (($payload['type'] ?? '') === 'car') || !empty($payload['seating']) || !empty($payload['transmission']);
+            $bikeCats = ['scooter', 'scooter / moped', 'sports bike', 'cruiser', 'tourer / adventure', 'electric scooter (ev)', 'superbike', 'dirt / off-road', 'cafe racer', 'standard / commuter', 'bike'];
+            $isBike = ($action === 'add_bike') 
+                   || (($payload['type'] ?? '') === 'bike') 
+                   || in_array(strtolower(trim($payload['category'] ?? '')), $bikeCats);
+            $isCar = !$isBike;
             $id = !empty($payload['id']) ? $payload['id'] : (($isCar ? 'car-' : 'bike-') . uniqid());
             $vendorId = $payload['vendor_id'] ?? ($payload['vendorId'] ?? 'vendor-1');
             
@@ -929,7 +985,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $id,
                     $vendorId,
                     $payload['name'],
-                    $payload['category'] ?? 'Scooter',
+                    $payload['category'] ?? 'Scooter / Moped',
                     intval($payload['price']),
                     $payload['engine'] ?? '150cc',
                     $payload['fuel'] ?? 'Petrol',
@@ -947,8 +1003,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$id) throw new Exception("Missing vehicle ID.");
 
             // Check if car or bike
-            $isCar = ($action === 'update_car') || (($payload['type'] ?? '') === 'car');
-            if (!$isCar && ($action === 'update_vehicle' || empty($payload['type']))) {
+            $bikeCats = ['scooter', 'scooter / moped', 'sports bike', 'cruiser', 'tourer / adventure', 'electric scooter (ev)', 'superbike', 'dirt / off-road', 'cafe racer', 'standard / commuter', 'bike'];
+            $isBike = ($action === 'update_bike') 
+                   || (($payload['type'] ?? '') === 'bike') 
+                   || in_array(strtolower(trim($payload['category'] ?? '')), $bikeCats);
+            $isCar = !$isBike;
+            if ($action === 'update_vehicle' && empty($payload['type']) && empty($payload['category'])) {
                 $checkCar = $pdo->prepare("SELECT id FROM cars WHERE id = ?");
                 $checkCar->execute([$id]);
                 $isCar = (bool)$checkCar->fetch();
@@ -1027,12 +1087,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!isset($payload['name']) || !isset($payload['price'])) {
                 throw new Exception("Missing package name or price.");
             }
-            $stmt = $pdo->prepare("INSERT INTO packages (id, name, duration, package_type, flights_included, food_included, pickup_drop_included, places_included, car_included, hotel_included, price, price_with_flight, description, tag, image, is_flight_customizable, base_flight_price, is_cab_customizable, company_cab_price, pickup_drop_price, pickup_drop_image, day_wise_itinerary, cancellation_policy, highlights_json, inclusions_exclusions_json, advance_percentage, package_addons_json, admin_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $pkgId = !empty($payload['id']) ? $payload['id'] : ('pkg-' . time() . rand(100, 999));
+            
+            // Image resolution
+            $imagesList = [];
+            if (!empty($payload['images']) && is_array($payload['images'])) {
+                $imagesList = array_values(array_filter($payload['images']));
+            } elseif (!empty($payload['images_json'])) {
+                $decoded = is_string($payload['images_json']) ? json_decode($payload['images_json'], true) : $payload['images_json'];
+                if (is_array($decoded)) $imagesList = array_values(array_filter($decoded));
+            }
+            $primaryImage = $payload['image'] ?? ($payload['imageUrl'] ?? ($payload['image_url'] ?? ''));
+            if (!$primaryImage && count($imagesList) > 0) {
+                $primaryImage = $imagesList[0];
+            }
+            if ($primaryImage && empty($imagesList)) {
+                $imagesList = [$primaryImage];
+            }
+            $imagesJson = count($imagesList) > 0 ? json_encode($imagesList) : null;
+
+            $stmt = $pdo->prepare("INSERT INTO packages (id, name, duration, package_type, flights_included, food_included, pickup_drop_included, places_included, car_included, hotel_included, price, price_with_flight, description, tag, image, image_url, images_json, destination, is_flight_customizable, base_flight_price, is_cab_customizable, company_cab_price, pickup_drop_price, pickup_drop_image, day_wise_itinerary, cancellation_policy, highlights_json, inclusions_exclusions_json, advance_percentage, package_addons_json, admin_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             $stmt->execute([
-                $payload['id'],
+                $pkgId,
                 $payload['name'],
-                $payload['duration'],
-                isset($payload['package_type']) ? $payload['package_type'] : 'Complete Package',
+                $payload['duration'] ?? '3 Days / 2 Nights',
+                isset($payload['package_type']) ? $payload['package_type'] : 'Trip Package',
                 isset($payload['flights_included']) ? $payload['flights_included'] : null,
                 isset($payload['food_included']) ? $payload['food_included'] : null,
                 isset($payload['pickup_drop_included']) ? $payload['pickup_drop_included'] : null,
@@ -1041,9 +1120,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 isset($payload['hotel_included']) ? $payload['hotel_included'] : null,
                 intval($payload['price']),
                 isset($payload['price_with_flight']) ? intval($payload['price_with_flight']) : null,
-                $payload['description'],
+                $payload['description'] ?? '',
                 isset($payload['tag']) ? $payload['tag'] : 'Popular',
-                isset($payload['image']) ? $payload['image'] : '',
+                $primaryImage,
+                $primaryImage,
+                $imagesJson,
+                $payload['destination'] ?? 'Goa',
                 isset($payload['is_flight_customizable']) ? intval($payload['is_flight_customizable']) : 0,
                 isset($payload['base_flight_price']) ? intval($payload['base_flight_price']) : 0,
                 isset($payload['is_cab_customizable']) ? intval($payload['is_cab_customizable']) : 0,
@@ -1058,7 +1140,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 isset($payload['package_addons_json']) ? (is_array($payload['package_addons_json']) ? json_encode($payload['package_addons_json']) : $payload['package_addons_json']) : null,
                 $tenant_id
             ]);
-            echo json_encode(["success" => true, "message" => "Package created successfully."]);
+            echo json_encode([
+                "success" => true,
+                "id" => $pkgId,
+                "message" => "Package created successfully.",
+                "package" => array_merge($payload, ['id' => $pkgId, 'image' => $primaryImage, 'imageUrl' => $primaryImage, 'image_url' => $primaryImage, 'images' => $imagesList])
+            ]);
             exit;} elseif ($action === 'calculate_price') {
             // Server-side calculation to prevent frontend tampering
             if (!isset($payload['package_id'])) throw new Exception("Missing package ID");
@@ -1166,8 +1253,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             echo json_encode(["success" => true, "message" => "Vehicle held for checkout.", "session_id" => $session_id]);
             exit;} elseif ($action === 'book' || $action === 'create_booking') {
             $booking_id = !empty($payload['id']) ? $payload['id'] : ("TG-" . rand(100000, 999999));
-            
-            $stmt = $pdo->prepare("INSERT INTO bookings (id, name, phone, email, license, pickup_loc, pickup_date, pickup_time, drop_date, drop_time, item_id, item_name, booking_days, total_amount, amount_paid, remaining_amount, total_paid, status, payment_status, customizations, created_at, payment_method, admin_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $dep_date = $payload['departure_date'] ?? ($payload['pickup_date'] ?? ($payload['check_in_date'] ?? ''));
+            $ret_date = $payload['return_date'] ?? ($payload['drop_date'] ?? ($payload['check_out_date'] ?? ''));
+            $days_count = intval($payload['booking_days'] ?? 1);
+            $duration_val = $payload['duration'] ?? ($days_count . ' Nights / ' . ($days_count + 1) . ' Days');
+
+            $stmt = $pdo->prepare("INSERT INTO bookings (id, name, phone, email, license, pickup_loc, pickup_date, pickup_time, drop_date, drop_time, departure_date, return_date, check_in_date, check_out_date, duration, item_id, item_name, booking_days, total_amount, amount_paid, remaining_amount, total_paid, status, payment_status, customizations, created_at, payment_method, admin_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             $stmt->execute([
                 $booking_id,
                 $payload['name'] ?? ($payload['customer_name'] ?? 'Customer'),
@@ -1175,13 +1266,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $payload['email'] ?? '',
                 $payload['license'] ?? '',
                 $payload['pickup_loc'] ?? ($payload['pickup_location'] ?? 'Goa'),
-                $payload['pickup_date'] ?? '',
+                $dep_date,
                 $payload['pickup_time'] ?? '10:00 AM',
-                $payload['drop_date'] ?? ($payload['return_date'] ?? ''),
+                $ret_date,
                 $payload['drop_time'] ?? '10:00 AM',
+                $dep_date,
+                $ret_date,
+                $dep_date,
+                $ret_date,
+                $duration_val,
                 $payload['item_id'] ?? '',
                 $payload['item_name'] ?? 'Vehicle Rental',
-                intval($payload['booking_days'] ?? 1),
+                $days_count,
                 intval($payload['total_amount'] ?? ($payload['total_paid'] ?? 0)),
                 intval($payload['amount_paid'] ?? ($payload['total_paid'] ?? 0)),
                 intval($payload['remaining_amount'] ?? 0),
@@ -1226,13 +1322,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;} elseif ($action === 'delete_package') {
             $stmt = $pdo->prepare("DELETE FROM packages WHERE id = ?");
             $stmt->execute([$payload['id']]);
-            echo json_encode(["success" => true, "message" => "Package deleted."]);
+            echo json_encode(["success" => true, "message" => "Package deleted.", "id" => $payload['id']]);
             exit;} elseif ($action === 'update_package') {
-            $stmt = $pdo->prepare("UPDATE packages SET name=?, duration=?, package_type=?, flights_included=?, food_included=?, pickup_drop_included=?, places_included=?, car_included=?, hotel_included=?, price=?, price_with_flight=?, description=?, tag=?, image=?, is_flight_customizable=?, base_flight_price=?, is_cab_customizable=?, company_cab_price=?, pickup_drop_price=?, pickup_drop_image=?, day_wise_itinerary=?, cancellation_policy=?, highlights_json=?, inclusions_exclusions_json=?, advance_percentage=?, package_addons_json=? WHERE id=?");
+            // Image resolution
+            $imagesList = [];
+            if (!empty($payload['images']) && is_array($payload['images'])) {
+                $imagesList = array_values(array_filter($payload['images']));
+            } elseif (!empty($payload['images_json'])) {
+                $decoded = is_string($payload['images_json']) ? json_decode($payload['images_json'], true) : $payload['images_json'];
+                if (is_array($decoded)) $imagesList = array_values(array_filter($decoded));
+            }
+            $primaryImage = $payload['image'] ?? ($payload['imageUrl'] ?? ($payload['image_url'] ?? ''));
+            if (!$primaryImage && count($imagesList) > 0) {
+                $primaryImage = $imagesList[0];
+            }
+            if ($primaryImage && empty($imagesList)) {
+                $imagesList = [$primaryImage];
+            }
+            $imagesJson = count($imagesList) > 0 ? json_encode($imagesList) : null;
+
+            $stmt = $pdo->prepare("UPDATE packages SET name=?, duration=?, package_type=?, flights_included=?, food_included=?, pickup_drop_included=?, places_included=?, car_included=?, hotel_included=?, price=?, price_with_flight=?, description=?, tag=?, image=?, image_url=?, images_json=?, destination=?, is_flight_customizable=?, base_flight_price=?, is_cab_customizable=?, company_cab_price=?, pickup_drop_price=?, pickup_drop_image=?, day_wise_itinerary=?, cancellation_policy=?, highlights_json=?, inclusions_exclusions_json=?, advance_percentage=?, package_addons_json=? WHERE id=?");
             $stmt->execute([
                 $payload['name'],
-                $payload['duration'],
-                isset($payload['package_type']) ? $payload['package_type'] : 'Complete Package',
+                $payload['duration'] ?? '3 Days / 2 Nights',
+                isset($payload['package_type']) ? $payload['package_type'] : 'Trip Package',
                 isset($payload['flights_included']) ? $payload['flights_included'] : null,
                 isset($payload['food_included']) ? $payload['food_included'] : null,
                 isset($payload['pickup_drop_included']) ? $payload['pickup_drop_included'] : null,
@@ -1241,9 +1354,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 isset($payload['hotel_included']) ? $payload['hotel_included'] : null,
                 intval($payload['price']),
                 isset($payload['price_with_flight']) ? intval($payload['price_with_flight']) : null,
-                $payload['description'],
+                $payload['description'] ?? '',
                 isset($payload['tag']) ? $payload['tag'] : 'Popular',
-                isset($payload['image']) ? $payload['image'] : '',
+                $primaryImage,
+                $primaryImage,
+                $imagesJson,
+                $payload['destination'] ?? 'Goa',
                 isset($payload['is_flight_customizable']) ? intval($payload['is_flight_customizable']) : 0,
                 isset($payload['base_flight_price']) ? intval($payload['base_flight_price']) : 0,
                 isset($payload['is_cab_customizable']) ? intval($payload['is_cab_customizable']) : 0,
@@ -1258,7 +1374,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 isset($payload['package_addons_json']) ? (is_array($payload['package_addons_json']) ? json_encode($payload['package_addons_json']) : $payload['package_addons_json']) : null,
                 $payload['id']
             ]);
-            echo json_encode(["success" => true, "message" => "Package updated successfully."]);
+            echo json_encode([
+                "success" => true,
+                "message" => "Package updated successfully.",
+                "package" => array_merge($payload, ['image' => $primaryImage, 'imageUrl' => $primaryImage, 'image_url' => $primaryImage, 'images' => $imagesList])
+            ]);
             exit;} elseif ($action === 'toggle_vehicle_availability') {
             $table = $payload['type'] === 'car' ? 'cars' : 'bikes';
             $stmt = $pdo->prepare("UPDATE $table SET is_available = ? WHERE id = ?");
@@ -1717,38 +1837,237 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $payload['id']
             ]);
             echo json_encode(["success" => true, "message" => "Chat updated."]);
-            exit;} elseif ($action === 'chat_with_ai') {
-            if (!isset($payload['messages'])) throw new Exception("Missing messages.");
-            $messages = $payload['messages'];
-            
-            // System prompt
-            $system_prompt = "You are Maya, an expert travel assistant for TripGalileo (a premium travel company in Goa). You help customers plan their trips, book luxury hotels (like W Goa), rent cars (like Thar), and customize packages. Be warm, concise, and helpful. Use emojis. Do not give markdown formatted output, stick to plain text.";
-            
-            array_unshift($messages, ["role" => "system", "content" => $system_prompt]);
-            
-            $groq_api_key = getenv('GROQ_API_KEY') ?: ($_ENV['GROQ_API_KEY'] ?? 'gsk_demo_ai_travel_assistant_key');
-            $ch = curl_init("https://api.groq.com/openai/v1/chat/completions");
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                "Authorization: Bearer " . $groq_api_key,
-                "Content-Type: application/json"
-            ]);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
-                "model" => "llama-3.1-8b-instant",
-                "messages" => $messages,
-                "temperature" => 0.7
-            ]));
-            
-            $response = curl_exec($ch);
-            curl_close($ch);
-            
-            $result = json_decode($response, true);
-            if (isset($result['choices'][0]['message']['content'])) {
-                echo json_encode(["success" => true, "reply" => $result['choices'][0]['message']['content']]);
-            exit;} else {
-                throw new Exception("Failed to get response from Groq AI.");
+        } elseif ($action === 'chat_with_ai') {
+            if (!isset($payload['messages']) || !is_array($payload['messages'])) {
+                throw new Exception("Missing messages.");
             }
+            $messages = $payload['messages'];
+            $latestUserMsg = '';
+            for ($i = count($messages) - 1; $i >= 0; $i--) {
+                if (isset($messages[$i]['role']) && $messages[$i]['role'] === 'user') {
+                    $latestUserMsg = $messages[$i]['content'] ?? '';
+                    break;
+                }
+            }
+
+            // Fetch live database inventory
+            $dbCars = [];
+            $dbBikes = [];
+            $dbHotels = [];
+            $dbPackages = [];
+            try {
+                $dbCars = $pdo->query("SELECT * FROM cars")->fetchAll(PDO::FETCH_ASSOC);
+                $dbBikes = $pdo->query("SELECT * FROM bikes")->fetchAll(PDO::FETCH_ASSOC);
+                $dbHotels = $pdo->query("SELECT * FROM hotels")->fetchAll(PDO::FETCH_ASSOC);
+                $dbPackages = $pdo->query("SELECT * FROM packages")->fetchAll(PDO::FETCH_ASSOC);
+            } catch(Exception $e) {}
+
+            $msgClean = strtolower(trim($latestUserMsg));
+            $cleanKeywords = preg_replace('/[^a-z0-9\s]/', ' ', $msgClean);
+            $words = array_filter(explode(' ', $cleanKeywords), function($w) {
+                return strlen($w) >= 3 && !in_array($w, ['the', 'and', 'for', 'with', 'you', 'have', 'are', 'what', 'how', 'rent', 'rental', 'price', 'rate', 'cost', 'available', 'avaible', 'availble', 'avail', 'there', 'want', 'need', 'give', 'tell', 'show']);
+            });
+
+            // 1. Check for specific car match in DB
+            $matchedCar = null;
+            foreach ($dbCars as $car) {
+                $carNameLower = strtolower($car['name']);
+                if (strpos($msgClean, $carNameLower) !== false || 
+                    (strpos($msgClean, 'defend') !== false && strpos($carNameLower, 'defend') !== false) ||
+                    (strpos($msgClean, 'thar') !== false && strpos($carNameLower, 'thar') !== false) ||
+                    (strpos($msgClean, 'swift') !== false && strpos($carNameLower, 'swift') !== false) ||
+                    (strpos($msgClean, 'creta') !== false && strpos($carNameLower, 'creta') !== false) ||
+                    (strpos($msgClean, 'ertiga') !== false && strpos($carNameLower, 'ertiga') !== false) ||
+                    (strpos($msgClean, 'baleno') !== false && strpos($carNameLower, 'baleno') !== false)) {
+                    $matchedCar = $car;
+                    break;
+                }
+                foreach ($words as $w) {
+                    if (strpos($carNameLower, $w) !== false || (strlen($w) >= 4 && levenshtein($w, $carNameLower) <= 2)) {
+                        $matchedCar = $car;
+                        break 2;
+                    }
+                }
+            }
+
+            // 2. Check for specific bike match in DB
+            $matchedBike = null;
+            if (!$matchedCar) {
+                foreach ($dbBikes as $bike) {
+                    $bikeNameLower = strtolower($bike['name']);
+                    if (strpos($msgClean, $bikeNameLower) !== false ||
+                        (strpos($msgClean, 'activa') !== false && strpos($bikeNameLower, 'activa') !== false) ||
+                        (strpos($msgClean, 'bullet') !== false && strpos($bikeNameLower, 'bullet') !== false) ||
+                        (strpos($msgClean, 'enfield') !== false && strpos($bikeNameLower, 'enfield') !== false) ||
+                        (strpos($msgClean, 'classic') !== false && strpos($bikeNameLower, 'classic') !== false) ||
+                        (strpos($msgClean, 'hunter') !== false && strpos($bikeNameLower, 'hunter') !== false) ||
+                        (strpos($msgClean, 'duke') !== false && strpos($bikeNameLower, 'duke') !== false) ||
+                        (strpos($msgClean, 'ninja') !== false && strpos($bikeNameLower, 'ninja') !== false)) {
+                        $matchedBike = $bike;
+                        break;
+                    }
+                    foreach ($words as $w) {
+                        if (strpos($bikeNameLower, $w) !== false || (strlen($w) >= 4 && levenshtein($w, $bikeNameLower) <= 2)) {
+                            $matchedBike = $bike;
+                            break 2;
+                        }
+                    }
+                }
+            }
+
+            // 3. Check for specific hotel match in DB
+            $matchedHotel = null;
+            if (!$matchedCar && !$matchedBike) {
+                foreach ($dbHotels as $hotel) {
+                    $hotelNameLower = strtolower($hotel['name']);
+                    if (strpos($msgClean, $hotelNameLower) !== false) {
+                        $matchedHotel = $hotel;
+                        break;
+                    }
+                    foreach ($words as $w) {
+                        if (strlen($w) >= 4 && strpos($hotelNameLower, $w) !== false) {
+                            $matchedHotel = $hotel;
+                            break 2;
+                        }
+                    }
+                }
+            }
+
+            // 4. Check for specific package match in DB
+            $matchedPackage = null;
+            if (!$matchedCar && !$matchedBike && !$matchedHotel) {
+                foreach ($dbPackages as $pkg) {
+                    $pkgNameLower = strtolower($pkg['name']);
+                    if (strpos($msgClean, $pkgNameLower) !== false) {
+                        $matchedPackage = $pkg;
+                        break;
+                    }
+                    foreach ($words as $w) {
+                        if (strlen($w) >= 4 && strpos($pkgNameLower, $w) !== false) {
+                            $matchedPackage = $pkg;
+                            break 2;
+                        }
+                    }
+                }
+            }
+
+            // Try Groq first if real API key configured
+            $groq_api_key = getenv('GROQ_API_KEY') ?: ($_ENV['GROQ_API_KEY'] ?? '');
+            $reply = null;
+
+            if (!empty($groq_api_key) && strpos($groq_api_key, 'demo') === false) {
+                $inventoryContext = "Live Inventory on TripGalileo:\n";
+                $inventoryContext .= "Cars: " . implode(', ', array_map(function($c) { return "{$c['name']} (₹{$c['price']}/day, {$c['transmission']}, {$c['seating']}, {$c['fuel']})"; }, $dbCars)) . "\n";
+                $inventoryContext .= "Bikes: " . implode(', ', array_map(function($b) { return "{$b['name']} (₹{$b['price']}/day)"; }, $dbBikes)) . "\n";
+                $inventoryContext .= "Hotels: " . implode(', ', array_map(function($h) { return "{$h['name']} ({$h['stars']}★, ₹{$h['price']}/night in {$h['location']})"; }, $dbHotels)) . "\n";
+
+                $system_prompt = "You are Maya (Kratu.ai), the expert AI travel assistant for TripGalileo (Goa travel platform). You help customers rent self-drive cars, bikes, book hotels, and customize holiday packages. Answer clearly, accurately, and enthusiastically with exact prices and details from our inventory. If a car like Defender or Swift is asked, say YES immediately and give full details (rate, transmission, seating, airport/doorstep delivery, 25% advance token). Be warm, concise, and helpful. Use emojis. Stick to plain text.\n\n" . $inventoryContext;
+
+                $groqMessages = $messages;
+                array_unshift($groqMessages, ["role" => "system", "content" => $system_prompt]);
+
+                $ch = curl_init("https://api.groq.com/openai/v1/chat/completions");
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_POST, true);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 6);
+                curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                    "Authorization: Bearer " . $groq_api_key,
+                    "Content-Type: application/json"
+                ]);
+                curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
+                    "model" => "llama-3.1-8b-instant",
+                    "messages" => $groqMessages,
+                    "temperature" => 0.7
+                ]));
+                
+                $response = curl_exec($ch);
+                curl_close($ch);
+                
+                $result = json_decode($response, true);
+                if (isset($result['choices'][0]['message']['content'])) {
+                    $reply = $result['choices'][0]['message']['content'];
+                }
+            }
+
+            // High-Intelligence Dynamic Database-Backed Knowledge Engine Fallback
+            if (!$reply) {
+                if ($matchedCar) {
+                    $carName = $matchedCar['name'];
+                    $price = number_format(floatval($matchedCar['price']));
+                    $trans = !empty($matchedCar['transmission']) ? $matchedCar['transmission'] : 'Automatic / Manual';
+                    $seating = !empty($matchedCar['seating']) ? $matchedCar['seating'] : '5 Seater';
+                    $fuel = !empty($matchedCar['fuel']) ? $matchedCar['fuel'] : 'Petrol / Diesel';
+                    $cat = !empty($matchedCar['category']) ? $matchedCar['category'] : 'Self-Drive Car';
+
+                    $reply = "Yes! We have the {$carName} available for self-drive rent in Goa! 🚙✨\n\n📋 Vehicle Details:\n• Model: {$carName}\n• Category: {$cat}\n• Rental Price: ₹{$price} / day\n• Transmission: {$trans}\n• Seating Capacity: {$seating}\n• Fuel Type: {$fuel}\n• Air Conditioning: Yes (AC)\n\n✨ Rental Benefits & Inclusions:\n• Free Doorstep Delivery across North & South Goa\n• Airport Handover at Dabolim (GOI) & Mopa (GOX)\n• 24/7 On-Road Assistance & Sanitized Car\n• Just 25% Advance Token to reserve dates, balance on delivery\n\nWould you like to reserve the {$carName} for your trip dates?";
+                } elseif ($matchedBike) {
+                    $bikeName = $matchedBike['name'];
+                    $price = number_format(floatval($matchedBike['price']));
+                    $cat = !empty($matchedBike['category']) ? $matchedBike['category'] : 'Scooter / Bike';
+                    $engine = !empty($matchedBike['engine']) ? $matchedBike['engine'] : 'Standard';
+
+                    $reply = "Yes! We have the {$bikeName} available for rent in Goa! 🛵✨\n\n📋 Bike Details:\n• Model: {$bikeName}\n• Category: {$cat}\n• Rental Price: ₹{$price} / day\n• Engine / Specs: {$engine}\n\n✨ Inclusions:\n• 2 Sanitized Helmets included\n• Valid commercial road tax & permits\n• Delivery at airport or your hotel\n\nWould you like to book the {$bikeName}?";
+                } elseif ($matchedHotel) {
+                    $hotelName = $matchedHotel['name'];
+                    $price = number_format(floatval($matchedHotel['price']));
+                    $stars = $matchedHotel['stars'] ?? '4';
+                    $loc = $matchedHotel['location'] ?? 'Goa Beachfront';
+
+                    $reply = "Yes! We have {$hotelName} available for booking in Goa! 🏨✨\n\n⭐ Rating: {$stars}★ Luxury Resort / Stay\n📍 Location: {$loc}\n💵 Price: Starting from ₹{$price} / night\n🍽️ Inclusions: Daily Buffet Breakfast, Swimming Pool Access, Free High-Speed Wi-Fi\n\nWould you like to check room availability for your dates?";
+                } elseif ($matchedPackage) {
+                    $pkgName = $matchedPackage['name'];
+                    $price = number_format(floatval($matchedPackage['price']));
+                    $dur = $matchedPackage['duration'] ?? '3N / 4D';
+                    $dest = $matchedPackage['destination'] ?? 'Goa';
+
+                    $reply = "Yes! We offer the \"{$pkgName}\" holiday package! 🌴✨\n\n⏱️ Duration: {$dur}\n📍 Destination: {$dest}\n💵 Price: Starting from ₹{$price} / person\n✨ Inclusions: Hotel Stay with Breakfast, Private Transfer or Self-Drive Car, Airport Pickup/Drop, and Day-by-Day Sightseeing Activities.\n\nWould you like to customize this package for your travel dates?";
+                } elseif (preg_match('/\b[6-9]\d{9}\b/', $latestUserMsg, $phoneMatches)) {
+                    $reply = "🎉 Thank you! I have saved your contact (" . $phoneMatches[0] . "). Our dedicated TripGalileo holiday specialist will reach out shortly to customize your dream Goa itinerary and apply exclusive discount rates! 🌴✨";
+                } elseif (strpos($msgClean, 'self drive') !== false || strpos($msgClean, 'self-drive') !== false) {
+                    $carListStr = !empty($dbCars) ? implode(', ', array_map(function($c) { return "{$c['name']} (₹" . number_format($c['price']) . "/day)"; }, array_slice($dbCars, 0, 5))) : "Defender, Thar 4x4, Swift, Creta, Baleno";
+                    $reply = "🚗 Explore Goa on your own terms with TripGalileo Self-Drive Packages & Rentals!\n\n🚙 Available Cars in Fleet:\n• {$carListStr}\n\n🛵 Available Bikes:\n• Activa, Royal Enfield Classic 350, Bullet, Hunter, Sports Bikes\n\n✨ All self-drive rentals include doorstep delivery across Goa, airport handover at Dabolim (GOI) & Mopa (GOX), and 24/7 road assistance. What dates are you traveling?";
+                } elseif (strpos($msgClean, 'car') !== false || strpos($msgClean, 'cars') !== false || strpos($msgClean, 'suv') !== false || strpos($msgClean, 'vehicle') !== false) {
+                    $carItems = [];
+                    foreach ($dbCars as $c) {
+                        $carItems[] = "• " . $c['name'] . " - ₹" . number_format($c['price']) . "/day (" . ($c['transmission'] ?? 'Automatic') . ", " . ($c['seating'] ?? '5 Seater') . ")";
+                    }
+                    $carListText = !empty($carItems) ? implode("\n", array_slice($carItems, 0, 6)) : "• Land Rover Defender - ₹10,000/day\n• Maruti Swift - ₹2,000/day\n• Mahindra Thar 4x4 - ₹3,500/day";
+
+                    $reply = "🚘 Here are our top Self-Drive Cars available for rent in Goa:\n\n{$carListText}\n\n📍 Free doorstep delivery in North & South Goa and Airport handovers. Which car would you like to rent?";
+                } elseif (strpos($msgClean, 'bike') !== false || strpos($msgClean, 'bikes') !== false || strpos($msgClean, 'scooter') !== false || strpos($msgClean, 'two wheeler') !== false) {
+                    $bikeItems = [];
+                    foreach ($dbBikes as $b) {
+                        $bikeItems[] = "• " . $b['name'] . " - ₹" . number_format($b['price']) . "/day";
+                    }
+                    $bikeListText = !empty($bikeItems) ? implode("\n", array_slice($bikeItems, 0, 6)) : "• Honda Activa 6G - ₹450/day\n• Royal Enfield Classic 350 - ₹1,000/day\n• Yamaha R15 / KTM Duke - ₹1,400/day";
+
+                    $reply = "🛵 Here are our top Bikes & Scooters available for rent in Goa:\n\n{$bikeListText}\n\n🛡️ All rentals include 2 sanitized helmets & commercial road permits. What dates do you need it for?";
+                } elseif (strpos($msgClean, 'package') !== false || strpos($msgClean, 'packages') !== false || strpos($msgClean, 'tour') !== false || strpos($msgClean, 'itinerary') !== false || strpos($msgClean, 'holiday') !== false) {
+                    $pkgItems = [];
+                    foreach ($dbPackages as $p) {
+                        $pkgItems[] = "• " . $p['name'] . " (" . ($p['duration'] ?? '4D/3N') . ") - ₹" . number_format($p['price']) . "/person";
+                    }
+                    $pkgListText = !empty($pkgItems) ? implode("\n", array_slice($pkgItems, 0, 5)) : "• Tropical Goa Getaway (4D/3N) - ₹8,999/person\n• Self-Drive Coastal Explorer (5D/4N) - ₹14,499/person";
+
+                    $reply = "🌴 Featured TripGalileo Holiday Packages:\n\n{$pkgListText}\n\n✨ All packages include Resort Stays + Transfers/Self-Drive Car + Daily Breakfast + Sightseeing!\n\nHead to 'Holiday Packages' on the menu to customize any package in 4 simple steps!";
+                } elseif (strpos($msgClean, 'hotel') !== false || strpos($msgClean, 'hotels') !== false || strpos($msgClean, 'resort') !== false || strpos($msgClean, 'stay') !== false || strpos($msgClean, 'villa') !== false) {
+                    $reply = "🏖️ TripGalileo partners with top-rated Hotels & Luxury Beach Resorts across Goa!\n\n⭐ 5-Star Luxury: W Goa (Vagator), Taj Fort Aguada, Grand Hyatt\n⭐ 4-Star Beachfront: Novotel Candolim, Whispering Palms, Radisson Blu\n⭐ Heritage Portuguese Villas & Pool Stays in North & South Goa\n\n🍽️ Most stays include complimentary buffet breakfast and swimming pool access. Which beach location do you prefer?";
+                } elseif (strpos($msgClean, 'beach') !== false || strpos($msgClean, 'north goa') !== false || strpos($msgClean, 'south goa') !== false || strpos($msgClean, 'baga') !== false || strpos($msgClean, 'calangute') !== false || strpos($msgClean, 'anjuna') !== false) {
+                    $reply = "🌊 Here are Goa's top beach highlights:\n\n🔥 North Goa (Vibrant & Nightlife):\n• Baga & Calangute: Watersports, beach shacks, night markets\n• Anjuna & Vagator: Sunset views, cliff cafes, techno parties, Curlies, Thalassa\n• Morjim & Ashwem: Peaceful white sands & beach clubs\n\n🌴 South Goa (Serene & Scenic):\n• Palolem & Butterfly Beach: Scenic crescent bays & kayaking\n• Colva & Benaulim: Pristine beaches & authentic Goan seafood";
+                } elseif (strpos($msgClean, 'watersport') !== false || strpos($msgClean, 'scuba') !== false || strpos($msgClean, 'activit') !== false || strpos($msgClean, 'cruise') !== false || strpos($msgClean, 'dudhsagar') !== false) {
+                    $reply = "🤿 Top Goa Experiences with TripGalileo:\n\n1. 5-in-1 Watersports Combo: Jet Ski, Parasailing, Banana & Bumper Ride\n2. Grand Island Scuba Diving with underwater HD video & dolphin spotting\n3. Mandovi River Sunset & Dinner Cruise with live DJ & Goan folk dance\n4. Dudhsagar Waterfalls Jeep Safari & Spice Plantation tour\n\nWould you like me to add any of these to your booking?";
+                } elseif (strpos($msgClean, 'document') !== false || strpos($msgClean, 'license') !== false || strpos($msgClean, 'dl') !== false || strpos($msgClean, 'require') !== false || strpos($msgClean, 'id') !== false) {
+                    $reply = "📄 Requirements for Self-Drive Rental:\n\n1. Original Valid Driving License (Indian DL or International Driving Permit)\n2. Original Govt Photo ID (Aadhaar Card, Passport, or Voter ID)\n3. Minimum age 21 years for cars, 18 years for two-wheelers\n\nVerification takes just 2 minutes at vehicle handover!";
+                } elseif (strpos($msgClean, 'price') !== false || strpos($msgClean, 'cost') !== false || strpos($msgClean, 'pay') !== false || strpos($msgClean, 'advance') !== false || strpos($msgClean, 'book') !== false) {
+                    $reply = "💳 Flexible Booking at TripGalileo:\n\n• Pay just 25% Advance Token to lock your package, vehicle, or hotel reservation.\n• Pay remaining 75% on arrival during check-in or vehicle handover.\n• 100% transparent pricing with zero surprise charges.\n\nShare your travel dates and I will get you the best available quote!";
+                } else {
+                    $carListStr = !empty($dbCars) ? implode(', ', array_map(function($c) { return $c['name']; }, array_slice($dbCars, 0, 4))) : "Defender, Thar 4x4, Swift, Creta";
+                    $reply = "🌴 Hello! I am Kratu.ai, your personal TripGalileo travel assistant for Goa!\n\nI can help you with:\n1. 🚗 Self-Drive Cars ({$carListStr})\n2. 🛵 Bike & Scooter Rentals (Activa, Bullet, Sports bikes)\n3. 🏖️ Custom Holiday Packages (Stays + Flights + Transfers)\n4. 🏨 Luxury Hotels & Beachfront Resorts\n5. 🤿 Watersports, Scuba & Sunset Cruises\n\nWhat would you like to explore today?";
+                }
+            }
+
+            echo json_encode(["success" => true, "reply" => $reply]);
+            exit;
         } elseif ($action === 'login') {
             if (!isset($payload['username']) || !isset($payload['password'])) {
                 throw new Exception("Missing username or password.");
@@ -2007,51 +2326,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
             echo json_encode(["success" => true, "message" => "Timeline entry added."]);
             exit;
-        } elseif ($action === 'chat_with_ai') {
-            if (!isset($payload['messages'])) {
-                throw new Exception("Missing messages array.");
-            }
-            
-            $api_key = getenv('GROQ_API_KEY') ?: ($_ENV['GROQ_API_KEY'] ?? 'gsk_demo_ai_travel_assistant_key');
-            $url = "https://api.groq.com/openai/v1/chat/completions";
-            
-            $system_prompt = [
-                "role" => "system",
-                "content" => "You are Maya, an expert AI travel assistant for TripGalileo (a premium Goa travel application). Your goal is to help users plan trips, customize packages, rent cars/bikes, and book luxury hotels in Goa. 
-You must explain the TripGalileo application in detail if asked (we offer self-drive cars like Thar, luxury bikes, premium hotels like W Goa, and full customizable holiday packages). 
-If a user wants to book or customize a package, actively ask them for their Name and Phone number so you can 'save it to the admin dashboard'. 
-Once they provide their name and phone number, acknowledge it enthusiastically and say 'I have captured your details! Our team will contact you shortly to finalize your custom package.' 
-Keep responses very concise, warm, and helpful. Use emojis."
-            ];
-            
-            $messages = $payload['messages'];
-            array_unshift($messages, $system_prompt);
-
-            $data = [
-                "model" => "llama3-8b-8192",
-                "messages" => $messages,
-                "temperature" => 0.7,
-                "max_tokens" => 500
-            ];
-            
-            $ch = curl_init($url);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                'Content-Type: application/json',
-                'Authorization: Bearer ' . $api_key
-            ]);
-            
-            $response = curl_exec($ch);
-            curl_close($ch);
-            
-            $result = json_decode($response, true);
-            if (isset($result['choices'][0]['message']['content'])) {
-                echo json_encode(["success" => true, "reply" => $result['choices'][0]['message']['content']]);
-            exit;} else {
-                echo json_encode(["success" => false, "error" => "Failed to get AI response", "raw" => $result]);
-            exit;}
         } elseif ($action === 'update_user') {
             if (!isset($payload['id']) || !isset($payload['username']) || !isset($payload['email']) || !isset($payload['role'])) {
                 throw new Exception("Missing user update parameters.");
