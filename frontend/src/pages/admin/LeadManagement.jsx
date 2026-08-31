@@ -65,6 +65,24 @@ export default function LeadManagement({ usersList = [], currentUser }) {
   const [selectedAssignee, setSelectedAssignee] = useState('');
   const [assigning, setAssigning] = useState(false);
 
+  // Lead / Itinerary Preview Modal State
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [previewLead, setPreviewLead] = useState(null);
+
+  const handleOpenPreview = (lead, e) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    setPreviewLead(lead || selectedLead);
+    setIsPreviewOpen(true);
+  };
+
+  const handleClosePreview = () => {
+    setIsPreviewOpen(false);
+    setPreviewLead(null);
+  };
+
   const [assignableUsers, setAssignableUsers] = useState([]);
   
   // Create Sub-Admin Modal state
@@ -930,7 +948,18 @@ export default function LeadManagement({ usersList = [], currentUser }) {
               </div>
               <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.6)' }}>{selectedLead.source}</div>
             </div>
-            <button className="btn p-1 border-0 text-white-50" onClick={() => setSelectedLead(null)}><X size={18} /></button>
+            <div className="d-flex align-items-center gap-2">
+              <button 
+                type="button"
+                className="btn btn-sm btn-outline-light py-1 px-2.5 rounded-pill d-flex align-items-center gap-1.5 text-white shadow-xs" 
+                style={{ fontSize: '0.74rem', borderColor: 'rgba(255,255,255,0.3)', background: 'rgba(255,255,255,0.12)' }}
+                onClick={(e) => handleOpenPreview(selectedLead, e)}
+                title="Preview Complete Itinerary & Trip Plan"
+              >
+                <Eye size={13} style={{ color: '#FF8A00' }} /> Preview Trip Plan
+              </button>
+              <button className="btn p-1 border-0 text-white-50 hover-text-white" onClick={() => setSelectedLead(null)}><X size={18} /></button>
+            </div>
           </div>
 
           <div className="flex-grow-1 overflow-auto p-4">
@@ -1048,7 +1077,18 @@ export default function LeadManagement({ usersList = [], currentUser }) {
               <div className="row g-2">
                 <div className="col-6">
                   <span className="d-block text-muted" style={{ fontSize: '0.68rem', fontWeight: 600 }}>SERVICE REQUESTED</span>
-                  <span className="fw-bold" style={{ fontSize: '0.82rem', color: '#0D1B2E' }}>{selectedLead.service || 'General Inquiry'}</span>
+                  <div className="d-flex align-items-center gap-1.5 mt-0.5">
+                    <span className="fw-bold" style={{ fontSize: '0.82rem', color: '#0D1B2E' }}>{selectedLead.service || 'General Inquiry'}</span>
+                    <button
+                      type="button"
+                      className="btn btn-xs btn-outline-primary py-0 px-1.5 rounded-pill d-inline-flex align-items-center gap-1"
+                      style={{ fontSize: '0.68rem', height: '20px' }}
+                      onClick={(e) => handleOpenPreview(selectedLead, e)}
+                      title="View Complete Trip Itinerary"
+                    >
+                      <Eye size={11} /> Plan
+                    </button>
+                  </div>
                 </div>
                 <div className="col-6">
                   <span className="d-block text-muted" style={{ fontSize: '0.68rem', fontWeight: 600 }}>ESTIMATED BUDGET</span>
@@ -1488,6 +1528,308 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── LEAD & TRIP PLAN PREVIEW MODAL ────────────────────────────────────── */}
+      {isPreviewOpen && previewLead && (
+        <div 
+          className="modal-backdrop-custom d-flex align-items-center justify-content-center"
+          style={{ 
+            position: 'fixed', 
+            top: 0, 
+            left: 0, 
+            right: 0, 
+            bottom: 0, 
+            background: 'rgba(11, 25, 44, 0.75)', 
+            backdropFilter: 'blur(8px)', 
+            zIndex: 1250, 
+            padding: '16px' 
+          }}
+          onClick={handleClosePreview}
+        >
+          <div 
+            className="animate-fade-in-up bg-white rounded-4 shadow-2xl overflow-hidden d-flex flex-column"
+            style={{ 
+              width: '860px', 
+              maxWidth: '96vw', 
+              maxHeight: '90vh', 
+              border: '1px solid rgba(0,0,0,0.1)' 
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div 
+              className="px-4 py-3 d-flex align-items-center justify-content-between flex-shrink-0"
+              style={{ background: 'linear-gradient(135deg, #0D1B2E 0%, #1e293b 100%)', color: '#fff' }}
+            >
+              <div className="d-flex align-items-center gap-3">
+                <div 
+                  className="rounded-circle d-flex align-items-center justify-content-center shadow-sm"
+                  style={{ width: '38px', height: '38px', background: 'linear-gradient(135deg, #FF6333 0%, #FF8A00 100%)', color: '#fff' }}
+                >
+                  <Sparkles size={18} />
+                </div>
+                <div>
+                  <div className="d-flex align-items-center gap-2">
+                    <h5 className="mb-0 fw-bold text-white font-heading">{previewLead.name || 'Lead Details'}</h5>
+                    <span className="badge bg-secondary font-monospace" style={{ fontSize: '0.7rem' }}>#{previewLead.id}</span>
+                    <span className="badge rounded-pill bg-warning text-dark fw-bold" style={{ fontSize: '0.68rem' }}>{previewLead.status || 'New'}</span>
+                  </div>
+                  <div className="text-white-50" style={{ fontSize: '0.75rem' }}>
+                    {previewLead.source} · Created {previewLead.created_at || previewLead.createdAt || 'Recently'}
+                  </div>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                className="btn p-1 text-white-50 hover-text-white border-0" 
+                onClick={handleClosePreview}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-grow-1 overflow-auto p-4" style={{ background: '#f8fafc' }}>
+              {/* Top Overview Cards */}
+              <div className="row g-3 mb-4">
+                <div className="col-md-4 col-sm-6">
+                  <div className="p-3 bg-white rounded-3 shadow-xs border h-100">
+                    <span className="d-block text-muted text-uppercase fw-bold" style={{ fontSize: '0.68rem' }}>Requested Service</span>
+                    <h6 className="fw-bold text-primary mb-1 mt-1">{previewLead.service || 'General Inquiry'}</h6>
+                    <span className="text-muted small" style={{ fontSize: '0.75rem' }}>Category: {previewLead.source}</span>
+                  </div>
+                </div>
+                <div className="col-md-4 col-sm-6">
+                  <div className="p-3 bg-white rounded-3 shadow-xs border h-100">
+                    <span className="d-block text-muted text-uppercase fw-bold" style={{ fontSize: '0.68rem' }}>Estimated Budget</span>
+                    <h6 className="fw-bold text-success mb-1 mt-1">{previewLead.budget || 'Not specified'}</h6>
+                    <span className="text-muted small" style={{ fontSize: '0.75rem' }}>Advance Token: 25% Applicable</span>
+                  </div>
+                </div>
+                <div className="col-md-4 col-sm-12">
+                  <div className="p-3 bg-white rounded-3 shadow-xs border h-100">
+                    <span className="d-block text-muted text-uppercase fw-bold" style={{ fontSize: '0.68rem' }}>Assigned Agent</span>
+                    <h6 className="fw-bold text-dark mb-1 mt-1">{previewLead.assigned_to || previewLead.assignedTo || 'Unassigned'}</h6>
+                    <span className="text-muted small" style={{ fontSize: '0.75rem' }}>By: {previewLead.assigned_by || 'Admin'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Customer Contact & Action Banner */}
+              <div className="p-3 rounded-3 mb-4 bg-white shadow-xs border">
+                <div className="d-flex flex-wrap align-items-center justify-content-between gap-3">
+                  <div className="d-flex align-items-center gap-3">
+                    <div className="p-2 rounded-circle bg-light text-primary">
+                      <Phone size={18} />
+                    </div>
+                    <div>
+                      <span className="d-block text-muted" style={{ fontSize: '0.72rem' }}>CUSTOMER CONTACT</span>
+                      <span className="fw-bold text-dark">{previewLead.phone}</span>
+                      {previewLead.email && <span className="text-muted ms-2 small">({previewLead.email})</span>}
+                    </div>
+                  </div>
+                  {(() => {
+                    const rawP = String(previewLead.phone || '').replace(/[^0-9]/g, '');
+                    const waP = rawP.length === 10 ? '91' + rawP : rawP;
+                    return (
+                      <div className="d-flex gap-2">
+                        <a 
+                          href={`https://wa.me/${waP}?text=${encodeURIComponent(`Hi ${previewLead.name}, this is ${currentUserName} from WOW GOA regarding your requested trip/service (${previewLead.service || 'Goa Holiday'})!`)}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="btn btn-success btn-sm d-flex align-items-center gap-1.5 fw-bold"
+                          style={{ fontSize: '0.78rem' }}
+                        >
+                          <MessageSquare size={14} /> WhatsApp
+                        </a>
+                        <a 
+                          href={`tel:${previewLead.phone}`}
+                          className="btn btn-primary btn-sm d-flex align-items-center gap-1.5 fw-bold"
+                          style={{ fontSize: '0.78rem' }}
+                        >
+                          <PhoneCall size={14} /> Call
+                        </a>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* Comprehensive 4-Day Day-Wise Itinerary Schedule */}
+              <div className="bg-white rounded-3 shadow-xs border p-4 mb-3">
+                <div className="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+                  <div>
+                    <h6 className="fw-bold text-dark mb-0 font-heading">
+                      📍 4-Day Itinerary & Activity Schedule
+                    </h6>
+                    <span className="text-muted small">Customized travel schedule for {previewLead.name}</span>
+                  </div>
+                  <span className="badge rounded-pill bg-light text-dark border px-3 py-1.5 fw-bold" style={{ fontSize: '0.75rem' }}>
+                    4 Days / 3 Nights
+                  </span>
+                </div>
+
+                <div className="d-flex flex-column gap-3">
+                  {/* DAY 1 */}
+                  <div className="p-3 rounded-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                    <div className="d-flex align-items-center justify-content-between mb-2">
+                      <span className="badge bg-primary text-white fw-bold px-2 py-1" style={{ fontSize: '0.72rem' }}>Day 1</span>
+                      <span className="fw-bold text-dark small">Arrival, Private Transfer & North Goa Beach Sunset</span>
+                    </div>
+                    <div className="row g-2 mt-1">
+                      <div className="col-md-6">
+                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                          <span className="fw-bold text-warning d-block">🌅 Morning (09:00 AM - 12:00 PM)</span>
+                          <span className="text-muted">Airport pickup at Dabolim (GOI) / Mopa (GOX) with vehicle handover & luxury hotel check-in.</span>
+                        </div>
+                      </div>
+                      <div className="col-md-6">
+                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                          <span className="fw-bold text-primary d-block">☀️ Afternoon (01:00 PM - 04:00 PM)</span>
+                          <span className="text-muted">Traditional Goan fish curry lunch at Calangute beach shack followed by relaxed coastal walk.</span>
+                        </div>
+                      </div>
+                      <div className="col-md-6">
+                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                          <span className="fw-bold text-info d-block">🌆 Evening (04:30 PM - 07:30 PM)</span>
+                          <span className="text-muted">Scenic sunset viewing at Fort Aguada lighthouse and Candolim Beach promenade.</span>
+                        </div>
+                      </div>
+                      <div className="col-md-6">
+                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                          <span className="fw-bold text-purple d-block" style={{ color: '#7c3aed' }}>🌙 Night (08:00 PM - 11:00 PM)</span>
+                          <span className="text-muted">Candlelight seaside dinner and exploring vibrant nightlife around Tito's Lane & Baga.</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* DAY 2 */}
+                  <div className="p-3 rounded-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                    <div className="d-flex align-items-center justify-content-between mb-2">
+                      <span className="badge bg-primary text-white fw-bold px-2 py-1" style={{ fontSize: '0.72rem' }}>Day 2</span>
+                      <span className="fw-bold text-dark small">Water Sports Adventure, Chapora Fort & Cliffside Dining</span>
+                    </div>
+                    <div className="row g-2 mt-1">
+                      <div className="col-md-6">
+                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                          <span className="fw-bold text-warning d-block">🌅 Morning (09:00 AM - 12:30 PM)</span>
+                          <span className="text-muted">High-speed Jet Ski, Parasailing, Banana Boat Ride & Bumper Tube at Baga Beach.</span>
+                        </div>
+                      </div>
+                      <div className="col-md-6">
+                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                          <span className="fw-bold text-primary d-block">☀️ Afternoon (01:00 PM - 04:00 PM)</span>
+                          <span className="text-muted">Cliffside Mediterranean lunch at Vagator overlooking the azure Arabian Sea.</span>
+                        </div>
+                      </div>
+                      <div className="col-md-6">
+                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                          <span className="fw-bold text-info d-block">🌆 Evening (04:30 PM - 07:00 PM)</span>
+                          <span className="text-muted">Panoramic sunset photography at Chapora Fort (Dil Chahta Hai point) & Little Vagator.</span>
+                        </div>
+                      </div>
+                      <div className="col-md-6">
+                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                          <span className="fw-bold text-purple d-block" style={{ color: '#7c3aed' }}>🌙 Night (07:30 PM - 10:30 PM)</span>
+                          <span className="text-muted">Acoustic live music, artisan night market shopping & dinner at Anjuna beach.</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* DAY 3 */}
+                  <div className="p-3 rounded-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                    <div className="d-flex align-items-center justify-content-between mb-2">
+                      <span className="badge bg-primary text-white fw-bold px-2 py-1" style={{ fontSize: '0.72rem' }}>Day 3</span>
+                      <span className="fw-bold text-dark small">South Goa Heritage, Fontainhas & Mandovi Sunset Cruise</span>
+                    </div>
+                    <div className="row g-2 mt-1">
+                      <div className="col-md-6">
+                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                          <span className="fw-bold text-warning d-block">🌅 Morning (09:30 AM - 12:30 PM)</span>
+                          <span className="text-muted">UNESCO Heritage tour: Basilica of Bom Jesus, Se Cathedral & historical churches of Old Goa.</span>
+                        </div>
+                      </div>
+                      <div className="col-md-6">
+                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                          <span className="fw-bold text-primary d-block">☀️ Afternoon (01:00 PM - 04:00 PM)</span>
+                          <span className="text-muted">Heritage walk through Fontainhas (Portuguese Latin Quarter) & cafe lunch.</span>
+                        </div>
+                      </div>
+                      <div className="col-md-6">
+                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                          <span className="fw-bold text-info d-block">🌆 Evening (05:00 PM - 07:30 PM)</span>
+                          <span className="text-muted">Sunset Mandovi River Cruise with live Goan folk dance & DJ music.</span>
+                        </div>
+                      </div>
+                      <div className="col-md-6">
+                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                          <span className="fw-bold text-purple d-block" style={{ color: '#7c3aed' }}>🌙 Night (08:00 PM - 10:30 PM)</span>
+                          <span className="text-muted">Fine dining authentic seafood dinner along Miramar Beach coastline.</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* DAY 4 */}
+                  <div className="p-3 rounded-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                    <div className="d-flex align-items-center justify-content-between mb-2">
+                      <span className="badge bg-primary text-white fw-bold px-2 py-1" style={{ fontSize: '0.72rem' }}>Day 4</span>
+                      <span className="fw-bold text-dark small">Leisure Souvenirs & Airport Departure Transfer</span>
+                    </div>
+                    <div className="row g-2 mt-1">
+                      <div className="col-md-6">
+                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                          <span className="fw-bold text-warning d-block">🌅 Morning (09:00 AM - 11:30 AM)</span>
+                          <span className="text-muted">Poolside buffet breakfast, cashew and spice shopping at Panjim/Mapusa market.</span>
+                        </div>
+                      </div>
+                      <div className="col-md-6">
+                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                          <span className="fw-bold text-primary d-block">☀️ Afternoon (12:00 PM - 03:00 PM)</span>
+                          <span className="text-muted">Hotel check-out and scenic drive through coconut groves of South Goa.</span>
+                        </div>
+                      </div>
+                      <div className="col-md-12">
+                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                          <span className="fw-bold text-success d-block">✈️ Evening / Departure (04:00 PM Onwards)</span>
+                          <span className="text-muted">Hassle-free vehicle drop / airport transfer at Dabolim (GOI) or Mopa (GOX) with departure support.</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-4 py-3 bg-white border-top d-flex align-items-center justify-content-between flex-shrink-0">
+              <div className="text-muted small" style={{ fontSize: '0.75rem' }}>
+                Trip Galileo CRM Itinerary Engine
+              </div>
+              <div className="d-flex gap-2">
+                <button 
+                  type="button" 
+                  className="btn btn-outline-secondary btn-sm px-3 py-1.5 fw-bold" 
+                  style={{ fontSize: '0.8rem' }}
+                  onClick={() => window.print()}
+                >
+                  Print Itinerary
+                </button>
+                <button 
+                  type="button" 
+                  className="btn btn-dark btn-sm px-4 py-1.5 fw-bold" 
+                  style={{ fontSize: '0.8rem' }}
+                  onClick={handleClosePreview}
+                >
+                  Close Preview
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
