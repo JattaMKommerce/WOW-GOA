@@ -183,7 +183,13 @@ export default function LeadManagement({ usersList = [], currentUser }) {
     }
   }, [usersList]);
 
-  // Fetch leads live from backend database
+  // Keep ref to selectedLead for stable callbacks
+  const selectedLeadRef = useRef(selectedLead);
+  useEffect(() => {
+    selectedLeadRef.current = selectedLead;
+  }, [selectedLead]);
+
+  // Fetch leads live from backend database (stable callback)
   const loadLeads = useCallback(async (showIndicator = false) => {
     if (showIndicator) setIsSyncing(true);
     try {
@@ -203,80 +209,75 @@ export default function LeadManagement({ usersList = [], currentUser }) {
         setLastSyncedAt(Date.now());
         setSecondsAgo(0);
 
-        // If a lead is currently selected, refresh its details
-        if (selectedLead) {
-          const fresh = data.find(l => l.id === selectedLead.id);
+        // If a lead is currently selected, update only if meaningful changes exist
+        if (selectedLeadRef.current) {
+          const fresh = data.find(l => l.id === selectedLeadRef.current.id);
           if (fresh) {
-            setSelectedLead(fresh);
+            const cur = selectedLeadRef.current;
+            if (
+              cur.status !== fresh.status ||
+              cur.assigned_to !== fresh.assigned_to ||
+              cur.next_action !== fresh.next_action ||
+              cur.notes !== fresh.notes ||
+              cur.budget !== fresh.budget
+            ) {
+              setSelectedLead(fresh);
+            }
           }
         }
       }
     } catch (err) {
-      console.warn('[LeadManagement] Realtime fetch error:', err.message);
+      console.warn('[LeadManagement] Fetch error:', err.message);
     } finally {
       setLoading(false);
       if (showIndicator) {
-        setTimeout(() => setIsSyncing(false), 400);
+        setTimeout(() => setIsSyncing(false), 300);
       }
     }
-  }, [isSubAdmin, currentUser, selectedLead]);
+  }, [isSubAdmin, currentUser]);
 
-  // Fetch comments for selected lead
-  const loadComments = useCallback(async (leadId) => {
+  // Fetch comments for selected lead (silent by default to prevent flickering)
+  const loadComments = useCallback(async (leadId, showSpinner = false) => {
     if (!leadId) return;
-    setLoadingComments(true);
+    if (showSpinner) setLoadingComments(true);
     try {
       const data = await api.fetchLeadComments(leadId, currentUser?.role, currentUser?.username);
       setComments(Array.isArray(data) ? data : []);
     } catch (err) {
       console.warn("Failed to load comments:", err);
     } finally {
-      setLoadingComments(false);
+      if (showSpinner) setLoadingComments(false);
     }
   }, [currentUser]);
 
-  // Initial fetch and Realtime sync loop (every 8 seconds)
+  // Initial fetch and event-driven updates (NO continuous auto-refresh polling)
   useEffect(() => {
     loadLeads();
     loadAssignableUsers();
-
-    const pollInterval = setInterval(() => {
-      loadLeads(false);
-      if (selectedLead) {
-        loadComments(selectedLead.id);
-      }
-    }, 8000);
-
-    const handleFocus = () => {
-      loadLeads(false);
-      if (selectedLead) loadComments(selectedLead.id);
-    };
-    window.addEventListener('focus', handleFocus);
 
     const handleRealtimeLead = () => loadLeads(true);
     window.addEventListener('realtime-lead-created', handleRealtimeLead);
     window.addEventListener('new-booking-created', handleRealtimeLead);
 
     return () => {
-      clearInterval(pollInterval);
-      window.removeEventListener('focus', handleFocus);
       window.removeEventListener('realtime-lead-created', handleRealtimeLead);
       window.removeEventListener('new-booking-created', handleRealtimeLead);
     };
-  }, [loadLeads, loadAssignableUsers, selectedLead, loadComments]);
+  }, [loadLeads, loadAssignableUsers]);
 
-  // Load comments when selectedLead changes
+  // Load comments when selectedLead ID changes
+  const selectedLeadId = selectedLead?.id;
   useEffect(() => {
-    if (selectedLead) {
-      setNextActionDraft(selectedLead.next_action || selectedLead.nextAction || '');
-      setNotesDraft(selectedLead.notes || '');
+    if (selectedLeadId) {
+      setNextActionDraft(selectedLead?.next_action || selectedLead?.nextAction || '');
+      setNotesDraft(selectedLead?.notes || '');
       setEditingNextAction(false);
       setEditingNotes(false);
-      loadComments(selectedLead.id);
+      loadComments(selectedLeadId, true);
     } else {
       setComments([]);
     }
-  }, [selectedLead, loadComments]);
+  }, [selectedLeadId, loadComments]);
 
   // Scroll comments to bottom
   useEffect(() => {
@@ -284,15 +285,6 @@ export default function LeadManagement({ usersList = [], currentUser }) {
       commentsEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [comments]);
-
-  // Track "seconds ago" timer
-  useEffect(() => {
-    const timer = setInterval(() => {
-      const diff = Math.floor((Date.now() - lastSyncedAt) / 1000);
-      setSecondsAgo(diff);
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [lastSyncedAt]);
 
   // Filtered Leads
   const filteredLeads = leads.filter(item => {
@@ -1120,7 +1112,7 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                 <span className="fw-bold text-dark text-uppercase d-flex align-items-center gap-1.5" style={{ fontSize: '0.74rem' }}>
                   <MessageSquare size={13} style={{ color: '#FF6333' }} /> LEAD COMMUNICATION & DISCUSSION ({comments.length})
                 </span>
-                <button onClick={() => loadComments(selectedLead.id)} disabled={loadingComments} className="btn btn-sm btn-link p-0 text-muted" title="Refresh discussion">
+                <button onClick={() => loadComments(selectedLead.id, true)} disabled={loadingComments} className="btn btn-sm btn-link p-0 text-muted" title="Refresh discussion">
                   <RefreshCw size={12} className={loadingComments ? 'animate-spin' : ''} />
                 </button>
               </div>
