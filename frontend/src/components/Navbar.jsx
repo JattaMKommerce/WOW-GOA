@@ -9,7 +9,7 @@ export default function Navbar({ activeTab, setActiveTab, currentUser, triggerOp
   return (
     <nav className="navbar navbar-expand-lg navbar-dark premium-navbar">
       <div className="container">
-        <a className="navbar-brand d-flex align-items-center" href="/" onClick={(e) => { e.preventDefault(); setActiveTab('packages'); }}>
+        <a className="navbar-brand d-flex align-items-center" href="/" onClick={(e) => { e.preventDefault(); setActiveTab('selfdrive'); }}>
           <div className="me-2 text-warning d-flex align-items-center">
             <Compass size={28} className="float-animation" />
           </div>

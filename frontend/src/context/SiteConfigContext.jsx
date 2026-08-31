@@ -35,8 +35,8 @@ export const DEFAULT_CONFIG = {
 
   menus: {
     header: [
-      { id: 'packages', label: 'Trip Packages', href: '/packages', children: [] },
       { id: 'selfdrive', label: 'Self Drive', href: '/self-drive', children: [] },
+      { id: 'packages', label: 'Trip Packages', href: '/packages', children: [] },
       { id: 'hotels', label: 'Hotels', href: '/hotels', children: [] },
       { id: 'flights', label: 'Flights', href: '/flights', children: [] },
       { id: 'craftmytrip', label: 'Craft My Trip', href: '/craft', children: [] }

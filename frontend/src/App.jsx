@@ -63,8 +63,8 @@ import { getTodayDateStr, addDays, validateBookingDates } from './utils/dateUtil
 export default function App() {
   const { liveConfig } = useSiteConfig();
   
-  // Navigation & Tabs state (Default to public storefront packages view)
-  const [activeTab, setActiveTab] = useState('packages');
+  // Navigation & Tabs state (Default to public storefront selfdrive view)
+  const [activeTab, setActiveTab] = useState('selfdrive');
   const [currentPath, setCurrentPath] = useState(() => (typeof window !== 'undefined' ? window.location.pathname.toLowerCase() : '/'));
   const path = currentPath;
 
