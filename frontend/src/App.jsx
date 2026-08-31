@@ -576,200 +576,138 @@ export default function App() {
     );
   }
 
-  // ─── ADMIN / SUPERADMIN / VENDOR PORTALS ──────────────────────────────────
-  if (activeTab === 'portal') {
-    if (currentUser?.role === 'superadmin') {
+  // ─── ADMIN / SUPERADMIN / VENDOR / SUBADMIN PORTALS ───────────────────────
+  if (activeTab === 'portal' || path.startsWith('/admin') || path === '/portal' || path.startsWith('/sub-admin') || path.startsWith('/subadmin') || path === '/superadmin' || path === '/vendor' || path === '/hotel-vendor' || path === '/flight-vendor') {
+    if (currentUser?.role === 'superadmin' || path === '/superadmin') {
       return (
-        <SuperAdminPortalPage
+        <>
+          <SuperAdminPortalPage
+            currentUser={currentUser}
+            triggerOpenLogin={() => setShowLoginModal(true)}
+            usersList={usersList}
+            vendors={vendors}
+            cars={cars}
+            bikes={bikes}
+            hotels={hotels}
+            bookings={bookings}
+            onAddUser={handleAddUser}
+            onUpdateUser={handleUpdateUser}
+            onDeleteUser={handleDeleteUser}
+            onLogout={handleLogout}
+          />
+          <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLogin={handleLogin} />
+        </>
+      );
+    }
+    if (currentUser?.role === 'subadmin' || path.startsWith('/sub-admin') || path.startsWith('/subadmin')) {
+      return (
+        <>
+          <SubAdminPortalPage
+            currentUser={currentUser}
+            onLogout={handleLogout}
+            usersList={usersList}
+          />
+          <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLogin={handleLogin} />
+        </>
+      );
+    }
+    if (currentUser?.role === 'hotel_vendor' || path === '/hotel-vendor') {
+      return (
+        <>
+          <HotelVendorPortalPage
+            currentUser={currentUser}
+            triggerOpenLogin={() => setShowLoginModal(true)}
+            hotels={hotels}
+            onAddHotel={handleAddHotel}
+            onUpdateHotel={handleUpdateHotel}
+            onDeleteHotel={handleDeleteHotel}
+            onLogout={handleLogout}
+            bookings={bookings}
+          />
+          <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLogin={handleLogin} />
+        </>
+      );
+    }
+    if (currentUser?.role === 'flight_vendor' || path === '/flight-vendor') {
+      return (
+        <>
+          <FlightVendorPortalPage
+            currentUser={currentUser}
+            triggerOpenLogin={() => setShowLoginModal(true)}
+            flights={flights}
+            onAddFlight={handleAddFlight}
+            onUpdateFlight={handleUpdateFlight}
+            onDeleteFlight={handleDeleteFlight}
+            onLogout={handleLogout}
+            bookings={bookings}
+          />
+          <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLogin={handleLogin} />
+        </>
+      );
+    }
+    if (currentUser?.role === 'vendor' || path === '/vendor') {
+      return (
+        <>
+          <VendorPortalPage
+            currentUser={currentUser}
+            triggerOpenLogin={() => setShowLoginModal(true)}
+            vendors={vendors}
+            cars={cars}
+            bikes={bikes}
+            onAddCar={handleAddCar}
+            onAddBike={handleAddBike}
+            onUpdateCar={handleUpdateCar}
+            onUpdateBike={handleUpdateBike}
+            onDeleteCar={handleDeleteCar}
+            onDeleteBike={handleDeleteBike}
+            onLogout={handleLogout}
+            bookings={bookings}
+            setBookingsList={setBookingsList}
+          />
+          <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLogin={handleLogin} />
+        </>
+      );
+    }
+
+    // Default to Admin Portal (for admin role or any unauthenticated partner portal access)
+    return (
+      <>
+        <AdminPortalPage
           currentUser={currentUser}
           triggerOpenLogin={() => setShowLoginModal(true)}
-          usersList={usersList}
           vendors={vendors}
+          allPackages={packages}
           cars={cars}
           bikes={bikes}
-          hotels={hotels}
-          bookings={bookings}
-          onAddUser={handleAddUser}
-          onUpdateUser={handleUpdateUser}
-          onDeleteUser={handleDeleteUser}
-          onLogout={handleLogout}
-        />
-      );
-    }
-    if (currentUser?.role === 'hotel_vendor') {
-      return (
-        <HotelVendorPortalPage
-          currentUser={currentUser}
-          triggerOpenLogin={() => setShowLoginModal(true)}
-          hotels={hotels}
-          onAddHotel={handleAddHotel}
-          onUpdateHotel={handleUpdateHotel}
-          onDeleteHotel={handleDeleteHotel}
-          onLogout={handleLogout}
-          bookings={bookings}
-        />
-      );
-    }
-    if (currentUser?.role === 'flight_vendor') {
-      return (
-        <FlightVendorPortalPage
-          currentUser={currentUser}
-          triggerOpenLogin={() => setShowLoginModal(true)}
-          flights={flights}
-          onAddFlight={handleAddFlight}
-          onUpdateFlight={handleUpdateFlight}
-          onDeleteFlight={handleDeleteFlight}
-          onLogout={handleLogout}
-          bookings={bookings}
-        />
-      );
-    }
-    if (currentUser?.role === 'vendor') {
-      return (
-        <VendorPortalPage
-          currentUser={currentUser}
-          triggerOpenLogin={() => setShowLoginModal(true)}
-          vendors={vendors}
-          cars={cars}
-          bikes={bikes}
+          onAddVendor={handleAddVendor}
+          onUpdateVendor={handleUpdateVendor}
+          onDeleteVendor={handleDeleteVendor}
+          onSetVendorPassword={handleSetVendorPassword}
+          onAddPackage={handleAddPackage}
+          onUpdatePackage={handleUpdatePackage}
+          onDeletePackage={handleDeletePackage}
           onAddCar={handleAddCar}
-          onAddBike={handleAddBike}
           onUpdateCar={handleUpdateCar}
-          onUpdateBike={handleUpdateBike}
           onDeleteCar={handleDeleteCar}
+          onAddBike={handleAddBike}
+          onUpdateBike={handleUpdateBike}
           onDeleteBike={handleDeleteBike}
           onLogout={handleLogout}
-          bookings={bookings}
-          setBookingsList={setBookingsList}
-        />
-      );
-    }
-  }
-
-  if (path === '/sub-admin' || path.startsWith('/sub-admin') || path === '/subadmin' || path.startsWith('/subadmin')) {
-    return (
-      <SubAdminPortalPage
-        currentUser={currentUser}
-        onLogout={handleLogout}
-        usersList={usersList}
-      />
-    );
-  }
-
-  // --- Dynamic Route Matching ---
-  const dynamicPage = Object.values(liveConfig?.pages || {}).find(p => p.slug === path);
-
-  if (path === '/superadmin') {
-    return (
-      <>
-        <SuperAdminPortalPage
-          currentUser={currentUser}
-          triggerOpenLogin={() => setShowLoginModal(true)}
-          usersList={usersList}
-          vendors={vendors}
-          cars={cars}
-          bikes={bikes}
-          hotels={hotels}
-          bookings={bookings}
-          onAddUser={handleAddUser}
-          onUpdateUser={handleUpdateUser}
-          onDeleteUser={handleDeleteUser}
-          onLogout={handleLogout}
-        />
-        <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLogin={handleLogin} />
-      </>
-    );
-  }
-
-  if (path === '/customer') {
-    return (
-      <>
-        <CustomerDashboard
-          currentUser={currentUser}
-          triggerOpenLogin={() => setShowLoginModal(true)}
-          bookings={bookings}
-          hotels={hotels}
-          cars={cars}
-          bikes={bikes}
-          onLogout={handleLogout}
-        />
-        <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLogin={handleLogin} />
-      </>
-    );
-  }
-
-  if (path === '/flight-vendor') {
-    return (
-      <>
-        <FlightVendorPortalPage
-          currentUser={currentUser}
-          triggerOpenLogin={() => setShowLoginModal(true)}
           flights={flights}
           onAddFlight={handleAddFlight}
           onUpdateFlight={handleUpdateFlight}
           onDeleteFlight={handleDeleteFlight}
-          onLogout={handleLogout}
-          bookings={bookings}
-        />
-        <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLogin={handleLogin} />
-      </>
-    );
-  }
-
-  if (path === '/hotel-vendor') {
-    return (
-      <>
-        <HotelVendorPortalPage
-          currentUser={currentUser}
-          triggerOpenLogin={() => setShowLoginModal(true)}
           hotels={hotels}
           onAddHotel={handleAddHotel}
           onUpdateHotel={handleUpdateHotel}
           onDeleteHotel={handleDeleteHotel}
-          onLogout={handleLogout}
+          markups={markups}
+          onSaveMarkup={handleSaveMarkup}
           bookings={bookings}
+          usersList={usersList}
         />
         <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLogin={handleLogin} />
       </>
-    );
-  }
-
-  if (path === '/admin') {
-    return (
-      <AdminPortalPage
-        currentUser={currentUser}
-        triggerOpenLogin={() => setShowLoginModal(true)}
-        vendors={vendors}
-        allPackages={packages}
-        cars={cars}
-        bikes={bikes}
-        onAddVendor={handleAddVendor}
-        onUpdateVendor={handleUpdateVendor}
-        onDeleteVendor={handleDeleteVendor}
-        onSetVendorPassword={handleSetVendorPassword}
-        onAddPackage={handleAddPackage}
-        onUpdatePackage={handleUpdatePackage}
-        onDeletePackage={handleDeletePackage}
-        onAddCar={handleAddCar}
-        onUpdateCar={handleUpdateCar}
-        onDeleteCar={handleDeleteCar}
-        onAddBike={handleAddBike}
-        onUpdateBike={handleUpdateBike}
-        onDeleteBike={handleDeleteBike}
-        onLogout={handleLogout}
-        flights={flights}
-        onAddFlight={handleAddFlight}
-        onUpdateFlight={handleUpdateFlight}
-        onDeleteFlight={handleDeleteFlight}
-        hotels={hotels}
-        onAddHotel={handleAddHotel}
-        onUpdateHotel={handleUpdateHotel}
-        onDeleteHotel={handleDeleteHotel}
-        markups={markups}
-        onSaveMarkup={handleSaveMarkup}
-        bookings={bookings}
-        usersList={usersList}
-      />
     );
   }
 
