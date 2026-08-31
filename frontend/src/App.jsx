@@ -40,7 +40,8 @@ import {
   PackageCustomizationPage,
   CraftMyTripPage,
   AIPlannerPage,
-  CustomerDashboard
+  CustomerDashboard,
+  SubAdminPortalPage
 } from './pages';
 import CustomTripEnquiryPage from './pages/customer/CustomTripEnquiryPage';
 
@@ -250,9 +251,17 @@ export default function App() {
     return () => window.removeEventListener('popstate', syncTabFromUrl);
   }, []);
 
-  const handleTabChange = (tab) => {
-    setActiveTab(tab);
+  const handleTabChange = (newTab) => {
+    let normalizedTab = newTab;
+    if (normalizedTab === 'self drive') normalizedTab = 'selfdrive';
+    if (normalizedTab === 'trip packages') normalizedTab = 'packages';
+
+    if (activeTab === 'customize' && normalizedTab !== 'customize') {
+      setSelectedBookingItem(null);
+    }
+    setActiveTab(normalizedTab);
     window.scrollTo(0, 0);
+
     const pathMap = {
       'packages': '/packages',
       'selfdrive': '/self-drive',
@@ -265,8 +274,13 @@ export default function App() {
       'portal': currentUser?.role === 'hotel_vendor' ? '/hotel-vendor' : (currentUser?.role === 'flight_vendor' ? '/flight-vendor' : (currentUser?.role === 'vendor' ? '/vendor' : (currentUser?.role === 'superadmin' ? '/superadmin' : '/admin'))),
       'dashboard': '/dashboard'
     };
-    if (pathMap[tab]) {
-      window.history.pushState({}, '', pathMap[tab]);
+    if (pathMap[normalizedTab]) {
+      window.history.pushState({}, '', pathMap[normalizedTab]);
+    }
+    if (normalizedTab === 'home' || normalizedTab === 'packages' || normalizedTab === 'cars') {
+      setSearchTriggered(false);
+    } else {
+      setSearchTriggered(true);
     }
   };
 
@@ -625,6 +639,97 @@ export default function App() {
         />
       );
     }
+  }
+
+  if (path === '/sub-admin' || path.startsWith('/sub-admin') || path === '/subadmin' || path.startsWith('/subadmin')) {
+    return (
+      <SubAdminPortalPage
+        currentUser={currentUser}
+        onLogout={handleLogout}
+        usersList={usersList}
+      />
+    );
+  }
+
+  // --- Dynamic Route Matching ---
+  const dynamicPage = Object.values(liveConfig?.pages || {}).find(p => p.slug === path);
+
+  if (path === '/superadmin') {
+    return (
+      <>
+        <SuperAdminPortalPage
+          currentUser={currentUser}
+          triggerOpenLogin={() => setShowLoginModal(true)}
+          usersList={usersList}
+          vendors={vendors}
+          cars={cars}
+          bikes={bikes}
+          hotels={hotels}
+          bookings={bookings}
+          onAddUser={handleAddUser}
+          onUpdateUser={handleUpdateUser}
+          onDeleteUser={handleDeleteUser}
+          onLogout={handleLogout}
+        />
+        <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLogin={handleLogin} />
+      </>
+    );
+  }
+
+  if (path === '/customer') {
+    return (
+      <>
+        <CustomerDashboard
+          currentUser={currentUser}
+          triggerOpenLogin={() => setShowLoginModal(true)}
+          bookings={bookings}
+          hotels={hotels}
+          cars={cars}
+          bikes={bikes}
+          onLogout={handleLogout}
+        />
+        <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLogin={handleLogin} />
+      </>
+    );
+  }
+
+  if (path === '/flight-vendor') {
+    return (
+      <>
+        <FlightVendorPortalPage
+          currentUser={currentUser}
+          triggerOpenLogin={() => setShowLoginModal(true)}
+          flights={flights}
+          onAddFlight={handleAddFlight}
+          onUpdateFlight={handleUpdateFlight}
+          onDeleteFlight={handleDeleteFlight}
+          onLogout={handleLogout}
+          bookings={bookings}
+        />
+        <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLogin={handleLogin} />
+      </>
+    );
+  }
+
+  if (path === '/hotel-vendor') {
+    return (
+      <>
+        <HotelVendorPortalPage
+          currentUser={currentUser}
+          triggerOpenLogin={() => setShowLoginModal(true)}
+          hotels={hotels}
+          onAddHotel={handleAddHotel}
+          onUpdateHotel={handleUpdateHotel}
+          onDeleteHotel={handleDeleteHotel}
+          onLogout={handleLogout}
+          bookings={bookings}
+        />
+        <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLogin={handleLogin} />
+      </>
+    );
+  }
+
+  if (path === '/admin') {
     return (
       <AdminPortalPage
         currentUser={currentUser}

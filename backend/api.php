@@ -140,6 +140,8 @@ function seedDatabaseIfEmpty($pdo) {
         "CREATE TABLE IF NOT EXISTS coupons (id INT PRIMARY KEY AUTO_INCREMENT, code VARCHAR(50) UNIQUE, discount_value INT, is_active BOOLEAN DEFAULT 1, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
         "CREATE TABLE IF NOT EXISTS add_ons (id INT PRIMARY KEY AUTO_INCREMENT, title VARCHAR(255), type VARCHAR(50), location VARCHAR(100), price INT, duration VARCHAR(50), description TEXT, image_url VARCHAR(255))",
         // --- NEW SCHEMA UPDATES ---
+        "ALTER TABLE users ADD COLUMN is_online TINYINT(1) DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN last_active_at DATETIME DEFAULT NULL",
         "ALTER TABLE packages ADD COLUMN cancellation_policy TEXT DEFAULT NULL",
         "ALTER TABLE packages ADD COLUMN highlights_json TEXT DEFAULT NULL",
         "ALTER TABLE packages ADD COLUMN inclusions_exclusions_json TEXT DEFAULT NULL",
@@ -341,7 +343,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
             echo json_encode($data);
             exit;} elseif ($resource === 'users') {
-            $stmt = $pdo->prepare("SELECT id, username, name, email, phone, city, role, created_at, billing_price, status, kyc_status, plain_password FROM users WHERE (admin_id = ? OR admin_id IS NULL OR admin_id = '' OR admin_id = 'admin' OR ? = 'superadmin' OR ? = 'admin') ORDER BY created_at DESC");
+            $stmt = $pdo->prepare("SELECT id, username, name, email, phone, city, role, created_at, billing_price, status, kyc_status, plain_password, is_online, last_active_at FROM users WHERE (admin_id = ? OR admin_id IS NULL OR admin_id = '' OR admin_id = 'admin' OR ? = 'superadmin' OR ? = 'admin') ORDER BY created_at DESC");
             $stmt->execute([$tenant_id, $tenant_id, $tenant_id]);
             $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
             echo json_encode($data);
@@ -421,7 +423,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             }
             exit;} elseif ($resource === 'assignable_users') {
             try {
-                $stmt = $pdo->query("SELECT id, username, name, email, phone, role, status FROM users WHERE status = 'active' AND role IN ('admin', 'superadmin', 'subadmin', 'agent') ORDER BY name ASC, username ASC");
+                $stmt = $pdo->query("SELECT id, username, name, email, phone, role, status FROM users WHERE status = 'active' AND role IN ('subadmin', 'sub_admin', 'agent') ORDER BY name ASC, username ASC");
                 $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 echo json_encode($data ?: []);
             } catch (Exception $e) {
@@ -658,6 +660,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($isValid && $user) {
                 unset($user['password_hash']);
                 unset($user['plain_password']);
+                $now = date('Y-m-d H:i:s');
+                try {
+                    $pdo->prepare("UPDATE users SET is_online = 1, last_active_at = ? WHERE id = ? OR username = ?")->execute([$now, $user['id'] ?? '', $user['username'] ?? '']);
+                    $user['is_online'] = 1;
+                    $user['last_active_at'] = $now;
+                } catch (Exception $e) {}
                 echo json_encode(["success" => true, "message" => "Login successful", "user" => $user]);
                 exit();
             } else {
@@ -665,6 +673,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 echo json_encode(["success" => false, "error" => "Invalid username or password. Check credentials."]);
                 exit();
             }
+        } elseif ($action === 'update_online_status') {
+            $userId = $payload['user_id'] ?? ($payload['id'] ?? null);
+            $isOnline = isset($payload['is_online']) ? (int)$payload['is_online'] : 1;
+            $now = date('Y-m-d H:i:s');
+            if ($userId) {
+                try {
+                    $pdo->prepare("UPDATE users SET is_online = ?, last_active_at = ? WHERE id = ? OR username = ?")->execute([$isOnline, $now, $userId, $userId]);
+                } catch (Exception $e) {}
+            }
+            echo json_encode(["success" => true, "is_online" => $isOnline, "last_active_at" => $now]);
+            exit();
         } elseif ($action === 'register_user' || $action === 'add_user') {
             $username = trim($payload['username'] ?? '');
             $email = trim($payload['email'] ?? '');
