@@ -65,6 +65,8 @@ export default function App() {
   
   // Navigation & Tabs state (Default to public storefront packages view)
   const [activeTab, setActiveTab] = useState('packages');
+  const [currentPath, setCurrentPath] = useState(() => (typeof window !== 'undefined' ? window.location.pathname.toLowerCase() : '/'));
+  const path = currentPath;
 
   // Search Widget form fields
   const [pickupLoc, setPickupLoc] = useState('');
@@ -233,17 +235,19 @@ export default function App() {
   // Sync tab with browser URL and history navigation
   useEffect(() => {
     const syncTabFromUrl = () => {
-      const path = window.location.pathname.toLowerCase().replace('/', '');
-      if (path === 'packages') setActiveTab('packages');
-      else if (path === 'self-drive' || path === 'selfdrive') setActiveTab('selfdrive');
-      else if (path === 'hotels') setActiveTab('hotels');
-      else if (path === 'cars') setActiveTab('cars');
-      else if (path === 'bikes') setActiveTab('bikes');
-      else if (path === 'flights') setActiveTab('flights');
-      else if (path === 'craft' || path === 'craftmytrip') setActiveTab('craftmytrip');
-      else if (path === 'custom-trip') setActiveTab('custom-trip');
-      else if (path === 'admin' || path === 'portal' || path === 'superadmin' || path === 'vendor' || path === 'hotel-vendor' || path === 'hotel-pms' || path === 'flight-vendor') setActiveTab('portal');
-      else if (path === 'dashboard' || path === 'my-bookings') setActiveTab('dashboard');
+      const p = window.location.pathname.toLowerCase();
+      setCurrentPath(p);
+      const cleanPath = p.replace('/', '');
+      if (cleanPath === 'packages') setActiveTab('packages');
+      else if (cleanPath === 'self-drive' || cleanPath === 'selfdrive') setActiveTab('selfdrive');
+      else if (cleanPath === 'hotels') setActiveTab('hotels');
+      else if (cleanPath === 'cars') setActiveTab('cars');
+      else if (cleanPath === 'bikes') setActiveTab('bikes');
+      else if (cleanPath === 'flights') setActiveTab('flights');
+      else if (cleanPath === 'craft' || cleanPath === 'craftmytrip') setActiveTab('craftmytrip');
+      else if (cleanPath === 'custom-trip') setActiveTab('custom-trip');
+      else if (cleanPath === 'admin' || cleanPath === 'portal' || cleanPath === 'superadmin' || cleanPath === 'vendor' || cleanPath === 'hotel-vendor' || cleanPath === 'hotel-pms' || cleanPath === 'flight-vendor' || cleanPath === 'sub-admin' || cleanPath === 'subadmin') setActiveTab('portal');
+      else if (cleanPath === 'dashboard' || cleanPath === 'my-bookings') setActiveTab('dashboard');
     };
 
     syncTabFromUrl();
@@ -276,6 +280,7 @@ export default function App() {
     };
     if (pathMap[normalizedTab]) {
       window.history.pushState({}, '', pathMap[normalizedTab]);
+      setCurrentPath(pathMap[normalizedTab].toLowerCase());
     }
     if (normalizedTab === 'home' || normalizedTab === 'packages' || normalizedTab === 'cars') {
       setSearchTriggered(false);
