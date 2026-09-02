@@ -45,10 +45,11 @@ jobs:
 
       - name: 🚀 Send Deployment to cPanel
         run: |
-          RESPONSE=$(curl -k -s -w "\n%{http_code}" -X POST \
+          echo "Uploading deploy package to cPanel..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             -H "X-Deploy-Secret: WowGoaDeploySecret_2026_SecureKey" \
             -F "package=@deploy_bundle.zip" \
-            https://172.236.179.228/backend/deploy_receiver.php \
+            "http://172.236.179.228/backend/deploy_receiver.php" \
             -H "Host: wowgoa.in")
           
           HTTP_BODY=$(echo "$RESPONSE" | sed '$d')
@@ -61,4 +62,4 @@ jobs:
             echo "❌ Deployment failed with HTTP Code $HTTP_CODE"
             exit 1
           fi
-          echo "✅ Deployment Successful!"
+          echo "🎉 Deployment Deployed & Applied Successfully to cPanel!"
