@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, CheckCircle, ShieldCheck, User, Users, BedDouble, Calendar, ArrowRight, ArrowLeft, Download, MessageCircle, Info, Compass } from 'lucide-react';
+import { X, CheckCircle, ShieldCheck, User, Users, BedDouble, Calendar, ArrowRight, ArrowLeft, Download, MessageCircle, Info, Compass, Cake } from 'lucide-react';
 import * as api from '../services/api';
 import { validateBookingDates } from '../utils/dateUtils';
 import ImageCarousel from './common/ImageCarousel';
@@ -26,10 +26,41 @@ export default function HotelBookingModal({
   const [guestName, setGuestName] = useState('');
   const [guestPhone, setGuestPhone] = useState('');
   const [guestEmail, setGuestEmail] = useState('');
+  const [guestDob, setGuestDob] = useState('');
+  const [isDobSaved, setIsDobSaved] = useState(false);
+  const [dobChecking, setDobChecking] = useState(false);
   const [adults, setAdults] = useState(2);
   const [children, setChildren] = useState(0);
   const [arrivalTime, setArrivalTime] = useState('14:00');
   const [specialRequests, setSpecialRequests] = useState('');
+
+  // Repeat customer lookup for Date of Birth & profile info
+  useEffect(() => {
+    const clean = String(guestPhone || '').replace(/\D/g, '');
+    if (clean.length >= 10) {
+      setDobChecking(true);
+      api.checkCustomerDob(clean).then(res => {
+        if (res && res.exists && res.date_of_birth) {
+          setGuestDob(res.date_of_birth);
+          setIsDobSaved(true);
+          if (!guestName && res.name) {
+            setGuestName(res.name);
+          }
+          if (!guestEmail && res.email) {
+            setGuestEmail(res.email);
+          }
+        } else {
+          setIsDobSaved(false);
+        }
+      }).catch(() => {
+        setIsDobSaved(false);
+      }).finally(() => {
+        setDobChecking(false);
+      });
+    } else {
+      setIsDobSaved(false);
+    }
+  }, [guestPhone]);
 
   // Driver / Chauffeur Service States
   const [driverRequired, setDriverRequired] = useState(false);
@@ -165,6 +196,10 @@ export default function HotelBookingModal({
     if (!guestName || cleanGuestPhone.length < 10) {
       return alert("Please enter your full name and a valid 10-digit mobile number for trip confirmation & tracking.");
     }
+
+    if (!isDobSaved && !guestDob) {
+      return alert("Please enter your Date of Birth. Date of Birth is required for birthday privileges and special offers from WOW GOA.");
+    }
     
     const dateVal = validateBookingDates(pickupDate, dropDate, { allowSameDay: false });
     if (!dateVal.valid) {
@@ -179,6 +214,7 @@ export default function HotelBookingModal({
           name: guestName,
           phone: cleanGuestPhone,
           email: guestEmail,
+          date_of_birth: guestDob,
           adults: adults,
           children: children,
           arrival_time: arrivalTime,
@@ -213,6 +249,8 @@ export default function HotelBookingModal({
         email: customerEmail,
         customer_email: customerEmail,
         customer_id: customerId,
+        date_of_birth: guestDob,
+        dob: guestDob,
         pickup_loc: driverRequired ? driverPickupLoc : (selectedBookingItem.area || selectedBookingItem.location || 'Goa'),
         pickup_location: driverRequired ? driverPickupLoc : (selectedBookingItem.area || selectedBookingItem.location || 'Goa'),
         pickup_date: pickupDate,
@@ -406,6 +444,48 @@ export default function HotelBookingModal({
             <div className="col-md-6">
                 <label className="form-label small fw-bold">Email Address</label>
                 <input type="email" className="form-control" placeholder="Email for booking confirmation" value={guestEmail} onChange={e => setGuestEmail(e.target.value)} />
+            </div>
+
+            {/* Date of Birth Mandatory Field with Auto-Retrieval for Repeat Guests */}
+            <div className="col-md-12">
+              {isDobSaved ? (
+                <div className="p-2.5 rounded-3 bg-success bg-opacity-10 border border-success border-opacity-25 d-flex align-items-center justify-content-between animate-fade-in">
+                  <div className="d-flex align-items-center gap-2">
+                    <div className="rounded-circle bg-success text-white d-flex align-items-center justify-content-center" style={{ width: '28px', height: '28px', minWidth: '28px' }}>
+                      <Cake size={14} />
+                    </div>
+                    <div>
+                      <div className="text-xs fw-bold text-success d-flex align-items-center gap-1">
+                        <ShieldCheck size={13} /> Verified DOB on WOW GOA Account
+                      </div>
+                      <div className="text-xs text-dark mt-0.5">
+                        🎂 Date of Birth: <strong>{guestDob}</strong> <span className="text-muted">(Saved for birthday benefits & member rewards)</span>
+                      </div>
+                    </div>
+                  </div>
+                  <span className="badge bg-success text-white text-xs px-2 py-1 rounded-pill">Saved</span>
+                </div>
+              ) : (
+                <div className="animate-fade-in">
+                  <label className="form-label small fw-bold d-flex align-items-center justify-content-between">
+                    <span className="d-flex align-items-center gap-1">
+                      <Cake size={14} className="text-warning" /> Date of Birth <span className="text-danger">*</span>
+                    </span>
+                    <span className="text-muted" style={{ fontSize: '11px' }}>[ DD / MM / YYYY ]</span>
+                  </label>
+                  <input 
+                    type="date" 
+                    className="form-control" 
+                    value={guestDob}
+                    onChange={e => setGuestDob(e.target.value)}
+                    required 
+                    max={new Date().toISOString().split('T')[0]}
+                  />
+                  <small className="text-muted d-block mt-1" style={{ fontSize: '11px', color: '#64748b' }}>
+                    Date of Birth is required to provide birthday benefits and special offers from WOW GOA.
+                  </small>
+                </div>
+              )}
             </div>
         </div>
         

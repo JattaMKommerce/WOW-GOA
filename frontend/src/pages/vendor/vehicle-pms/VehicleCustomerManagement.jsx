@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Users, Search, Phone, Mail, Eye, Calendar, DollarSign, Car, X, User, MapPin } from 'lucide-react';
+import { Users, Search, Phone, Mail, Eye, Calendar, DollarSign, Car, X, User, MapPin, Crown, ShieldCheck } from 'lucide-react';
+import { calculateLoyaltyTiers } from '../../../utils/loyaltyHelper';
 
 export default function VehicleCustomerManagement({ bookings = [] }) {
   const [search, setSearch] = useState('');
@@ -40,7 +41,13 @@ export default function VehicleCustomerManagement({ bookings = [] }) {
     c.bookings.push(b);
   });
 
-  const customersList = Object.values(customerMap);
+  const customersList = Object.values(customerMap).map(c => {
+    const tiers = calculateLoyaltyTiers(c.bookings);
+    return {
+      ...c,
+      carTier: tiers.car // Strictly Car Tier only (isolating Hotel & Trip)
+    };
+  });
 
   const filtered = customersList.filter(c =>
     c.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -103,7 +110,7 @@ export default function VehicleCustomerManagement({ bookings = [] }) {
         <table className="table align-middle mb-0" style={{ fontSize: '0.82rem' }}>
           <thead style={{ background: '#f8fafc' }}>
             <tr>
-              {['Customer', 'Contact Info', 'Location / License', 'Total Bookings', 'Total Spent', 'Status', 'Actions'].map(h => (
+              {['Customer', 'Contact Info', '🚗 Car Loyalty Tier', 'Location / License', 'Total Bookings', 'Total Spent', 'Status', 'Actions'].map(h => (
                 <th key={h} className="px-3 py-3 fw-bold" style={{ color: '#475569', fontSize: '0.65rem', textTransform: 'uppercase', border: 'none', borderBottom: '1px solid rgba(0,0,0,0.07)' }}>{h}</th>
               ))}
             </tr>
@@ -131,6 +138,15 @@ export default function VehicleCustomerManagement({ bookings = [] }) {
                       <Mail size={11} /> {c.email}
                     </div>
                   )}
+                </td>
+                <td className="px-3 py-3">
+                  <span className="badge rounded-pill fw-bold px-2.5 py-1" style={{ 
+                    background: c.carTier?.tier === 'Platinum' ? '#f3e8ff' : c.carTier?.tier === 'Gold' ? '#fef9c3' : c.carTier?.tier === 'Silver' ? '#f1f5f9' : '#ffedd5',
+                    color: c.carTier?.tier === 'Platinum' ? '#7e22ce' : c.carTier?.tier === 'Gold' ? '#a16207' : c.carTier?.tier === 'Silver' ? '#475569' : '#c2410c',
+                    fontSize: '0.7rem' 
+                  }}>
+                    🚗 {c.carTier?.tier || 'Bronze'} ({c.carTier?.count || 0} Trips)
+                  </span>
                 </td>
                 <td className="px-3 py-3">
                   <div style={{ fontSize: '0.75rem', color: '#475569' }}>📍 {c.city}</div>
@@ -191,6 +207,16 @@ export default function VehicleCustomerManagement({ bookings = [] }) {
               {selectedCustomer.email && selectedCustomer.email !== '—' && (
                 <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{selectedCustomer.email}</div>
               )}
+
+              {/* Strict Vehicle Tier Isolation */}
+              <div className="mt-2.5 d-inline-flex align-items-center gap-1.5 px-3 py-1 rounded-pill fw-bold text-xs shadow-sm" style={{
+                background: selectedCustomer.carTier?.tier === 'Platinum' ? '#f3e8ff' : selectedCustomer.carTier?.tier === 'Gold' ? '#fef9c3' : selectedCustomer.carTier?.tier === 'Silver' ? '#f1f5f9' : '#ffedd5',
+                color: selectedCustomer.carTier?.tier === 'Platinum' ? '#7e22ce' : selectedCustomer.carTier?.tier === 'Gold' ? '#a16207' : selectedCustomer.carTier?.tier === 'Silver' ? '#475569' : '#c2410c',
+                border: '1px solid rgba(0,0,0,0.1)'
+              }}>
+                <Crown size={13} />
+                <span>Car Loyalty Tier: <strong>{selectedCustomer.carTier?.tier || 'Bronze'}</strong> ({selectedCustomer.carTier?.count || 0} Trips)</span>
+              </div>
             </div>
 
             {/* Stats Summary */}

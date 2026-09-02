@@ -249,6 +249,133 @@ export async function fetchCustomerBookings(mobile) {
   return list;
 }
 
+export async function fetchCustomerLoyalty(phone, customerId = '') {
+  try {
+    let url = `${API_BASE}?resource=customer_loyalty`;
+    if (phone) url += `&phone=${encodeURIComponent(phone)}`;
+    if (customerId) url += `&customer_id=${encodeURIComponent(customerId)}`;
+    const res = await apiFetch(url);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.car) return data;
+    }
+  } catch (err) {
+    console.warn('[API] Customer loyalty fetch fallback:', err.message);
+  }
+
+  // Resilient fallback tier calculator
+  const emptyTier = { count: 0, tier: 'Bronze', tier_name: 'Bronze', badge: '🥉 Bronze', icon: '🥉', target: 1, remaining: 1, progress: 0, is_platinum: false, description: '1 completed booking to activate Bronze' };
+  return {
+    customer: { name: '', phone: phone || '', email: '', date_of_birth: '' },
+    car: emptyTier,
+    hotel: emptyTier,
+    trip: emptyTier,
+    highest_tier: 'Bronze'
+  };
+}
+
+export async function checkCustomerDob(phone) {
+  if (!phone) return { exists: false, date_of_birth: '', name: '', email: '' };
+  try {
+    const clean = String(phone).replace(/\D/g, '');
+    const res = await apiFetch(`${API_BASE}?resource=check_customer_dob&phone=${encodeURIComponent(clean)}`);
+    if (res.ok) {
+      const data = await res.json();
+      return data;
+    }
+  } catch (err) {
+    console.warn('[API] checkCustomerDob fallback:', err.message);
+  }
+
+  // Fallback to localStorage / local_users
+  try {
+    const clean = String(phone).replace(/\D/g, '');
+    const cleanLast10 = clean.length >= 10 ? clean.slice(-10) : clean;
+    const localUsers = JSON.parse(localStorage.getItem('local_users') || '[]');
+    const matched = localUsers.find(u => {
+      const uPhone = String(u.phone || '').replace(/\D/g, '');
+      return uPhone === clean || (cleanLast10 && uPhone.endsWith(cleanLast10));
+    });
+    if (matched && matched.date_of_birth) {
+      return { exists: true, date_of_birth: matched.date_of_birth, name: matched.name || '', email: matched.email || '' };
+    }
+  } catch (e) {}
+
+  return { exists: false, date_of_birth: '', name: '', email: '' };
+}
+
+export async function fetchTodayBirthdays() {
+  try {
+    const res = await apiFetch(`${API_BASE}?resource=today_birthdays`);
+    if (res.ok) {
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    }
+  } catch (err) {
+    console.warn('[API] fetchTodayBirthdays fallback:', err.message);
+  }
+  return [];
+}
+
+export async function fetchBirthdayLogs() {
+  try {
+    const res = await apiFetch(`${API_BASE}?resource=birthday_logs`);
+    if (res.ok) {
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    }
+  } catch (err) {
+    console.warn('[API] fetchBirthdayLogs fallback:', err.message);
+  }
+  return [];
+}
+
+export async function fetchBirthdayOffers() {
+  try {
+    const res = await apiFetch(`${API_BASE}?resource=birthday_offers`);
+    if (res.ok) {
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    }
+  } catch (err) {
+    console.warn('[API] fetchBirthdayOffers fallback:', err.message);
+  }
+  return [];
+}
+
+export async function sendBirthdayWish(payload) {
+  const res = await apiFetch(`${API_BASE}?action=send_birthday_wish`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) throw new Error(data.error || 'Failed to send birthday wish');
+  return data;
+}
+
+export async function saveBirthdayOffer(offerData) {
+  const res = await apiFetch(`${API_BASE}?action=save_birthday_offer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(offerData)
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) throw new Error(data.error || 'Failed to save birthday offer');
+  return data;
+}
+
+export async function runBirthdayCron() {
+  const res = await apiFetch(`${API_BASE}?action=run_birthday_cron`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({})
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) throw new Error(data.error || 'Birthday cron execution failed');
+  return data;
+}
+
 export async function fetchMarkups() {
   try {
     const res = await apiFetch(`${API_BASE}?resource=markups`);

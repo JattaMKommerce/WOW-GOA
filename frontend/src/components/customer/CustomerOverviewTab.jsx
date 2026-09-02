@@ -3,9 +3,10 @@ import {
   Compass, Calendar, Car, Wallet, Gift, Clock, CheckCircle2,
   AlertCircle, ArrowRight, ShieldCheck, MapPin, ChevronRight,
   TrendingUp, Star, Phone, Bell, Eye, Download, Info, Hotel,
-  Plane, Fuel, Navigation, Check, X, Sparkles, Filter, Bike, Crown
+  Plane, Fuel, Navigation, Check, X, Sparkles, Filter, Bike, Crown, Cake
 } from 'lucide-react';
 import SelfDriveCategoryShowcase from '../widgets/SelfDriveCategoryShowcase';
+import CustomerLoyaltyCard from './CustomerLoyaltyCard';
 import { getBookingDisplayImage } from '../../utils/bookingImageHelper';
 
 export default function CustomerOverviewTab({
@@ -328,7 +329,10 @@ export default function CustomerOverviewTab({
         </div>
       </div>
 
-      {/* ─── 2. Top Metric Statistics Cards ─── */}
+      {/* ─── 2. Dedicated Loyalty Tier & Membership Card ─── */}
+      <CustomerLoyaltyCard bookings={myBookings} />
+
+      {/* ─── 3. Top Metric Statistics Cards ─── */}
       <div className="row g-3 mb-3">
         <div className="col-6 col-md-3">
           <div className="card border-0 shadow-sm rounded-4 h-100 p-3 bg-white" style={{ border: '1px solid #eef2f6' }}>

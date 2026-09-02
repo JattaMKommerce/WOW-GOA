@@ -131,6 +131,14 @@ try {
         );");
 
         $drvAlters = [
+            "ALTER TABLE users ADD COLUMN name VARCHAR(255) DEFAULT ''",
+            "ALTER TABLE users ADD COLUMN phone VARCHAR(50) DEFAULT ''",
+            "ALTER TABLE users ADD COLUMN city VARCHAR(100) DEFAULT 'Goa'",
+            "ALTER TABLE users ADD COLUMN kyc_status VARCHAR(50) DEFAULT 'verified'",
+            "ALTER TABLE users ADD COLUMN is_online INT DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN last_active_at DATETIME DEFAULT NULL",
+            "ALTER TABLE users ADD COLUMN date_of_birth VARCHAR(50) DEFAULT NULL",
+            "ALTER TABLE bookings ADD COLUMN date_of_birth VARCHAR(50) DEFAULT NULL",
             "ALTER TABLE bookings ADD COLUMN driver_required INT DEFAULT 0",
             "ALTER TABLE bookings ADD COLUMN assigned_driver_id VARCHAR(50) DEFAULT NULL",
             "ALTER TABLE bookings ADD COLUMN driver_assigned_at DATETIME DEFAULT NULL",
@@ -139,7 +147,32 @@ try {
             "ALTER TABLE bookings ADD COLUMN driver_charge INT DEFAULT 0",
             "ALTER TABLE bookings ADD COLUMN driver_days INT DEFAULT 0",
             "ALTER TABLE bookings ADD COLUMN driver_earning INT DEFAULT 0",
-            "ALTER TABLE bookings ADD COLUMN driver_payment_status VARCHAR(50) DEFAULT 'Pending'"
+            "ALTER TABLE bookings ADD COLUMN driver_payment_status VARCHAR(50) DEFAULT 'Pending'",
+            "CREATE TABLE IF NOT EXISTS birthday_message_logs (
+                id VARCHAR(50) PRIMARY KEY,
+                customer_id VARCHAR(50) NOT NULL,
+                customer_name VARCHAR(255) NOT NULL,
+                phone VARCHAR(50) NOT NULL,
+                email VARCHAR(255) DEFAULT '',
+                birthday_year INT NOT NULL,
+                birthday_date VARCHAR(50) NOT NULL,
+                highest_tier VARCHAR(50) NOT NULL,
+                message_text TEXT NOT NULL,
+                channel VARCHAR(50) NOT NULL DEFAULT 'SMS',
+                status VARCHAR(50) NOT NULL DEFAULT 'Sent',
+                sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (customer_id, birthday_year, channel)
+            )",
+            "CREATE TABLE IF NOT EXISTS birthday_offers (
+                tier VARCHAR(50) PRIMARY KEY,
+                title VARCHAR(255),
+                offer_type VARCHAR(50) DEFAULT 'discount',
+                discount_amount INT DEFAULT 0,
+                discount_percent INT DEFAULT 0,
+                message_template TEXT,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )"
         ];
         foreach ($drvAlters as $da) {
             try { $pdo->exec($da); } catch (Exception $e) {}
@@ -289,6 +322,33 @@ function seedDatabaseIfEmpty($pdo) {
         "ALTER TABLE bookings ADD COLUMN package_name VARCHAR(255) DEFAULT NULL",
         "ALTER TABLE bookings ADD COLUMN hotel_name VARCHAR(255) DEFAULT NULL",
         "ALTER TABLE bookings ADD COLUMN vehicle_name VARCHAR(255) DEFAULT NULL",
+        "ALTER TABLE bookings ADD COLUMN date_of_birth VARCHAR(50) DEFAULT NULL",
+        "ALTER TABLE users ADD COLUMN date_of_birth VARCHAR(50) DEFAULT NULL",
+        "CREATE TABLE IF NOT EXISTS birthday_message_logs (
+            id VARCHAR(50) PRIMARY KEY,
+            customer_id VARCHAR(50) NOT NULL,
+            customer_name VARCHAR(255) NOT NULL,
+            phone VARCHAR(50) NOT NULL,
+            email VARCHAR(255) DEFAULT '',
+            birthday_year INT NOT NULL,
+            birthday_date VARCHAR(50) NOT NULL,
+            highest_tier VARCHAR(50) NOT NULL,
+            message_text TEXT NOT NULL,
+            channel VARCHAR(50) NOT NULL DEFAULT 'SMS',
+            status VARCHAR(50) NOT NULL DEFAULT 'Sent',
+            sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_birthday_log (customer_id, birthday_year, channel)
+        )",
+        "CREATE TABLE IF NOT EXISTS birthday_offers (
+            tier VARCHAR(50) PRIMARY KEY,
+            title VARCHAR(255),
+            offer_type VARCHAR(50) DEFAULT 'discount',
+            discount_amount INT DEFAULT 0,
+            discount_percent INT DEFAULT 0,
+            message_template TEXT,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
         "CREATE TABLE IF NOT EXISTS drivers (id VARCHAR(50) PRIMARY KEY, name VARCHAR(255) NOT NULL, phone VARCHAR(50) NOT NULL, email VARCHAR(255) NOT NULL, password_hash VARCHAR(255), plain_password VARCHAR(255), address TEXT, profile_photo TEXT, aadhaar_card TEXT, pan_card TEXT, license_number VARCHAR(100), license_card TEXT, experience_years VARCHAR(50), vehicle_details TEXT, status VARCHAR(50) DEFAULT 'Pending', admin_id VARCHAR(50) DEFAULT 'admin', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)",
         "CREATE TABLE IF NOT EXISTS driver_assignments (id VARCHAR(50) PRIMARY KEY, driver_id VARCHAR(50) NOT NULL, booking_id VARCHAR(50) NOT NULL, customer_name VARCHAR(255), customer_phone VARCHAR(50), pickup_loc VARCHAR(255), drop_loc VARCHAR(255), date VARCHAR(50), time VARCHAR(50), status VARCHAR(50) DEFAULT 'Assigned', assigned_by VARCHAR(50) DEFAULT 'admin', assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, notes TEXT)"
     ];
@@ -316,6 +376,14 @@ function seedDatabaseIfEmpty($pdo) {
         ('flight_vendor', 'all', 'percentage', 5.00, 'Default flight commission')
     ");
 
+    // Seed default birthday offers
+    $pdo->exec("INSERT IGNORE INTO birthday_offers (tier, title, offer_type, discount_amount, discount_percent, message_template) VALUES
+        ('Bronze', 'Bronze Birthday Wishes', 'discount', 0, 0, 'Wishing you a wonderful birthday from WOW GOA! 🎂 Have an amazing year ahead. 🌴'),
+        ('Silver', 'Silver 5% Birthday Discount', 'discount', 500, 5, 'Enjoy a special birthday offer on your next booking with WOW GOA! ❤️'),
+        ('Gold', 'Gold 10% Special Birthday Privilege', 'discount', 1000, 10, 'As our Gold Member, enjoy your special birthday discount on your next booking! 🌴✨'),
+        ('Platinum', 'Platinum VIP Birthday Privilege', 'discount', 2000, 15, 'As our Platinum Member, an exclusive VIP birthday surprise is waiting for you! 🌴✨')
+    ");
+
     // Seed default site_configs if none exist
     $gsCount = $pdo->query("SELECT COUNT(*) FROM global_settings")->fetchColumn();
     if ($gsCount == 0) { $pdo->exec("INSERT INTO global_settings (siteName) VALUES ('TripGalileo')"); }
@@ -323,6 +391,315 @@ function seedDatabaseIfEmpty($pdo) {
     if ($cfgCount == 0) {
         $pdo->exec("INSERT INTO site_configs (admin_id, booking_fee_deduction, min_wallet_recharge) VALUES ('superadmin', 10, 5000)");
     }
+}
+
+/**
+ * Authoritative Server-Side Tier Calculation Engine for WOW GOA
+ * Categories: Car (Cars/Bikes), Hotel (Hotel Stays), Trip (Packages/Tours)
+ * Only Completed bookings count.
+ * Progression: Bronze (1-3) -> Silver (4-6) -> Gold (7-9) -> Platinum (10+)
+ */
+function calculateCustomerTiers($pdo, $phone, $customerId = null) {
+    $clean = preg_replace('/\D/', '', $phone ?? '');
+    $last10 = strlen($clean) >= 10 ? substr($clean, -10) : $clean;
+    
+    // Customer profile info (DOB, name, email)
+    $customerInfo = [
+        'name' => '',
+        'phone' => $clean,
+        'email' => '',
+        'date_of_birth' => ''
+    ];
+
+    if (!empty($last10)) {
+        try {
+            $uStmt = $pdo->prepare("SELECT name, phone, email, date_of_birth FROM users WHERE phone LIKE ? OR phone LIKE ? ORDER BY created_at DESC LIMIT 1");
+            $uStmt->execute(["%$last10", "%$clean"]);
+            $uRow = $uStmt->fetch(PDO::FETCH_ASSOC);
+            if ($uRow) {
+                $customerInfo['name'] = $uRow['name'] ?? '';
+                $customerInfo['email'] = $uRow['email'] ?? '';
+                $customerInfo['date_of_birth'] = $uRow['date_of_birth'] ?? '';
+            }
+        } catch (Exception $e) {}
+    }
+
+    if (empty($customerInfo['date_of_birth']) && !empty($last10)) {
+        try {
+            $bDobStmt = $pdo->prepare("SELECT name, phone, email, date_of_birth FROM bookings WHERE (phone LIKE ? OR phone LIKE ?) AND date_of_birth IS NOT NULL AND date_of_birth != '' ORDER BY created_at DESC LIMIT 1");
+            $bDobStmt->execute(["%$last10", "%$clean"]);
+            $bDobRow = $bDobStmt->fetch(PDO::FETCH_ASSOC);
+            if ($bDobRow) {
+                if (empty($customerInfo['name'])) $customerInfo['name'] = $bDobRow['name'] ?? '';
+                if (empty($customerInfo['email'])) $customerInfo['email'] = $bDobRow['email'] ?? '';
+                $customerInfo['date_of_birth'] = $bDobRow['date_of_birth'] ?? '';
+            }
+        } catch (Exception $e) {}
+    }
+
+    if (empty($last10) && empty($customerId)) {
+        $emptyTier = [
+            'count' => 0,
+            'tier' => 'Bronze',
+            'tier_name' => 'Bronze',
+            'badge' => '🥉 Bronze',
+            'icon' => '🥉',
+            'target' => 1,
+            'remaining' => 1,
+            'progress' => 0,
+            'is_platinum' => false,
+            'description' => '1 completed booking to activate Bronze'
+        ];
+        return [
+            'customer' => $customerInfo,
+            'car' => $emptyTier,
+            'hotel' => $emptyTier,
+            'trip' => $emptyTier,
+            'highest_tier' => 'Bronze'
+        ];
+    }
+
+    // Query strictly completed bookings
+    $completedBookings = [];
+    try {
+        if (!empty($last10)) {
+            $stmt = $pdo->prepare("SELECT * FROM bookings WHERE (phone LIKE ? OR phone LIKE ?) AND LOWER(status) = 'completed'");
+            $stmt->execute(["%$last10", "%$clean"]);
+            $completedBookings = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } elseif (!empty($customerId)) {
+            $stmt = $pdo->prepare("SELECT * FROM bookings WHERE (id = ? OR email = ?) AND LOWER(status) = 'completed'");
+            $stmt->execute([$customerId, $customerId]);
+            $completedBookings = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        }
+    } catch (Exception $e) {
+        $completedBookings = [];
+    }
+
+    $carCount = 0;
+    $hotelCount = 0;
+    $tripCount = 0;
+
+    foreach ($completedBookings as $b) {
+        $type = strtolower($b['type'] ?? '');
+        $pkgType = strtolower($b['package_type'] ?? '');
+        $itemName = strtolower($b['item_name'] ?? '');
+        $hotelName = strtolower($b['hotel_name'] ?? '');
+        $vehicleName = strtolower($b['vehicle_name'] ?? '');
+
+        if ($type === 'hotel' || !empty($hotelName) || strpos($pkgType, 'hotel') !== false || strpos($itemName, 'resort') !== false || strpos($itemName, 'hotel') !== false) {
+            $hotelCount++;
+        } elseif ($type === 'car' || $type === 'bike' || !empty($vehicleName) || strpos($pkgType, 'rental') !== false || strpos($pkgType, 'car') !== false || strpos($pkgType, 'bike') !== false || strpos($pkgType, 'vehicle') !== false) {
+            $carCount++;
+        } else {
+            // Packages, tours, self-drive holidays, craft my trip
+            $tripCount++;
+        }
+    }
+
+    $buildTier = function($count) {
+        if ($count >= 10) {
+            return [
+                'count' => $count,
+                'tier' => 'Platinum',
+                'tier_name' => 'Platinum',
+                'badge' => '💎 Platinum',
+                'icon' => '💎',
+                'target' => 10,
+                'remaining' => 0,
+                'progress' => 100,
+                'is_platinum' => true,
+                'description' => '10+ Completed Bookings (Highest Tier)'
+            ];
+        } elseif ($count >= 7) {
+            $rem = 10 - $count;
+            return [
+                'count' => $count,
+                'tier' => 'Gold',
+                'tier_name' => 'Gold',
+                'badge' => '🥇 Gold',
+                'icon' => '🥇',
+                'target' => 10,
+                'remaining' => $rem,
+                'progress' => round(($count / 10) * 100),
+                'is_platinum' => false,
+                'description' => "$rem more completed bookings to reach Platinum"
+            ];
+        } elseif ($count >= 4) {
+            $rem = 7 - $count;
+            return [
+                'count' => $count,
+                'tier' => 'Silver',
+                'tier_name' => 'Silver',
+                'badge' => '🥈 Silver',
+                'icon' => '🥈',
+                'target' => 7,
+                'remaining' => $rem,
+                'progress' => round(($count / 7) * 100),
+                'is_platinum' => false,
+                'description' => "$rem more completed bookings to reach Gold"
+            ];
+        } elseif ($count >= 1) {
+            $rem = 4 - $count;
+            return [
+                'count' => $count,
+                'tier' => 'Bronze',
+                'tier_name' => 'Bronze',
+                'badge' => '🥉 Bronze',
+                'icon' => '🥉',
+                'target' => 4,
+                'remaining' => $rem,
+                'progress' => round(($count / 4) * 100),
+                'is_platinum' => false,
+                'description' => "$rem more completed bookings to reach Silver"
+            ];
+        } else {
+            return [
+                'count' => 0,
+                'tier' => 'Bronze',
+                'tier_name' => 'Bronze',
+                'badge' => '🥉 Bronze (New Member)',
+                'icon' => '🥉',
+                'target' => 1,
+                'remaining' => 1,
+                'progress' => 0,
+                'is_platinum' => false,
+                'description' => '1 completed booking to activate Bronze'
+            ];
+        }
+    };
+
+    $carData = $buildTier($carCount);
+    $hotelData = $buildTier($hotelCount);
+    $tripData = $buildTier($tripCount);
+
+    $tierRank = ['Bronze' => 1, 'Silver' => 2, 'Gold' => 3, 'Platinum' => 4];
+    $highestTier = 'Bronze';
+    $maxR = 1;
+    foreach ([$carData['tier'], $hotelData['tier'], $tripData['tier']] as $t) {
+        if (($tierRank[$t] ?? 1) > $maxR) {
+            $maxR = $tierRank[$t];
+            $highestTier = $t;
+        }
+    }
+
+    return [
+        'customer' => $customerInfo,
+        'car' => $carData,
+        'hotel' => $hotelData,
+        'trip' => $tripData,
+        'highest_tier' => $highestTier
+    ];
+}
+
+/**
+ * Daily Birthday Cron Processor
+ */
+function processDailyBirthdays($pdo) {
+    $todayMonthDay = date('m-d');
+    $currentYear = intval(date('Y'));
+    $sentCount = 0;
+    $skippedCount = 0;
+    $logs = [];
+
+    // Collect all users and bookings with a non-empty DOB
+    $allUsers = [];
+    try {
+        $stmt = $pdo->query("SELECT id, name, phone, email, date_of_birth FROM users WHERE date_of_birth IS NOT NULL AND date_of_birth != ''");
+        $allUsers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {}
+
+    $bookingUsers = [];
+    try {
+        $stmtB = $pdo->query("SELECT DISTINCT name, phone, email, date_of_birth FROM bookings WHERE date_of_birth IS NOT NULL AND date_of_birth != ''");
+        $bookingUsers = $stmtB->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {}
+
+    $customerMap = [];
+    foreach (array_merge($allUsers, $bookingUsers) as $u) {
+        $cleanPhone = preg_replace('/\D/', '', $u['phone'] ?? '');
+        if (empty($cleanPhone)) continue;
+        if (!isset($customerMap[$cleanPhone])) {
+            $customerMap[$cleanPhone] = $u;
+        }
+    }
+
+    foreach ($customerMap as $phone => $u) {
+        $dob = trim($u['date_of_birth']);
+        $dobTime = false;
+
+        // Try standard parsing
+        $t = strtotime($dob);
+        if ($t !== false && $t > 0) {
+            $dobTime = $t;
+        } else {
+            // Try DD/MM/YYYY or DD-MM-YYYY
+            $parts = preg_split('/[\/\-\.]/', $dob);
+            if (count($parts) === 3) {
+                if (strlen($parts[0]) === 4) { // YYYY-MM-DD
+                    $dobTime = strtotime($parts[0] . '-' . $parts[1] . '-' . $parts[2]);
+                } else { // DD-MM-YYYY
+                    $dobTime = strtotime($parts[2] . '-' . $parts[1] . '-' . $parts[0]);
+                }
+            }
+        }
+
+        if (!$dobTime) continue;
+        if (date('m-d', $dobTime) !== $todayMonthDay) continue;
+
+        // Customer has birthday today!
+        $tiers = calculateCustomerTiers($pdo, $phone);
+        $highestTier = $tiers['highest_tier'] ?? 'Bronze';
+        $custName = $u['name'] ?: 'Valued Guest';
+        $custId = $u['id'] ?: ('c_' . $phone);
+        $channel = 'SMS';
+
+        // Check duplicate protection for this year & channel
+        $chkLog = $pdo->prepare("SELECT id FROM birthday_message_logs WHERE customer_id = ? AND birthday_year = ? AND channel = ?");
+        $chkLog->execute([$custId, $currentYear, $channel]);
+        if ($chkLog->fetch()) {
+            $skippedCount++;
+            continue;
+        }
+
+        // Tier-specific birthday message
+        if ($highestTier === 'Platinum') {
+            $msg = "🎉 Happy Birthday, $custName! 🎂💎\n\nWishing you an incredible year ahead from WOW GOA! ❤️\n\nAs our Platinum Member, you have an exclusive VIP birthday offer waiting for you. 🌴✨\n\nEnjoy your special day!";
+        } elseif ($highestTier === 'Gold') {
+            $msg = "🎉 Happy Birthday, $custName! 🎂\n\nWOW GOA wishes you an amazing year ahead! ❤️\n\nAs our Gold Member, enjoy your special birthday offer on your next booking. 🌴✨\n\nThank you for being a valued WOW GOA customer!";
+        } elseif ($highestTier === 'Silver') {
+            $msg = "🎉 Happy Birthday, $custName! 🎂\n\nWarm wishes from WOW GOA! ❤️\n\nEnjoy a special birthday offer on your next booking.\n\nThank you for choosing WOW GOA! 🌴";
+        } else {
+            $msg = "🎉 Happy Birthday, $custName!\n\nWishing you a wonderful birthday from WOW GOA! 🎂\n\nHave an amazing year ahead. 🌴";
+        }
+
+        $logId = 'bday_' . uniqid();
+        $status = 'Sent';
+
+        try {
+            $insLog = $pdo->prepare("INSERT INTO birthday_message_logs (id, customer_id, customer_name, phone, email, birthday_year, birthday_date, highest_tier, message_text, channel, status, sent_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $insLog->execute([
+                $logId, $custId, $custName, $phone, $u['email'] ?? '',
+                $currentYear, date('Y-m-d'), $highestTier, $msg, $channel, $status,
+                date('Y-m-d H:i:s'), date('Y-m-d H:i:s')
+            ]);
+            $sentCount++;
+            $logs[] = [
+                'id' => $logId,
+                'customer_name' => $custName,
+                'phone' => $phone,
+                'highest_tier' => $highestTier,
+                'status' => $status
+            ];
+        } catch (Exception $e) {}
+    }
+
+    return [
+        'success' => true,
+        'date' => date('Y-m-d'),
+        'sent_count' => $sentCount,
+        'skipped_duplicate_count' => $skippedCount,
+        'logs' => $logs
+    ];
 }
 
 // 2. Process GET Resources (Read Queries)
@@ -409,10 +786,150 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
             echo json_encode($data);
             exit;} elseif ($resource === 'users') {
-            $stmt = $pdo->prepare("SELECT id, username, name, email, phone, city, role, created_at, billing_price, status, kyc_status, plain_password, is_online, last_active_at FROM users WHERE (admin_id = ? OR admin_id IS NULL OR admin_id = '' OR admin_id = 'admin' OR ? = 'superadmin' OR ? = 'admin') ORDER BY created_at DESC");
+            $stmt = $pdo->prepare("SELECT id, username, name, email, phone, city, role, date_of_birth, created_at, billing_price, status, kyc_status, plain_password, is_online, last_active_at FROM users WHERE (admin_id = ? OR admin_id IS NULL OR admin_id = '' OR admin_id = 'admin' OR ? = 'superadmin' OR ? = 'admin') ORDER BY created_at DESC");
             $stmt->execute([$tenant_id, $tenant_id, $tenant_id]);
             $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
             echo json_encode($data);
+            exit;} elseif ($resource === 'customer_loyalty') {
+            $phone = $_GET['phone'] ?? ($_GET['mobile'] ?? '');
+            $customerId = $_GET['customer_id'] ?? ($_GET['id'] ?? '');
+            $loyalty = calculateCustomerTiers($pdo, $phone, $customerId);
+            echo json_encode($loyalty);
+            exit;} elseif ($resource === 'check_customer_dob') {
+            $phone = preg_replace('/\D/', '', $_GET['phone'] ?? ($_GET['mobile'] ?? ''));
+            $last10 = strlen($phone) >= 10 ? substr($phone, -10) : $phone;
+            $foundDob = null;
+            $custName = '';
+            $custEmail = '';
+
+            if (!empty($last10)) {
+                try {
+                    $uStmt = $pdo->prepare("SELECT name, email, date_of_birth FROM users WHERE (phone LIKE ? OR phone LIKE ?) AND date_of_birth IS NOT NULL AND date_of_birth != '' ORDER BY created_at DESC LIMIT 1");
+                    $uStmt->execute(["%$last10", "%$phone"]);
+                    $uRow = $uStmt->fetch(PDO::FETCH_ASSOC);
+                    if ($uRow) {
+                        $foundDob = $uRow['date_of_birth'];
+                        $custName = $uRow['name'] ?? '';
+                        $custEmail = $uRow['email'] ?? '';
+                    }
+                } catch (Exception $e) {}
+
+                if (empty($foundDob)) {
+                    try {
+                        $bStmt = $pdo->prepare("SELECT name, email, date_of_birth FROM bookings WHERE (phone LIKE ? OR phone LIKE ?) AND date_of_birth IS NOT NULL AND date_of_birth != '' ORDER BY created_at DESC LIMIT 1");
+                        $bStmt->execute(["%$last10", "%$phone"]);
+                        $bRow = $bStmt->fetch(PDO::FETCH_ASSOC);
+                        if ($bRow) {
+                            $foundDob = $bRow['date_of_birth'];
+                            if (empty($custName)) $custName = $bRow['name'] ?? '';
+                            if (empty($custEmail)) $custEmail = $bRow['email'] ?? '';
+                        }
+                    } catch (Exception $e) {}
+                }
+            }
+
+            echo json_encode([
+                'exists' => !empty($foundDob),
+                'date_of_birth' => $foundDob ?: '',
+                'name' => $custName,
+                'email' => $custEmail
+            ]);
+            exit;} elseif ($resource === 'today_birthdays') {
+            $todayMonthDay = date('m-d');
+            $currentYear = intval(date('Y'));
+            
+            $allUsers = [];
+            try {
+                $stmt = $pdo->query("SELECT id, name, phone, email, date_of_birth FROM users WHERE date_of_birth IS NOT NULL AND date_of_birth != ''");
+                $allUsers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            } catch (Exception $e) {}
+
+            $bookingUsers = [];
+            try {
+                $stmtB = $pdo->query("SELECT DISTINCT name, phone, email, date_of_birth FROM bookings WHERE date_of_birth IS NOT NULL AND date_of_birth != ''");
+                $bookingUsers = $stmtB->fetchAll(PDO::FETCH_ASSOC);
+            } catch (Exception $e) {}
+
+            $customerMap = [];
+            foreach (array_merge($allUsers, $bookingUsers) as $u) {
+                $cleanPhone = preg_replace('/\D/', '', $u['phone'] ?? '');
+                if (empty($cleanPhone)) continue;
+                if (!isset($customerMap[$cleanPhone])) {
+                    $customerMap[$cleanPhone] = $u;
+                }
+            }
+
+            $birthdaysToday = [];
+            foreach ($customerMap as $phone => $u) {
+                $dob = trim($u['date_of_birth']);
+                $dobTime = false;
+                $t = strtotime($dob);
+                if ($t !== false && $t > 0) {
+                    $dobTime = $t;
+                } else {
+                    $parts = preg_split('/[\/\-\.]/', $dob);
+                    if (count($parts) === 3) {
+                        if (strlen($parts[0]) === 4) {
+                            $dobTime = strtotime($parts[0] . '-' . $parts[1] . '-' . $parts[2]);
+                        } else {
+                            $dobTime = strtotime($parts[2] . '-' . $parts[1] . '-' . $parts[0]);
+                        }
+                    }
+                }
+
+                if (!$dobTime) continue;
+                if (date('m-d', $dobTime) !== $todayMonthDay) continue;
+
+                $tiers = calculateCustomerTiers($pdo, $phone);
+                $highestTier = $tiers['highest_tier'] ?? 'Bronze';
+                $custId = $u['id'] ?: ('c_' . $phone);
+
+                $status = 'Pending';
+                $sentAt = null;
+                try {
+                    $chk = $pdo->prepare("SELECT status, sent_at FROM birthday_message_logs WHERE customer_id = ? AND birthday_year = ? ORDER BY sent_at DESC LIMIT 1");
+                    $chk->execute([$custId, $currentYear]);
+                    $logRow = $chk->fetch(PDO::FETCH_ASSOC);
+                    if ($logRow) {
+                        $status = $logRow['status'] ?? 'Sent';
+                        $sentAt = $logRow['sent_at'];
+                    }
+                } catch (Exception $e) {}
+
+                $birthdaysToday[] = [
+                    'id' => $custId,
+                    'customer_id' => $custId,
+                    'name' => $u['name'] ?: 'Valued Customer',
+                    'phone' => $phone,
+                    'email' => $u['email'] ?? '',
+                    'date_of_birth' => $dob,
+                    'formatted_dob' => date('d F', $dobTime),
+                    'car_tier' => $tiers['car']['tier_name'] ?? 'Bronze',
+                    'hotel_tier' => $tiers['hotel']['tier_name'] ?? 'Bronze',
+                    'trip_tier' => $tiers['trip']['tier_name'] ?? 'Bronze',
+                    'highest_tier' => $highestTier,
+                    'status' => $status,
+                    'sent_at' => $sentAt
+                ];
+            }
+
+            echo json_encode($birthdaysToday);
+            exit;} elseif ($resource === 'birthday_logs') {
+            try {
+                $stmt = $pdo->query("SELECT * FROM birthday_message_logs ORDER BY sent_at DESC LIMIT 200");
+                $logs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                echo json_encode($logs ?: []);
+            } catch (Exception $e) {
+                echo json_encode([]);
+            }
+            exit;} elseif ($resource === 'birthday_offers') {
+            try {
+                $stmt = $pdo->query("SELECT * FROM birthday_offers ORDER BY CASE tier WHEN 'Bronze' THEN 1 WHEN 'Silver' THEN 2 WHEN 'Gold' THEN 3 WHEN 'Platinum' THEN 4 ELSE 5 END");
+                $offers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                echo json_encode($offers ?: []);
+            } catch (Exception $e) {
+                echo json_encode([]);
+            }
             exit;} elseif ($resource === 'flights') {
             $stmt = $pdo->prepare("SELECT * FROM flights WHERE (admin_id = ? OR admin_id IS NULL OR admin_id = '' OR ? = 'superadmin' OR ? = 'admin') ORDER BY created_at DESC");
             $stmt->execute([$tenant_id, $tenant_id, $tenant_id]);
@@ -1902,6 +2419,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $driver_earning = $driver_charge;
             $driver_payment_status = 'Pending';
 
+            $rawDob = trim($payload['date_of_birth'] ?? ($payload['dob'] ?? ''));
+            $rawPhone = preg_replace('/\D/', '', $payload['phone'] ?? ($payload['customer_phone'] ?? ''));
+            $last10 = strlen($rawPhone) >= 10 ? substr($rawPhone, -10) : $rawPhone;
+            $custName = $payload['name'] ?? ($payload['customer_name'] ?? 'Customer');
+            $custEmail = $payload['email'] ?? ($payload['customer_email'] ?? '');
+            $custDob = null;
+
+            // Customer Identity & Permanent DOB Management
+            if (!empty($last10)) {
+                try {
+                    $chkCust = $pdo->prepare("SELECT id, name, phone, email, date_of_birth FROM users WHERE phone LIKE ? OR phone LIKE ?");
+                    $chkCust->execute(["%$last10", "%$rawPhone"]);
+                    $existingCust = $chkCust->fetch(PDO::FETCH_ASSOC);
+
+                    if ($existingCust) {
+                        if (!empty($existingCust['date_of_birth'])) {
+                            // Retain existing stored DOB - NEVER overwrite
+                            $custDob = $existingCust['date_of_birth'];
+                        } elseif (!empty($rawDob)) {
+                            $custDob = $rawDob;
+                            $updCust = $pdo->prepare("UPDATE users SET date_of_birth = ? WHERE id = ?");
+                            $updCust->execute([$custDob, $existingCust['id']]);
+                        }
+                    } else {
+                        // Create new customer profile with mandatory DOB
+                        $custDob = !empty($rawDob) ? $rawDob : null;
+                        $newCustId = 'c_' . $last10;
+                        $insCust = $pdo->prepare("INSERT INTO users (id, username, name, email, phone, role, status, date_of_birth, created_at) VALUES (?, ?, ?, ?, ?, 'customer', 'active', ?, ?)");
+                        $insCust->execute([$newCustId, $rawPhone, $custName, $custEmail, $rawPhone, $custDob, date('Y-m-d H:i:s')]);
+                    }
+                } catch (Exception $ce) {}
+
+                if (empty($custDob) && !empty($rawDob)) {
+                    $custDob = $rawDob;
+                }
+            }
+
             $img_val = $payload['vehicle_image'] ?? ($payload['image'] ?? ($payload['image_url'] ?? ''));
             if (empty($img_val) && !empty($payload['item_id'])) {
                 try {
@@ -1922,12 +2476,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             try {
-                $stmt = $pdo->prepare("INSERT INTO bookings (id, name, phone, email, license, pickup_loc, pickup_date, pickup_time, drop_date, drop_time, departure_date, return_date, check_in_date, check_out_date, duration, item_id, item_name, booking_days, total_amount, amount_paid, remaining_amount, total_paid, status, payment_status, customizations, created_at, payment_method, admin_id, driver_required, driver_charge, driver_days, driver_earning, driver_payment_status, image, vehicle_image) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt = $pdo->prepare("INSERT INTO bookings (id, name, phone, email, license, pickup_loc, pickup_date, pickup_time, drop_date, drop_time, departure_date, return_date, check_in_date, check_out_date, duration, item_id, item_name, booking_days, total_amount, amount_paid, remaining_amount, total_paid, status, payment_status, customizations, created_at, payment_method, admin_id, driver_required, driver_charge, driver_days, driver_earning, driver_payment_status, image, vehicle_image, date_of_birth) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
                 $stmt->execute([
                     $booking_id,
-                    $payload['name'] ?? ($payload['customer_name'] ?? 'Customer'),
+                    $custName,
                     $payload['phone'] ?? '',
-                    $payload['email'] ?? '',
+                    $custEmail,
                     $payload['license'] ?? '',
                     $payload['pickup_loc'] ?? ($payload['pickup_location'] ?? 'Goa'),
                     $dep_date,
@@ -1958,16 +2512,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $driver_earning,
                     $driver_payment_status,
                     $img_val,
-                    $img_val
+                    $img_val,
+                    $custDob
                 ]);
             } catch (Exception $insEx) {
                 // Fallback insert if columns differ
-                $stmt = $pdo->prepare("INSERT INTO bookings (id, name, phone, email, license, pickup_loc, pickup_date, pickup_time, drop_date, drop_time, departure_date, return_date, check_in_date, check_out_date, duration, item_id, item_name, booking_days, total_amount, amount_paid, remaining_amount, total_paid, status, payment_status, customizations, created_at, payment_method, admin_id, driver_required, driver_charge, driver_days, driver_earning, driver_payment_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt = $pdo->prepare("INSERT INTO bookings (id, name, phone, email, license, pickup_loc, pickup_date, pickup_time, drop_date, drop_time, departure_date, return_date, check_in_date, check_out_date, duration, item_id, item_name, booking_days, total_amount, amount_paid, remaining_amount, total_paid, status, payment_status, customizations, created_at, payment_method, admin_id, driver_required, driver_charge, driver_days, driver_earning, driver_payment_status, date_of_birth) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
                 $stmt->execute([
                     $booking_id,
-                    $payload['name'] ?? ($payload['customer_name'] ?? 'Customer'),
+                    $custName,
                     $payload['phone'] ?? '',
-                    $payload['email'] ?? '',
+                    $custEmail,
                     $payload['license'] ?? '',
                     $payload['pickup_loc'] ?? ($payload['pickup_location'] ?? 'Goa'),
                     $dep_date,
@@ -1996,7 +2551,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $driver_charge,
                     $driver_days,
                     $driver_earning,
-                    $driver_payment_status
+                    $driver_payment_status,
+                    $custDob
                 ]);
             }
             
@@ -2028,7 +2584,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $leadStmt->execute([$leadId, $payload['name'] ?? 'Customer', $payload['phone'] ?? '', $leadEmail, $leadSource, $leadService, $leadBudget, $leadNotes, $tenant_id, date('Y-m-d H:i:s'), date('Y-m-d H:i:s')]);
             } catch (Exception $leade) {}
             
-            echo json_encode(["success" => true, "message" => "Booking complete.", "booking_id" => $booking_id]);
+            echo json_encode(["success" => true, "message" => "Booking complete.", "booking_id" => $booking_id, "date_of_birth" => $custDob]);
+            exit;} elseif ($action === 'run_birthday_cron') {
+            $cronResult = processDailyBirthdays($pdo);
+            echo json_encode($cronResult);
+            exit;} elseif ($action === 'send_birthday_wish') {
+            $phone = preg_replace('/\D/', '', $payload['phone'] ?? ($payload['mobile'] ?? ''));
+            $custName = trim($payload['name'] ?? ($payload['customer_name'] ?? 'Valued Customer'));
+            $custId = $payload['customer_id'] ?? ('c_' . $phone);
+            $tier = $payload['tier'] ?? ($payload['highest_tier'] ?? 'Bronze');
+            $channel = $payload['channel'] ?? 'SMS';
+            $currentYear = intval(date('Y'));
+
+            if ($tier === 'Platinum') {
+                $msg = "🎉 Happy Birthday, $custName! 🎂💎\n\nWishing you an incredible year ahead from WOW GOA! ❤️\n\nAs our Platinum Member, you have an exclusive VIP birthday offer waiting for you. 🌴✨\n\nEnjoy your special day!";
+            } elseif ($tier === 'Gold') {
+                $msg = "🎉 Happy Birthday, $custName! 🎂\n\nWOW GOA wishes you an amazing year ahead! ❤️\n\nAs our Gold Member, enjoy your special birthday offer on your next booking. 🌴✨\n\nThank you for being a valued WOW GOA customer!";
+            } elseif ($tier === 'Silver') {
+                $msg = "🎉 Happy Birthday, $custName! 🎂\n\nWarm wishes from WOW GOA! ❤️\n\nEnjoy a special birthday offer on your next booking.\n\nThank you for choosing WOW GOA! 🌴";
+            } else {
+                $msg = "🎉 Happy Birthday, $custName!\n\nWishing you a wonderful birthday from WOW GOA! 🎂\n\nHave an amazing year ahead. 🌴";
+            }
+
+            $logId = 'bday_' . uniqid();
+            $status = 'Sent';
+
+            try {
+                $ins = $pdo->prepare("INSERT INTO birthday_message_logs (id, customer_id, customer_name, phone, email, birthday_year, birthday_date, highest_tier, message_text, channel, status, sent_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status = 'Sent', sent_at = VALUES(sent_at), message_text = VALUES(message_text)");
+                $ins->execute([
+                    $logId, $custId, $custName, $phone, $payload['email'] ?? '',
+                    $currentYear, date('Y-m-d'), $tier, $msg, $channel, $status,
+                    date('Y-m-d H:i:s'), date('Y-m-d H:i:s')
+                ]);
+            } catch (Exception $e) {
+                // SQLite fallback
+                try {
+                    $insLite = $pdo->prepare("INSERT OR REPLACE INTO birthday_message_logs (id, customer_id, customer_name, phone, email, birthday_year, birthday_date, highest_tier, message_text, channel, status, sent_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                    $insLite->execute([
+                        $logId, $custId, $custName, $phone, $payload['email'] ?? '',
+                        $currentYear, date('Y-m-d'), $tier, $msg, $channel, $status,
+                        date('Y-m-d H:i:s'), date('Y-m-d H:i:s')
+                    ]);
+                } catch (Exception $e2) {}
+            }
+
+            echo json_encode(["success" => true, "message" => "Birthday wish sent successfully to " . $custName, "log_id" => $logId]);
+            exit;} elseif ($action === 'save_birthday_offer') {
+            $tier = $payload['tier'] ?? '';
+            $title = $payload['title'] ?? ($tier . ' Birthday Perk');
+            $discountAmt = intval($payload['discount_amount'] ?? 0);
+            $discountPct = intval($payload['discount_percent'] ?? 0);
+            $msg = $payload['message_template'] ?? '';
+
+            if (!$tier) throw new Exception("Missing tier.");
+
+            try {
+                $stmtOff = $pdo->prepare("INSERT INTO birthday_offers (tier, title, offer_type, discount_amount, discount_percent, message_template, updated_at) VALUES (?, ?, 'discount', ?, ?, ?, ?) ON DUPLICATE KEY UPDATE title = VALUES(title), discount_amount = VALUES(discount_amount), discount_percent = VALUES(discount_percent), message_template = VALUES(message_template), updated_at = VALUES(updated_at)");
+                $stmtOff->execute([$tier, $title, $discountAmt, $discountPct, $msg, date('Y-m-d H:i:s')]);
+            } catch (Exception $e) {
+                $stmtOff2 = $pdo->prepare("INSERT OR REPLACE INTO birthday_offers (tier, title, offer_type, discount_amount, discount_percent, message_template, updated_at) VALUES (?, ?, 'discount', ?, ?, ?, ?)");
+                $stmtOff2->execute([$tier, $title, $discountAmt, $discountPct, $msg, date('Y-m-d H:i:s')]);
+            }
+
+            echo json_encode(["success" => true, "message" => "Birthday offer updated for " . $tier]);
             exit;} elseif ($action === 'delete_package') {
             $stmt = $pdo->prepare("DELETE FROM packages WHERE id = ?");
             $stmt->execute([$payload['id']]);

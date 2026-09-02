@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { X, CheckCircle, ShieldCheck, Compass, Calendar, Clock, MapPin } from 'lucide-react';
+import { X, CheckCircle, ShieldCheck, Compass, Calendar, Clock, MapPin, Cake, Award, Sparkles } from 'lucide-react';
 import { getTodayDateStr, addDays } from '../utils/dateUtils';
+import { checkCustomerDob } from '../services/api';
 import UnifiedGalleryViewer from './UnifiedGalleryViewer';
 
 export default function BookingModal({
@@ -32,6 +33,9 @@ export default function BookingModal({
   const [modalPickupTime, setModalPickupTime] = useState(pickupTime || '10:00 AM');
   const [modalDropTime, setModalDropTime] = useState(dropTime || '10:00 AM');
   const [modalPickupLoc, setModalPickupLoc] = useState(pickupLoc || 'Goa Airport (Dabolim / Mopa)');
+  const [userDob, setUserDob] = useState('');
+  const [isDobSaved, setIsDobSaved] = useState(false);
+  const [dobChecking, setDobChecking] = useState(false);
 
   useEffect(() => {
     if (pickupDate) setModalPickupDate(pickupDate);
@@ -40,6 +44,31 @@ export default function BookingModal({
     if (dropTime) setModalDropTime(dropTime);
     if (pickupLoc) setModalPickupLoc(pickupLoc);
   }, [pickupDate, dropDate, pickupTime, dropTime, pickupLoc]);
+
+  // Repeat customer lookup for Date of Birth & profile info
+  useEffect(() => {
+    const clean = String(userPhone || '').replace(/\D/g, '');
+    if (clean.length >= 10) {
+      setDobChecking(true);
+      checkCustomerDob(clean).then(res => {
+        if (res && res.exists && res.date_of_birth) {
+          setUserDob(res.date_of_birth);
+          setIsDobSaved(true);
+          if (!userName && res.name && setUserName) {
+            setUserName(res.name);
+          }
+        } else {
+          setIsDobSaved(false);
+        }
+      }).catch(() => {
+        setIsDobSaved(false);
+      }).finally(() => {
+        setDobChecking(false);
+      });
+    } else {
+      setIsDobSaved(false);
+    }
+  }, [userPhone]);
 
   const allItemImages = useMemo(() => {
     if (!selectedBookingItem) return [];
@@ -337,6 +366,7 @@ export default function BookingModal({
       driver_fullday_end: driverFullDayEnd || modalDropDate,
       driver_fullday_days: driverFullDayDaysCount,
       driver_details: driverDetailsPayload,
+      date_of_birth: userDob,
       subtotal,
       tax,
       fee,
@@ -393,7 +423,7 @@ export default function BookingModal({
                   </h6>
                 </div>
                 <p className="text-muted text-xs mb-3">
-                  Track your booking, trip details, payments and updates from your WOW GOA Customer Portal.
+                  Track your booking, trip details, payments and loyalty rewards from your WOW GOA Customer Portal.
                 </p>
                 <button 
                   type="button" 
@@ -462,22 +492,68 @@ export default function BookingModal({
                           Use this 10-digit mobile number to log in to the Customer Portal & track your booking.
                         </small>
                       </div>
+
+                      {/* Date of Birth Mandatory Field with Auto-Retrieval for Repeat Bookings */}
+                      {isDobSaved ? (
+                        <div className="mb-3 p-2.5 rounded-3 bg-success bg-opacity-10 border border-success border-opacity-25 d-flex align-items-center justify-content-between animate-fade-in">
+                          <div className="d-flex align-items-center gap-2">
+                            <div className="rounded-circle bg-success text-white d-flex align-items-center justify-content-center" style={{ width: '28px', height: '28px', minWidth: '28px' }}>
+                              <Cake size={14} />
+                            </div>
+                            <div>
+                              <div className="text-xs fw-bold text-success d-flex align-items-center gap-1">
+                                <ShieldCheck size={13} /> Verified DOB on WOW GOA Account
+                              </div>
+                              <div className="text-xs text-dark mt-0.5">
+                                🎂 Date of Birth: <strong>{userDob}</strong> <span className="text-muted">(Saved for birthday benefits)</span>
+                              </div>
+                            </div>
+                          </div>
+                          <span className="badge bg-success text-white text-xs px-2 py-1 rounded-pill">Saved</span>
+                        </div>
+                      ) : (
+                        <div className="mb-3 animate-fade-in">
+                          <label className="form-label small fw-bold d-flex align-items-center justify-content-between">
+                            <span className="d-flex align-items-center gap-1">
+                              <Cake size={14} className="text-warning" /> Date of Birth <span className="text-danger">*</span>
+                            </span>
+                            <span className="text-muted" style={{ fontSize: '11px' }}>[ DD / MM / YYYY ]</span>
+                          </label>
+                          <input 
+                            type="date" 
+                            className="form-control" 
+                            value={userDob}
+                            onChange={(e) => setUserDob(e.target.value)}
+                            required 
+                            max={new Date().toISOString().split('T')[0]}
+                          />
+                          <small className="text-muted d-block mt-1" style={{ fontSize: '11px', color: '#64748b' }}>
+                            Date of Birth is required to provide birthday benefits and special offers from WOW GOA.
+                          </small>
+                        </div>
+                      )}
                     </>
                   )}
 
-                {(isPackage && selectedBookingItem.traveller_details) && (
-                  <div className="bg-light p-3 rounded border mb-4">
-                     <h6 className="fw-bold text-primary mb-2">Lead Traveller Verified</h6>
-                     <div className="d-flex align-items-center gap-2 mb-1">
-                         <span className="text-muted small">Name:</span>
-                         <span className="fw-bold">{userName}</span>
-                     </div>
-                     <div className="d-flex align-items-center gap-2">
-                         <span className="text-muted small">Contact:</span>
-                         <span className="fw-bold">{userPhone}</span>
-                     </div>
-                  </div>
-                )}
+                  {(isPackage && selectedBookingItem.traveller_details) && (
+                    <div className="bg-light p-3 rounded border mb-4">
+                       <h6 className="fw-bold text-primary mb-2">Lead Traveller Verified</h6>
+                       <div className="d-flex align-items-center gap-2 mb-1">
+                           <span className="text-muted small">Name:</span>
+                           <span className="fw-bold">{userName}</span>
+                       </div>
+                       <div className="d-flex align-items-center gap-2">
+                           <span className="text-muted small">Contact:</span>
+                           <span className="fw-bold">{userPhone}</span>
+                       </div>
+                       {userDob && (
+                         <div className="d-flex align-items-center gap-2 mt-1 pt-1 border-top">
+                           <span className="text-muted small">🎂 Birthday:</span>
+                           <span className="fw-bold text-success">{userDob}</span>
+                         </div>
+                       )}
+                    </div>
+                  )}
 
                   {(isCar || isBike || addonVehicle) && (
                     <div className="mb-3">
@@ -488,20 +564,6 @@ export default function BookingModal({
                         placeholder="e.g. DL-1420180098765"
                         value={userLicense}
                         onChange={(e) => setUserLicense(e.target.value)}
-                        required 
-                      />
-                    </div>
-                  )}
-
-                  {isFlight && (
-                    <div className="mb-3">
-                      <label className="form-label small fw-bold">Total Members</label>
-                      <input 
-                        type="number" 
-                        min="1"
-                        className="form-control" 
-                        value={totalMembers}
-                        onChange={(e) => setTotalMembers(parseInt(e.target.value) || 1)}
                         required 
                       />
                     </div>

@@ -1,18 +1,24 @@
 import React, { useState } from 'react';
 import {
   User, Mail, Phone, MapPin, ShieldCheck, Key,
-  Save, CheckCircle2, AlertCircle, FileText, Lock
+  Save, CheckCircle2, AlertCircle, FileText, Lock, Cake, Sparkles
 } from 'lucide-react';
+import { formatBirthdayDisplay } from '../../utils/loyaltyHelper';
 
 export default function CustomerProfileTab({
   currentUser,
   bookings = [],
   onUpdateProfile
 }) {
+  // Find DOB from currentUser or any booking
+  const savedDob = currentUser?.date_of_birth || 
+    (bookings.find(b => b.date_of_birth)?.date_of_birth) || '';
+
   const [formData, setFormData] = useState({
     name: currentUser?.name || currentUser?.username || '',
     email: currentUser?.email || '',
     phone: currentUser?.phone || '',
+    dateOfBirth: savedDob,
     city: currentUser?.city || 'Goa',
     address: currentUser?.address || '',
     licenseNumber: currentUser?.license_number || currentUser?.licenseNumber || '',
@@ -100,6 +106,14 @@ export default function CustomerProfileTab({
                 <span className="text-muted">Cancelled</span>
                 <span className="text-danger fw-bold">{cancelledBookings}</span>
               </div>
+              {savedDob && (
+                <div className="d-flex align-items-center justify-content-between text-xs mb-2 pb-2 border-bottom">
+                  <span className="text-muted d-flex align-items-center gap-1">
+                    <Cake size={13} className="text-warning" /> Birthday
+                  </span>
+                  <span className="fw-bold text-success">{formatBirthdayDisplay(savedDob)}</span>
+                </div>
+              )}
               <div className="d-flex align-items-center justify-content-between text-xs">
                 <span className="text-muted">KYC & License</span>
                 <span className="badge bg-success bg-opacity-10 text-success fw-bold px-2 py-0.5 rounded">Verified</span>
@@ -107,7 +121,7 @@ export default function CustomerProfileTab({
             </div>
 
             <div className="text-xxs text-muted">
-              🔒 Your identification documents are stored encrypted under 256-bit security.
+              🔒 Your identification details and birthday are saved securely on your WOW GOA profile.
             </div>
           </div>
         </div>
@@ -173,6 +187,22 @@ export default function CustomerProfileTab({
                       placeholder="e.g. Mumbai, Maharashtra"
                     />
                   </div>
+                </div>
+
+                <div className="col-md-6">
+                  <label className="form-label text-xs fw-bold text-muted">Date of Birth</label>
+                  <div className="input-group">
+                    <span className="input-group-text bg-light border-end-0"><Cake size={14} className="text-warning" /></span>
+                    <input 
+                      type="text" 
+                      className="form-control border-start-0 text-xs bg-light"
+                      value={formData.dateOfBirth ? `${formData.dateOfBirth} (${formatBirthdayDisplay(formData.dateOfBirth)})` : 'Saved on First Booking'}
+                      disabled
+                    />
+                  </div>
+                  <small className="text-muted" style={{ fontSize: '10px' }}>
+                    🎂 Saved for your annual birthday wishes and exclusive WOW GOA membership privileges.
+                  </small>
                 </div>
 
                 <div className="col-12">

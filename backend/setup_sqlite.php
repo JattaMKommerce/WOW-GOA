@@ -12,12 +12,19 @@ DROP TABLE IF EXISTS users;
 CREATE TABLE users (
   id VARCHAR(50) PRIMARY KEY,
   username VARCHAR(100) UNIQUE,
+  name VARCHAR(255) DEFAULT '',
   email VARCHAR(100) UNIQUE,
+  phone VARCHAR(50) DEFAULT '',
+  city VARCHAR(100) DEFAULT 'Goa',
   password_hash VARCHAR(255),
   role VARCHAR(50),
   billing_price DECIMAL(10,2) DEFAULT 0,
   status VARCHAR(50) DEFAULT 'active',
+  kyc_status VARCHAR(50) DEFAULT 'verified',
   plain_password VARCHAR(255),
+  is_online INT DEFAULT 0,
+  last_active_at DATETIME,
+  date_of_birth VARCHAR(50) DEFAULT NULL,
   admin_id VARCHAR(50),
   created_at DATETIME
 );

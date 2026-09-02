@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, Search, Eye, Wallet, Calendar, Star, Filter, ChevronRight, X, Download, 
-  UserPlus, Shield, Plus, CheckCircle, AlertCircle, RefreshCw, Key, Phone, Mail, MapPin, UserCheck, ToggleLeft, ToggleRight
+  UserPlus, Shield, Plus, CheckCircle, AlertCircle, RefreshCw, Key, Phone, Mail, MapPin, 
+  UserCheck, ToggleLeft, ToggleRight, Cake, Send, Gift, Crown, History, Settings, Sparkles, CheckCircle2, Car, Hotel, Compass
 } from 'lucide-react';
 import * as api from '../../services/api';
+import { calculateLoyaltyTiers, formatBirthdayDisplay } from '../../utils/loyaltyHelper';
 
 function StatusBadge({ status }) {
   const m = { 
@@ -38,15 +40,48 @@ function RoleBadge({ role }) {
   );
 }
 
+function TierBadgeMini({ tier, icon, count, category }) {
+  const colors = {
+    Platinum: { bg: '#f3e8ff', color: '#7e22ce', border: '#d8b4fe' },
+    Gold: { bg: '#fef9c3', color: '#a16207', border: '#fde047' },
+    Silver: { bg: '#f1f5f9', color: '#475569', border: '#cbd5e1' },
+    Bronze: { bg: '#ffedd5', color: '#c2410c', border: '#fdba74' }
+  };
+  const c = colors[tier] || colors.Bronze;
+  return (
+    <span 
+      className="d-inline-flex align-items-center gap-1 px-2 py-0.5 rounded-pill fw-bold" 
+      style={{ background: c.bg, color: c.color, border: `1px solid ${c.border}`, fontSize: '0.68rem' }}
+      title={`${category}: ${tier} (${count} completed bookings)`}
+    >
+      <span>{icon}</span>
+      <span>{tier}</span>
+      <span className="text-muted" style={{ fontSize: '0.6rem' }}>({count})</span>
+    </span>
+  );
+}
+
 export default function AdminCustomerManagement({ usersList = [], bookings = [], initialOpenAddUser = false, currentUser }) {
+  const [activeMainTab, setActiveMainTab] = useState('directory'); // 'directory' | 'birthdays_today' | 'birthday_logs' | 'birthday_settings'
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [selected, setSelected] = useState(null);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [drawerTab, setDrawerTab] = useState('overview');
+
+  // Birthday Management State
+  const [todayBirthdays, setTodayBirthdays] = useState([]);
+  const [loadingBirthdays, setLoadingBirthdays] = useState(false);
+  const [birthdayLogs, setBirthdayLogs] = useState([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [birthdayOffers, setBirthdayOffers] = useState([]);
+  const [loadingOffers, setLoadingOffers] = useState(false);
+  const [wishSendingPhone, setWishSendingPhone] = useState(null);
+  const [actionAlert, setActionAlert] = useState(null);
+  const [cronRunning, setCronRunning] = useState(false);
 
   // Add Users / Team Management Modal State
   const [showUsersModal, setShowUsersModal] = useState(initialOpenAddUser);
-  const [usersSubTab, setUsersSubTab] = useState('list'); // 'list' | 'add'
+  const [usersSubTab, setUsersSubTab] = useState('list');
   const [allUsers, setAllUsers] = useState(usersList);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [userModalMessage, setUserModalMessage] = useState(null);
@@ -84,11 +119,117 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
     }
   };
 
+  const loadBirthdaysData = async () => {
+    setLoadingBirthdays(true);
+    try {
+      const bdays = await api.fetchTodayBirthdays();
+      setTodayBirthdays(bdays || []);
+    } catch (e) {
+      console.warn("Failed to load today's birthdays", e);
+    } finally {
+      setLoadingBirthdays(false);
+    }
+  };
+
+  const loadLogsData = async () => {
+    setLoadingLogs(true);
+    try {
+      const logs = await api.fetchBirthdayLogs();
+      setBirthdayLogs(logs || []);
+    } catch (e) {
+      console.warn("Failed to load birthday logs", e);
+    } finally {
+      setLoadingLogs(false);
+    }
+  };
+
+  const loadOffersData = async () => {
+    setLoadingOffers(true);
+    try {
+      const offers = await api.fetchBirthdayOffers();
+      setBirthdayOffers(offers || []);
+    } catch (e) {
+      console.warn("Failed to load birthday offers", e);
+    } finally {
+      setLoadingOffers(false);
+    }
+  };
+
+  useEffect(() => {
+    loadBirthdaysData();
+    loadOffersData();
+  }, []);
+
+  useEffect(() => {
+    if (activeMainTab === 'birthdays_today') loadBirthdaysData();
+    if (activeMainTab === 'birthday_logs') loadLogsData();
+    if (activeMainTab === 'birthday_settings') loadOffersData();
+  }, [activeMainTab]);
+
   useEffect(() => {
     if (showUsersModal) {
       loadLiveUsers();
     }
   }, [showUsersModal]);
+
+  const handleSendWish = async (cust) => {
+    setWishSendingPhone(cust.phone);
+    try {
+      await api.sendBirthdayWish({
+        customer_id: cust.customer_id || cust.id,
+        name: cust.name,
+        phone: cust.phone,
+        email: cust.email,
+        tier: cust.highest_tier || 'Bronze',
+        channel: 'SMS'
+      });
+      setActionAlert({ type: 'success', text: `Birthday wishes sent successfully to ${cust.name}!` });
+      await loadBirthdaysData();
+      setTimeout(() => setActionAlert(null), 4000);
+    } catch (e) {
+      setActionAlert({ type: 'error', text: e.message || 'Failed to send birthday wish' });
+      setTimeout(() => setActionAlert(null), 4000);
+    } finally {
+      setWishSendingPhone(null);
+    }
+  };
+
+  const handleRunBirthdayCron = async () => {
+    setCronRunning(true);
+    try {
+      const res = await api.runBirthdayCron();
+      setActionAlert({ 
+        type: 'success', 
+        text: `Daily Birthday Job Executed: ${res.sent_count || 0} messages sent, ${res.skipped_duplicate_count || 0} duplicates skipped.` 
+      });
+      await loadBirthdaysData();
+      await loadLogsData();
+      setTimeout(() => setActionAlert(null), 5000);
+    } catch (e) {
+      setActionAlert({ type: 'error', text: e.message || 'Cron execution failed' });
+      setTimeout(() => setActionAlert(null), 4000);
+    } finally {
+      setCronRunning(false);
+    }
+  };
+
+  const handleSaveOfferTemplate = async (tier, title, discountAmt, discountPct, template) => {
+    try {
+      await api.saveBirthdayOffer({
+        tier,
+        title,
+        discount_amount: discountAmt,
+        discount_percent: discountPct,
+        message_template: template
+      });
+      setActionAlert({ type: 'success', text: `Birthday offer updated for ${tier} tier!` });
+      await loadOffersData();
+      setTimeout(() => setActionAlert(null), 3000);
+    } catch (e) {
+      setActionAlert({ type: 'error', text: e.message || 'Failed to update offer' });
+      setTimeout(() => setActionAlert(null), 3000);
+    }
+  };
 
   const handleToggleStatus = async (user) => {
     const nextStatus = user.status === 'active' ? 'inactive' : 'active';
@@ -151,25 +292,27 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
 
   // 1. Registered customer users from DB
   (allUsers.length > 0 ? allUsers : usersList).filter(u => u.role === 'customer' || !u.role).forEach(u => {
-    const key = (u.email || u.phone || u.username || String(u.id)).toLowerCase();
+    const key = (u.phone || u.email || u.username || String(u.id)).toLowerCase();
     customerMap.set(key, {
       id: u.id,
       name: u.name || u.username || 'Customer',
       email: u.email || '',
       phone: u.phone || '—',
+      date_of_birth: u.date_of_birth || '',
       city: u.city || 'Goa',
       joined: u.created_at ? String(u.created_at).slice(0, 10) : '2026-08-01',
       status: u.status || 'active',
       bookings: 0,
       spent: 0,
       wallet: 0,
-      kyc: u.kyc_status || 'verified'
+      kyc: u.kyc_status || 'verified',
+      rawBookings: []
     });
   });
 
   // 2. Customers with active bookings from DB
   (bookings || []).forEach(b => {
-    const key = (b.email || b.phone || b.name || '').toLowerCase();
+    const key = (b.phone || b.email || b.name || '').toLowerCase();
     if (!key) return;
     const bAmt = Number(b.total_amount || b.total_paid || b.amount_paid || 0) || 0;
     if (customerMap.has(key)) {
@@ -178,57 +321,77 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
       existing.spent += bAmt;
       if (!existing.phone || existing.phone === '—') existing.phone = b.phone || '—';
       if (!existing.email && b.email) existing.email = b.email;
+      if (!existing.date_of_birth && b.date_of_birth) existing.date_of_birth = b.date_of_birth;
+      existing.rawBookings.push(b);
     } else {
       customerMap.set(key, {
         id: b.id || `CUST-${Math.random().toString(36).substr(2, 6)}`,
         name: b.name || 'Direct Customer',
         email: b.email || '',
         phone: b.phone || '—',
+        date_of_birth: b.date_of_birth || '',
         city: b.pickup_loc || 'Goa',
         joined: (b.created_at ? String(b.created_at).slice(0, 10) : new Date().toISOString().slice(0, 10)),
         status: 'active',
         bookings: 1,
         spent: bAmt,
         wallet: 0,
-        kyc: 'verified'
+        kyc: 'verified',
+        rawBookings: [b]
       });
     }
   });
 
-  const allCustomers = Array.from(customerMap.values());
+  // Compute Loyalty Tiers for each customer
+  const allCustomers = Array.from(customerMap.values()).map(c => {
+    const tiers = calculateLoyaltyTiers(c.rawBookings);
+    return {
+      ...c,
+      tiers: tiers,
+      carTier: tiers.car,
+      hotelTier: tiers.hotel,
+      tripTier: tiers.trip,
+      highestTier: tiers.highest_tier
+    };
+  });
 
   const filtered = allCustomers.filter(c => {
     const matchStatus = statusFilter === 'all' || (c.status || '').toLowerCase() === statusFilter.toLowerCase();
     const query = search.toLowerCase();
-    const matchSearch = String(c.name || '').toLowerCase().includes(query) || String(c.email || '').toLowerCase().includes(query);
+    const matchSearch = String(c.name || '').toLowerCase().includes(query) || 
+      String(c.email || '').toLowerCase().includes(query) || 
+      String(c.phone || '').includes(query);
     return matchStatus && matchSearch;
   });
 
-  const customerBookings = selected ? (bookings || []).filter(b => b.name === selected.name || b.customer_id === selected.id) : [];
+  const customerBookings = selected ? (bookings || []).filter(b => b.name === selected.name || b.phone === selected.phone || b.customer_id === selected.id) : [];
 
   const handleExportCSV = () => {
     if (!filtered || filtered.length === 0) {
       alert("No customer records to export.");
       return;
     }
-    const headers = ["Customer Name", "Email", "Phone", "City", "Member Since", "Status", "KYC Status", "Total Bookings", "Total Spent (INR)", "Wallet Balance (INR)"];
+    const headers = ["Customer Name", "Email", "Phone", "Date of Birth", "Car Tier", "Hotel Tier", "Trip Tier", "City", "Member Since", "Status", "Total Bookings", "Total Spent (INR)"];
     const rows = filtered.map(c => [
       `"${c.name || ''}"`,
       `"${c.email || ''}"`,
       `"${c.phone || ''}"`,
+      `"${c.date_of_birth || ''}"`,
+      `"${c.carTier?.tier || 'Bronze'} (${c.carTier?.count || 0})"`,
+      `"${c.hotelTier?.tier || 'Bronze'} (${c.hotelTier?.count || 0})"`,
+      `"${c.tripTier?.tier || 'Bronze'} (${c.tripTier?.count || 0})"`,
       `"${c.city || ''}"`,
       `"${c.joined || ''}"`,
       `"${c.status || ''}"`,
-      `"${c.kyc || ''}"`,
-      c.bookings || 0,
-      c.spent || 0,
-      c.wallet || 0
+      c.bookings,
+      c.spent
     ]);
-    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `customers_export_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute("download", `wowgoa_customers_${new Date().toISOString().slice(0,10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -236,172 +399,548 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
 
   return (
     <div className="p-4">
-      {/* Header with Export & + Add Users action */}
-      <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
-        <div>
-          <h5 className="fw-bold mb-0" style={{ color: '#0D1B2E', fontSize: '18px' }}>Customer Management</h5>
-          <p className="mb-0 mt-1" style={{ fontSize: '0.78rem', color: '#64748b' }}>View and manage customer accounts, team members, Sub-Admins, and booking histories</p>
+      {/* Action Notification Alert */}
+      {actionAlert && (
+        <div className={`alert ${actionAlert.type === 'success' ? 'alert-success' : 'alert-danger'} border-0 shadow-sm rounded-3 py-2.5 px-4 d-flex align-items-center justify-content-between mb-4 text-xs animate-fade-in`}>
+          <div className="d-flex align-items-center gap-2">
+            <CheckCircle2 size={16} />
+            <span>{actionAlert.text}</span>
+          </div>
+          <button className="btn btn-sm p-0 border-0" onClick={() => setActionAlert(null)}><X size={14} /></button>
         </div>
-        <div className="d-flex align-items-center gap-2">
-          {/* + Add Users Button */}
+      )}
+
+      {/* Header */}
+      <div className="d-flex flex-wrap align-items-center justify-content-between mb-4 gap-3">
+        <div>
+          <h5 className="fw-bold mb-0" style={{ color: '#0D1B2E', fontSize: '18px' }}>Customer CRM & Loyalty Management</h5>
+          <p className="mb-0 mt-0.5" style={{ fontSize: '0.8rem', color: '#64748b' }}>
+            Manage customer directories, service-specific loyalty tiers, birthdays, and automated greetings.
+          </p>
+        </div>
+        <div className="d-flex flex-wrap align-items-center gap-2">
           <button 
-            onClick={() => { setShowUsersModal(true); setUsersSubTab('add'); }}
-            className="btn px-3 py-2 rounded-3 fw-bold d-flex align-items-center gap-2 shadow-sm text-white border-0" 
-            style={{ background: 'linear-gradient(135deg, #FF6333 0%, #FF8A00 100%)', fontSize: '0.82rem' }}
+            onClick={handleRunBirthdayCron}
+            disabled={cronRunning}
+            className="btn btn-sm rounded-pill fw-bold px-3 py-2 text-white shadow-sm d-flex align-items-center gap-1.5"
+            style={{ background: 'linear-gradient(135deg, #FF6026 0%, #E04D15 100%)', border: 'none', fontSize: '0.8rem' }}
           >
-            <UserPlus size={15} /> + Add Users
+            <Sparkles size={14} className={cronRunning ? 'animate-spin' : ''} />
+            {cronRunning ? 'Running Cron...' : 'Run Birthday Automation'}
           </button>
 
-          {/* Manage Team Button */}
           <button 
-            onClick={() => { setShowUsersModal(true); setUsersSubTab('list'); }}
-            className="btn btn-light px-3 py-2 rounded-3 fw-bold d-flex align-items-center gap-2 shadow-sm border" 
-            style={{ fontSize: '0.82rem', color: '#475569' }}
+            onClick={() => setShowUsersModal(true)}
+            className="btn btn-sm rounded-pill fw-bold px-3 py-2 d-flex align-items-center gap-1.5"
+            style={{ background: '#0D1B2E', color: '#fff', border: 'none', fontSize: '0.8rem' }}
           >
-            <Shield size={14} style={{ color: '#9333ea' }} /> Manage Team & Sub-Admins
+            <Users size={14} /> Team & Sub-Admins ({allUsers.filter(u => ['subadmin', 'agent'].includes(u.role)).length})
           </button>
 
           <button 
             onClick={handleExportCSV}
-            className="btn px-3 py-2 rounded-3 fw-bold d-flex align-items-center gap-2 shadow-sm" 
-            style={{ background: '#dcfce7', color: '#16a34a', fontSize: '0.82rem', border: '1px solid #bbf7d0' }}
+            className="btn btn-sm rounded-pill fw-bold px-3 py-2 d-flex align-items-center gap-1.5"
+            style={{ background: '#fff', color: '#0D1B2E', border: '1px solid #cbd5e1', fontSize: '0.8rem' }}
           >
-            <Download size={14} /> Export
+            <Download size={14} /> Export CSV
           </button>
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="row g-3 mb-4">
-        <div className="col-6 col-md-3">
-          <div className="rounded-3 p-3" style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.07)' }}>
-            <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 600 }}>TOTAL CUSTOMERS</div>
-            <div className="fw-bold mt-1" style={{ fontSize: '1.4rem', color: '#0D1B2E' }}>{allCustomers.length}</div>
-            <div style={{ fontSize: '0.7rem', color: '#16a34a' }}>Registered & Booking Guests</div>
-          </div>
-        </div>
-        <div className="col-6 col-md-3">
-          <div className="rounded-3 p-3" style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.07)' }}>
-            <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 600 }}>ACTIVE ACCOUNTS</div>
-            <div className="fw-bold mt-1" style={{ fontSize: '1.4rem', color: '#16a34a' }}>{allCustomers.filter(c => c.status === 'active').length}</div>
-            <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Verified profiles</div>
-          </div>
-        </div>
-        <div className="col-6 col-md-3">
-          <div className="rounded-3 p-3" style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.07)' }}>
-            <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 600 }}>TEAM & SUB-ADMINS</div>
-            <div className="fw-bold mt-1" style={{ fontSize: '1.4rem', color: '#9333ea' }}>{allUsers.filter(u => ['subadmin', 'agent', 'admin'].includes(u.role)).length}</div>
-            <div style={{ fontSize: '0.7rem', color: '#9333ea' }}>Lead Assignees & Staff</div>
-          </div>
-        </div>
-        <div className="col-6 col-md-3">
-          <div className="rounded-3 p-3" style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.07)' }}>
-            <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 600 }}>TOTAL REVENUE</div>
-            <div className="fw-bold mt-1" style={{ fontSize: '1.4rem', color: '#0D1B2E' }}>₹{(allCustomers.reduce((s, c) => s + c.spent, 0) / 1000).toFixed(1)}K</div>
-            <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Cumulative bookings</div>
-          </div>
-        </div>
+      {/* Main CRM Navigation Tabs */}
+      <div className="d-flex flex-wrap align-items-center border-bottom mb-4 gap-2">
+        <button
+          onClick={() => setActiveMainTab('directory')}
+          className={`btn btn-sm fw-bold px-3.5 py-2.5 rounded-top-3 border-0 d-flex align-items-center gap-2 ${activeMainTab === 'directory' ? 'bg-white text-primary shadow-sm border-bottom border-primary border-2' : 'text-muted'}`}
+          style={{ fontSize: '0.85rem' }}
+        >
+          <Users size={16} /> Customer Directory ({allCustomers.length})
+        </button>
+
+        <button
+          onClick={() => setActiveMainTab('birthdays_today')}
+          className={`btn btn-sm fw-bold px-3.5 py-2.5 rounded-top-3 border-0 d-flex align-items-center gap-2 ${activeMainTab === 'birthdays_today' ? 'bg-white text-danger shadow-sm border-bottom border-danger border-2' : 'text-muted'}`}
+          style={{ fontSize: '0.85rem' }}
+        >
+          <Cake size={16} className="text-danger" /> 
+          <span>Today's Birthdays</span>
+          {todayBirthdays.length > 0 && (
+            <span className="badge bg-danger text-white rounded-pill px-2 py-0.5 text-xs">
+              {todayBirthdays.length} Today
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => setActiveMainTab('birthday_logs')}
+          className={`btn btn-sm fw-bold px-3.5 py-2.5 rounded-top-3 border-0 d-flex align-items-center gap-2 ${activeMainTab === 'birthday_logs' ? 'bg-white text-dark shadow-sm border-bottom border-dark border-2' : 'text-muted'}`}
+          style={{ fontSize: '0.85rem' }}
+        >
+          <History size={16} /> Birthday History Logs
+        </button>
+
+        <button
+          onClick={() => setActiveMainTab('birthday_settings')}
+          className={`btn btn-sm fw-bold px-3.5 py-2.5 rounded-top-3 border-0 d-flex align-items-center gap-2 ${activeMainTab === 'birthday_settings' ? 'bg-white text-dark shadow-sm border-bottom border-dark border-2' : 'text-muted'}`}
+          style={{ fontSize: '0.85rem' }}
+        >
+          <Settings size={16} /> Birthday Offer Settings
+        </button>
       </div>
 
-      {/* Search & Filter */}
-      <div className="rounded-3 p-3 mb-4 d-flex flex-wrap gap-2 align-items-center justify-content-between" style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.07)' }}>
-        <div className="d-flex align-items-center gap-2 flex-grow-1" style={{ maxWidth: '400px' }}>
-          <Search size={15} style={{ color: '#94a3b8' }} />
-          <input
-            type="text"
-            className="form-control form-control-sm border-0 shadow-none"
-            placeholder="Search customers by name, email..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            style={{ fontSize: '0.82rem' }}
-          />
-        </div>
-        <div className="d-flex align-items-center gap-2">
-          <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 600 }}>Status:</span>
-          {['all', 'active', 'suspended'].map(s => (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              className="btn btn-sm px-2 py-1 rounded-pill fw-bold"
-              style={{
-                fontSize: '0.7rem',
-                background: statusFilter === s ? '#0D1B2E' : '#f1f5f9',
-                color: statusFilter === s ? '#fff' : '#64748b',
-                textTransform: 'capitalize',
-                border: 'none'
-              }}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Customer List */}
-      <div className="rounded-3 shadow-sm" style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.07)', overflow: 'hidden' }}>
-        <div className="table-responsive">
-          <table className="table align-middle mb-0" style={{ fontSize: '0.82rem' }}>
-            <thead style={{ background: '#f8fafc' }}>
-              <tr>
-                <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Customer</th>
-                <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Contact</th>
-                <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>City</th>
-                <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Bookings</th>
-                <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Total Spent</th>
-                <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Status</th>
-                <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(c => (
-                <tr key={c.id} style={{ borderBottom: '1px solid rgba(0,0,0,0.04)', cursor: 'pointer' }} onClick={() => setSelected(c)}>
-                  <td className="px-3 py-3">
-                    <div className="fw-bold" style={{ color: '#0D1B2E' }}>{c.name}</div>
-                    <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Member since {c.joined}</div>
-                  </td>
-                  <td className="px-3 py-3">
-                    <div>{c.email || '—'}</div>
-                    <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{c.phone}</div>
-                  </td>
-                  <td className="px-3 py-3">{c.city}</td>
-                  <td className="px-3 py-3 fw-bold">{c.bookings}</td>
-                  <td className="px-3 py-3 fw-bold" style={{ color: '#16a34a' }}>₹{c.spent.toLocaleString()}</td>
-                  <td className="px-3 py-3"><StatusBadge status={c.status} /></td>
-                  <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
-                    <button className="btn btn-sm btn-light p-1 rounded-2" onClick={() => setSelected(c)} title="View Profile">
-                      <Eye size={14} style={{ color: '#64748b' }} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {filtered.length === 0 && <div className="text-center py-5 text-muted" style={{ fontSize: '0.82rem' }}>No customers found matching search</div>}
-        </div>
-      </div>
-
-      {/* Customer Details Drawer */}
-      {selected && (
-        <div className="position-fixed top-0 end-0 bottom-0 shadow-lg d-flex flex-column" style={{ width: '420px', maxWidth: '90vw', background: '#fff', zIndex: 1050, borderLeft: '1px solid rgba(0,0,0,0.1)' }}>
-          <div className="d-flex align-items-center justify-content-between px-4 py-3 flex-shrink-0" style={{ background: '#0D1B2E', color: '#fff' }}>
-            <div>
-              <h6 className="mb-0 fw-bold">{selected.name}</h6>
-              <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.6)' }}>{selected.email || selected.phone}</div>
+      {/* ─── TAB 1: CUSTOMER DIRECTORY & TIERS ─── */}
+      {activeMainTab === 'directory' && (
+        <div className="animate-fade-in">
+          {/* Stats */}
+          <div className="row g-3 mb-4">
+            <div className="col-6 col-md-3">
+              <div className="rounded-4 p-3 bg-white shadow-sm border">
+                <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 600 }}>TOTAL CUSTOMERS</div>
+                <div className="fw-bold mt-1" style={{ fontSize: '1.4rem', color: '#0D1B2E' }}>{allCustomers.length}</div>
+                <div style={{ fontSize: '0.7rem', color: '#16a34a' }}>Registered & Booking Guests</div>
+              </div>
             </div>
-            <button className="btn p-1 border-0 text-white-50" onClick={() => setSelected(null)}><X size={18} /></button>
+            <div className="col-6 col-md-3">
+              <div className="rounded-4 p-3 bg-white shadow-sm border">
+                <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 600 }}>ACTIVE ACCOUNTS</div>
+                <div className="fw-bold mt-1" style={{ fontSize: '1.4rem', color: '#16a34a' }}>{allCustomers.filter(c => c.status === 'active').length}</div>
+                <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Verified profiles</div>
+              </div>
+            </div>
+            <div className="col-6 col-md-3">
+              <div className="rounded-4 p-3 bg-white shadow-sm border">
+                <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 600 }}>PLATINUM MEMBERS</div>
+                <div className="fw-bold mt-1" style={{ fontSize: '1.4rem', color: '#8b5cf6' }}>
+                  {allCustomers.filter(c => c.highestTier === 'Platinum').length}
+                </div>
+                <div style={{ fontSize: '0.7rem', color: '#8b5cf6' }}>10+ Completed Trips</div>
+              </div>
+            </div>
+            <div className="col-6 col-md-3">
+              <div className="rounded-4 p-3 bg-white shadow-sm border">
+                <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 600 }}>TOTAL REVENUE</div>
+                <div className="fw-bold mt-1" style={{ fontSize: '1.4rem', color: '#0D1B2E' }}>₹{(allCustomers.reduce((s, c) => s + c.spent, 0) / 1000).toFixed(1)}K</div>
+                <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Cumulative bookings</div>
+              </div>
+            </div>
           </div>
 
-          <div className="d-flex border-bottom flex-shrink-0">
+          {/* Search & Filter */}
+          <div className="rounded-4 p-3 mb-4 d-flex flex-wrap gap-2 align-items-center justify-content-between bg-white border shadow-sm">
+            <div className="d-flex align-items-center gap-2 flex-grow-1" style={{ maxWidth: '420px' }}>
+              <Search size={15} style={{ color: '#94a3b8' }} />
+              <input
+                type="text"
+                className="form-control form-control-sm border-0 shadow-none"
+                placeholder="Search customers by name, phone, email..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                style={{ fontSize: '0.82rem' }}
+              />
+            </div>
+            <div className="d-flex align-items-center gap-2">
+              <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 600 }}>Status:</span>
+              {['all', 'active', 'suspended'].map(s => (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(s)}
+                  className="btn btn-sm px-2.5 py-1 rounded-pill fw-bold"
+                  style={{
+                    fontSize: '0.7rem',
+                    background: statusFilter === s ? '#0D1B2E' : '#f1f5f9',
+                    color: statusFilter === s ? '#fff' : '#64748b',
+                    textTransform: 'capitalize',
+                    border: 'none'
+                  }}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Customer Table */}
+          <div className="rounded-4 shadow-sm bg-white border overflow-hidden">
+            <div className="table-responsive">
+              <table className="table align-middle mb-0" style={{ fontSize: '0.82rem' }}>
+                <thead style={{ background: '#f8fafc' }}>
+                  <tr>
+                    <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Customer</th>
+                    <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Contact</th>
+                    <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>🎂 Birthday</th>
+                    <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>🚗 Car Tier</th>
+                    <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>🏨 Hotel Tier</th>
+                    <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>🧳 Trip Tier</th>
+                    <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Spent</th>
+                    <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Status</th>
+                    <th className="px-3 py-3 fw-bold text-muted text-end" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(c => (
+                    <tr key={c.id} style={{ borderBottom: '1px solid rgba(0,0,0,0.04)', cursor: 'pointer' }} onClick={() => setSelected(c)}>
+                      <td className="px-3 py-3">
+                        <div className="fw-bold" style={{ color: '#0D1B2E' }}>{c.name}</div>
+                        <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Member since {c.joined}</div>
+                      </td>
+                      <td className="px-3 py-3">
+                        <div>{c.phone}</div>
+                        <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{c.email || '—'}</div>
+                      </td>
+                      <td className="px-3 py-3">
+                        {c.date_of_birth ? (
+                          <span className="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25 px-2 py-1 rounded-pill">
+                            🎂 {formatBirthdayDisplay(c.date_of_birth)}
+                          </span>
+                        ) : (
+                          <span className="text-muted" style={{ fontSize: '0.72rem' }}>—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3">
+                        <TierBadgeMini tier={c.carTier?.tier || 'Bronze'} icon="🚗" count={c.carTier?.count || 0} category="Car Tier" />
+                      </td>
+                      <td className="px-3 py-3">
+                        <TierBadgeMini tier={c.hotelTier?.tier || 'Bronze'} icon="🏨" count={c.hotelTier?.count || 0} category="Hotel Tier" />
+                      </td>
+                      <td className="px-3 py-3">
+                        <TierBadgeMini tier={c.tripTier?.tier || 'Bronze'} icon="🧳" count={c.tripTier?.count || 0} category="Trip Tier" />
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className="fw-bold text-success">₹{c.spent.toLocaleString()}</div>
+                        <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>{c.bookings} booking{c.bookings !== 1 ? 's' : ''}</div>
+                      </td>
+                      <td className="px-3 py-3">
+                        <StatusBadge status={c.status} />
+                      </td>
+                      <td className="px-3 py-3 text-end" onClick={e => e.stopPropagation()}>
+                        <button 
+                          onClick={() => setSelected(c)}
+                          className="btn btn-sm btn-light border rounded-pill px-2.5 py-1 text-xs fw-bold text-dark"
+                        >
+                          <Eye size={12} className="me-1 inline" /> View
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {filtered.length === 0 && (
+                    <tr>
+                      <td colSpan="9" className="text-center py-5 text-muted">
+                        No customer records matching search criteria.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── TAB 2: TODAY'S BIRTHDAYS ─── */}
+      {activeMainTab === 'birthdays_today' && (
+        <div className="animate-fade-in">
+          <div className="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4">
+            <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+              <div>
+                <h6 className="fw-black text-dark mb-1 font-heading" style={{ fontSize: '16px' }}>
+                  🎂 Today's Customer Birthdays ({new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })})
+                </h6>
+                <p className="text-muted text-xs mb-0">
+                  Customers celebrating their birthday today. Personalized greetings are matched against their highest tier.
+                </p>
+              </div>
+              <button 
+                onClick={loadBirthdaysData} 
+                disabled={loadingBirthdays}
+                className="btn btn-sm btn-light border rounded-pill px-3 py-1.5 text-xs fw-bold"
+              >
+                <RefreshCw size={13} className={`me-1 inline ${loadingBirthdays ? 'animate-spin' : ''}`} /> Refresh
+              </button>
+            </div>
+
+            {todayBirthdays.length === 0 ? (
+              <div className="text-center py-5 bg-light rounded-4 border">
+                <div className="text-muted mb-2">
+                  <Cake size={48} className="mx-auto text-secondary opacity-50" />
+                </div>
+                <h6 className="fw-bold text-dark mb-1">No Customer Birthdays Today</h6>
+                <p className="text-muted text-xs mb-0">
+                  Any customer whose date of birth matches today's date will appear here automatically.
+                </p>
+              </div>
+            ) : (
+              <div className="table-responsive rounded-3 border">
+                <table className="table align-middle mb-0" style={{ fontSize: '0.82rem' }}>
+                  <thead style={{ background: '#f8fafc' }}>
+                    <tr>
+                      <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Customer</th>
+                      <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Phone & Email</th>
+                      <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>DOB</th>
+                      <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Highest Tier</th>
+                      <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Status</th>
+                      <th className="px-3 py-3 fw-bold text-muted text-end" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {todayBirthdays.map((b, i) => {
+                      const isSent = b.status === 'Sent';
+                      return (
+                        <tr key={b.id || i} style={{ borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
+                          <td className="px-3 py-3">
+                            <div className="fw-bold" style={{ color: '#0D1B2E' }}>{b.name}</div>
+                            <div className="text-muted" style={{ fontSize: '0.7rem' }}>Customer ID: {b.customer_id}</div>
+                          </td>
+                          <td className="px-3 py-3">
+                            <div>{b.phone}</div>
+                            <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{b.email || '—'}</div>
+                          </td>
+                          <td className="px-3 py-3">
+                            <span className="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25 px-2 py-1 rounded-pill">
+                              🎂 {b.formatted_dob || b.date_of_birth}
+                            </span>
+                          </td>
+                          <td className="px-3 py-3">
+                            <span className="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 px-2 py-1 rounded-pill fw-bold">
+                              👑 {b.highest_tier}
+                            </span>
+                          </td>
+                          <td className="px-3 py-3">
+                            {isSent ? (
+                              <span className="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-2.5 py-1 rounded-pill fw-bold d-inline-flex align-items-center gap-1">
+                                <CheckCircle2 size={12} /> Sent ({b.sent_at ? String(b.sent_at).slice(11,16) : 'Today'})
+                              </span>
+                            ) : (
+                              <span className="badge bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25 px-2.5 py-1 rounded-pill fw-bold">
+                                ⚠️ Pending Send
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 text-end">
+                            <button
+                              onClick={() => handleSendWish(b)}
+                              disabled={wishSendingPhone === b.phone}
+                              className={`btn btn-sm rounded-pill px-3 py-1 text-xs fw-bold ${isSent ? 'btn-light border text-muted' : 'btn-warning text-dark'}`}
+                            >
+                              <Send size={12} className={`me-1 inline ${wishSendingPhone === b.phone ? 'animate-spin' : ''}`} />
+                              {wishSendingPhone === b.phone ? 'Sending...' : (isSent ? 'Resend Wish' : 'Send Birthday Wishes')}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ─── TAB 3: BIRTHDAY NOTIFICATION LOGS ─── */}
+      {activeMainTab === 'birthday_logs' && (
+        <div className="animate-fade-in">
+          <div className="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4">
+            <div className="d-flex align-items-center justify-content-between mb-3">
+              <div>
+                <h6 className="fw-black text-dark mb-1 font-heading" style={{ fontSize: '16px' }}>
+                  📜 Birthday Communication Audit Logs
+                </h6>
+                <p className="text-muted text-xs mb-0">
+                  Chronological history of all automated and manual birthday wishes dispatched to customers.
+                </p>
+              </div>
+              <button 
+                onClick={loadLogsData} 
+                disabled={loadingLogs}
+                className="btn btn-sm btn-light border rounded-pill px-3 py-1.5 text-xs fw-bold"
+              >
+                <RefreshCw size={13} className={`me-1 inline ${loadingLogs ? 'animate-spin' : ''}`} /> Refresh Logs
+              </button>
+            </div>
+
+            {birthdayLogs.length === 0 ? (
+              <div className="text-center py-5 bg-light rounded-4 border">
+                <History size={48} className="mx-auto text-secondary opacity-50 mb-2" />
+                <h6 className="fw-bold text-dark mb-1">No Sent Logs Recorded Yet</h6>
+                <p className="text-muted text-xs mb-0">Sent birthday notifications will be logged here with complete timestamps.</p>
+              </div>
+            ) : (
+              <div className="table-responsive rounded-3 border">
+                <table className="table align-middle mb-0" style={{ fontSize: '0.82rem' }}>
+                  <thead style={{ background: '#f8fafc' }}>
+                    <tr>
+                      <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Sent Timestamp</th>
+                      <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Customer</th>
+                      <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Phone</th>
+                      <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Tier Applied</th>
+                      <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Channel</th>
+                      <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Status</th>
+                      <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Message Preview</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {birthdayLogs.map(l => (
+                      <tr key={l.id} style={{ borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
+                        <td className="px-3 py-3 text-muted" style={{ fontSize: '0.75rem' }}>
+                          {l.sent_at || l.created_at || '—'}
+                        </td>
+                        <td className="px-3 py-3 fw-bold" style={{ color: '#0D1B2E' }}>
+                          {l.customer_name}
+                        </td>
+                        <td className="px-3 py-3">{l.phone}</td>
+                        <td className="px-3 py-3">
+                          <span className="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 px-2 py-0.5 rounded-pill fw-bold">
+                            {l.highest_tier || 'Bronze'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3">
+                          <span className="badge bg-light text-dark border px-2 py-0.5 rounded">{l.channel || 'SMS'}</span>
+                        </td>
+                        <td className="px-3 py-3">
+                          <span className="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-2 py-0.5 rounded-pill fw-bold">
+                            {l.status || 'Sent'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3" style={{ maxWidth: '280px' }}>
+                          <span className="text-muted text-truncate d-block" style={{ fontSize: '0.72rem' }} title={l.message_text}>
+                            {l.message_text}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ─── TAB 4: BIRTHDAY OFFER SETTINGS ─── */}
+      {activeMainTab === 'birthday_settings' && (
+        <div className="animate-fade-in">
+          <div className="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4">
+            <h6 className="fw-black text-dark mb-1 font-heading" style={{ fontSize: '16px' }}>
+              ⚙️ Tier-Specific Birthday Perk Settings
+            </h6>
+            <p className="text-muted text-xs mb-4">
+              Configure discount vouchers and greeting templates sent automatically on customer birthdays.
+            </p>
+
+            <div className="row g-4">
+              {['Bronze', 'Silver', 'Gold', 'Platinum'].map(tier => {
+                const existing = birthdayOffers.find(o => o.tier === tier) || {
+                  title: `${tier} Birthday Perk`,
+                  discount_amount: tier === 'Platinum' ? 2000 : (tier === 'Gold' ? 1000 : (tier === 'Silver' ? 500 : 0)),
+                  discount_percent: tier === 'Platinum' ? 15 : (tier === 'Gold' ? 10 : (tier === 'Silver' ? 5 : 0)),
+                  message_template: `Warm birthday wishes from WOW GOA for our valued ${tier} member! 🌴`
+                };
+
+                return (
+                  <div key={tier} className="col-12 col-md-6">
+                    <div className="card h-100 border rounded-4 p-3.5 bg-light shadow-sm">
+                      <div className="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
+                        <div className="d-flex align-items-center gap-2">
+                          <div className="rounded-3 p-1.5 bg-dark text-white text-xs fw-bold">
+                            {tier === 'Platinum' ? '💎' : tier === 'Gold' ? '🥇' : tier === 'Silver' ? '🥈' : '🥉'}
+                          </div>
+                          <h6 className="fw-bold mb-0 text-dark" style={{ fontSize: '14px' }}>{tier} Member Perk</h6>
+                        </div>
+                        <span className="badge bg-primary bg-opacity-10 text-primary fw-bold text-xs">
+                          {tier === 'Platinum' ? '10+ Trips' : tier === 'Gold' ? '7–9 Trips' : tier === 'Silver' ? '4–6 Trips' : '1–3 Trips'}
+                        </span>
+                      </div>
+
+                      <div className="mb-2">
+                        <label className="form-label text-xs fw-bold text-muted">Perk / Offer Title</label>
+                        <input
+                          type="text"
+                          className="form-control form-control-sm text-xs"
+                          defaultValue={existing.title}
+                          id={`title_${tier}`}
+                        />
+                      </div>
+
+                      <div className="row g-2 mb-2">
+                        <div className="col-6">
+                          <label className="form-label text-xs fw-bold text-muted">Discount Value (₹)</label>
+                          <input
+                            type="number"
+                            className="form-control form-control-sm text-xs"
+                            defaultValue={existing.discount_amount}
+                            id={`amt_${tier}`}
+                          />
+                        </div>
+                        <div className="col-6">
+                          <label className="form-label text-xs fw-bold text-muted">Discount (%)</label>
+                          <input
+                            type="number"
+                            className="form-control form-control-sm text-xs"
+                            defaultValue={existing.discount_percent}
+                            id={`pct_${tier}`}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="mb-3">
+                        <label className="form-label text-xs fw-bold text-muted">Message Template</label>
+                        <textarea
+                          className="form-control form-control-sm text-xs"
+                          rows="3"
+                          defaultValue={existing.message_template}
+                          id={`tpl_${tier}`}
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-dark w-100 rounded-pill fw-bold text-xs py-1.5"
+                        onClick={() => {
+                          const tTitle = document.getElementById(`title_${tier}`)?.value || '';
+                          const tAmt = parseInt(document.getElementById(`amt_${tier}`)?.value || 0);
+                          const tPct = parseInt(document.getElementById(`pct_${tier}`)?.value || 0);
+                          const tTpl = document.getElementById(`tpl_${tier}`)?.value || '';
+                          handleSaveOfferTemplate(tier, tTitle, tAmt, tPct, tTpl);
+                        }}
+                      >
+                        Save {tier} Offer
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── CUSTOMER DETAIL DRAWER ─── */}
+      {selected && (
+        <div
+          className="position-fixed top-0 end-0 h-100 shadow-lg d-flex flex-column animate-fade-in"
+          style={{ width: '100%', maxWidth: '480px', background: '#fff', zIndex: 1050, borderLeft: '1px solid rgba(0,0,0,0.1)' }}
+        >
+          <div className="p-4 border-bottom d-flex align-items-center justify-content-between" style={{ background: '#0D1B2E', color: '#fff' }}>
+            <div>
+              <h6 className="fw-bold mb-0">{selected.name}</h6>
+              <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>ID: {selected.id}</div>
+            </div>
+            <button className="btn btn-sm p-0 text-white-50 border-0" onClick={() => setSelected(null)}>
+              <X size={20} />
+            </button>
+          </div>
+
+          <div className="d-flex border-bottom px-4 pt-2 bg-light">
             {['overview', 'bookings'].map(tab => (
               <button
                 key={tab}
-                onClick={() => setActiveTab(tab)}
-                className="btn btn-sm flex-fill py-2 fw-bold text-capitalize rounded-0"
+                onClick={() => setDrawerTab(tab)}
+                className="btn btn-sm px-3 py-2 fw-bold text-capitalize border-0 rounded-top"
                 style={{
                   fontSize: '0.78rem',
-                  borderBottom: activeTab === tab ? '2px solid #FF6333' : 'none',
-                  color: activeTab === tab ? '#FF6333' : '#64748b',
-                  background: activeTab === tab ? '#fff' : '#f8fafc'
+                  borderBottom: drawerTab === tab ? '2px solid #FF6333' : 'none',
+                  color: drawerTab === tab ? '#FF6333' : '#64748b',
+                  background: drawerTab === tab ? '#fff' : '#f8fafc'
                 }}
               >
                 {tab}
@@ -410,8 +949,38 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
           </div>
 
           <div className="flex-grow-1 overflow-auto p-4">
-            {activeTab === 'overview' ? (
+            {drawerTab === 'overview' ? (
               <div>
+                {/* 3 Loyalty Tiers Overview */}
+                <div className="p-3 rounded-4 mb-3 bg-light border">
+                  <div className="fw-bold text-dark text-xs mb-2 d-flex align-items-center gap-1">
+                    <Crown size={14} className="text-warning" /> Customer Loyalty Tiers
+                  </div>
+                  <div className="row g-2">
+                    <div className="col-4">
+                      <div className="p-2 bg-white rounded-3 text-center border">
+                        <div style={{ fontSize: '0.65rem', color: '#64748b' }}>🚗 Car Tier</div>
+                        <div className="fw-bold text-xs mt-0.5">{selected.carTier?.tier || 'Bronze'}</div>
+                        <div className="text-muted" style={{ fontSize: '0.62rem' }}>{selected.carTier?.count || 0} Trips</div>
+                      </div>
+                    </div>
+                    <div className="col-4">
+                      <div className="p-2 bg-white rounded-3 text-center border">
+                        <div style={{ fontSize: '0.65rem', color: '#64748b' }}>🏨 Hotel Tier</div>
+                        <div className="fw-bold text-xs mt-0.5">{selected.hotelTier?.tier || 'Bronze'}</div>
+                        <div className="text-muted" style={{ fontSize: '0.62rem' }}>{selected.hotelTier?.count || 0} Trips</div>
+                      </div>
+                    </div>
+                    <div className="col-4">
+                      <div className="p-2 bg-white rounded-3 text-center border">
+                        <div style={{ fontSize: '0.65rem', color: '#64748b' }}>🧳 Trip Tier</div>
+                        <div className="fw-bold text-xs mt-0.5">{selected.tripTier?.tier || 'Bronze'}</div>
+                        <div className="text-muted" style={{ fontSize: '0.62rem' }}>{selected.tripTier?.count || 0} Trips</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="p-3 rounded-3 mb-3" style={{ background: '#f8fafc', border: '1px solid rgba(0,0,0,0.06)' }}>
                   <div className="d-flex justify-content-between mb-2">
                     <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Account Status</span>
@@ -424,6 +993,12 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
                   <div className="d-flex justify-content-between mb-2">
                     <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Email</span>
                     <span className="fw-semibold" style={{ fontSize: '0.8rem' }}>{selected.email || '—'}</span>
+                  </div>
+                  <div className="d-flex justify-content-between mb-2">
+                    <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Date of Birth</span>
+                    <span className="fw-semibold text-danger" style={{ fontSize: '0.8rem' }}>
+                      {selected.date_of_birth ? `🎂 ${selected.date_of_birth} (${formatBirthdayDisplay(selected.date_of_birth)})` : 'Not on record'}
+                    </span>
                   </div>
                   <div className="d-flex justify-content-between mb-2">
                     <span style={{ fontSize: '0.75rem', color: '#64748b' }}>City</span>
@@ -472,11 +1047,10 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
         </div>
       )}
 
-      {/* TEAM & USER MANAGEMENT MODAL (Add Users / Sub-Admins) */}
+      {/* TEAM & USER MANAGEMENT MODAL */}
       {showUsersModal && (
         <div className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center" style={{ background: 'rgba(0,0,0,0.5)', zIndex: 2000, backdropFilter: 'blur(3px)' }}>
           <div className="rounded-4 shadow-lg overflow-hidden animate__animated animate__fadeInUp" style={{ width: '100%', maxWidth: '780px', background: '#fff', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
-            {/* Modal Header */}
             <div className="px-4 py-3 d-flex align-items-center justify-content-between" style={{ background: '#0D1B2E', color: '#fff' }}>
               <div className="d-flex align-items-center gap-2">
                 <Shield size={18} style={{ color: '#FF6333' }} />
@@ -485,7 +1059,6 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
               <button className="btn p-0 text-white-50 border-0" onClick={() => setShowUsersModal(false)}><X size={18} /></button>
             </div>
 
-            {/* Sub-tabs: List vs Add */}
             <div className="d-flex border-bottom px-4 pt-2 bg-light gap-2">
               <button 
                 onClick={() => setUsersSubTab('list')}
@@ -503,7 +1076,6 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
               </button>
             </div>
 
-            {/* Notification alert */}
             {userModalMessage && (
               <div className={`px-4 py-2 text-white fw-semibold d-flex align-items-center justify-content-between ${userModalMessage.type === 'success' ? 'bg-success' : 'bg-danger'}`} style={{ fontSize: '0.8rem' }}>
                 <span>{userModalMessage.text}</span>
@@ -511,7 +1083,6 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
               </div>
             )}
 
-            {/* Content Body */}
             <div className="flex-grow-1 overflow-auto p-4">
               {usersSubTab === 'list' ? (
                 <div>
@@ -531,7 +1102,6 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
                           <th className="px-3 py-2.5 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>User / Name</th>
                           <th className="px-3 py-2.5 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Contact</th>
                           <th className="px-3 py-2.5 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Role</th>
-                          <th className="px-3 py-2.5 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Live Presence</th>
                           <th className="px-3 py-2.5 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Status</th>
                           <th className="px-3 py-2.5 fw-bold text-muted text-end" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Actions</th>
                         </tr>
@@ -551,27 +1121,14 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
                               <RoleBadge role={u.role} />
                             </td>
                             <td className="px-3 py-2.5">
-                              {Number(u.is_online) === 1 ? (
-                                <span className="badge rounded-pill bg-success-subtle text-success border border-success-subtle px-2 py-1 font-monospace fw-bold" style={{ fontSize: '0.68rem' }}>
-                                  🟢 ONLINE
-                                </span>
-                              ) : (
-                                <span className="badge rounded-pill bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1 font-monospace fw-normal" style={{ fontSize: '0.68rem' }}>
-                                  ⚪ OFFLINE
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-3 py-2.5">
-                              <StatusBadge status={u.status || 'active'} />
+                              <StatusBadge status={u.status} />
                             </td>
                             <td className="px-3 py-2.5 text-end">
                               <button
                                 onClick={() => handleToggleStatus(u)}
-                                className={`btn btn-sm px-2.5 py-1 rounded-pill fw-bold border ${u.status === 'active' ? 'btn-outline-danger' : 'btn-outline-success'}`}
-                                style={{ fontSize: '0.72rem' }}
-                                title={u.status === 'active' ? 'Deactivate user' : 'Activate user'}
+                                className={`btn btn-sm px-2.5 py-0.5 rounded-pill border fw-bold text-xs ${u.status === 'active' ? 'btn-outline-danger' : 'btn-outline-success'}`}
                               >
-                                {u.status === 'active' ? 'Deactivate' : 'Activate'}
+                                {u.status === 'active' ? 'Suspend' : 'Activate'}
                               </button>
                             </td>
                           </tr>
@@ -581,99 +1138,77 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
                   </div>
                 </div>
               ) : (
-                /* Create User Form */
                 <form onSubmit={handleCreateUser}>
                   <div className="row g-3">
-                    <div className="col-md-6">
-                      <label className="form-label fw-bold" style={{ fontSize: '0.78rem', color: '#475569' }}>Full Name *</label>
+                    <div className="col-12 col-md-6">
+                      <label className="form-label text-xs fw-bold">Full Name <span className="text-danger">*</span></label>
                       <input
                         type="text"
-                        required
-                        className="form-control form-control-sm"
-                        placeholder="e.g. Rahul Deshmukh"
+                        className="form-control form-control-sm text-xs"
+                        placeholder="e.g. Rahul Sharma"
                         value={newUser.name}
                         onChange={e => setNewUser({ ...newUser, name: e.target.value })}
-                        style={{ fontSize: '0.85rem' }}
+                        required
                       />
                     </div>
-
-                    <div className="col-md-6">
-                      <label className="form-label fw-bold" style={{ fontSize: '0.78rem', color: '#475569' }}>Username</label>
+                    <div className="col-12 col-md-6">
+                      <label className="form-label text-xs fw-bold">Username</label>
                       <input
                         type="text"
-                        className="form-control form-control-sm"
-                        placeholder="e.g. rahul_subadmin (auto-generated if empty)"
+                        className="form-control form-control-sm text-xs"
+                        placeholder="e.g. rahul_ops"
                         value={newUser.username}
                         onChange={e => setNewUser({ ...newUser, username: e.target.value })}
-                        style={{ fontSize: '0.85rem' }}
                       />
                     </div>
-
-                    <div className="col-md-6">
-                      <label className="form-label fw-bold" style={{ fontSize: '0.78rem', color: '#475569' }}>Email Address *</label>
+                    <div className="col-12 col-md-6">
+                      <label className="form-label text-xs fw-bold">Email <span className="text-danger">*</span></label>
                       <input
                         type="email"
-                        required
-                        className="form-control form-control-sm"
-                        placeholder="rahul@tripgalileo.com"
+                        className="form-control form-control-sm text-xs"
+                        placeholder="e.g. rahul@tripgalileo.com"
                         value={newUser.email}
                         onChange={e => setNewUser({ ...newUser, email: e.target.value })}
-                        style={{ fontSize: '0.85rem' }}
+                        required
                       />
                     </div>
-
-                    <div className="col-md-6">
-                      <label className="form-label fw-bold" style={{ fontSize: '0.78rem', color: '#475569' }}>Phone Number</label>
+                    <div className="col-12 col-md-6">
+                      <label className="form-label text-xs fw-bold">Phone</label>
                       <input
                         type="tel"
-                        className="form-control form-control-sm"
-                        placeholder="+91 98765 43210"
+                        className="form-control form-control-sm text-xs"
+                        placeholder="10-digit mobile"
                         value={newUser.phone}
                         onChange={e => setNewUser({ ...newUser, phone: e.target.value })}
-                        style={{ fontSize: '0.85rem' }}
                       />
                     </div>
-
-                    <div className="col-md-6">
-                      <label className="form-label fw-bold" style={{ fontSize: '0.78rem', color: '#475569' }}>User Role *</label>
+                    <div className="col-12 col-md-6">
+                      <label className="form-label text-xs fw-bold">Role <span className="text-danger">*</span></label>
                       <select
-                        className="form-select form-select-sm fw-bold"
+                        className="form-select form-select-sm text-xs"
                         value={newUser.role}
                         onChange={e => setNewUser({ ...newUser, role: e.target.value })}
-                        style={{ fontSize: '0.85rem' }}
                       >
-                        <option value="subadmin">Sub-Admin (Lead Dispatch & Operations)</option>
-                        <option value="agent">Agent (Lead Assigned Representative)</option>
-                        <option value="admin">Administrator (Full Access)</option>
-                        <option value="customer">Customer Guest</option>
-                        <option value="vendor">Vendor Partner</option>
+                        <option value="subadmin">Sub-Admin (Operational Management & CRM)</option>
+                        <option value="agent">Support Agent (Leads & Live Inquiries)</option>
+                        <option value="admin">Full Admin</option>
                       </select>
                     </div>
-
-                    <div className="col-md-6">
-                      <label className="form-label fw-bold" style={{ fontSize: '0.78rem', color: '#475569' }}>Password</label>
+                    <div className="col-12 col-md-6">
+                      <label className="form-label text-xs fw-bold">Password</label>
                       <input
-                        type="text"
-                        className="form-control form-control-sm"
-                        placeholder="Default: Pass@123"
+                        type="password"
+                        className="form-control form-control-sm text-xs"
+                        placeholder="Pass@123"
                         value={newUser.password}
                         onChange={e => setNewUser({ ...newUser, password: e.target.value })}
-                        style={{ fontSize: '0.85rem' }}
                       />
                     </div>
                   </div>
-
-                  <div className="d-flex align-items-center justify-content-end gap-2 mt-4 pt-3 border-top">
-                    <button type="button" className="btn btn-light px-3 py-2 fw-bold" style={{ fontSize: '0.82rem' }} onClick={() => setUsersSubTab('list')}>
-                      Cancel
-                    </button>
-                    <button 
-                      type="submit" 
-                      disabled={creatingUser}
-                      className="btn text-white px-4 py-2 fw-bold d-flex align-items-center gap-2" 
-                      style={{ background: 'linear-gradient(135deg, #FF6333 0%, #FF8A00 100%)', fontSize: '0.82rem', border: 'none' }}
-                    >
-                      <CheckCircle size={15} /> {creatingUser ? 'Creating...' : 'Create User Account'}
+                  <div className="d-flex justify-content-end gap-2 mt-4 pt-3 border-top">
+                    <button type="button" className="btn btn-sm btn-light border" onClick={() => setUsersSubTab('list')}>Cancel</button>
+                    <button type="submit" disabled={creatingUser} className="btn btn-sm btn-primary fw-bold px-3">
+                      {creatingUser ? 'Creating...' : 'Create User'}
                     </button>
                   </div>
                 </form>
