@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { X, CheckCircle, ShieldCheck, Compass, Calendar, Clock, MapPin, Cake, Award, Sparkles } from 'lucide-react';
+import { X, CheckCircle, ShieldCheck, Compass, Calendar, Clock, MapPin, Cake, Award, Sparkles, Gift, Wallet } from 'lucide-react';
 import { getTodayDateStr, addDays } from '../utils/dateUtils';
+import * as api from '../services/api';
 import { checkCustomerDob } from '../services/api';
 import UnifiedGalleryViewer from './UnifiedGalleryViewer';
 

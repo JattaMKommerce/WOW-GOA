@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, CheckCircle, ShieldCheck, User, Users, BedDouble, Calendar, ArrowRight, ArrowLeft, Download, MessageCircle, Info, Compass, Cake } from 'lucide-react';
+import { X, CheckCircle, ShieldCheck, User, Users, BedDouble, Calendar, ArrowRight, ArrowLeft, Download, MessageCircle, Info, Compass, Cake, Gift, Wallet, Clock } from 'lucide-react';
 import * as api from '../services/api';
 import { validateBookingDates } from '../utils/dateUtils';
 import ImageCarousel from './common/ImageCarousel';
