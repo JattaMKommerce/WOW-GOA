@@ -9,7 +9,7 @@ on:
 
 jobs:
   web-deploy:
-    name: Build & Deploy to cPanel
+    name: Build & Deploy to cPanel (SFTP)
     runs-on: ubuntu-latest
     steps:
       - name: 🚚 Checkout Repository
@@ -38,23 +38,19 @@ jobs:
           # Copy backend files
           mkdir -p deploy_dir/backend
           cp -r backend/* deploy_dir/backend/
-          # Ensure sensitive or unnecessary files are removed from deploy_dir
+          # Remove local test / sqlite / large files
           rm -f deploy_dir/backend/database.sqlite
           rm -f deploy_dir/backend/*.log
           rm -f deploy_dir/backend/*.zip
+          rm -f deploy_dir/backend/test_*.php
 
-      - name: 🚀 Sync Files to cPanel via FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+      - name: 🚀 Sync Files to cPanel via Secure SFTP (Port 22)
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.4
         with:
-          server: ${{ secrets.CPANEL_FTP_SERVER }}
           username: ${{ secrets.CPANEL_FTP_USERNAME }}
+          server: ${{ secrets.CPANEL_FTP_SERVER }}
+          port: '22'
           password: ${{ secrets.CPANEL_FTP_PASSWORD }}
-          server-dir: public_html/
-          local-dir: ./deploy_dir/
-          dangerous-clean-slate: false
-          exclude: |
-            **/.git*/**
-            **/node_modules/**
-            backend/.env
-            backend/database.sqlite
-            backend/uploads/**
+          local_path: './deploy_dir/*'
+          remote_path: '/home/wowgoa/public_html/'
+          sftpArgs: '-o ConnectTimeout=30'
