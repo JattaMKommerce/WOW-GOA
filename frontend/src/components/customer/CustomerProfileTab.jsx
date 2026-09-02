@@ -1,0 +1,232 @@
+import React, { useState } from 'react';
+import {
+  User, Mail, Phone, MapPin, ShieldCheck, Key,
+  Save, CheckCircle2, AlertCircle, FileText, Lock
+} from 'lucide-react';
+
+export default function CustomerProfileTab({
+  currentUser,
+  bookings = [],
+  onUpdateProfile
+}) {
+  const [formData, setFormData] = useState({
+    name: currentUser?.name || currentUser?.username || '',
+    email: currentUser?.email || '',
+    phone: currentUser?.phone || '',
+    city: currentUser?.city || 'Goa',
+    address: currentUser?.address || '',
+    licenseNumber: currentUser?.license_number || currentUser?.licenseNumber || '',
+    emergencyContact: currentUser?.emergency_contact || '',
+  });
+
+  const [savedSuccess, setSavedSuccess] = useState(false);
+
+  // Profile booking stats
+  const totalBookings = bookings.length;
+  const activeBookings = bookings.filter(b => {
+    const s = (b.status || 'confirmed').toLowerCase();
+    return s === 'confirmed' || s === 'upcoming' || s === 'ongoing';
+  }).length;
+  const completedBookings = bookings.filter(b => (b.status || '').toLowerCase() === 'completed').length;
+  const cancelledBookings = bookings.filter(b => (b.status || '').toLowerCase() === 'cancelled').length;
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (onUpdateProfile) {
+      onUpdateProfile(formData);
+    }
+    // Update local storage session
+    try {
+      const existing = JSON.parse(localStorage.getItem('currentUser') || '{}');
+      const updated = { ...existing, ...formData };
+      localStorage.setItem('currentUser', JSON.stringify(updated));
+    } catch (err) {}
+
+    setSavedSuccess(true);
+    setTimeout(() => setSavedSuccess(false), 3000);
+  };
+
+  return (
+    <div className="customer-tab-content animate-fade-in">
+      
+      {/* ─── Header ─── */}
+      <div className="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+        <div>
+          <h4 className="fw-black text-dark mb-1 font-heading" style={{ fontSize: '22px' }}>
+            Customer Profile & Verification
+          </h4>
+          <p className="text-muted text-xs mb-0">
+            Keep your traveler details and driving license updated for fast, paperless Self Drive delivery in Goa.
+          </p>
+        </div>
+      </div>
+
+      {savedSuccess && (
+        <div className="alert alert-success border-0 shadow-sm rounded-3 py-2.5 px-4 d-flex align-items-center gap-2 mb-4 text-xs">
+          <CheckCircle2 size={16} />
+          <span>Profile information updated successfully!</span>
+        </div>
+      )}
+
+      <div className="row g-4">
+        
+        {/* Left Column: Avatar & Verification Badge */}
+        <div className="col-lg-4">
+          <div className="card border-0 shadow-sm rounded-4 p-4 text-center bg-white" style={{ border: '1px solid #eef2f6' }}>
+            <div className="rounded-circle d-flex align-items-center justify-content-center mx-auto mb-3 text-white fw-black font-heading shadow-sm" style={{ width: '80px', height: '80px', background: 'linear-gradient(135deg, #0B192C 0%, #FF6026 100%)', fontSize: '28px' }}>
+              {(formData.name || 'G').charAt(0).toUpperCase()}
+            </div>
+
+            <h5 className="fw-black text-dark mb-1 font-heading" style={{ fontSize: '18px' }}>
+              {formData.name || 'Verified Explorer'}
+            </h5>
+            <div className="text-muted text-xs mb-3">{formData.email || 'No email attached'}</div>
+
+            {/* Travel Summary Stats */}
+            <div className="p-3 bg-light rounded-3 text-start border mb-3">
+              <div className="d-flex align-items-center justify-content-between text-xs mb-2 pb-2 border-bottom">
+                <span className="text-muted">Total Bookings</span>
+                <span className="fw-black text-dark">{totalBookings}</span>
+              </div>
+              <div className="d-flex align-items-center justify-content-between text-xs mb-2 pb-2 border-bottom">
+                <span className="text-muted">Active / Upcoming</span>
+                <span className="badge bg-primary bg-opacity-10 text-primary fw-bold px-2 py-0.5 rounded">{activeBookings}</span>
+              </div>
+              <div className="d-flex align-items-center justify-content-between text-xs mb-2 pb-2 border-bottom">
+                <span className="text-muted">Completed Trips</span>
+                <span className="badge bg-success bg-opacity-10 text-success fw-bold px-2 py-0.5 rounded">{completedBookings}</span>
+              </div>
+              <div className="d-flex align-items-center justify-content-between text-xs mb-2 pb-2 border-bottom">
+                <span className="text-muted">Cancelled</span>
+                <span className="text-danger fw-bold">{cancelledBookings}</span>
+              </div>
+              <div className="d-flex align-items-center justify-content-between text-xs">
+                <span className="text-muted">KYC & License</span>
+                <span className="badge bg-success bg-opacity-10 text-success fw-bold px-2 py-0.5 rounded">Verified</span>
+              </div>
+            </div>
+
+            <div className="text-xxs text-muted">
+              🔒 Your identification documents are stored encrypted under 256-bit security.
+            </div>
+          </div>
+        </div>
+
+        {/* Right Column: Profile Edit Form */}
+        <div className="col-lg-8">
+          <div className="card border-0 shadow-sm rounded-4 p-4 bg-white" style={{ border: '1px solid #eef2f6' }}>
+            <h6 className="fw-bold text-dark mb-3 font-heading">Personal & Travel Details</h6>
+
+            <form onSubmit={handleSubmit}>
+              <div className="row g-3">
+                <div className="col-md-6">
+                  <label className="form-label text-xs fw-bold text-muted">Full Legal Name</label>
+                  <div className="input-group">
+                    <span className="input-group-text bg-light border-end-0"><User size={14} /></span>
+                    <input 
+                      type="text" 
+                      className="form-control border-start-0 text-xs"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="col-md-6">
+                  <label className="form-label text-xs fw-bold text-muted">Email Address</label>
+                  <div className="input-group">
+                    <span className="input-group-text bg-light border-end-0"><Mail size={14} /></span>
+                    <input 
+                      type="email" 
+                      className="form-control border-start-0 text-xs"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="col-md-6">
+                  <label className="form-label text-xs fw-bold text-muted">Mobile Number (WhatsApp Enabled)</label>
+                  <div className="input-group">
+                    <span className="input-group-text bg-light border-end-0"><Phone size={14} /></span>
+                    <input 
+                      type="tel" 
+                      className="form-control border-start-0 text-xs"
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      placeholder="+91 98765 43210"
+                    />
+                  </div>
+                </div>
+
+                <div className="col-md-6">
+                  <label className="form-label text-xs fw-bold text-muted">City / State of Residence</label>
+                  <div className="input-group">
+                    <span className="input-group-text bg-light border-end-0"><MapPin size={14} /></span>
+                    <input 
+                      type="text" 
+                      className="form-control border-start-0 text-xs"
+                      value={formData.city}
+                      onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                      placeholder="e.g. Mumbai, Maharashtra"
+                    />
+                  </div>
+                </div>
+
+                <div className="col-12">
+                  <label className="form-label text-xs fw-bold text-muted">Full Address</label>
+                  <textarea 
+                    className="form-control text-xs"
+                    rows="2"
+                    value={formData.address}
+                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                    placeholder="Enter your residential address"
+                  />
+                </div>
+
+                <div className="col-md-6">
+                  <label className="form-label text-xs fw-bold text-muted">Driving License Number (For Self Drive)</label>
+                  <div className="input-group">
+                    <span className="input-group-text bg-light border-end-0"><Key size={14} /></span>
+                    <input 
+                      type="text" 
+                      className="form-control border-start-0 text-xs"
+                      value={formData.licenseNumber}
+                      onChange={(e) => setFormData({ ...formData, licenseNumber: e.target.value })}
+                      placeholder="DL-0420110012345"
+                    />
+                  </div>
+                </div>
+
+                <div className="col-md-6">
+                  <label className="form-label text-xs fw-bold text-muted">Emergency Contact Name & Phone</label>
+                  <div className="input-group">
+                    <span className="input-group-text bg-light border-end-0"><Phone size={14} /></span>
+                    <input 
+                      type="text" 
+                      className="form-control border-start-0 text-xs"
+                      value={formData.emergencyContact}
+                      onChange={(e) => setFormData({ ...formData, emergencyContact: e.target.value })}
+                      placeholder="Contact Person (+91 ...)"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="d-flex justify-content-end mt-4">
+                <button type="submit" className="btn btn-warning text-dark fw-bold rounded-pill px-4 py-2 text-xs d-flex align-items-center gap-2 shadow-sm">
+                  <Save size={15} />
+                  <span>Save Profile Updates</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  );
+}

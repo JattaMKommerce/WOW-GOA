@@ -1,0 +1,60 @@
+name: Deploy to cPanel
+
+on:
+  push:
+    branches:
+      - main
+      - feature/implementation
+  workflow_dispatch:
+
+jobs:
+  web-deploy:
+    name: Build & Deploy to cPanel
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🚚 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 📦 Install Frontend Dependencies & Build
+        run: |
+          cd frontend
+          npm install
+          npm run build
+
+      - name: 🗂️ Prepare Deployment Files
+        run: |
+          mkdir -p deploy_dir
+          # Copy built frontend
+          cp -r frontend/dist/* deploy_dir/
+          # Copy .htaccess
+          if [ -f .htaccess ]; then cp .htaccess deploy_dir/; fi
+          # Copy backend files
+          mkdir -p deploy_dir/backend
+          cp -r backend/* deploy_dir/backend/
+          # Ensure sensitive or unnecessary files are removed from deploy_dir
+          rm -f deploy_dir/backend/database.sqlite
+          rm -f deploy_dir/backend/*.log
+          rm -f deploy_dir/backend/*.zip
+
+      - name: 🚀 Sync Files to cPanel via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.CPANEL_FTP_SERVER }}
+          username: ${{ secrets.CPANEL_FTP_USERNAME }}
+          password: ${{ secrets.CPANEL_FTP_PASSWORD }}
+          server-dir: public_html/
+          local-dir: ./deploy_dir/
+          dangerous-clean-slate: false
+          exclude: |
+            **/.git*/**
+            **/node_modules/**
+            backend/.env
+            backend/database.sqlite
+            backend/uploads/**

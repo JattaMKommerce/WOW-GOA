@@ -51,6 +51,13 @@ export default function AdminBookingManagement({
   const [actionLoading, setActionLoading] = useState(false);
   const [formError, setFormError] = useState('');
 
+  // Driver Assignment State
+  const [driversList, setDriversList] = useState([]);
+  const [assigningBooking, setAssigningBooking] = useState(null);
+  const [selectedDriverId, setSelectedDriverId] = useState('');
+  const [assignNotes, setAssignNotes] = useState('');
+  const [driverAssignMsg, setDriverAssignMsg] = useState('');
+
   // Create Form State
   const [formData, setFormData] = useState({
     name: '',
@@ -67,7 +74,8 @@ export default function AdminBookingManagement({
     payment_method: 'Cash',
     status: 'Confirmed',
     payment_status: 'Paid',
-    customizations: ''
+    customizations: '',
+    driver_required: 0
   });
 
   const fetchLatestBookings = async () => {
@@ -83,8 +91,18 @@ export default function AdminBookingManagement({
     }
   };
 
+  const loadDriversList = async () => {
+    try {
+      const drvs = await api.fetchDrivers();
+      setDriversList(drvs || []);
+    } catch (e) {
+      console.error('Failed to fetch drivers in bookings:', e);
+    }
+  };
+
   useEffect(() => {
     fetchLatestBookings();
+    loadDriversList();
   }, []);
 
   useEffect(() => {
@@ -92,6 +110,26 @@ export default function AdminBookingManagement({
       setBookingsList(initialBookings);
     }
   }, [initialBookings]);
+
+  const handleAssignDriverSubmit = async (e) => {
+    e.preventDefault();
+    if (!assigningBooking || !selectedDriverId) return;
+    setActionLoading(true);
+    setFormError('');
+    try {
+      await api.assignDriver(assigningBooking.id, selectedDriverId, assignNotes);
+      setDriverAssignMsg(`Driver successfully assigned to booking #${assigningBooking.id}!`);
+      setTimeout(() => setDriverAssignMsg(''), 4000);
+      setAssigningBooking(null);
+      setSelectedDriverId('');
+      setAssignNotes('');
+      await fetchLatestBookings();
+    } catch (err) {
+      setFormError(err.message || 'Failed to assign driver.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   // Filter Bookings
   const filteredBookings = (bookingsList || []).filter(b => {
@@ -124,12 +162,24 @@ export default function AdminBookingManagement({
     setActionLoading(true);
     setFormError('');
     try {
+      const isPkg = formData.serviceType === 'package' || formData.serviceType === 'custom';
+      const isSd = formData.serviceType === 'selfdrive';
+      const isCar = formData.serviceType === 'car';
+      const isBike = formData.serviceType === 'bike';
+      const isHotel = formData.serviceType === 'hotel';
+
       const payload = {
         name: formData.name,
+        customer_name: formData.name,
         phone: formData.phone,
+        customer_phone: formData.phone,
         email: formData.email || null,
+        customer_email: formData.email || null,
         item_id: formData.item_id || `item-${Date.now()}`,
         item_name: formData.item_name,
+        package_name: formData.item_name,
+        package_type: isPkg ? 'Trip Package' : (isSd ? 'Self Drive Package' : (isCar ? 'Car Rental' : (isBike ? 'Bike Rental' : (isHotel ? 'Hotel Stay' : 'Trip Package')))),
+        type: isPkg ? 'package' : (isSd ? 'selfdrive' : (isCar ? 'car' : (isBike ? 'bike' : (isHotel ? 'hotel' : 'package')))),
         pickup_date: formData.pickup_date || null,
         drop_date: formData.drop_date || null,
         pickup_loc: formData.pickup_loc || 'Goa',
@@ -391,6 +441,36 @@ export default function AdminBookingManagement({
                             <MapPin size={11} /> {b.pickup_loc}
                           </div>
                         )}
+                        {(b.driver_required == 1 || b.driver_required === 'yes' || b.driver_required === true) && (
+                          <div className="mt-1 d-flex align-items-center gap-1 flex-wrap">
+                            <span className="badge rounded-pill bg-warning bg-opacity-25 text-dark fw-bold border border-warning" style={{ fontSize: '0.66rem' }}>
+                              🚗 Driver Required (₹800/d: ₹{b.driver_charge || (800 * Math.max(1, parseInt(b.driver_days || b.booking_days || 1)))})
+                            </span>
+                            {b.assigned_driver_id ? (
+                              <span className="badge rounded-pill bg-success-subtle text-success border border-success-subtle fw-semibold" style={{ fontSize: '0.66rem' }}>
+                                🟢 Driver: {b.assigned_driver_name || b.assigned_driver_id} {b.assigned_driver_phone ? `(${b.assigned_driver_phone})` : ''} • {b.driver_job_status || 'Accepted'}
+                              </span>
+                            ) : (
+                              <div className="d-flex align-items-center gap-1">
+                                <span className="badge rounded-pill bg-warning-subtle text-dark border border-warning-subtle fw-bold" style={{ fontSize: '0.64rem' }}>
+                                  ⚡ Open for Driver First-Accept
+                                </span>
+                                <button
+                                  type="button"
+                                  className="btn btn-xs py-0 px-2 fw-bold text-white rounded-pill"
+                                  style={{ background: 'linear-gradient(90deg,#FF6333,#FF8A00)', fontSize: '0.65rem' }}
+                                  onClick={() => {
+                                    setAssigningBooking(b);
+                                    setSelectedDriverId('');
+                                    setAssignNotes('');
+                                  }}
+                                >
+                                  + Manual Assign
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </td>
                       <td>
                         <div className="small fw-semibold">{b.pickup_date || '—'}</div>
@@ -538,8 +618,10 @@ export default function AdminBookingManagement({
                           setFormData({ ...formData, serviceType: type, item_name: '', item_id: '' });
                         }}
                       >
+                        <option value="package">Trip Package</option>
+                        <option value="selfdrive">Self-Drive Holiday</option>
                         <option value="hotel">Hotel Stay</option>
-                        <option value="car">Self-Drive Car</option>
+                        <option value="car">Self-Drive Car Rental</option>
                         <option value="bike">Rental Bike</option>
                         <option value="custom">Custom Trip Package</option>
                       </select>
@@ -699,6 +781,20 @@ export default function AdminBookingManagement({
                         <option value="Pending">Pending / Unpaid</option>
                       </select>
                     </div>
+                    <div className="col-12 mt-1">
+                      <div className="form-check p-2 rounded bg-light border">
+                        <input
+                          type="checkbox"
+                          className="form-check-input ms-0 me-2"
+                          id="admin_drv_req"
+                          checked={formData.driver_required == 1}
+                          onChange={e => setFormData({ ...formData, driver_required: e.target.checked ? 1 : 0 })}
+                        />
+                        <label className="form-check-label small fw-bold text-dark" htmlFor="admin_drv_req">
+                          🚗 Require Private Driver / Chauffeur for this booking
+                        </label>
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div className="modal-footer border-top py-2.5 px-4 bg-light">
@@ -764,6 +860,67 @@ export default function AdminBookingManagement({
                     <div className="small fw-semibold">{viewBooking.payment_method || 'Cash / Offline'}</div>
                   </div>
                 </div>
+
+                {/* Driver Requirement Info */}
+                <div className="p-3 rounded-3 bg-light border mt-2">
+                  <div className="d-flex align-items-center justify-content-between">
+                    <span className="small fw-bold text-dark">
+                      Driver Requirement:
+                    </span>
+                    <span className={`badge rounded-pill px-2.5 py-1 fw-bold ${(viewBooking.driver_required == 1 || viewBooking.driver_required === 'yes') ? 'bg-warning text-dark' : 'bg-secondary-subtle text-secondary'}`} style={{ fontSize: '0.72rem' }}>
+                      {(viewBooking.driver_required == 1 || viewBooking.driver_required === 'yes') ? '🚗 YES (Driver Required)' : 'NO (Self Drive / Unrequested)'}
+                    </span>
+                  </div>
+                  {(viewBooking.driver_required == 1 || viewBooking.driver_required === 'yes') && (
+                    <div className="mt-2 pt-2 border-top">
+                      {viewBooking.assigned_driver_id ? (
+                        <div className="small">
+                          <div className="d-flex justify-content-between align-items-center">
+                            <span className="text-muted">Assigned Driver:</span>
+                            <span className="fw-bold text-success">
+                              {viewBooking.assigned_driver_name || viewBooking.assigned_driver_id} ({viewBooking.driver_job_status || 'Accepted'})
+                            </span>
+                          </div>
+                          {viewBooking.assigned_driver_phone && (
+                            <div className="d-flex justify-content-between align-items-center mt-1">
+                              <span className="text-muted">Driver Contact:</span>
+                              <span className="fw-semibold text-dark">{viewBooking.assigned_driver_phone}</span>
+                            </div>
+                          )}
+                          {viewBooking.assigned_driver_vehicle && (
+                            <div className="d-flex justify-content-between align-items-center mt-1">
+                              <span className="text-muted">Assigned Vehicle:</span>
+                              <span className="text-dark">{viewBooking.assigned_driver_vehicle}</span>
+                            </div>
+                          )}
+                          <div className="d-flex justify-content-between align-items-center mt-1 border-top pt-1">
+                            <span className="text-muted">Driver Charge (₹800/d):</span>
+                            <span className="fw-bold text-dark">₹{(viewBooking.driver_charge || (800 * Math.max(1, parseInt(viewBooking.driver_days || viewBooking.booking_days || 1)))).toLocaleString()}</span>
+                          </div>
+                          <div className="d-flex justify-content-between align-items-center mt-1">
+                            <span className="text-muted">Driver Earning Payout:</span>
+                            <span className="fw-bold text-success">₹{(viewBooking.driver_earning || (800 * Math.max(1, parseInt(viewBooking.driver_days || viewBooking.booking_days || 1)))).toLocaleString()} • {viewBooking.driver_payment_status || (viewBooking.driver_job_status === 'Completed' ? 'Payable' : 'Pending')}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="d-flex justify-content-between align-items-center">
+                          <span className="text-muted small">No driver assigned yet.</span>
+                          <button
+                            type="button"
+                            className="btn btn-sm text-white fw-bold px-3 py-1 rounded-pill shadow-sm"
+                            style={{ background: 'linear-gradient(90deg,#FF6333,#FF8A00)', fontSize: '0.75rem' }}
+                            onClick={() => {
+                              setAssigningBooking(viewBooking);
+                              setViewBooking(null);
+                            }}
+                          >
+                            Assign Driver Now
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="modal-footer border-top py-2 px-4 bg-light">
                 <button type="button" className="btn btn-sm btn-secondary px-3" onClick={() => setViewBooking(null)}>
@@ -818,6 +975,88 @@ export default function AdminBookingManagement({
                   </button>
                   <button type="submit" className="btn btn-sm btn-primary px-4 fw-bold" disabled={actionLoading}>
                     {actionLoading ? 'Saving...' : 'Save Changes'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* QUICK ASSIGN DRIVER MODAL */}
+      {assigningBooking && (
+        <div className="modal fade show d-block" style={{ backgroundColor: 'rgba(11,25,44,0.6)', zIndex: 1070 }}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+              <div className="modal-header text-white py-3 px-4" style={{ background: '#0D1B2E' }}>
+                <h5 className="modal-title fw-bold fs-6">Assign Driver — Booking #{assigningBooking.id}</h5>
+                <button type="button" className="btn-close btn-close-white" onClick={() => setAssigningBooking(null)} />
+              </div>
+              <form onSubmit={handleAssignDriverSubmit}>
+                <div className="modal-body p-4">
+                  <div className="p-3 rounded bg-light border mb-3 small">
+                    <div className="d-flex justify-content-between mb-1">
+                      <span className="text-muted">Customer:</span>
+                      <span className="fw-bold">{assigningBooking.name || assigningBooking.customer_name} ({assigningBooking.phone})</span>
+                    </div>
+                    <div className="d-flex justify-content-between mb-1">
+                      <span className="text-muted">Pickup Location:</span>
+                      <span className="fw-bold">{assigningBooking.pickup_loc || 'Goa'}</span>
+                    </div>
+                    <div className="d-flex justify-content-between">
+                      <span className="text-muted">Service / Item:</span>
+                      <span className="fw-bold">{assigningBooking.item_name}</span>
+                    </div>
+                  </div>
+
+                  <div className="mb-3">
+                    <label className="form-label small fw-bold text-secondary">
+                      Select Approved / Active Driver *
+                    </label>
+                    <select
+                      className="form-select form-select-sm fw-semibold"
+                      value={selectedDriverId}
+                      onChange={e => setSelectedDriverId(e.target.value)}
+                      required
+                    >
+                      <option value="">-- Choose Approved Driver --</option>
+                      {driversList.filter(d => (d.status || '').toLowerCase() === 'approved' || (d.status || '').toLowerCase() === 'active').map(d => (
+                        <option key={d.id} value={d.id}>
+                          {d.name} ({d.phone} • {d.vehicle_details || 'Commercial'} • Status: {d.status})
+                        </option>
+                      ))}
+                    </select>
+                    {driversList.filter(d => (d.status || '').toLowerCase() === 'approved' || (d.status || '').toLowerCase() === 'active').length === 0 && (
+                      <div className="text-danger small mt-1">
+                        No approved drivers available. Please approve drivers in Driver Management.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mb-3">
+                    <label className="form-label small fw-bold text-secondary">
+                      Assignment Notes / Instructions (Optional)
+                    </label>
+                    <textarea
+                      className="form-control form-control-sm"
+                      rows="2"
+                      placeholder="e.g. Airport pickup at arrival gate 2..."
+                      value={assignNotes}
+                      onChange={e => setAssignNotes(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="modal-footer border-top py-2.5 px-4 bg-light">
+                  <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => setAssigningBooking(null)}>
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn btn-sm px-4 fw-bold text-white shadow-sm"
+                    style={{ background: 'linear-gradient(90deg,#FF6333,#FF8A00)' }}
+                    disabled={actionLoading || !selectedDriverId}
+                  >
+                    {actionLoading ? 'Assigning...' : 'Confirm Assignment'}
                   </button>
                 </div>
               </form>

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Car, Bike, Hotel, Plane, Users, CheckCircle, ArrowLeft, ArrowRight,
   Search, Star, MapPin, Zap, X, CreditCard, Shield, PlaneTakeoff, PlaneLanding, Calendar, User,
-  Wand2, AlertCircle, BadgeCheck, Check, Loader2
+  Wand2, AlertCircle, BadgeCheck, Check, Loader2, Compass
 } from 'lucide-react';
 import * as api from '../../services/api';
 import HotelImageGallery from '../../components/HotelImageGallery';
@@ -771,31 +771,60 @@ function Step4ReviewPay({ selectedVehicle, selectedHotel, selectedFlight, withFl
       withFlight && selectedFlight ? (selectedFlight.airline?.name || selectedFlight.airline || 'Flight') : null
     ].filter(Boolean).join(' + ') || 'Custom Goa Holiday';
 
+    const cleanPhone = String(phone || '').replace(/\D/g, '');
+    const cmtPayload = {
+      name,
+      customer_name: name,
+      phone,
+      customer_phone: phone,
+      customer_id: `c_${cleanPhone || Date.now()}`,
+      license,
+      pickup_loc: selectedVehicle?.location || 'Goa',
+      pickup_location: selectedVehicle?.location || 'Goa',
+      drop_loc: selectedVehicle?.location || 'Goa',
+      drop_location: selectedVehicle?.location || 'Goa',
+      pickup_date: validPickup,
+      drop_date: validDrop,
+      item_id: `craft-${Date.now()}`,
+      item_name: `Craft My Trip: ${itemName}`,
+      package_name: `Craft My Trip: ${itemName}`,
+      package_type: 'Self Drive Package',
+      type: 'selfdrive',
+      vehicle_name: selectedVehicle?.name || 'Self Drive Vehicle',
+      vehicle_image: selectedVehicle?.image || '',
+      image: selectedVehicle?.image || selectedHotel?.image || '',
+      hotel_name: selectedHotel?.name || '',
+      booking_days: nights,
+      duration: `${nights} Nights / ${nights + 1} Days`,
+      total_amount: grandTotal,
+      amount_paid: amountDue,
+      total_paid: amountDue,
+      paid_amount: amountDue,
+      remaining_amount: grandTotal - amountDue,
+      pending_amount: grandTotal - amountDue,
+      status: 'Confirmed',
+      payment_status: paymentMode === 'full' ? 'Full' : 'Partial',
+      customizations: JSON.stringify({
+        vehicle: selectedVehicle ? { id: selectedVehicle.id, name: selectedVehicle.name, price: vehiclePrice } : null,
+        hotel: selectedHotel ? { id: selectedHotel.id, name: selectedHotel.name, price: hotelPrice } : null,
+        flight: withFlight && selectedFlight ? { id: selectedFlight.id, airline: selectedFlight.airline, price: flightPrice } : null,
+        members: memberCount,
+        payment_mode: paymentMode
+      })
+    };
+
     try {
-      await api.createBooking({
-        name,
-        phone,
-        license,
-        pickup_loc: selectedVehicle?.location || 'Goa',
-        pickup_date: validPickup,
-        drop_date: validDrop,
-        item_id: `craft-${Date.now()}`,
-        item_name: `Craft My Trip: ${itemName}`,
-        booking_days: nights,
-        total_amount: grandTotal,
-        amount_paid: amountDue,
-        remaining_amount: grandTotal - amountDue,
-        total_paid: amountDue,
-        status: 'Confirmed',
-        payment_status: paymentMode === 'full' ? 'Full' : 'Partial',
-        customizations: JSON.stringify({
-          vehicle: selectedVehicle ? { id: selectedVehicle.id, name: selectedVehicle.name, price: vehiclePrice } : null,
-          hotel: selectedHotel ? { id: selectedHotel.id, name: selectedHotel.name, price: hotelPrice } : null,
-          flight: withFlight && selectedFlight ? { id: selectedFlight.id, airline: selectedFlight.airline, price: flightPrice } : null,
-          members: memberCount,
-          payment_mode: paymentMode
-        })
-      });
+      const res = await api.createBooking(cmtPayload);
+      const bookingId = res?.booking_id || res?.id || `CMT-${Date.now()}`;
+      const fullRecord = { ...cmtPayload, id: bookingId };
+      try {
+        sessionStorage.setItem('customer_login_phone', cleanPhone);
+        sessionStorage.setItem('last_created_booking', JSON.stringify(fullRecord));
+        localStorage.setItem('customer_login_phone', cleanPhone);
+        localStorage.setItem('last_created_booking', JSON.stringify(fullRecord));
+        const existing = JSON.parse(localStorage.getItem('local_bookings') || '[]');
+        localStorage.setItem('local_bookings', JSON.stringify([fullRecord, ...existing.filter(b => String(b.id) !== String(bookingId))]));
+      } catch (e) {}
       setShowSuccess(true);
       if (onConfirm) onConfirm();
     } catch (e) {
@@ -823,6 +852,45 @@ function Step4ReviewPay({ selectedVehicle, selectedHotel, selectedFlight, withFl
           <div><strong>Amount Paid:</strong> ₹{amountDue.toLocaleString('en-IN')} ({paymentMode === 'full' ? 'Full' : '30% Advance'})</div>
         </div>
         <p className="cmt-success-note">Our team will contact you at <strong>{phone}</strong> shortly to confirm details.</p>
+
+        {/* Customer Portal Tracking Card */}
+        <div className="card border-0 shadow-sm rounded-4 p-4 my-4 text-start bg-light mx-auto" style={{ maxWidth: '440px', border: '1px solid #e2e8f0' }}>
+          <div className="d-flex align-items-center gap-2 mb-1.5">
+            <Compass size={20} className="text-warning" />
+            <h6 className="fw-bold text-dark mb-0 font-heading" style={{ fontSize: '15px' }}>
+              Track in WOW GOA Customer Portal
+            </h6>
+          </div>
+          <p className="text-muted text-xs mb-3">
+            Track your custom holiday itinerary, vehicle allocation, hotel stay and payment receipts.
+          </p>
+          <button 
+            type="button" 
+            className="btn btn-warning text-dark fw-bold rounded-pill px-4 py-2.5 text-xs d-flex align-items-center justify-content-center gap-2 shadow-sm w-100 font-heading"
+            onClick={() => {
+              if (phone) {
+                try {
+                  sessionStorage.setItem('customer_login_phone', phone);
+                  localStorage.removeItem('customerUser');
+                } catch (e) {}
+              }
+              window.location.href = '/customer';
+            }}
+          >
+            <span>View My Booking →</span>
+          </button>
+        </div>
+
+        <button 
+          type="button"
+          className="btn btn-link text-muted text-xs text-decoration-none mt-1"
+          onClick={() => {
+            if (onConfirm) onConfirm();
+            window.location.href = '/';
+          }}
+        >
+          Return to Home
+        </button>
       </div>
     );
   }

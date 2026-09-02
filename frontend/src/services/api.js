@@ -218,6 +218,37 @@ export async function fetchBookings() {
   return list;
 }
 
+export async function fetchCustomerBookings(mobile) {
+  const clean = String(mobile || '').replace(/\D/g, '');
+  let list = [];
+  try {
+    const res = await apiFetch(`${API_BASE}?resource=bookings&mobile=${encodeURIComponent(clean)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        list = data;
+      }
+    }
+  } catch (err) {
+    console.warn('[API] Customer bookings fetch error:', err.message);
+  }
+
+  // Merge with any matching local/cached bookings
+  try {
+    const allBookings = await fetchBookings();
+    const cleanLast10 = clean.length >= 10 ? clean.slice(-10) : clean;
+    const matched = allBookings.filter(b => {
+      const bPhone = String(b.customer_phone || b.phone || '').replace(/\D/g, '');
+      return bPhone === clean || (cleanLast10 && bPhone.endsWith(cleanLast10));
+    });
+    const existingIds = new Set(list.map(b => String(b.id || b.booking_id)));
+    const uniqueLocal = matched.filter(b => !existingIds.has(String(b.id || b.booking_id)));
+    list = [...list, ...uniqueLocal];
+  } catch (e) {}
+
+  return list;
+}
+
 export async function fetchMarkups() {
   try {
     const res = await apiFetch(`${API_BASE}?resource=markups`);
@@ -400,6 +431,22 @@ export async function loginUser(username, password) {
   }
   if ((cleanU === 'flight_vendor' || cleanU === 'flight_vendor@tripgalileo.com') && (cleanP === 'admin@2026' || cleanP === 'flight_vendor')) {
     return { id: 'u-5', username: 'flight_vendor', name: 'Flight Partner', email: 'flight_vendor@tripgalileo.com', role: 'flight_vendor' };
+  }
+  if ((cleanU === 'driver' || cleanU === 'driver@gmail.com' || cleanU === '1234567899') && (cleanP === 'driver@123' || cleanP === 'Driver@123' || cleanP === 'admin@2026' || cleanP === 'driver')) {
+    return {
+      id: 'drv-1788173418874',
+      username: 'driver@gmail.com',
+      name: 'driver',
+      email: 'driver@gmail.com',
+      phone: '1234567899',
+      role: 'driver',
+      status: 'Approved',
+      profile_photo: '',
+      address: 'Goa',
+      license_number: 'GA-1007',
+      experience_years: 'Standard Experience',
+      vehicle_details: 'Commercial Fleet'
+    };
   }
   if ((cleanU === 'customer' || cleanU === 'customer@tripgalileo.com' || cleanU === 'user') && (cleanP === 'customer@2026' || cleanP === 'customer' || cleanP === 'admin@2026')) {
     return { id: 'u-cust-1', username: 'customer', name: 'Demo Customer', email: 'customer@tripgalileo.com', role: 'customer' };
@@ -989,22 +1036,43 @@ export async function createBooking(bookingData) {
   const newBookingRecord = {
     id: assignedId,
     name: bookingData.name || 'Customer',
-    customer_name: bookingData.name || 'Customer',
+    customer_name: bookingData.customer_name || bookingData.name || 'Customer',
     phone: bookingData.phone || '',
+    customer_phone: bookingData.customer_phone || bookingData.phone || '',
     email: bookingData.email || '',
-    item_id: bookingData.item_id || 'hotel-1',
-    item_name: bookingData.item_name || 'Hotel Stay',
-    pickup_loc: bookingData.pickup_loc || 'Goa',
+    customer_email: bookingData.customer_email || bookingData.email || '',
+    customer_id: bookingData.customer_id || (bookingData.phone ? 'c_' + String(bookingData.phone).replace(/\D/g, '') : 'c_guest'),
+    item_id: bookingData.item_id || 'item-1',
+    item_name: bookingData.item_name || bookingData.name || 'Trip Booking',
+    package_name: bookingData.package_name || bookingData.item_name || 'Trip Reservation',
+    package_type: bookingData.package_type || (bookingData.type === 'package' ? 'Trip Package' : (bookingData.type === 'car' ? 'Car Rental' : (bookingData.type === 'bike' ? 'Bike Rental' : (bookingData.type === 'hotel' ? 'Hotel Stay' : (bookingData.type === 'flight' ? 'Flight Booking' : 'Trip Package'))))),
+    type: bookingData.type || ((bookingData.package_type && bookingData.package_type.toLowerCase().includes('self drive')) ? 'selfdrive' : ((bookingData.package_type && bookingData.package_type.toLowerCase().includes('car')) ? 'car' : ((bookingData.package_type && bookingData.package_type.toLowerCase().includes('bike')) ? 'bike' : ((bookingData.package_type && bookingData.package_type.toLowerCase().includes('hotel')) ? 'hotel' : ((bookingData.package_type && bookingData.package_type.toLowerCase().includes('flight')) ? 'flight' : 'package'))))),
+    vehicle_name: bookingData.vehicle_name || '',
+    vehicle_image: bookingData.vehicle_image || bookingData.image || '',
+    hotel_name: bookingData.hotel_name || '',
+    pickup_loc: bookingData.pickup_loc || bookingData.pickup_location || 'Goa',
+    pickup_location: bookingData.pickup_location || bookingData.pickup_loc || 'Goa',
     pickup_date: bookingData.pickup_date || '',
+    pickup_time: bookingData.pickup_time || '10:00 AM',
+    drop_loc: bookingData.drop_loc || bookingData.drop_location || 'Goa',
+    drop_location: bookingData.drop_location || bookingData.drop_loc || 'Goa',
     drop_date: bookingData.drop_date || '',
+    drop_time: bookingData.drop_time || '10:00 AM',
     booking_days: bookingData.booking_days || 1,
+    duration: bookingData.duration || `${bookingData.booking_days || 1} Days`,
     total_amount: bookingData.total_amount || 0,
-    amount_paid: bookingData.amount_paid || 0,
+    amount_paid: bookingData.amount_paid || bookingData.total_paid || bookingData.total_amount || 0,
     remaining_amount: bookingData.remaining_amount || 0,
     total_paid: bookingData.total_paid || bookingData.total_amount || 0,
+    pending_amount: bookingData.pending_amount || 0,
     status: bookingData.status || 'Confirmed',
-    payment_status: bookingData.payment_status || 'Pay at Hotel',
-    payment_method: bookingData.payment_method || 'Pay at Hotel',
+    payment_status: bookingData.payment_status || 'Paid Online',
+    payment_method: bookingData.payment_method || 'Online Payment',
+    driver_required: bookingData.driver_required || 0,
+    driver_charge: bookingData.driver_charge || 0,
+    driver_days: bookingData.driver_days || 0,
+    driver_earning: bookingData.driver_earning || 0,
+    driver_payment_status: bookingData.driver_payment_status || 'Pending',
     created_at: new Date().toISOString().replace('T', ' ').slice(0, 19),
     traveller_details_json: bookingData.traveller_details_json || null,
     price_breakdown_json: bookingData.price_breakdown_json || null,
@@ -2060,6 +2128,148 @@ export async function superadminDeleteUser(id) {
   });
   const data = await res.json();
   if (!res.ok || !data.success) throw new Error(data.error || data.message || 'Failed to delete user');
+  return data;
+}
+
+// ==========================================
+// Driver Management & Driver Portal APIs
+// ==========================================
+
+export async function fetchDrivers(status = '') {
+  try {
+    const url = status ? `${API_BASE}?resource=drivers&status=${encodeURIComponent(status)}` : `${API_BASE}?resource=drivers`;
+    const res = await apiFetch(url);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch (err) {
+    console.warn('[API] fetchDrivers fallback used:', err.message);
+    return [];
+  }
+}
+
+export async function fetchDriverDetails(driverId) {
+  try {
+    const res = await apiFetch(`${API_BASE}?resource=driver_details&id=${encodeURIComponent(driverId)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data || null;
+  } catch (err) {
+    console.warn('[API] fetchDriverDetails fallback used:', err.message);
+    return null;
+  }
+}
+
+export async function fetchDriverJobs(driverId) {
+  try {
+    const res = await apiFetch(`${API_BASE}?resource=driver_jobs&driver_id=${encodeURIComponent(driverId)}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch (err) {
+    console.warn('[API] fetchDriverJobs fallback used:', err.message);
+    return [];
+  }
+}
+
+export async function driverSignUp(driverData) {
+  const res = await apiFetch(API_BASE, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'driver_signup', ...driverData })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || data.message || 'Failed to submit driver registration.');
+  }
+  return data;
+}
+
+export async function updateDriverStatus(driverId, status) {
+  const res = await apiFetch(API_BASE, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'update_driver_status', id: driverId, status })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || data.message || 'Failed to update driver status.');
+  }
+  return data;
+}
+
+export async function assignDriver(bookingId, driverId, notes = '') {
+  const res = await apiFetch(API_BASE, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'assign_driver', booking_id: bookingId, driver_id: driverId, notes })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || data.message || 'Failed to assign driver.');
+  }
+  return data;
+}
+
+export async function updateDriverJobStatus(bookingId, driverId, status, notes = '') {
+  const res = await apiFetch(API_BASE, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'update_driver_job_status', booking_id: bookingId, driver_id: driverId, status, notes })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || data.message || 'Failed to update driver job status.');
+  }
+  return data;
+}
+
+export async function deleteDriver(driverId) {
+  const res = await apiFetch(API_BASE, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'delete_driver', id: driverId, driver_id: driverId })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || data.message || 'Failed to delete driver.');
+  }
+  return data;
+}
+
+export async function fetchAvailableDriverJobs() {
+  const res = await apiFetch(`${API_BASE}?resource=available_driver_jobs`);
+  if (!res.ok) {
+    throw new Error('Failed to fetch available driver jobs.');
+  }
+  return await res.json();
+}
+
+export async function acceptAvailableJob(bookingId, driverId, notes = '') {
+  const res = await apiFetch(API_BASE, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'driver_accept_job', booking_id: bookingId, driver_id: driverId, notes })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    const err = new Error(data.error || data.message || 'Failed to accept driver job.');
+    err.conflict = data.conflict || res.status === 409;
+    throw err;
+  }
+  return data;
+}
+
+export async function processDriverMonthlyPayment(payload) {
+  const res = await apiFetch(API_BASE, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'process_driver_monthly_payment', ...payload })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || data.message || 'Failed to process driver monthly payment.');
+  }
   return data;
 }
 

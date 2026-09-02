@@ -101,6 +101,38 @@ export default function PackageCheckoutStep4({
             </div>
           </div>
 
+          {/* Customer Portal Tracking Card */}
+          <div className="card border-0 shadow-sm rounded-4 p-4 mb-4 text-start bg-white" style={{ border: '1px solid #e2e8f0' }}>
+            <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+              <div>
+                <div className="d-flex align-items-center gap-2 mb-1">
+                  <Compass size={22} className="text-warning" />
+                  <h5 className="fw-black text-dark mb-0 font-heading" style={{ fontSize: '17px' }}>
+                    Track in WOW GOA Customer Portal
+                  </h5>
+                </div>
+                <p className="text-muted text-xs mb-0">
+                  Track your trip itinerary, stay voucher, vehicle allocation, payments and live updates from your Customer Portal.
+                </p>
+              </div>
+              <button 
+                type="button" 
+                className="btn btn-warning text-dark fw-bold rounded-pill px-4 py-2.5 text-xs d-flex align-items-center justify-content-center gap-2 shadow-sm flex-shrink-0 font-heading"
+                onClick={() => {
+                  if (contactPhone) {
+                    try {
+                      sessionStorage.setItem('customer_login_phone', contactPhone);
+                      localStorage.removeItem('customerUser');
+                    } catch (e) {}
+                  }
+                  window.location.href = '/customer';
+                }}
+              >
+                <span>View My Booking →</span>
+              </button>
+            </div>
+          </div>
+
           {/* Detailed Voucher Document */}
           <div className="bg-white border rounded-4 shadow-sm p-4 p-md-5 mb-4">
             
