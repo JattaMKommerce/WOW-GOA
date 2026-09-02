@@ -376,6 +376,72 @@ export async function runBirthdayCron() {
   return data;
 }
 
+/**
+ * Customer Cashback Wallet APIs
+ */
+export async function fetchCustomerWallet(phone, customerId = '') {
+  if (!phone && !customerId) {
+    return {
+      customer_id: '',
+      customer_phone: '',
+      available_balance: 0,
+      total_earned: 0,
+      total_used: 0,
+      total_expired: 0,
+      nearest_expiring: null,
+      server_time: new Date().toISOString(),
+      transactions: []
+    };
+  }
+
+  try {
+    const clean = String(phone || '').replace(/\D/g, '');
+    const res = await apiFetch(`${API_BASE}?resource=customer_wallet&phone=${encodeURIComponent(clean)}&customer_id=${encodeURIComponent(customerId || '')}`);
+    if (res.ok) {
+      const data = await res.json();
+      return data;
+    }
+  } catch (err) {
+    console.warn('[API] fetchCustomerWallet fallback:', err.message);
+  }
+
+  return {
+    customer_id: customerId,
+    customer_phone: phone,
+    available_balance: 0,
+    total_earned: 0,
+    total_used: 0,
+    total_expired: 0,
+    nearest_expiring: null,
+    server_time: new Date().toISOString(),
+    transactions: []
+  };
+}
+
+export async function fetchCustomerWalletTransactions(phone, customerId = '') {
+  try {
+    const clean = String(phone || '').replace(/\D/g, '');
+    const res = await apiFetch(`${API_BASE}?resource=customer_wallet_transactions&phone=${encodeURIComponent(clean)}&customer_id=${encodeURIComponent(customerId || '')}`);
+    if (res.ok) {
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    }
+  } catch (err) {
+    console.warn('[API] fetchCustomerWalletTransactions fallback:', err.message);
+  }
+  return [];
+}
+
+export async function runWalletCron() {
+  const res = await apiFetch(`${API_BASE}?action=run_wallet_cron`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) throw new Error(data.error || 'Failed to run wallet cron');
+  return data;
+}
+
 export async function fetchMarkups() {
   try {
     const res = await apiFetch(`${API_BASE}?resource=markups`);

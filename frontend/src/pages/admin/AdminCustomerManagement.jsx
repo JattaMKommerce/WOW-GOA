@@ -79,6 +79,25 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
   const [actionAlert, setActionAlert] = useState(null);
   const [cronRunning, setCronRunning] = useState(false);
 
+  // Customer Wallet Drawer State
+  const [selectedWallet, setSelectedWallet] = useState(null);
+  const [loadingSelectedWallet, setLoadingSelectedWallet] = useState(false);
+
+  useEffect(() => {
+    if (selected?.phone || selected?.id) {
+      setLoadingSelectedWallet(true);
+      api.fetchCustomerWallet(selected.phone, selected.id).then(res => {
+        setSelectedWallet(res);
+      }).catch(() => {
+        setSelectedWallet(null);
+      }).finally(() => {
+        setLoadingSelectedWallet(false);
+      });
+    } else {
+      setSelectedWallet(null);
+    }
+  }, [selected]);
+
   // Add Users / Team Management Modal State
   const [showUsersModal, setShowUsersModal] = useState(initialOpenAddUser);
   const [usersSubTab, setUsersSubTab] = useState('list');
@@ -931,11 +950,11 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
           </div>
 
           <div className="d-flex border-bottom px-4 pt-2 bg-light">
-            {['overview', 'bookings'].map(tab => (
+            {['overview', 'wallet', 'bookings'].map(tab => (
               <button
                 key={tab}
                 onClick={() => setDrawerTab(tab)}
-                className="btn btn-sm px-3 py-2 fw-bold text-capitalize border-0 rounded-top"
+                className="btn btn-sm px-3 py-2 fw-bold text-capitalize border-0 rounded-top d-flex align-items-center gap-1"
                 style={{
                   fontSize: '0.78rem',
                   borderBottom: drawerTab === tab ? '2px solid #FF6333' : 'none',
@@ -943,7 +962,8 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
                   background: drawerTab === tab ? '#fff' : '#f8fafc'
                 }}
               >
-                {tab}
+                {tab === 'wallet' && <Wallet size={13} />}
+                <span>{tab === 'wallet' ? '💰 Wallet' : tab}</span>
               </button>
             ))}
           </div>
@@ -979,6 +999,27 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
                       </div>
                     </div>
                   </div>
+                </div>
+
+                {/* Cashback Wallet Summary Badge */}
+                <div className="p-3 rounded-4 mb-3 bg-dark text-white shadow-sm d-flex align-items-center justify-content-between">
+                  <div className="d-flex align-items-center gap-2">
+                    <div className="rounded-3 p-2 bg-warning text-dark">
+                      <Wallet size={16} />
+                    </div>
+                    <div>
+                      <div className="text-white-50 text-xxs text-uppercase fw-bold">Cashback Wallet</div>
+                      <div className="fw-black text-warning font-heading fs-5">
+                        ₹{(selectedWallet?.available_balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setDrawerTab('wallet')}
+                    className="btn btn-sm btn-light py-1 px-2.5 rounded-pill text-xs fw-bold"
+                  >
+                    View Ledger →
+                  </button>
                 </div>
 
                 <div className="p-3 rounded-3 mb-3" style={{ background: '#f8fafc', border: '1px solid rgba(0,0,0,0.06)' }}>
@@ -1024,6 +1065,71 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
                     </div>
                   </div>
                 </div>
+              </div>
+            ) : drawerTab === 'wallet' ? (
+              <div>
+                <div className="card border-0 rounded-4 shadow-sm mb-3 text-white overflow-hidden" style={{ background: 'linear-gradient(135deg, #0B192C 0%, #1E3E62 100%)' }}>
+                  <div className="p-3">
+                    <div className="d-flex align-items-center justify-content-between">
+                      <div className="text-white-50 text-xxs text-uppercase fw-bold">Available Cashback Balance</div>
+                      <span className="badge bg-warning text-dark text-xxs fw-bold px-2 py-0.5 rounded-pill">10% Policy</span>
+                    </div>
+                    <div className="fs-3 fw-black text-warning font-heading my-1">
+                      ₹{(selectedWallet?.available_balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </div>
+                    {selectedWallet?.nearest_expiring && (
+                      <div className="text-white-50 text-xxs mt-1">
+                        ⏳ ₹{selectedWallet.nearest_expiring.amount} expires on {selectedWallet.nearest_expiring.formatted_expires_at}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="row g-2 mb-3">
+                  <div className="col-4">
+                    <div className="p-2.5 rounded-3 bg-light border text-center">
+                      <div className="text-muted text-xxs fw-bold">EARNED</div>
+                      <div className="fw-bold text-success text-sm mt-0.5">₹{(selectedWallet?.total_earned || 0).toLocaleString()}</div>
+                    </div>
+                  </div>
+                  <div className="col-4">
+                    <div className="p-2.5 rounded-3 bg-light border text-center">
+                      <div className="text-muted text-xxs fw-bold">USED</div>
+                      <div className="fw-bold text-primary text-sm mt-0.5">₹{(selectedWallet?.total_used || 0).toLocaleString()}</div>
+                    </div>
+                  </div>
+                  <div className="col-4">
+                    <div className="p-2.5 rounded-3 bg-light border text-center">
+                      <div className="text-muted text-xxs fw-bold">EXPIRED</div>
+                      <div className="fw-bold text-danger text-sm mt-0.5">₹{(selectedWallet?.total_expired || 0).toLocaleString()}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <h6 className="fw-bold text-dark text-xs mb-2">Wallet Transactions Ledger ({selectedWallet?.transactions?.length || 0})</h6>
+                {(selectedWallet?.transactions || []).map((tx, idx) => {
+                  const isCredit = tx.transaction_type === 'CASHBACK_CREDIT';
+                  const isUsed = tx.transaction_type === 'CASHBACK_USED';
+                  return (
+                    <div key={idx} className="p-2.5 rounded-3 mb-2 bg-light border" style={{ fontSize: '0.78rem' }}>
+                      <div className="d-flex justify-content-between align-items-center mb-1">
+                        <span className="fw-bold text-dark">
+                          {isCredit ? '🎁 Cashback Earned' : (isUsed ? '💳 Cashback Used' : '❌ Expired')}
+                        </span>
+                        <span className={`fw-bold ${isCredit ? 'text-success' : (isUsed ? 'text-primary' : 'text-danger')}`}>
+                          {isCredit ? `+₹${parseFloat(tx.amount).toLocaleString()}` : `-₹${parseFloat(tx.amount).toLocaleString()}`}
+                        </span>
+                      </div>
+                      <div className="d-flex justify-content-between text-muted text-xxs">
+                        <span>{tx.booking_id ? `#${tx.booking_id}` : 'General'} • {tx.status}</span>
+                        <span>{tx.created_at || tx.earned_at}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+                {(!selectedWallet?.transactions || selectedWallet.transactions.length === 0) && (
+                  <div className="text-center py-4 text-muted text-xs">No wallet transactions recorded for this customer.</div>
+                )}
               </div>
             ) : (
               <div>

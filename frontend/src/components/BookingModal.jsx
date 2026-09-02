@@ -37,6 +37,10 @@ export default function BookingModal({
   const [isDobSaved, setIsDobSaved] = useState(false);
   const [dobChecking, setDobChecking] = useState(false);
 
+  // Customer Wallet Cashback State
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [useWalletCashback, setUseWalletCashback] = useState(false);
+
   useEffect(() => {
     if (pickupDate) setModalPickupDate(pickupDate);
     if (dropDate) setModalDropDate(dropDate);
@@ -45,7 +49,7 @@ export default function BookingModal({
     if (pickupLoc) setModalPickupLoc(pickupLoc);
   }, [pickupDate, dropDate, pickupTime, dropTime, pickupLoc]);
 
-  // Repeat customer lookup for Date of Birth & profile info
+  // Repeat customer lookup for Date of Birth & Wallet Balance
   useEffect(() => {
     const clean = String(userPhone || '').replace(/\D/g, '');
     if (clean.length >= 10) {
@@ -65,8 +69,22 @@ export default function BookingModal({
       }).finally(() => {
         setDobChecking(false);
       });
+
+      // Fetch customer wallet
+      api.fetchCustomerWallet(clean).then(w => {
+        if (w && w.available_balance > 0) {
+          setWalletBalance(w.available_balance);
+        } else {
+          setWalletBalance(0);
+          setUseWalletCashback(false);
+        }
+      }).catch(() => {
+        setWalletBalance(0);
+      });
     } else {
       setIsDobSaved(false);
+      setWalletBalance(0);
+      setUseWalletCashback(false);
     }
   }, [userPhone]);
 
@@ -251,10 +269,15 @@ export default function BookingModal({
     subtotal += (addonVehicle.price * calculatedDays);
   }
 
-  const tax = Math.round(subtotal * 0.18);
+    const tax = Math.round(subtotal * 0.18);
   const fee = 250;
   const baseTotal = subtotal + tax + fee;
   const total = baseTotal + driverTotalCharge;
+
+  // Wallet Deduction & 10% Cashback Calculations
+  const appliedWalletAmount = (useWalletCashback && walletBalance > 0) ? Math.min(walletBalance, total) : 0;
+  const finalPayable = Math.max(0, total - appliedWalletAmount);
+  const projectedCashback = Math.round(finalPayable * 0.10);
 
   const handleFormSubmit = (e) => {
     e.preventDefault();
@@ -367,10 +390,13 @@ export default function BookingModal({
       driver_fullday_days: driverFullDayDaysCount,
       driver_details: driverDetailsPayload,
       date_of_birth: userDob,
+      wallet_amount_used: appliedWalletAmount,
       subtotal,
       tax,
       fee,
-      total
+      total,
+      amount_paid: finalPayable,
+      total_amount: total
     });
   };
 
@@ -414,6 +440,25 @@ export default function BookingModal({
                 </p>
               )}
 
+              {/* 10% Cashback Notification Card */}
+              <div className="card border-0 shadow-sm rounded-4 p-3.5 my-3 text-start" style={{ background: 'linear-gradient(135deg, #0B192C 0%, #1E3E62 100%)', color: '#ffffff' }}>
+                <div className="d-flex align-items-center gap-2 mb-1.5">
+                  <div className="rounded-circle p-1.5 bg-warning text-dark d-flex align-items-center justify-content-center" style={{ width: '28px', height: '28px' }}>
+                    <Gift size={16} />
+                  </div>
+                  <h6 className="fw-black text-white mb-0 font-heading" style={{ fontSize: '15px' }}>
+                    🎁 Cashback You Can Earn: ₹{projectedCashback.toLocaleString('en-IN')}
+                  </h6>
+                </div>
+                <p className="text-white-50 text-xs mb-2">
+                  💰 <strong>10% Cashback (₹{projectedCashback.toLocaleString('en-IN')})</strong> will be added to your <strong>WOW GOA Wallet</strong> after your booking is marked <strong>Completed</strong>.
+                </p>
+                <div className="text-warning text-xxs fw-semibold d-flex align-items-center gap-1">
+                  <Clock size={12} />
+                  <span>⏳ Valid for 30 days upon completion. Usable on future Car, Hotel & Trip bookings.</span>
+                </div>
+              </div>
+
               {/* Customer Portal Notification Card */}
               <div className="card border-0 shadow-sm rounded-4 p-4 my-3 text-start bg-light" style={{ border: '1px solid #e2e8f0' }}>
                 <div className="d-flex align-items-center gap-2 mb-1.5">
@@ -423,7 +468,7 @@ export default function BookingModal({
                   </h6>
                 </div>
                 <p className="text-muted text-xs mb-3">
-                  Track your booking, trip details, payments and loyalty rewards from your WOW GOA Customer Portal.
+                  Track your booking, trip details, wallet cashback and loyalty tier from your WOW GOA Customer Portal.
                 </p>
                 <button 
                   type="button" 
@@ -439,7 +484,7 @@ export default function BookingModal({
                     window.location.href = '/customer';
                   }}
                 >
-                  <span>View My Booking →</span>
+                  <span>View My Booking & Wallet →</span>
                 </button>
               </div>
 
@@ -1157,9 +1202,55 @@ export default function BookingModal({
                         <span>Admin/Delivery Fee:</span>
                         <span>₹{fee}</span>
                       </div>
+
+                      {walletBalance > 0 && (
+                        <div className="p-2.5 rounded-3 my-2" style={{ background: '#ecfdf5', border: '1px solid #a7f3d0' }}>
+                          <div className="d-flex align-items-center justify-content-between">
+                            <div className="d-flex align-items-center gap-1.5">
+                              <Wallet size={15} className="text-success" />
+                              <div>
+                                <div className="fw-bold text-dark text-xs">WOW GOA Wallet</div>
+                                <div className="text-muted" style={{ fontSize: '10px' }}>Available: ₹{walletBalance.toLocaleString('en-IN')}</div>
+                              </div>
+                            </div>
+                            <div className="form-check form-switch mb-0">
+                              <input 
+                                type="checkbox" 
+                                className="form-check-input" 
+                                id="useWalletCashback"
+                                checked={useWalletCashback}
+                                onChange={(e) => setUseWalletCashback(e.target.checked)}
+                                style={{ cursor: 'pointer' }}
+                              />
+                              <label className="form-check-label text-xs fw-bold text-success" htmlFor="useWalletCashback">
+                                Use ₹{Math.min(walletBalance, total).toLocaleString('en-IN')}
+                              </label>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {appliedWalletAmount > 0 && (
+                        <div className="d-flex justify-content-between mb-2 text-success fw-bold">
+                          <span>Wallet Cashback Applied:</span>
+                          <span>-₹{appliedWalletAmount.toLocaleString('en-IN')}</span>
+                        </div>
+                      )}
+
                       <div className="d-flex justify-content-between border-top border-dark pt-2 fw-bold text-primary" style={{ fontSize: '16px' }}>
-                        <span>Total Payable:</span>
-                        <span>₹{total}</span>
+                        <span>Final Amount Payable:</span>
+                        <span>₹{finalPayable.toLocaleString('en-IN')}</span>
+                      </div>
+
+                      {/* 10% Cashback Earning Preview */}
+                      <div className="mt-2.5 p-2 rounded-3 text-center" style={{ background: '#fef3c7', border: '1px solid #fde68a' }}>
+                        <div className="text-xs fw-bold text-dark d-flex align-items-center justify-content-center gap-1">
+                          <Gift size={13} className="text-warning" />
+                          <span>10% Cashback You Will Earn: <strong className="text-success font-heading">₹{projectedCashback.toLocaleString('en-IN')}</strong></span>
+                        </div>
+                        <div className="text-muted text-xxs mt-0.5">
+                          Credited to your wallet on booking completion • Valid 30 days
+                        </div>
                       </div>
                     </div>
                   </div>

@@ -172,6 +172,25 @@ try {
                 discount_percent INT DEFAULT 0,
                 message_template TEXT,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )",
+            "ALTER TABLE bookings ADD COLUMN wallet_amount_used DECIMAL(10,2) DEFAULT 0.00",
+            "ALTER TABLE bookings ADD COLUMN cashback_earned DECIMAL(10,2) DEFAULT 0.00",
+            "ALTER TABLE bookings ADD COLUMN cashback_status VARCHAR(50) DEFAULT 'Pending'",
+            "CREATE TABLE IF NOT EXISTS customer_wallet_transactions (
+                id VARCHAR(50) PRIMARY KEY,
+                customer_id VARCHAR(50) NOT NULL,
+                customer_phone VARCHAR(50) NOT NULL,
+                booking_id VARCHAR(50) DEFAULT NULL,
+                transaction_type VARCHAR(50) NOT NULL,
+                amount DECIMAL(10,2) NOT NULL,
+                used_amount DECIMAL(10,2) DEFAULT 0.00,
+                remaining_amount DECIMAL(10,2) NOT NULL,
+                earned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                expires_at DATETIME NOT NULL,
+                status VARCHAR(50) NOT NULL DEFAULT 'AVAILABLE',
+                description TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )"
         ];
         foreach ($drvAlters as $da) {
@@ -348,6 +367,28 @@ function seedDatabaseIfEmpty($pdo) {
             discount_percent INT DEFAULT 0,
             message_template TEXT,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+        "ALTER TABLE bookings ADD COLUMN wallet_amount_used DECIMAL(10,2) DEFAULT 0.00",
+        "ALTER TABLE bookings ADD COLUMN cashback_earned DECIMAL(10,2) DEFAULT 0.00",
+        "ALTER TABLE bookings ADD COLUMN cashback_status VARCHAR(50) DEFAULT 'Pending'",
+        "CREATE TABLE IF NOT EXISTS customer_wallet_transactions (
+            id VARCHAR(50) PRIMARY KEY,
+            customer_id VARCHAR(50) NOT NULL,
+            customer_phone VARCHAR(50) NOT NULL,
+            booking_id VARCHAR(50) DEFAULT NULL,
+            transaction_type VARCHAR(50) NOT NULL,
+            amount DECIMAL(10,2) NOT NULL,
+            used_amount DECIMAL(10,2) DEFAULT 0.00,
+            remaining_amount DECIMAL(10,2) NOT NULL,
+            earned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            expires_at DATETIME NOT NULL,
+            status VARCHAR(50) NOT NULL DEFAULT 'AVAILABLE',
+            description TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_cust_phone (customer_phone),
+            INDEX idx_cust_id (customer_id),
+            INDEX idx_booking_id (booking_id)
         )",
         "CREATE TABLE IF NOT EXISTS drivers (id VARCHAR(50) PRIMARY KEY, name VARCHAR(255) NOT NULL, phone VARCHAR(50) NOT NULL, email VARCHAR(255) NOT NULL, password_hash VARCHAR(255), plain_password VARCHAR(255), address TEXT, profile_photo TEXT, aadhaar_card TEXT, pan_card TEXT, license_number VARCHAR(100), license_card TEXT, experience_years VARCHAR(50), vehicle_details TEXT, status VARCHAR(50) DEFAULT 'Pending', admin_id VARCHAR(50) DEFAULT 'admin', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)",
         "CREATE TABLE IF NOT EXISTS driver_assignments (id VARCHAR(50) PRIMARY KEY, driver_id VARCHAR(50) NOT NULL, booking_id VARCHAR(50) NOT NULL, customer_name VARCHAR(255), customer_phone VARCHAR(50), pickup_loc VARCHAR(255), drop_loc VARCHAR(255), date VARCHAR(50), time VARCHAR(50), status VARCHAR(50) DEFAULT 'Assigned', assigned_by VARCHAR(50) DEFAULT 'admin', assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, notes TEXT)"
@@ -702,6 +743,310 @@ function processDailyBirthdays($pdo) {
     ];
 }
 
+/**
+ * =========================================================================
+ * WOW GOA CUSTOMER CASHBACK WALLET ENGINE (10% CASHBACK & 30-DAY EXPIRY)
+ * =========================================================================
+ */
+
+function processExpiredCashback($pdo) {
+    try {
+        $now = date('Y-m-d H:i:s');
+        $stmt = $pdo->prepare("UPDATE customer_wallet_transactions SET status = 'EXPIRED', remaining_amount = 0, updated_at = ? WHERE status IN ('AVAILABLE', 'PARTIALLY_USED') AND expires_at <= ?");
+        $stmt->execute([$now, $now]);
+        return $stmt->rowCount();
+    } catch (Exception $e) {
+        return 0;
+    }
+}
+
+function getCustomerWalletSummary($pdo, $phone, $customerId = '') {
+    $cleanPhone = preg_replace('/\D/', '', $phone ?? '');
+    $last10 = strlen($cleanPhone) >= 10 ? substr($cleanPhone, -10) : $cleanPhone;
+    $custId = !empty($customerId) ? $customerId : ('c_' . $last10);
+
+    // Auto-expire past transactions
+    processExpiredCashback($pdo);
+
+    if (empty($last10) && empty($customerId)) {
+        return [
+            'customer_id' => '',
+            'customer_phone' => '',
+            'available_balance' => 0.00,
+            'total_earned' => 0.00,
+            'total_used' => 0.00,
+            'total_expired' => 0.00,
+            'active_credits_count' => 0,
+            'nearest_expiring' => null,
+            'server_time' => date('c'),
+            'transactions' => []
+        ];
+    }
+
+    $allTx = [];
+    try {
+        $stmt = $pdo->prepare("SELECT * FROM customer_wallet_transactions WHERE (customer_phone LIKE ? OR customer_phone LIKE ? OR customer_id = ?) ORDER BY created_at DESC");
+        $stmt->execute(["%$last10", "%$cleanPhone", $custId]);
+        $allTx = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {}
+
+    $availableBalance = 0.00;
+    $totalEarned = 0.00;
+    $totalUsed = 0.00;
+    $totalExpired = 0.00;
+    $activeCredits = [];
+    $nowTime = time();
+
+    foreach ($allTx as $tx) {
+        $type = $tx['transaction_type'] ?? '';
+        $st = $tx['status'] ?? '';
+        $amt = floatval($tx['amount'] ?? 0);
+        $rem = floatval($tx['remaining_amount'] ?? 0);
+        $expTime = !empty($tx['expires_at']) ? strtotime($tx['expires_at']) : 0;
+
+        if ($type === 'CASHBACK_CREDIT' && $st !== 'REVERSED') {
+            $totalEarned += $amt;
+            if (($st === 'AVAILABLE' || $st === 'PARTIALLY_USED') && $rem > 0 && $expTime > $nowTime) {
+                $availableBalance += $rem;
+                $activeCredits[] = [
+                    'id' => $tx['id'],
+                    'booking_id' => $tx['booking_id'] ?? '',
+                    'amount' => $amt,
+                    'remaining_amount' => $rem,
+                    'earned_at' => $tx['earned_at'],
+                    'expires_at' => $tx['expires_at'],
+                    'seconds_remaining' => max(0, $expTime - $nowTime),
+                    'status' => $st
+                ];
+            } elseif ($st === 'EXPIRED' || ($expTime > 0 && $expTime <= $nowTime)) {
+                $totalExpired += max(0, $amt - floatval($tx['used_amount'] ?? 0));
+            }
+        } elseif ($type === 'CASHBACK_USED') {
+            $totalUsed += $amt;
+        } elseif ($type === 'CASHBACK_EXPIRED') {
+            $totalExpired += $amt;
+        }
+    }
+
+    // Sort active credits by earliest expiry first
+    usort($activeCredits, function($a, $b) {
+        return strtotime($a['expires_at']) - strtotime($b['expires_at']);
+    });
+
+    $nearestExpiring = null;
+    if (!empty($activeCredits)) {
+        $first = $activeCredits[0];
+        $nearestExpiring = [
+            'credit_id' => $first['id'],
+            'amount' => $first['remaining_amount'],
+            'expires_at' => $first['expires_at'],
+            'seconds_remaining' => $first['seconds_remaining'],
+            'formatted_expires_at' => date('d M Y, h:i A', strtotime($first['expires_at']))
+        ];
+    }
+
+    return [
+        'customer_id' => $custId,
+        'customer_phone' => $cleanPhone ?: $last10,
+        'available_balance' => round($availableBalance, 2),
+        'total_earned' => round($totalEarned, 2),
+        'total_used' => round($totalUsed, 2),
+        'total_expired' => round($totalExpired, 2),
+        'active_credits_count' => count($activeCredits),
+        'nearest_expiring' => $nearestExpiring,
+        'server_time' => date('c'),
+        'transactions' => $allTx
+    ];
+}
+
+function creditBookingCashback($pdo, $bookingId) {
+    if (empty($bookingId)) return false;
+
+    // 1. Fetch booking record
+    $stmt = $pdo->prepare("SELECT * FROM bookings WHERE id = ?");
+    $stmt->execute([$bookingId]);
+    $booking = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$booking) return false;
+
+    // Strict completion check: ONLY Completed bookings qualify
+    $status = strtolower(trim($booking['status'] ?? ''));
+    if ($status !== 'completed') {
+        return false;
+    }
+
+    // Anti-duplicate protection: check if already credited
+    $cashbackStatus = trim($booking['cashback_status'] ?? '');
+    if (strcasecmp($cashbackStatus, 'Credited') === 0) {
+        return false;
+    }
+
+    // Check unique transaction record in customer_wallet_transactions
+    $chkStmt = $pdo->prepare("SELECT id FROM customer_wallet_transactions WHERE booking_id = ? AND transaction_type = 'CASHBACK_CREDIT' LIMIT 1");
+    $chkStmt->execute([$bookingId]);
+    if ($chkStmt->fetch()) {
+        // Already credited previously in ledger
+        $pdo->prepare("UPDATE bookings SET cashback_status = 'Credited' WHERE id = ?")->execute([$bookingId]);
+        return false;
+    }
+
+    // 2. Calculate eligible customer-paid amount (Booking Amount - Wallet Cashback Used)
+    $totalAmount = floatval($booking['total_amount'] ?? ($booking['amount_paid'] ?? 0));
+    $walletUsed = floatval($booking['wallet_amount_used'] ?? 0);
+    $eligiblePaid = max(0, $totalAmount - $walletUsed);
+
+    // 10% Cashback calculation
+    $cashbackAmount = round($eligiblePaid * 0.10, 2);
+
+    if ($cashbackAmount <= 0) {
+        $pdo->prepare("UPDATE bookings SET cashback_earned = 0, cashback_status = 'None' WHERE id = ?")->execute([$bookingId]);
+        return false;
+    }
+
+    // 3. Customer Identity
+    $rawPhone = preg_replace('/\D/', '', $booking['phone'] ?? '');
+    $last10 = strlen($rawPhone) >= 10 ? substr($rawPhone, -10) : $rawPhone;
+    $custId = !empty($booking['customer_id']) ? $booking['customer_id'] : ('c_' . $last10);
+    $nowStr = date('Y-m-d H:i:s');
+    $expiresStr = date('Y-m-d H:i:s', strtotime('+30 days'));
+    $txId = 'cwt_' . uniqid();
+
+    // 4. Create ONE CASHBACK_CREDIT transaction
+    $ins = $pdo->prepare("INSERT INTO customer_wallet_transactions (id, customer_id, customer_phone, booking_id, transaction_type, amount, used_amount, remaining_amount, earned_at, expires_at, status, description, created_at, updated_at) VALUES (?, ?, ?, ?, 'CASHBACK_CREDIT', ?, 0.00, ?, ?, ?, 'AVAILABLE', ?, ?, ?)");
+    $ins->execute([
+        $txId,
+        $custId,
+        $rawPhone,
+        $bookingId,
+        $cashbackAmount,
+        $cashbackAmount,
+        $nowStr,
+        $expiresStr,
+        "10% Cashback earned for completed booking #$bookingId",
+        $nowStr,
+        $nowStr
+    ]);
+
+    // 5. Update booking record
+    $updB = $pdo->prepare("UPDATE bookings SET cashback_earned = ?, cashback_status = 'Credited' WHERE id = ?");
+    $updB->execute([$cashbackAmount, $bookingId]);
+
+    return [
+        'success' => true,
+        'booking_id' => $bookingId,
+        'cashback_amount' => $cashbackAmount,
+        'transaction_id' => $txId,
+        'expires_at' => $expiresStr
+    ];
+}
+
+function deductCustomerWallet($pdo, $phone, $customerId, $amountToUse, $bookingId) {
+    $amountToUse = round(floatval($amountToUse), 2);
+    if ($amountToUse <= 0) return true;
+
+    $cleanPhone = preg_replace('/\D/', '', $phone ?? '');
+    $last10 = strlen($cleanPhone) >= 10 ? substr($cleanPhone, -10) : $cleanPhone;
+    $custId = !empty($customerId) ? $customerId : ('c_' . $last10);
+
+    // Auto-expire
+    processExpiredCashback($pdo);
+
+    // Fetch active credits sorted by EARLIEST EXPIRY FIRST (FIFO consumption)
+    $stmt = $pdo->prepare("SELECT * FROM customer_wallet_transactions WHERE (customer_phone LIKE ? OR customer_phone LIKE ? OR customer_id = ?) AND status IN ('AVAILABLE', 'PARTIALLY_USED') AND remaining_amount > 0 AND expires_at > ? ORDER BY expires_at ASC");
+    $nowStr = date('Y-m-d H:i:s');
+    $stmt->execute(["%$last10", "%$cleanPhone", $custId, $nowStr]);
+    $credits = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $totalAvailable = 0.00;
+    foreach ($credits as $c) {
+        $totalAvailable += floatval($c['remaining_amount']);
+    }
+
+    if ($totalAvailable < $amountToUse) {
+        throw new Exception("Insufficient active wallet cashback balance. Available: ₹" . round($totalAvailable, 2));
+    }
+
+    $remainingToDeduct = $amountToUse;
+
+    foreach ($credits as $c) {
+        if ($remainingToDeduct <= 0) break;
+
+        $cRem = floatval($c['remaining_amount']);
+        $cUsed = floatval($c['used_amount']);
+
+        if ($cRem <= $remainingToDeduct) {
+            $deductFromThis = $cRem;
+            $newUsed = $cUsed + $deductFromThis;
+            $upd = $pdo->prepare("UPDATE customer_wallet_transactions SET used_amount = ?, remaining_amount = 0.00, status = 'USED', updated_at = ? WHERE id = ?");
+            $upd->execute([$newUsed, $nowStr, $c['id']]);
+            $remainingToDeduct -= $deductFromThis;
+        } else {
+            $deductFromThis = $remainingToDeduct;
+            $newUsed = $cUsed + $deductFromThis;
+            $newRem = $cRem - $deductFromThis;
+            $upd = $pdo->prepare("UPDATE customer_wallet_transactions SET used_amount = ?, remaining_amount = ?, status = 'PARTIALLY_USED', updated_at = ? WHERE id = ?");
+            $upd->execute([$newUsed, $newRem, $nowStr, $c['id']]);
+            $remainingToDeduct = 0;
+        }
+    }
+
+    // Log CASHBACK_USED transaction
+    $usedTxId = 'cwt_' . uniqid();
+    $insUsed = $pdo->prepare("INSERT INTO customer_wallet_transactions (id, customer_id, customer_phone, booking_id, transaction_type, amount, used_amount, remaining_amount, earned_at, expires_at, status, description, created_at, updated_at) VALUES (?, ?, ?, ?, 'CASHBACK_USED', ?, ?, 0.00, ?, ?, 'USED', ?, ?, ?)");
+    $insUsed->execute([
+        $usedTxId,
+        $custId,
+        $cleanPhone ?: $last10,
+        $bookingId,
+        $amountToUse,
+        $amountToUse,
+        $nowStr,
+        $nowStr,
+        "Wallet cashback applied on booking #$bookingId",
+        $nowStr,
+        $nowStr
+    ]);
+
+    return true;
+}
+
+function reverseBookingCashback($pdo, $bookingId) {
+    if (empty($bookingId)) return false;
+
+    try {
+        $stmt = $pdo->prepare("SELECT * FROM customer_wallet_transactions WHERE booking_id = ? AND transaction_type = 'CASHBACK_CREDIT' AND status != 'REVERSED'");
+        $stmt->execute([$bookingId]);
+        $credit = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($credit) {
+            $nowStr = date('Y-m-d H:i:s');
+            // Mark credit reversed
+            $pdo->prepare("UPDATE customer_wallet_transactions SET status = 'REVERSED', remaining_amount = 0.00, updated_at = ? WHERE id = ?")
+                ->execute([$nowStr, $credit['id']]);
+
+            // Create reversal log
+            $revId = 'cwt_' . uniqid();
+            $pdo->prepare("INSERT INTO customer_wallet_transactions (id, customer_id, customer_phone, booking_id, transaction_type, amount, used_amount, remaining_amount, earned_at, expires_at, status, description, created_at, updated_at) VALUES (?, ?, ?, ?, 'CASHBACK_REVERSED', ?, 0.00, 0.00, ?, ?, 'REVERSED', ?, ?, ?)")
+                ->execute([
+                    $revId,
+                    $credit['customer_id'],
+                    $credit['customer_phone'],
+                    $bookingId,
+                    $credit['amount'],
+                    $nowStr,
+                    $nowStr,
+                    "Cashback reversed due to cancellation of booking #$bookingId",
+                    $nowStr,
+                    $nowStr
+                ]);
+
+            $pdo->prepare("UPDATE bookings SET cashback_status = 'Reversed' WHERE id = ?")->execute([$bookingId]);
+        }
+    } catch (Exception $e) {}
+
+    return true;
+}
+
 // 2. Process GET Resources (Read Queries)
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     try {
@@ -795,6 +1140,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $customerId = $_GET['customer_id'] ?? ($_GET['id'] ?? '');
             $loyalty = calculateCustomerTiers($pdo, $phone, $customerId);
             echo json_encode($loyalty);
+            exit;} elseif ($resource === 'customer_wallet') {
+            $phone = $_GET['phone'] ?? ($_GET['mobile'] ?? '');
+            $customerId = $_GET['customer_id'] ?? ($_GET['id'] ?? '');
+            $wallet = getCustomerWalletSummary($pdo, $phone, $customerId);
+            echo json_encode($wallet);
+            exit;} elseif ($resource === 'customer_wallet_transactions') {
+            $phone = $_GET['phone'] ?? ($_GET['mobile'] ?? '');
+            $customerId = $_GET['customer_id'] ?? ($_GET['id'] ?? '');
+            $cleanPhone = preg_replace('/\D/', '', $phone ?? '');
+            $last10 = strlen($cleanPhone) >= 10 ? substr($cleanPhone, -10) : $cleanPhone;
+            $custId = !empty($customerId) ? $customerId : ('c_' . $last10);
+            processExpiredCashback($pdo);
+            $stmt = $pdo->prepare("SELECT * FROM customer_wallet_transactions WHERE (customer_phone LIKE ? OR customer_phone LIKE ? OR customer_id = ?) ORDER BY created_at DESC");
+            $stmt->execute(["%$last10", "%$cleanPhone", $custId]);
+            $tx = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            echo json_encode($tx);
             exit;} elseif ($resource === 'check_customer_dob') {
             $phone = preg_replace('/\D/', '', $_GET['phone'] ?? ($_GET['mobile'] ?? ''));
             $last10 = strlen($phone) >= 10 ? substr($phone, -10) : $phone;
@@ -2475,8 +2836,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } catch (Exception $e) {}
             }
 
+            // Customer Wallet Cashback Deduction & 10% Calculation
+            $walletAmountUsed = max(0, round(floatval($payload['wallet_amount_used'] ?? 0), 2));
+            $totBookingAmt = floatval($payload['total_amount'] ?? ($payload['total_paid'] ?? 0));
+            $eligiblePaidAmt = max(0, $totBookingAmt - $walletAmountUsed);
+            $potentialCashback = round($eligiblePaidAmt * 0.10, 2);
+
+            if ($walletAmountUsed > 0) {
+                try {
+                    deductCustomerWallet($pdo, $rawPhone, $custId ?? ('c_' . $last10), $walletAmountUsed, $booking_id);
+                } catch (Exception $wEx) {
+                    http_response_code(400);
+                    echo json_encode(["success" => false, "error" => $wEx->getMessage()]);
+                    exit();
+                }
+            }
+
+            $initStatus = $payload['status'] ?? 'Confirmed';
+            $initCashbackStatus = 'Pending';
+
             try {
-                $stmt = $pdo->prepare("INSERT INTO bookings (id, name, phone, email, license, pickup_loc, pickup_date, pickup_time, drop_date, drop_time, departure_date, return_date, check_in_date, check_out_date, duration, item_id, item_name, booking_days, total_amount, amount_paid, remaining_amount, total_paid, status, payment_status, customizations, created_at, payment_method, admin_id, driver_required, driver_charge, driver_days, driver_earning, driver_payment_status, image, vehicle_image, date_of_birth) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt = $pdo->prepare("INSERT INTO bookings (id, name, phone, email, license, pickup_loc, pickup_date, pickup_time, drop_date, drop_time, departure_date, return_date, check_in_date, check_out_date, duration, item_id, item_name, booking_days, total_amount, amount_paid, remaining_amount, total_paid, status, payment_status, customizations, created_at, payment_method, admin_id, driver_required, driver_charge, driver_days, driver_earning, driver_payment_status, image, vehicle_image, date_of_birth, wallet_amount_used, cashback_earned, cashback_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
                 $stmt->execute([
                     $booking_id,
                     $custName,
@@ -2500,7 +2880,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     intval($payload['amount_paid'] ?? ($payload['total_paid'] ?? 0)),
                     intval($payload['remaining_amount'] ?? 0),
                     intval($payload['total_paid'] ?? ($payload['total_amount'] ?? 0)),
-                    $payload['status'] ?? 'Confirmed',
+                    $initStatus,
                     $payload['payment_status'] ?? 'Paid',
                     $payload['customizations'] ?? null,
                     date('Y-m-d H:i:s'),
@@ -2513,11 +2893,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $driver_payment_status,
                     $img_val,
                     $img_val,
-                    $custDob
+                    $custDob,
+                    $walletAmountUsed,
+                    $potentialCashback,
+                    $initCashbackStatus
                 ]);
             } catch (Exception $insEx) {
                 // Fallback insert if columns differ
-                $stmt = $pdo->prepare("INSERT INTO bookings (id, name, phone, email, license, pickup_loc, pickup_date, pickup_time, drop_date, drop_time, departure_date, return_date, check_in_date, check_out_date, duration, item_id, item_name, booking_days, total_amount, amount_paid, remaining_amount, total_paid, status, payment_status, customizations, created_at, payment_method, admin_id, driver_required, driver_charge, driver_days, driver_earning, driver_payment_status, date_of_birth) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt = $pdo->prepare("INSERT INTO bookings (id, name, phone, email, license, pickup_loc, pickup_date, pickup_time, drop_date, drop_time, departure_date, return_date, check_in_date, check_out_date, duration, item_id, item_name, booking_days, total_amount, amount_paid, remaining_amount, total_paid, status, payment_status, customizations, created_at, payment_method, admin_id, driver_required, driver_charge, driver_days, driver_earning, driver_payment_status, date_of_birth, wallet_amount_used, cashback_earned, cashback_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
                 $stmt->execute([
                     $booking_id,
                     $custName,
@@ -2541,7 +2924,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     intval($payload['amount_paid'] ?? ($payload['total_paid'] ?? 0)),
                     intval($payload['remaining_amount'] ?? 0),
                     intval($payload['total_paid'] ?? ($payload['total_amount'] ?? 0)),
-                    $payload['status'] ?? 'Confirmed',
+                    $initStatus,
                     $payload['payment_status'] ?? 'Paid',
                     $payload['customizations'] ?? null,
                     date('Y-m-d H:i:s'),
@@ -2552,8 +2935,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $driver_days,
                     $driver_earning,
                     $driver_payment_status,
-                    $custDob
+                    $custDob,
+                    $walletAmountUsed,
+                    $potentialCashback,
+                    $initCashbackStatus
                 ]);
+            }
+
+            // If booking was created with Completed status directly, credit cashback
+            if (strtolower($initStatus) === 'completed') {
+                creditBookingCashback($pdo, $booking_id);
             }
             
             // Trigger Notification for the Vendor if applicable
@@ -2584,7 +2975,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $leadStmt->execute([$leadId, $payload['name'] ?? 'Customer', $payload['phone'] ?? '', $leadEmail, $leadSource, $leadService, $leadBudget, $leadNotes, $tenant_id, date('Y-m-d H:i:s'), date('Y-m-d H:i:s')]);
             } catch (Exception $leade) {}
             
-            echo json_encode(["success" => true, "message" => "Booking complete.", "booking_id" => $booking_id, "date_of_birth" => $custDob]);
+            echo json_encode([
+                "success" => true,
+                "message" => "Booking complete.",
+                "booking_id" => $booking_id,
+                "date_of_birth" => $custDob,
+                "wallet_amount_used" => $walletAmountUsed,
+                "cashback_preview" => [
+                    "amount" => $potentialCashback,
+                    "status" => strtolower($initStatus) === 'completed' ? 'Credited' : 'Pending',
+                    "message" => strtolower($initStatus) === 'completed' ? "₹$potentialCashback Cashback Added to Your WOW GOA Wallet!" : "Cashback will be added to your WOW GOA Wallet after the booking is completed."
+                ]
+            ]);
             exit;} elseif ($action === 'run_birthday_cron') {
             $cronResult = processDailyBirthdays($pdo);
             echo json_encode($cronResult);
@@ -3562,7 +3964,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt = $pdo->prepare("UPDATE bookings SET payment_status = ? WHERE id = ?");
                 $stmt->execute([$payment_status, $payload['id']]);
             }
+
+            // 10% Cashback Lifecycle Integration on Booking Completion / Cancellation
+            if ($status) {
+                $cleanStatus = strtolower(trim($status));
+                if ($cleanStatus === 'completed') {
+                    creditBookingCashback($pdo, $payload['id']);
+                } elseif (in_array($cleanStatus, ['cancelled', 'rejected', 'refunded'])) {
+                    reverseBookingCashback($pdo, $payload['id']);
+                }
+            }
+
             echo json_encode(["success" => true, "message" => "Booking status updated successfully."]);
+            exit;
+        } elseif ($action === 'run_wallet_cron') {
+            $expiredCount = processExpiredCashback($pdo);
+            echo json_encode([
+                "success" => true,
+                "message" => "Customer wallet expiry job completed successfully.",
+                "expired_transactions_count" => $expiredCount,
+                "server_time" => date('c')
+            ]);
             exit;
         } elseif ($action === 'delete_booking') {
             if (!isset($payload['id'])) {
@@ -4540,7 +4962,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exit();
 }
 
+if (php_sapi_name() === 'cli' && basename($_SERVER['PHP_SELF'] ?? '') !== 'api.php') {
+    return;
+}
+
 http_response_code(404);
 echo json_encode(["error" => "Resource not found."]);
-            exit;?>
+exit;?>
 

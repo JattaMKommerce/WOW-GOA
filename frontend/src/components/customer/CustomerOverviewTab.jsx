@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Compass, Calendar, Car, Wallet, Gift, Clock, CheckCircle2,
   AlertCircle, ArrowRight, ShieldCheck, MapPin, ChevronRight,
   TrendingUp, Star, Phone, Bell, Eye, Download, Info, Hotel,
-  Plane, Fuel, Navigation, Check, X, Sparkles, Filter, Bike, Crown, Cake
+  Plane, Fuel, Navigation, Check, X, Sparkles, Filter, Bike, Crown, Cake, ArrowUpRight
 } from 'lucide-react';
 import SelfDriveCategoryShowcase from '../widgets/SelfDriveCategoryShowcase';
 import CustomerLoyaltyCard from './CustomerLoyaltyCard';
 import { getBookingDisplayImage } from '../../utils/bookingImageHelper';
+import * as api from '../../services/api';
 
 export default function CustomerOverviewTab({
   currentUser,
@@ -23,6 +24,19 @@ export default function CustomerOverviewTab({
   walletBalance = 0,
   cashbackBalance = 0
 }) {
+  const [walletData, setWalletData] = useState({ available_balance: 0, nearest_expiring: null });
+  const [loadingWallet, setLoadingWallet] = useState(false);
+
+  useEffect(() => {
+    const ph = currentUser?.phone || currentUser?.username || '';
+    const cid = currentUser?.id || '';
+    if (ph || cid) {
+      setLoadingWallet(true);
+      api.fetchCustomerWallet(ph, cid).then(res => {
+        if (res) setWalletData(res);
+      }).catch(() => {}).finally(() => setLoadingWallet(false));
+    }
+  }, [currentUser]);
   // Category state for Explore More WOW GOA
   const [exploreCategory, setExploreCategory] = useState('selfdrive'); // 'selfdrive' | 'packages' | 'hotels' | 'cars' | 'flights'
   const [selfDriveSubcategory, setSelfDriveSubcategory] = useState('all');
@@ -331,6 +345,62 @@ export default function CustomerOverviewTab({
 
       {/* ─── 2. Dedicated Loyalty Tier & Membership Card ─── */}
       <CustomerLoyaltyCard bookings={myBookings} />
+
+      {/* ─── 2B. Dedicated Cashback Wallet Summary Card ─── */}
+      <div className="card border-0 rounded-4 shadow-sm mb-4 overflow-hidden" style={{ background: '#ffffff', border: '1px solid #eef2f6' }}>
+        <div className="p-4 d-flex flex-wrap align-items-center justify-content-between gap-3" style={{ background: 'linear-gradient(135deg, #0B192C 0%, #1E3E62 100%)' }}>
+          <div className="d-flex align-items-center gap-3">
+            <div className="rounded-3 p-2.5 text-warning d-flex align-items-center justify-content-center shadow-sm" style={{ background: 'rgba(255, 255, 255, 0.15)', backdropFilter: 'blur(8px)' }}>
+              <Wallet size={24} />
+            </div>
+            <div>
+              <div className="d-flex align-items-center gap-2">
+                <h5 className="fw-black text-white mb-0 font-heading" style={{ fontSize: '18px' }}>
+                  WOW GOA Cashback Wallet
+                </h5>
+                <span className="badge bg-warning text-dark text-xs fw-bold px-2.5 py-0.5 rounded-pill">
+                  10% Cashback on Paid Amount
+                </span>
+              </div>
+              <p className="text-white-50 text-xs mb-0 mt-0.5">
+                Usable on future bookings across Self Drive Cars, Hotels, and Tours upon trip completion.
+              </p>
+            </div>
+          </div>
+
+          <div className="d-flex align-items-center gap-3">
+            <div className="text-end text-white">
+              <div className="text-white-50 text-xxs text-uppercase fw-bold">Available Balance</div>
+              <div className="fs-4 fw-black text-warning font-heading">
+                ₹{parseFloat(walletData.available_balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            </div>
+
+            <button 
+              onClick={() => onNavigateTab && onNavigateTab('wallet')}
+              className="btn btn-warning btn-sm rounded-pill fw-bold text-dark px-3 py-2 text-xs d-flex align-items-center gap-1 shadow-sm"
+            >
+              <span>View My Wallet</span>
+              <ArrowRight size={13} />
+            </button>
+          </div>
+        </div>
+
+        {walletData.nearest_expiring && walletData.available_balance > 0 && (
+          <div className="px-4 py-2.5 bg-warning bg-opacity-10 border-top d-flex align-items-center justify-content-between text-xs">
+            <span className="text-dark d-flex align-items-center gap-1.5 fw-semibold">
+              <Clock size={14} className="text-warning" />
+              <span>₹{walletData.nearest_expiring.amount} cashback expires on <strong>{walletData.nearest_expiring.formatted_expires_at}</strong> (30-day validity policy)</span>
+            </span>
+            <button 
+              onClick={() => onNavigateTab && onNavigateTab('wallet')}
+              className="btn btn-link p-0 text-dark text-xs fw-bold text-decoration-none"
+            >
+              Track Countdown →
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* ─── 3. Top Metric Statistics Cards ─── */}
       <div className="row g-3 mb-3">
