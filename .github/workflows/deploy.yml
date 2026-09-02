@@ -9,7 +9,7 @@ on:
 
 jobs:
   web-deploy:
-    name: Build & Deploy to cPanel (SFTP)
+    name: Build & Auto-Deploy to cPanel
     runs-on: ubuntu-latest
     steps:
       - name: 🚚 Checkout Repository
@@ -28,29 +28,37 @@ jobs:
           npm install
           npm run build
 
-      - name: 🗂️ Prepare Deployment Files
+      - name: 🗂️ Package Deployment Bundle
         run: |
-          mkdir -p deploy_dir
-          # Copy built frontend
-          cp -r frontend/dist/* deploy_dir/
-          # Copy .htaccess
-          if [ -f .htaccess ]; then cp .htaccess deploy_dir/; fi
-          # Copy backend files
-          mkdir -p deploy_dir/backend
-          cp -r backend/* deploy_dir/backend/
-          # Remove local test / sqlite / large files
-          rm -f deploy_dir/backend/database.sqlite
-          rm -f deploy_dir/backend/*.log
-          rm -f deploy_dir/backend/*.zip
-          rm -f deploy_dir/backend/test_*.php
+          mkdir -p deploy_staging
+          cp -r frontend/dist/* deploy_staging/
+          if [ -f .htaccess ]; then cp .htaccess deploy_staging/; fi
+          mkdir -p deploy_staging/backend
+          cp -r backend/* deploy_staging/backend/
+          rm -f deploy_staging/backend/database.sqlite
+          rm -f deploy_staging/backend/*.log
+          rm -f deploy_staging/backend/*.zip
+          rm -f deploy_staging/backend/test_*.php
+          cd deploy_staging
+          zip -r ../deploy_bundle.zip .
+          cd ..
 
-      - name: 🚀 Sync Files to cPanel via Secure SFTP (Port 22)
-        uses: wlixcc/SFTP-Deploy-Action@v1.2.4
-        with:
-          username: ${{ secrets.CPANEL_FTP_USERNAME }}
-          server: ${{ secrets.CPANEL_FTP_SERVER }}
-          port: '22'
-          password: ${{ secrets.CPANEL_FTP_PASSWORD }}
-          local_path: './deploy_dir/*'
-          remote_path: '/home/wowgoa/public_html/'
-          sftpArgs: '-o ConnectTimeout=30'
+      - name: 🚀 Send Deployment to cPanel
+        run: |
+          RESPONSE=$(curl -k -s -w "\n%{http_code}" -X POST \
+            -H "X-Deploy-Secret: WowGoaDeploySecret_2026_SecureKey" \
+            -F "package=@deploy_bundle.zip" \
+            https://172.236.179.228/backend/deploy_receiver.php \
+            -H "Host: wowgoa.in")
+          
+          HTTP_BODY=$(echo "$RESPONSE" | sed '$d')
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          
+          echo "Server Response: $HTTP_BODY"
+          echo "HTTP Code: $HTTP_CODE"
+          
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            echo "❌ Deployment failed with HTTP Code $HTTP_CODE"
+            exit 1
+          fi
+          echo "✅ Deployment Successful!"
