@@ -20,7 +20,8 @@ import CustomerSupportTab from '../../components/customer/CustomerSupportTab';
 import BookingModal from '../../components/BookingModal';
 import * as api from '../../services/api';
 import { getTodayDateStr } from '../../utils/dateUtils';
-import { getBookingDisplayImage } from '../../utils/bookingImageHelper';
+import { getBookingDisplayImage, getBookingDisplayImages } from '../../utils/bookingImageHelper';
+import ImageCarousel from '../../components/common/ImageCarousel';
 
 const SIDEBAR_GROUPS = [
   {
@@ -1173,32 +1174,30 @@ export default function CustomerPortalPage({
                         </span>
                       </div>
                       <div className="card-body p-3">
-                        <div className="row g-3 align-items-center">
-                          <div className="col-sm-4 text-center">
-                            <div className="rounded-3 p-1 bg-light overflow-hidden" style={{ height: '120px' }}>
-                              <img 
-                                src={getBookingDisplayImage(selectedBookingDetails, cars, bikes, packages, hotels, flights)} 
-                                alt="Hotel" 
-                                className="w-100 h-100 object-fit-cover rounded-2"
-                                onError={(e) => {
-                                  e.target.onerror = null;
-                                  e.target.src = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=600&q=80';
-                                }}
-                              />
-                            </div>
+                        <div className="row g-4">
+                          <div className="col-12 col-md-5">
+                            <ImageCarousel 
+                              images={getBookingDisplayImages(selectedBookingDetails, cars, bikes, packages, hotels, flights)}
+                              alt={selectedBookingDetails.hotel_name || 'Hotel'}
+                              height="220px"
+                              rounded="12px"
+                            />
                           </div>
-                          <div className="col-sm-8">
-                            <h5 className="fw-black text-dark mb-1 font-heading" style={{ fontSize: '17px' }}>
+                          <div className="col-12 col-md-7 d-flex flex-column justify-content-center">
+                            <h5 className="fw-black text-dark mb-1 font-heading" style={{ fontSize: '18px' }}>
                               {selectedBookingDetails.hotel_name || selectedBookingDetails.item_name || 'Goa Beach Resort & Spa'}
                             </h5>
-                            <div className="text-muted text-xs mb-2">
+                            <div className="text-muted text-xs mb-3">
                               📍 {selectedBookingDetails.hotel_location || selectedBookingDetails.pickup_location || 'Goa Beachfront'}
                             </div>
-                            <div className="d-flex flex-wrap gap-1.5 text-xxs mb-2">
-                              <span className="badge bg-light text-dark border px-2 py-1">Room: <strong>{selectedBookingDetails.room_type || 'Deluxe Room'}</strong></span>
-                              <span className="badge bg-light text-dark border px-2 py-1">Duration: <strong>{selectedBookingDetails.duration || `${selectedBookingDetails.booking_days || 2} Nights`}</strong></span>
-                              <span className="badge bg-light text-dark border px-2 py-1">✓ Breakfast Included</span>
-                              <span className="badge bg-light text-dark border px-2 py-1">✓ Swimming Pool Access</span>
+                            <div className="d-flex flex-wrap gap-2 text-xxs mb-3">
+                              <span className="badge bg-light text-dark border px-2.5 py-1.5 rounded-pill">Room: <strong>{selectedBookingDetails.room_type || 'Deluxe Room'}</strong></span>
+                              <span className="badge bg-light text-dark border px-2.5 py-1.5 rounded-pill">Duration: <strong>{selectedBookingDetails.duration || `${selectedBookingDetails.booking_days || 2} Nights`}</strong></span>
+                              <span className="badge bg-success bg-opacity-10 text-success border-0 px-2.5 py-1.5 rounded-pill">✓ Breakfast Included</span>
+                              <span className="badge bg-info bg-opacity-10 text-info border-0 px-2.5 py-1.5 rounded-pill">✓ Swimming Pool Access</span>
+                            </div>
+                            <div className="p-2.5 bg-light rounded-3 text-xs text-muted">
+                              Check-in: <strong className="text-dark">{selectedBookingDetails.pickup_date || selectedBookingDetails.checkin_date || 'Day 1'} (14:00)</strong> • Check-out: <strong className="text-dark">{selectedBookingDetails.drop_date || selectedBookingDetails.checkout_date || 'Departure'} (11:00)</strong>
                             </div>
                           </div>
                         </div>
@@ -1220,35 +1219,28 @@ export default function CustomerPortalPage({
                       </span>
                     </div>
                     <div className="card-body p-3">
-                      <div className="row g-3 align-items-center">
-                        <div className="col-sm-4 text-center">
-                          <div className="rounded-3 p-2 bg-light overflow-hidden" style={{ height: '110px' }}>
-                            <img 
-                              src={getBookingDisplayImage(selectedBookingDetails, cars, bikes, packages, hotels, flights)} 
-                              alt="Item" 
-                              className="w-100 h-100 object-fit-contain"
-                              onError={(e) => {
-                                e.target.onerror = null;
-                                e.target.src = isBike
-                                  ? 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=600&q=80'
-                                  : 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=600&q=80';
-                              }}
-                            />
-                          </div>
+                      <div className="row g-4">
+                        <div className="col-12 col-md-5">
+                          <ImageCarousel 
+                            images={getBookingDisplayImages(selectedBookingDetails, cars, bikes, packages, hotels, flights)}
+                            alt={selectedBookingDetails.package_name || selectedBookingDetails.item_name || 'Vehicle'}
+                            height="220px"
+                            rounded="12px"
+                          />
                         </div>
-                        <div className="col-sm-8">
-                          <h5 className="fw-black text-dark mb-1 font-heading" style={{ fontSize: '17px' }}>
+                        <div className="col-12 col-md-7 d-flex flex-column justify-content-center">
+                          <h5 className="fw-black text-dark mb-1 font-heading" style={{ fontSize: '18px' }}>
                             {selectedBookingDetails.package_name || selectedBookingDetails.item_name || selectedBookingDetails.vehicle_name || 'WOW GOA Booking'}
                           </h5>
-                          <div className="text-muted text-xs mb-2">
+                          <div className="text-muted text-xs mb-3">
                             {selectedBookingDetails.vehicle_name ? `Assigned Model: ${selectedBookingDetails.vehicle_name}` : (selectedBookingDetails.hotel_name ? `Stay: ${selectedBookingDetails.hotel_name}` : 'WOW GOA Curated Booking')}
                             {selectedBookingDetails.vehicle_number ? ` • Reg: ${selectedBookingDetails.vehicle_number}` : ''}
                           </div>
-                          <div className="d-flex flex-wrap gap-1.5 text-xxs">
-                            <span className="badge bg-light text-dark border px-2 py-1">✓ Unlimited KMs</span>
-                            <span className="badge bg-light text-dark border px-2 py-1">✓ Full Insurance Coverage</span>
-                            <span className="badge bg-light text-dark border px-2 py-1">✓ All Goa Tourist Permit</span>
-                            <span className="badge bg-light text-dark border px-2 py-1">✓ Free Delivery & Pickup</span>
+                          <div className="d-flex flex-wrap gap-2 text-xxs">
+                            <span className="badge bg-light text-dark border px-2.5 py-1.5 rounded-pill">✓ Unlimited KMs</span>
+                            <span className="badge bg-light text-dark border px-2.5 py-1.5 rounded-pill">✓ Full Insurance Coverage</span>
+                            <span className="badge bg-light text-dark border px-2.5 py-1.5 rounded-pill">✓ All Goa Tourist Permit</span>
+                            <span className="badge bg-light text-dark border px-2.5 py-1.5 rounded-pill">✓ Free Delivery & Pickup</span>
                           </div>
                         </div>
                       </div>

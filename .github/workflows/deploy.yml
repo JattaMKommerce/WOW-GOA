@@ -45,12 +45,13 @@ jobs:
 
       - name: 🚀 Send Deployment to cPanel
         run: |
-          echo "Uploading deploy package to cPanel..."
+          echo "Uploading deploy package to cPanel (Binary Stream)..."
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             -H "X-Deploy-Secret: WowGoaDeploySecret_2026_SecureKey" \
-            -F "package=@deploy_bundle.zip" \
-            "http://172.236.179.228/backend/deploy_receiver.php" \
-            -H "Host: wowgoa.in")
+            -H "Content-Type: application/octet-stream" \
+            -H "Host: wowgoa.in" \
+            --data-binary "@deploy_bundle.zip" \
+            "http://172.236.179.228/backend/deploy_receiver.php")
           
           HTTP_BODY=$(echo "$RESPONSE" | sed '$d')
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
