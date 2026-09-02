@@ -361,22 +361,22 @@ export default function SearchWidget({
           <button 
             type="button" 
             role="tab"
-            aria-selected={activeTab === 'packages'}
-            className={`widget-tab-btn ${activeTab === 'packages' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('packages'); setActiveDropdown(null); setValidationError(''); }}
-          >
-            <Compass />
-            <span>Trip Packages</span>
-          </button>
-          <button 
-            type="button" 
-            role="tab"
             aria-selected={activeTab === 'selfdrive'}
             className={`widget-tab-btn ${activeTab === 'selfdrive' ? 'active' : ''}`}
             onClick={() => { setActiveTab('selfdrive'); setActiveDropdown(null); setValidationError(''); }}
           >
             <Car />
             <span>Self Drive Holidays</span>
+          </button>
+          <button 
+            type="button" 
+            role="tab"
+            aria-selected={activeTab === 'packages'}
+            className={`widget-tab-btn ${activeTab === 'packages' ? 'active' : ''}`}
+            onClick={() => { setActiveTab('packages'); setActiveDropdown(null); setValidationError(''); }}
+          >
+            <Compass />
+            <span>Trip Packages</span>
           </button>
           <button 
             type="button" 
