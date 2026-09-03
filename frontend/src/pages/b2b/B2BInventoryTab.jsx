@@ -3,7 +3,7 @@ import {
   Hotel, Car, Compass, Plane, Wand2, Search, Filter, Gift, Tag, Check, Star, 
   Users, Calendar, Sparkles, MapPin, ArrowRight, ShieldCheck, Clock, 
   Eye, CheckCircle2, AlertCircle, X, Shield, PlaneTakeoff, PlaneLanding,
-  CreditCard, Fuel, Gauge, Award, FileText
+  CreditCard, Fuel, Gauge, Award, FileText, Wallet
 } from 'lucide-react';
 import * as api from '../../services/api';
 import B2BSelfDriveFlow from './B2BSelfDriveFlow';
@@ -39,7 +39,7 @@ export default function B2BInventoryTab({
     guests: 2,
     daysOrQty: 1,
     special_requests: '',
-    payment_method: 'B2B Account / Cash'
+    payment_method: 'Prepaid Agent Wallet'
   });
   const [bookingLoading, setBookingLoading] = useState(false);
   const [bookingError, setBookingError] = useState('');
@@ -162,7 +162,7 @@ export default function B2BInventoryTab({
       guests: 2,
       daysOrQty: 1,
       special_requests: '',
-      payment_method: 'B2B Account / Cash'
+      payment_method: 'Prepaid Agent Wallet'
     });
   };
 
@@ -961,6 +961,29 @@ export default function B2BInventoryTab({
                         </div>
                       );
                     })()}
+                  </div>
+
+                  {/* Settlement Method */}
+                  <div className="mb-3">
+                    <label className="form-label text-xxs fw-bold text-muted text-uppercase mb-1">
+                      Settlement Method *
+                    </label>
+                    <div className="p-2.5 rounded-3 bg-light border d-flex align-items-center justify-content-between">
+                      <div className="d-flex align-items-center gap-2">
+                        <span className="p-1.5 rounded-circle bg-warning text-dark">
+                          <Wallet size={14} />
+                        </span>
+                        <div>
+                          <strong className="text-dark d-block text-xs">Prepaid Agent Wallet</strong>
+                          <span className="text-muted text-xxs">
+                            Available: ₹{parseFloat(partnerUser?.wallet_balance || 0).toLocaleString('en-IN')}
+                          </span>
+                        </div>
+                      </div>
+                      <span className="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 text-3xs rounded-pill">
+                        Instant Booking Debit
+                      </span>
+                    </div>
                   </div>
 
                   <button

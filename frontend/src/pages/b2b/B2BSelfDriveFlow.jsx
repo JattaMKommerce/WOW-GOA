@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Car, Calendar, Clock, MapPin, Fuel, Gauge, Users, Shield, 
   CheckCircle2, AlertCircle, ArrowRight, ChevronRight, User, Phone, 
-  Mail, FileText, Check, DollarSign, Percent, Sparkles, Navigation, X
+  Mail, FileText, Check, DollarSign, Percent, Sparkles, Navigation, X, Wallet
 } from 'lucide-react';
 import * as api from '../../services/api';
 
@@ -74,18 +74,30 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
     return Math.max(1, diffDays);
   }, [pickupDate, dropDate]);
 
-  // Load vehicles from backend
+  // Load vehicles and bikes from backend
   useEffect(() => {
     async function loadVehicles() {
       setLoading(true);
       try {
-        const res = await api.apiFetch(`${api.API_BASE}?resource=cars`);
-        if (res.ok) {
-          const data = await res.json();
-          setVehicles(Array.isArray(data) ? data : []);
-        }
+        const [carsRes, bikesRes] = await Promise.all([
+          api.apiFetch(`${api.API_BASE}?resource=cars`),
+          api.apiFetch(`${api.API_BASE}?resource=bikes`)
+        ]);
+        const cars = carsRes.ok ? await carsRes.json() : [];
+        const bikes = bikesRes.ok ? await bikesRes.json() : [];
+
+        const taggedCars = (Array.isArray(cars) ? cars : []).map(c => ({
+          ...c,
+          fleet_type: (c.category?.toLowerCase().includes('luxury') || parseFloat(c.price_per_day || c.price || 0) >= 4000) ? 'luxury' : 'car'
+        }));
+        const taggedBikes = (Array.isArray(bikes) ? bikes : []).map(b => ({
+          ...b,
+          fleet_type: 'bike'
+        }));
+
+        setVehicles([...taggedCars, ...taggedBikes]);
       } catch (err) {
-        console.warn('Failed to load cars from backend:', err);
+        console.warn('Failed to load fleet from backend:', err);
       } finally {
         setLoading(false);
       }
@@ -193,6 +205,9 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
   // Filter vehicles
   const filteredVehicles = useMemo(() => {
     if (filterCategory === 'All') return vehicles;
+    if (filterCategory === 'Bikes') return vehicles.filter(v => v.fleet_type === 'bike');
+    if (filterCategory === 'Cars') return vehicles.filter(v => v.fleet_type === 'car');
+    if (filterCategory === 'Luxury') return vehicles.filter(v => v.fleet_type === 'luxury');
     return vehicles.filter(v => 
       (v.category && v.category.toLowerCase().includes(filterCategory.toLowerCase())) ||
       (v.transmission && v.transmission.toLowerCase().includes(filterCategory.toLowerCase())) ||
@@ -363,7 +378,7 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
         <div className="p-3 bg-white d-flex align-items-center justify-content-between flex-wrap gap-2">
           <div className="d-flex align-items-center gap-1.5 flex-wrap">
             <span className="text-xxs fw-bold text-muted text-uppercase me-1">Category:</span>
-            {['All', 'Hatchback', 'Sedan', 'SUV', 'Automatic', 'EV'].map(cat => (
+            {['All', 'Bikes', 'Cars', 'Luxury', 'Hatchback', 'SUV', 'Automatic'].map(cat => (
               <button
                 key={cat}
                 type="button"
@@ -406,22 +421,24 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
         <div className="row g-3">
           {filteredVehicles.map(veh => {
             const pricing = calculateVehiclePricing(veh);
+            const isBike = veh.fleet_type === 'bike';
+            const isLuxury = veh.fleet_type === 'luxury';
             return (
               <div key={veh.id} className="col-12 col-md-6 col-xl-4">
                 <div className="card h-100 border-0 shadow-sm rounded-4 overflow-hidden d-flex flex-column transition-all hover-shadow-lg" style={{ background: '#ffffff' }}>
                   {/* Vehicle Image */}
                   <div className="position-relative" style={{ height: '190px', background: '#F8F9FA' }}>
                     <img 
-                      src={veh.image || 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=600&q=80'} 
+                      src={veh.image || (isBike ? 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=600&q=80' : 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=600&q=80')} 
                       alt={veh.name}
                       className="w-100 h-100 object-fit-cover"
-                      onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=600&q=80'; }}
+                      onError={(e) => { e.target.src = isBike ? 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=600&q=80' : 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=600&q=80'; }}
                     />
-                    <div className="position-absolute top-0 start-0 m-2.5 d-flex gap-1.5">
-                      <span className="badge bg-dark bg-opacity-75 backdrop-blur text-white text-xxs px-2 py-1 rounded-pill">
-                        {veh.category || 'Standard'}
+                    <div className="position-absolute top-0 start-0 m-2.5 d-flex gap-1.5 flex-wrap">
+                      <span className={`badge ${isBike ? 'bg-primary' : isLuxury ? 'bg-warning text-dark' : 'bg-dark bg-opacity-75'} backdrop-blur text-white text-xxs px-2 py-1 rounded-pill`}>
+                        {isBike ? 'Two Wheeler / Bike' : isLuxury ? 'Luxury Fleet' : (veh.category || 'Standard')}
                       </span>
-                      {veh.transmission && (
+                      {veh.transmission && !isBike && (
                         <span className="badge bg-dark bg-opacity-75 backdrop-blur text-white text-xxs px-2 py-1 rounded-pill">
                           {veh.transmission}
                         </span>
@@ -439,22 +456,38 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
                     <div>
                       <div className="d-flex align-items-start justify-content-between mb-1">
                         <h6 className="fw-bold text-dark font-heading mb-0 text-sm">{veh.name}</h6>
-                        <span className="text-xxs text-muted">{veh.fuel_type || 'Petrol'}</span>
+                        <span className="text-xxs text-muted">{veh.fuel_type || (isBike ? 'Petrol' : 'Petrol')}</span>
                       </div>
 
                       {/* Specs Badges */}
                       <div className="d-flex align-items-center gap-2 text-xxs text-muted my-2 pb-2 border-bottom flex-wrap">
-                        <span className="d-flex align-items-center gap-1">
-                          <Users size={12} /> {veh.seating_capacity || 5} Seats
-                        </span>
-                        <span>•</span>
-                        <span className="d-flex align-items-center gap-1">
-                          <Fuel size={12} /> {veh.fuel_type || 'Petrol'}
-                        </span>
-                        <span>•</span>
-                        <span className="d-flex align-items-center gap-1">
-                          <Gauge size={12} /> Unlimited KMs
-                        </span>
+                        {isBike ? (
+                          <>
+                            <span className="badge bg-warning bg-opacity-10 text-dark border border-warning border-opacity-25 px-1.5 py-0.5 rounded">
+                              {veh.category || 'Scooter / Bike'}
+                            </span>
+                            <span>•</span>
+                            <span>2 Helmets Included</span>
+                            <span>•</span>
+                            <span className="d-flex align-items-center gap-1">
+                              <Gauge size={12} /> Unlimited KMs
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="d-flex align-items-center gap-1">
+                              <Users size={12} /> {veh.seating_capacity || 5} Seats
+                            </span>
+                            <span>•</span>
+                            <span className="d-flex align-items-center gap-1">
+                              <Fuel size={12} /> {veh.fuel_type || 'Petrol'}
+                            </span>
+                            <span>•</span>
+                            <span className="d-flex align-items-center gap-1">
+                              <Gauge size={12} /> Unlimited KMs
+                            </span>
+                          </>
+                        )}
                       </div>
 
                       <p className="text-muted text-xxs line-clamp-2 mb-2">
@@ -706,6 +739,29 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
                         </div>
                       );
                     })()}
+                  </div>
+
+                  {/* Settlement / Payment Method */}
+                  <div className="mb-3">
+                    <label className="form-label text-xxs fw-bold text-muted text-uppercase mb-1">
+                      Settlement Method *
+                    </label>
+                    <div className="p-2.5 rounded-3 bg-light border d-flex align-items-center justify-content-between">
+                      <div className="d-flex align-items-center gap-2">
+                        <span className="p-1.5 rounded-circle bg-warning text-dark">
+                          <Wallet size={14} />
+                        </span>
+                        <div>
+                          <strong className="text-dark d-block text-xs">Prepaid Agent Wallet</strong>
+                          <span className="text-muted text-xxs">
+                            Available: ₹{parseFloat(partner?.wallet_balance || 0).toLocaleString('en-IN')}
+                          </span>
+                        </div>
+                      </div>
+                      <span className="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 text-3xs rounded-pill">
+                        Instant Booking Debit
+                      </span>
+                    </div>
                   </div>
 
                   {/* Submit Button */}

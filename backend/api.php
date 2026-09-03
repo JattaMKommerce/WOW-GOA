@@ -270,6 +270,23 @@ try {
                 new_value TEXT,
                 reason TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )",
+            "CREATE TABLE IF NOT EXISTS b2b_wallet_transactions (
+                id VARCHAR(64) PRIMARY KEY,
+                partner_id VARCHAR(50) NOT NULL,
+                transaction_type VARCHAR(30) NOT NULL,
+                flow_type VARCHAR(10) NOT NULL,
+                amount DECIMAL(10,2) NOT NULL,
+                balance_before DECIMAL(10,2) NOT NULL,
+                balance_after DECIMAL(10,2) NOT NULL,
+                booking_id VARCHAR(50) DEFAULT NULL,
+                payment_gateway_ref VARCHAR(100) DEFAULT NULL,
+                payment_method VARCHAR(50) DEFAULT 'Prepaid Wallet',
+                description TEXT,
+                status VARCHAR(20) DEFAULT 'COMPLETED',
+                created_by VARCHAR(50) DEFAULT 'SYSTEM',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                idempotency_key VARCHAR(100) DEFAULT NULL
             )"
         ];
         foreach ($drvAlters as $da) {
@@ -549,6 +566,25 @@ function seedDatabaseIfEmpty($pdo) {
             new_value TEXT,
             reason TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+        "CREATE TABLE IF NOT EXISTS b2b_wallet_transactions (
+            id VARCHAR(64) PRIMARY KEY,
+            partner_id VARCHAR(50) NOT NULL,
+            transaction_type VARCHAR(30) NOT NULL,
+            flow_type VARCHAR(10) NOT NULL,
+            amount DECIMAL(10,2) NOT NULL,
+            balance_before DECIMAL(10,2) NOT NULL,
+            balance_after DECIMAL(10,2) NOT NULL,
+            booking_id VARCHAR(50) DEFAULT NULL,
+            payment_gateway_ref VARCHAR(100) DEFAULT NULL,
+            payment_method VARCHAR(50) DEFAULT 'Prepaid Wallet',
+            description TEXT,
+            status VARCHAR(20) DEFAULT 'COMPLETED',
+            created_by VARCHAR(50) DEFAULT 'SYSTEM',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            idempotency_key VARCHAR(100) DEFAULT NULL,
+            KEY idx_b2b_wallet_partner (partner_id),
+            KEY idx_b2b_wallet_tx (transaction_type)
         )"
     ];
     foreach ($alters as $q) {
@@ -2174,6 +2210,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 flush();
             } catch (Exception $e) {}
             exit;
+            exit;} elseif ($resource === 'b2b_wallet') {
+            try {
+                $partner = getAuthenticatedB2BPartner($pdo, false);
+                $partnerId = trim($_GET['partner_id'] ?? ($partner['id'] ?? ''));
+                if (!$partnerId) {
+                    echo json_encode(["success" => false, "error" => "Partner ID required."]);
+                    exit();
+                }
+
+                // Get current balance & limits
+                $uStmt = $pdo->prepare("SELECT id, name, company_name, email, phone, wallet_balance, credit_limit, role, status FROM users WHERE id = ?");
+                $uStmt->execute([$partnerId]);
+                $userRec = $uStmt->fetch(PDO::FETCH_ASSOC);
+
+                if (!$userRec) {
+                    echo json_encode(["success" => false, "error" => "Partner not found."]);
+                    exit();
+                }
+
+                // Get ledger transactions
+                $limit = max(1, min(200, intval($_GET['limit'] ?? 100)));
+                $tStmt = $pdo->prepare("SELECT * FROM b2b_wallet_transactions WHERE partner_id = ? ORDER BY created_at DESC LIMIT $limit");
+                $tStmt->execute([$partnerId]);
+                $transactions = $tStmt->fetchAll(PDO::FETCH_ASSOC);
+
+                // Calculate summary totals
+                $calcStmt = $pdo->prepare("SELECT 
+                    COALESCE(SUM(CASE WHEN flow_type = 'CREDIT' AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) as total_credited,
+                    COALESCE(SUM(CASE WHEN flow_type = 'DEBIT' AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) as total_debited,
+                    COALESCE(SUM(CASE WHEN transaction_type = 'REFUND_CREDIT' AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) as total_refunded
+                    FROM b2b_wallet_transactions WHERE partner_id = ?");
+                $calcStmt->execute([$partnerId]);
+                $stats = $calcStmt->fetch(PDO::FETCH_ASSOC);
+
+                echo json_encode([
+                    "success" => true,
+                    "partner" => $userRec,
+                    "wallet_balance" => floatval($userRec['wallet_balance'] ?? 0),
+                    "credit_limit" => floatval($userRec['credit_limit'] ?? 0),
+                    "stats" => [
+                        "total_credited" => floatval($stats['total_credited'] ?? 0),
+                        "total_debited" => floatval($stats['total_debited'] ?? 0),
+                        "total_refunded" => floatval($stats['total_refunded'] ?? 0)
+                    ],
+                    "transactions" => $transactions ?: []
+                ]);
+            } catch (Exception $e) {
+                echo json_encode(["success" => false, "error" => $e->getMessage()]);
+            }
+            exit;} elseif ($resource === 'b2b_all_wallet_transactions') {
+            try {
+                $partner = getAuthenticatedB2BPartner($pdo, false);
+                $isSuperAdmin = ($partner && ($partner['role'] === 'superadmin' || $partner['role'] === 'admin'));
+                
+                $limit = max(1, min(500, intval($_GET['limit'] ?? 200)));
+                $stmt = $pdo->query("SELECT t.*, u.company_name, u.name as partner_name, u.email as partner_email 
+                    FROM b2b_wallet_transactions t 
+                    LEFT JOIN users u ON t.partner_id = u.id 
+                    ORDER BY t.created_at DESC LIMIT $limit");
+                $transactions = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                echo json_encode($transactions ?: []);
+            } catch (Exception $e) {
+                echo json_encode([]);
+            }
             exit;} elseif ($resource === 'flights') {
             $stmt = $pdo->prepare("SELECT * FROM flights WHERE (admin_id = ? OR admin_id IS NULL OR admin_id = '' OR ? = 'superadmin' OR ? = 'admin') ORDER BY created_at DESC");
             $stmt->execute([$tenant_id, $tenant_id, $tenant_id]);
@@ -3218,6 +3318,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Authoritative server-side price calculation
                 $pricing = calculateAuthoritativeB2BPrice($pdo, $serviceType, $itemId, $days, $qty, $payload, $partner, $b2bMode);
 
+                // Anti-Double Booking Concurrency Check
+                $normServ = strtolower($serviceType);
+                if ($normServ === 'vehicle' || $normServ === 'car' || $normServ === 'bike' || $normServ === 'selfdrive') {
+                    // 1. Availability check in fleet tables
+                    $vCheck = $pdo->prepare("SELECT id, name, is_available FROM cars WHERE id = ?");
+                    $vCheck->execute([$pricing['item_id']]);
+                    $vRow = $vCheck->fetch(PDO::FETCH_ASSOC);
+                    if (!$vRow) {
+                        $bCheck = $pdo->prepare("SELECT id, name, is_available FROM bikes WHERE id = ?");
+                        $bCheck->execute([$pricing['item_id']]);
+                        $vRow = $bCheck->fetch(PDO::FETCH_ASSOC);
+                    }
+                    if ($vRow && isset($vRow['is_available']) && intval($vRow['is_available']) === 0) {
+                        throw new Exception("The selected vehicle ({$vRow['name']}) is currently marked as unavailable in fleet inventory.");
+                    }
+
+                    // 2. Anti-double booking: Check for overlapping active reservations
+                    $overlapStmt = $pdo->prepare("SELECT id, name, pickup_date, drop_date FROM bookings 
+                        WHERE item_id = ? 
+                          AND status NOT IN ('Cancelled', 'Rejected') 
+                          AND (pickup_date < ? AND drop_date > ?)
+                        LIMIT 1");
+                    $overlapStmt->execute([$pricing['item_id'], $dropDate, $pickupDate]);
+                    $conflict = $overlapStmt->fetch(PDO::FETCH_ASSOC);
+                    if ($conflict) {
+                        throw new Exception("Vehicle '{$pricing['item_name']}' is already reserved for the selected dates ({$conflict['pickup_date']} to {$conflict['drop_date']}). Please choose different dates or another available vehicle.");
+                    }
+                } elseif ($normServ === 'hotel') {
+                    $hCheck = $pdo->prepare("SELECT id, name, is_available, blocked_dates FROM hotels WHERE id = ?");
+                    $hCheck->execute([$pricing['item_id']]);
+                    $hRow = $hCheck->fetch(PDO::FETCH_ASSOC);
+                    if ($hRow && isset($hRow['is_available']) && intval($hRow['is_available']) === 0) {
+                        throw new Exception("The selected hotel ({$hRow['name']}) is currently marked as unavailable.");
+                    }
+                    if ($hRow && !empty($hRow['blocked_dates'])) {
+                        $blockedArr = json_decode($hRow['blocked_dates'], true);
+                        if (is_array($blockedArr) && (in_array($pickupDate, $blockedArr) || in_array($dropDate, $blockedArr))) {
+                            throw new Exception("The selected hotel has blocked dates covering your requested stay ({$pickupDate} to {$dropDate}).");
+                        }
+                    }
+                }
+
                 $bookingId = 'TG-B2B-' . strtoupper(substr(uniqid(), -6));
                 $customerId = 'c_' . substr($guestPhone, -10);
 
@@ -3228,6 +3370,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $commStatus = ($b2bMode === 'COMMISSION') ? 'Pending' : null;
+
+                // Handle Prepaid Agent Wallet Payment & Atomic Balance Deduction
+                $payMethod = trim($payload['payment_method'] ?? 'Prepaid Agent Wallet');
+                $isWalletPay = (stripos($payMethod, 'wallet') !== false || stripos($payMethod, 'prepaid') !== false || stripos($payMethod, 'balance') !== false || empty($payload['payment_method']) || $payMethod === 'B2B Account / Cash');
+                $finalPayable = floatval($pricing['final_payable_amount']);
+
+                if ($isWalletPay) {
+                    $balStmt = $pdo->prepare("SELECT wallet_balance, credit_limit FROM users WHERE id = ?");
+                    $balStmt->execute([$partner['id']]);
+                    $pRow = $balStmt->fetch(PDO::FETCH_ASSOC);
+
+                    $curBal = floatval($pRow['wallet_balance'] ?? 0);
+                    $creditLimit = floatval($pRow['credit_limit'] ?? 0);
+                    $totalAvail = $curBal + $creditLimit;
+
+                    if ($totalAvail < $finalPayable) {
+                        throw new Exception("Insufficient prepaid wallet balance. Required: ₹" . number_format($finalPayable, 2) . ", Available Balance: ₹" . number_format($curBal, 2) . ". Please recharge your wallet to confirm this booking.");
+                    }
+
+                    // Atomic deduction with concurrency guard (ensures balance never drops below permitted credit limit)
+                    $deduct = $pdo->prepare("UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ? AND (CAST(wallet_balance AS REAL) + CAST(? AS REAL)) >= CAST(? AS REAL)");
+                    $deduct->execute([$finalPayable, $partner['id'], $creditLimit, $finalPayable]);
+                    if ($deduct->rowCount() === 0) {
+                        throw new Exception("Wallet concurrency conflict: balance changed during booking. Please retry.");
+                    }
+
+                    $balAfter = $curBal - $finalPayable;
+                    $txId = 'tx_deb_' . uniqid();
+
+                    // Insert into wallet transaction ledger
+                    $ledger = $pdo->prepare("INSERT INTO b2b_wallet_transactions (
+                        id, partner_id, transaction_type, flow_type, amount, balance_before, balance_after,
+                        booking_id, payment_gateway_ref, payment_method, description, status, created_by, created_at, idempotency_key
+                    ) VALUES (?, ?, 'BOOKING_DEBIT', 'DEBIT', ?, ?, ?, ?, ?, 'Prepaid Agent Wallet', ?, 'COMPLETED', ?, ?, ?)");
+                    $ledger->execute([
+                        $txId,
+                        $partner['id'],
+                        $finalPayable,
+                        $curBal,
+                        $balAfter,
+                        $bookingId,
+                        $bookingId,
+                        "Debit for $b2bMode booking #$bookingId ({$pricing['item_name']})",
+                        $partner['id'],
+                        date('Y-m-d H:i:s'),
+                        $idempotencyKey ?: ('deb_' . $bookingId)
+                    ]);
+
+                    $payMethod = 'Prepaid Agent Wallet';
+                }
 
                 $stmt = $pdo->prepare("INSERT INTO bookings (
                     id, name, phone, email, pickup_loc, pickup_date, pickup_time, drop_date, drop_time,
@@ -3275,7 +3467,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $pricing['final_payable_amount'],
                     'Confirmed',
                     'Paid',
-                    $payload['payment_method'] ?? 'B2B Account / Cash',
+                    $payMethod,
                     date('Y-m-d H:i:s'),
                     $tenant_id,
                     'B2B',
@@ -3347,6 +3539,305 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->rollBack();
                 http_response_code(400);
                 echo json_encode(["success" => false, "error" => $txEx->getMessage()]);
+                exit();
+            }
+        } elseif ($action === 'b2b_wallet_recharge') {
+            $partner = getAuthenticatedB2BPartner($pdo, true);
+            $amount = floatval($payload['amount'] ?? 0);
+            $method = trim($payload['payment_method'] ?? 'Online Recharge');
+            $ref = trim($payload['payment_gateway_ref'] ?? ($payload['razorpay_payment_id'] ?? ($payload['utr'] ?? '')));
+            $idemp = trim($payload['idempotency_key'] ?? '');
+
+            if ($amount <= 0) {
+                http_response_code(400);
+                echo json_encode(["success" => false, "error" => "Recharge amount must be greater than ₹0."]);
+                exit();
+            }
+
+            // Check idempotency to prevent duplicate credits
+            if (!empty($idemp)) {
+                $chkIdemp = $pdo->prepare("SELECT * FROM b2b_wallet_transactions WHERE idempotency_key = ? AND partner_id = ?");
+                $chkIdemp->execute([$idemp, $partner['id']]);
+                $existingTx = $chkIdemp->fetch(PDO::FETCH_ASSOC);
+                if ($existingTx) {
+                    echo json_encode([
+                        "success" => true,
+                        "message" => "Recharge already completed via idempotency key.",
+                        "transaction" => $existingTx,
+                        "wallet_balance" => floatval($partner['wallet_balance'] ?? 0)
+                    ]);
+                    exit();
+                }
+            }
+
+            $pdo->beginTransaction();
+            try {
+                $uStmt = $pdo->prepare("SELECT wallet_balance FROM users WHERE id = ?");
+                $uStmt->execute([$partner['id']]);
+                $curBal = floatval($uStmt->fetchColumn() ?: 0);
+                $newBal = $curBal + $amount;
+
+                $upd = $pdo->prepare("UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?");
+                $upd->execute([$amount, $partner['id']]);
+
+                $txId = 'tx_rec_' . uniqid();
+                $insTx = $pdo->prepare("INSERT INTO b2b_wallet_transactions (
+                    id, partner_id, transaction_type, flow_type, amount, balance_before, balance_after,
+                    booking_id, payment_gateway_ref, payment_method, description, status, created_by, created_at, idempotency_key
+                ) VALUES (?, ?, 'RECHARGE', 'CREDIT', ?, ?, ?, NULL, ?, ?, ?, 'COMPLETED', ?, ?, ?)");
+                $insTx->execute([
+                    $txId,
+                    $partner['id'],
+                    $amount,
+                    $curBal,
+                    $newBal,
+                    $ref ?: ('REF-' . strtoupper(substr(uniqid(), -8))),
+                    $method,
+                    "Prepaid Wallet Recharge via $method",
+                    $partner['id'],
+                    date('Y-m-d H:i:s'),
+                    $idemp ?: ('rec_' . $txId)
+                ]);
+
+                recordB2BAuditLog(
+                    $pdo,
+                    $partner['id'],
+                    $partner['id'],
+                    null,
+                    'WALLET_RECHARGE',
+                    ['wallet_balance' => $curBal],
+                    ['wallet_balance' => $newBal, 'recharge_amount' => $amount, 'payment_method' => $method],
+                    "Agent recharged wallet by ₹$amount"
+                );
+
+                createB2BNotification(
+                    $pdo,
+                    $partner['id'],
+                    $partner['id'],
+                    'wallet_recharged',
+                    'Wallet Recharged',
+                    "Your prepaid wallet has been credited with ₹" . number_format($amount, 2) . ". New balance: ₹" . number_format($newBal, 2),
+                    'wallet',
+                    $txId
+                );
+
+                $pdo->commit();
+
+                echo json_encode([
+                    "success" => true,
+                    "message" => "Wallet credited successfully.",
+                    "wallet_balance" => $newBal,
+                    "transaction_id" => $txId
+                ]);
+                exit();
+            } catch (Exception $e) {
+                $pdo->rollBack();
+                http_response_code(400);
+                echo json_encode(["success" => false, "error" => $e->getMessage()]);
+                exit();
+            }
+        } elseif ($action === 'b2b_admin_adjust_wallet') {
+            $partner = getAuthenticatedB2BPartner($pdo, false);
+            $actorId = $partner['id'] ?? ($tenant_id ?: 'admin');
+            
+            $targetPartnerId = trim($payload['partner_id'] ?? '');
+            $type = strtoupper(trim($payload['adjustment_type'] ?? 'CREDIT')); // CREDIT or DEBIT
+            $amount = floatval($payload['amount'] ?? 0);
+            $reason = trim($payload['reason'] ?? '');
+
+            if (!$targetPartnerId || $amount <= 0 || !$reason) {
+                http_response_code(400);
+                echo json_encode(["success" => false, "error" => "Partner ID, valid amount, and adjustment reason are required."]);
+                exit();
+            }
+
+            if ($type !== 'CREDIT' && $type !== 'DEBIT') {
+                http_response_code(400);
+                echo json_encode(["success" => false, "error" => "Adjustment type must be CREDIT or DEBIT."]);
+                exit();
+            }
+
+            $pdo->beginTransaction();
+            try {
+                $uStmt = $pdo->prepare("SELECT id, name, company_name, wallet_balance FROM users WHERE id = ?");
+                $uStmt->execute([$targetPartnerId]);
+                $target = $uStmt->fetch(PDO::FETCH_ASSOC);
+                if (!$target) {
+                    throw new Exception("Partner account not found.");
+                }
+
+                $curBal = floatval($target['wallet_balance'] ?? 0);
+                if ($type === 'DEBIT' && $curBal < $amount) {
+                    throw new Exception("Cannot debit ₹$amount: partner current balance is only ₹$curBal.");
+                }
+
+                $newBal = ($type === 'CREDIT') ? ($curBal + $amount) : ($curBal - $amount);
+                if ($type === 'CREDIT') {
+                    $upd = $pdo->prepare("UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?");
+                    $upd->execute([$amount, $targetPartnerId]);
+                } else {
+                    $upd = $pdo->prepare("UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ? AND wallet_balance >= ?");
+                    $upd->execute([$amount, $targetPartnerId, $amount]);
+                    if ($upd->rowCount() === 0) {
+                        throw new Exception("Balance was modified concurrently. Debit aborted.");
+                    }
+                }
+
+                $txId = 'tx_adj_' . uniqid();
+                $insTx = $pdo->prepare("INSERT INTO b2b_wallet_transactions (
+                    id, partner_id, transaction_type, flow_type, amount, balance_before, balance_after,
+                    booking_id, payment_gateway_ref, payment_method, description, status, created_by, created_at
+                ) VALUES (?, ?, 'ADMIN_ADJUSTMENT', ?, ?, ?, ?, NULL, ?, 'Admin Adjustment', ?, 'COMPLETED', ?, ?)");
+                $insTx->execute([
+                    $txId,
+                    $targetPartnerId,
+                    $type,
+                    $amount,
+                    $curBal,
+                    $newBal,
+                    'ADJ-' . strtoupper(substr(uniqid(), -6)),
+                    "Admin adjustment ($type): $reason",
+                    $actorId,
+                    date('Y-m-d H:i:s')
+                ]);
+
+                recordB2BAuditLog(
+                    $pdo,
+                    $actorId,
+                    $targetPartnerId,
+                    null,
+                    'ADMIN_WALLET_ADJUSTMENT',
+                    ['wallet_balance' => $curBal],
+                    ['wallet_balance' => $newBal, 'adjustment_type' => $type, 'amount' => $amount, 'reason' => $reason],
+                    "Admin manual wallet adjustment: $reason"
+                );
+
+                createB2BNotification(
+                    $pdo,
+                    $targetPartnerId,
+                    $targetPartnerId,
+                    'wallet_adjusted',
+                    'Wallet Balance Adjusted',
+                    "Your wallet balance has been " . ($type === 'CREDIT' ? 'credited with' : 'debited by') . " ₹" . number_format($amount, 2) . ". Reason: $reason. New balance: ₹" . number_format($newBal, 2),
+                    'wallet',
+                    $txId
+                );
+
+                $pdo->commit();
+
+                echo json_encode([
+                    "success" => true,
+                    "message" => "Partner wallet adjusted successfully.",
+                    "new_balance" => $newBal,
+                    "transaction_id" => $txId
+                ]);
+                exit();
+            } catch (Exception $e) {
+                $pdo->rollBack();
+                http_response_code(400);
+                echo json_encode(["success" => false, "error" => $e->getMessage()]);
+                exit();
+            }
+        } elseif ($action === 'b2b_cancel_booking') {
+            $partner = getAuthenticatedB2BPartner($pdo, false);
+            $actorId = $partner['id'] ?? ($tenant_id ?: 'admin');
+            $bookingId = trim($payload['booking_id'] ?? '');
+            $reason = trim($payload['reason'] ?? 'Cancelled by B2B Partner');
+
+            if (!$bookingId) {
+                http_response_code(400);
+                echo json_encode(["success" => false, "error" => "Booking ID is required."]);
+                exit();
+            }
+
+            $pdo->beginTransaction();
+            try {
+                $bStmt = $pdo->prepare("SELECT * FROM bookings WHERE id = ?");
+                $bStmt->execute([$bookingId]);
+                $bRec = $bStmt->fetch(PDO::FETCH_ASSOC);
+
+                if (!$bRec) {
+                    throw new Exception("Booking not found.");
+                }
+
+                if ($bRec['status'] === 'Cancelled') {
+                    throw new Exception("Booking is already cancelled.");
+                }
+
+                // Check authorization
+                $isSuperAdmin = ($partner && ($partner['role'] === 'superadmin' || $partner['role'] === 'admin'));
+                if (!$isSuperAdmin && $bRec['b2b_partner_id'] !== $partner['id']) {
+                    throw new Exception("Unauthorized to cancel this booking.");
+                }
+
+                $updB = $pdo->prepare("UPDATE bookings SET status = 'Cancelled', customizations = ? WHERE id = ?");
+                $updB->execute(["Cancellation Reason: $reason", $bookingId]);
+
+                // If paid via Prepaid Wallet, credit refund
+                $refundAmount = floatval($bRec['total_amount'] ?? 0);
+                $partnerId = $bRec['b2b_partner_id'];
+                if ($refundAmount > 0 && !empty($partnerId) && ($bRec['payment_method'] === 'Prepaid Agent Wallet' || $bRec['payment_method'] === 'Prepaid Wallet' || $bRec['payment_method'] === 'B2B Account / Cash')) {
+                    $uStmt = $pdo->prepare("SELECT wallet_balance FROM users WHERE id = ?");
+                    $uStmt->execute([$partnerId]);
+                    $curBal = floatval($uStmt->fetchColumn() ?: 0);
+                    $newBal = $curBal + $refundAmount;
+
+                    $updW = $pdo->prepare("UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?");
+                    $updW->execute([$refundAmount, $partnerId]);
+
+                    $txId = 'tx_ref_' . uniqid();
+                    $insTx = $pdo->prepare("INSERT INTO b2b_wallet_transactions (
+                        id, partner_id, transaction_type, flow_type, amount, balance_before, balance_after,
+                        booking_id, payment_gateway_ref, payment_method, description, status, created_by, created_at
+                    ) VALUES (?, ?, 'REFUND_CREDIT', 'CREDIT', ?, ?, ?, ?, ?, 'Prepaid Wallet Refund', ?, 'COMPLETED', ?, ?)");
+                    $insTx->execute([
+                        $txId,
+                        $partnerId,
+                        $refundAmount,
+                        $curBal,
+                        $newBal,
+                        $bookingId,
+                        $bookingId,
+                        "Refund for cancelled booking #$bookingId. Reason: $reason",
+                        $actorId,
+                        date('Y-m-d H:i:s')
+                    ]);
+
+                    createB2BNotification(
+                        $pdo,
+                        $partnerId,
+                        $partnerId,
+                        'booking_cancelled',
+                        'Booking Cancelled & Refunded',
+                        "Booking #$bookingId was cancelled. ₹" . number_format($refundAmount, 2) . " has been refunded to your wallet. New balance: ₹" . number_format($newBal, 2),
+                        'booking',
+                        $bookingId
+                    );
+                }
+
+                recordB2BAuditLog(
+                    $pdo,
+                    $actorId,
+                    $partnerId ?: 'unknown',
+                    $bookingId,
+                    'BOOKING_CANCELLED',
+                    ['status' => $bRec['status']],
+                    ['status' => 'Cancelled', 'refund_amount' => $refundAmount, 'reason' => $reason],
+                    "Booking cancelled. Refund issued: ₹$refundAmount"
+                );
+
+                $pdo->commit();
+
+                echo json_encode([
+                    "success" => true,
+                    "message" => "Booking cancelled successfully" . ($refundAmount > 0 ? " and refunded to wallet." : "."),
+                    "refund_amount" => $refundAmount
+                ]);
+                exit();
+            } catch (Exception $e) {
+                $pdo->rollBack();
+                http_response_code(400);
+                echo json_encode(["success" => false, "error" => $e->getMessage()]);
                 exit();
             }
         } elseif ($action === 'save_b2b_partner') {

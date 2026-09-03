@@ -719,6 +719,80 @@ export async function clearB2BNotifications(partnerId) {
   }
 }
 
+export async function fetchB2BWallet(partnerId) {
+  try {
+    const res = await apiFetch(`${API_BASE}?resource=b2b_wallet&partner_id=${encodeURIComponent(partnerId || '')}`, {
+      headers: { 'Authorization': `Bearer ${partnerId || ''}` }
+    });
+    if (!res.ok) return { success: false, error: 'Failed to load wallet' };
+    return await res.json();
+  } catch (err) {
+    console.warn('[API] fetchB2BWallet error:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function fetchAllB2BWalletTransactions() {
+  try {
+    const res = await apiFetch(`${API_BASE}?resource=b2b_all_wallet_transactions`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch (err) {
+    console.warn('[API] fetchAllB2BWalletTransactions error:', err.message);
+    return [];
+  }
+}
+
+export async function rechargeB2BWallet(payload) {
+  try {
+    const res = await apiFetch(`${API_BASE}?action=b2b_wallet_recharge`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${payload.b2b_partner_id || payload.partner_id || ''}`
+      },
+      body: JSON.stringify({ action: 'b2b_wallet_recharge', ...payload })
+    });
+    return await res.json();
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function adjustB2BWallet(payload) {
+  try {
+    const res = await apiFetch(`${API_BASE}?action=b2b_admin_adjust_wallet`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${payload.admin_id || 'admin'}`
+      },
+      body: JSON.stringify({ action: 'b2b_admin_adjust_wallet', ...payload })
+    });
+    return await res.json();
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function cancelB2BBooking(bookingId, reason, partnerId) {
+  try {
+    const res = await apiFetch(`${API_BASE}?action=b2b_cancel_booking`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${partnerId || ''}`
+      },
+      body: JSON.stringify({ action: 'b2b_cancel_booking', booking_id: bookingId, reason: reason })
+    });
+    return await res.json();
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+
 
 
 export async function fetchMarkups() {
