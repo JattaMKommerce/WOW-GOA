@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, CheckCircle, ShieldCheck, User, Users, BedDouble, Calendar, ArrowRight, ArrowLeft, Download, MessageCircle, Info } from 'lucide-react';
+import { X, CheckCircle, ShieldCheck, User, Users, BedDouble, Calendar, ArrowRight, ArrowLeft, Download, MessageCircle, Info, Compass, Cake, Gift, Wallet, Clock } from 'lucide-react';
 import * as api from '../services/api';
 import { validateBookingDates } from '../utils/dateUtils';
 import ImageCarousel from './common/ImageCarousel';
@@ -26,10 +26,65 @@ export default function HotelBookingModal({
   const [guestName, setGuestName] = useState('');
   const [guestPhone, setGuestPhone] = useState('');
   const [guestEmail, setGuestEmail] = useState('');
+  const [guestDob, setGuestDob] = useState('');
+  const [isDobSaved, setIsDobSaved] = useState(false);
+  const [dobChecking, setDobChecking] = useState(false);
   const [adults, setAdults] = useState(2);
   const [children, setChildren] = useState(0);
   const [arrivalTime, setArrivalTime] = useState('14:00');
   const [specialRequests, setSpecialRequests] = useState('');
+
+  // Customer Wallet Cashback State
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [useWalletCashback, setUseWalletCashback] = useState(false);
+
+  // Repeat customer lookup for Date of Birth & Wallet Balance
+  useEffect(() => {
+    const clean = String(guestPhone || '').replace(/\D/g, '');
+    if (clean.length >= 10) {
+      setDobChecking(true);
+      api.checkCustomerDob(clean).then(res => {
+        if (res && res.exists && res.date_of_birth) {
+          setGuestDob(res.date_of_birth);
+          setIsDobSaved(true);
+          if (!guestName && res.name) {
+            setGuestName(res.name);
+          }
+          if (!guestEmail && res.email) {
+            setGuestEmail(res.email);
+          }
+        } else {
+          setIsDobSaved(false);
+        }
+      }).catch(() => {
+        setIsDobSaved(false);
+      }).finally(() => {
+        setDobChecking(false);
+      });
+
+      // Fetch customer wallet balance
+      api.fetchCustomerWallet(clean).then(w => {
+        if (w && w.available_balance > 0) {
+          setWalletBalance(w.available_balance);
+        } else {
+          setWalletBalance(0);
+          setUseWalletCashback(false);
+        }
+      }).catch(() => {
+        setWalletBalance(0);
+      });
+    } else {
+      setIsDobSaved(false);
+      setWalletBalance(0);
+      setUseWalletCashback(false);
+    }
+  }, [guestPhone]);
+
+  // Driver / Chauffeur Service States
+  const [driverRequired, setDriverRequired] = useState(false);
+  const [driverServiceType, setDriverServiceType] = useState('airport_transfer');
+  const [driverPickupLoc, setDriverPickupLoc] = useState('Goa Airport (Dabolim / Mopa)');
+  const [driverPickupTime, setDriverPickupTime] = useState('14:00');
   
   // Payment State
   const [paymentSettings, setPaymentSettings] = useState([]);
@@ -132,21 +187,43 @@ export default function HotelBookingModal({
   const roomTotal = roomPrice * nights * numRooms;
   const gst = Math.round(roomTotal * 0.18);
   const platformFee = 250;
-  const totalAmount = roomTotal + gst + platformFee;
-  
+
+  // Driver Pricing Logic
+  let driverCharge = 0;
+  if (driverRequired) {
+    if (driverServiceType === 'airport_transfer') driverCharge = 800;
+    else if (driverServiceType === 'full_day') driverCharge = 1800;
+    else if (driverServiceType === 'entire_stay') driverCharge = 1500 * nights;
+  }
+
+  const totalAmount = roomTotal + gst + platformFee + driverCharge;
   const advanceAmount = Math.round(totalAmount * 0.20); // 20% advance
+
+  // Wallet Deduction & 10% Cashback Calculations
+  const appliedWalletAmount = (useWalletCashback && walletBalance > 0) ? Math.min(walletBalance, totalAmount) : 0;
+  const finalTotalPayable = Math.max(0, totalAmount - appliedWalletAmount);
 
   const isPayAtHotel = paymentOption === 'pay_at_hotel' || paymentOption === 'hotel';
   let payableNow = 0;
   if (!isPayAtHotel) {
-    if (paymentOption === 'partial') payableNow = advanceAmount;
-    else payableNow = totalAmount;
+    if (paymentOption === 'partial') payableNow = Math.max(0, advanceAmount - appliedWalletAmount);
+    else payableNow = finalTotalPayable;
   }
+
+  const projectedCashback = Math.round(finalTotalPayable * 0.10);
 
   const handleConfirmBooking = async (e) => {
     e.preventDefault();
     if (!selectedRoom) return alert("Please select a room first.");
-    if (!guestName || !guestPhone) return alert("Please fill in your contact details.");
+    
+    const cleanGuestPhone = String(guestPhone || '').replace(/\D/g, '');
+    if (!guestName || cleanGuestPhone.length < 10) {
+      return alert("Please enter your full name and a valid 10-digit mobile number for trip confirmation & tracking.");
+    }
+
+    if (!isDobSaved && !guestDob) {
+      return alert("Please enter your Date of Birth. Date of Birth is required for birthday privileges and special offers from WOW GOA.");
+    }
     
     const dateVal = validateBookingDates(pickupDate, dropDate, { allowSameDay: false });
     if (!dateVal.valid) {
@@ -156,13 +233,19 @@ export default function HotelBookingModal({
     setIsProcessing(true);
     
     try {
+      const numGuests = (parseInt(adults) || 2) + (parseInt(children) || 0);
       const travellerDetails = {
+          name: guestName,
+          phone: cleanGuestPhone,
           email: guestEmail,
+          date_of_birth: guestDob,
           adults: adults,
           children: children,
           arrival_time: arrivalTime,
           special_requests: specialRequests,
-          num_rooms: numRooms
+          num_rooms: numRooms,
+          driver_required: driverRequired,
+          driver_service_type: driverServiceType
       };
       
       const priceBreakdown = {
@@ -170,31 +253,58 @@ export default function HotelBookingModal({
           nights: nights,
           num_rooms: numRooms,
           room_total: roomTotal,
+          driver_charge: driverCharge,
           gst: gst,
           platform_fee: platformFee,
           total_price: totalAmount,
+          wallet_amount_used: appliedWalletAmount,
+          final_payable: finalTotalPayable,
           advance_amount: advanceAmount
       };
 
       const selectedCustom = paymentSettings.find(m => m.id?.toString() === paymentOption?.toString());
-      const paymentMethodName = isPayAtHotel 
-        ? 'Pay at Hotel' 
-        : (selectedCustom?.method_type || (paymentOption === 'upi_direct' ? 'UPI Direct' : 'Online Payment'));
+      const paymentMethodName = isPayAtHotel ? 'Pay at Hotel' : (paymentOption === 'upi_direct' ? 'UPI' : (selectedCustom?.method_name || 'Online Payment'));
+      const customerId = `c_${cleanGuestPhone || Date.now()}`;
+      const customerEmail = guestEmail || `${cleanGuestPhone || 'guest'}@hotel.wowgoa.com`;
 
       const bookingPayload = {
         name: guestName,
-        phone: guestPhone,
-        pickup_loc: selectedBookingItem.area || selectedBookingItem.location || 'Goa',
+        customer_name: guestName,
+        phone: cleanGuestPhone,
+        customer_phone: cleanGuestPhone,
+        email: customerEmail,
+        customer_email: customerEmail,
+        customer_id: customerId,
+        date_of_birth: guestDob,
+        dob: guestDob,
+        pickup_loc: driverRequired ? driverPickupLoc : (selectedBookingItem.area || selectedBookingItem.location || 'Goa'),
+        pickup_location: driverRequired ? driverPickupLoc : (selectedBookingItem.area || selectedBookingItem.location || 'Goa'),
         pickup_date: pickupDate,
-        pickup_time: arrivalTime,
+        pickup_time: driverRequired ? driverPickupTime : arrivalTime,
         drop_date: dropDate,
+        drop_location: selectedBookingItem.area || selectedBookingItem.location || 'Goa',
         drop_time: '12:00',
         item_id: selectedBookingItem.id,
         item_name: selectedBookingItem.name,
+        hotel_name: selectedBookingItem.name,
+        hotel_location: selectedBookingItem.area || selectedBookingItem.location || 'Goa',
+        room_type: selectedRoom?.name || 'Deluxe Room',
+        package_type: driverRequired ? 'Hotel Booking (with Chauffeur)' : 'Hotel Booking',
+        type: 'hotel',
+        image: selectedBookingItem.image || selectedBookingItem.image_url || '',
+        vehicle_image: selectedBookingItem.image || selectedBookingItem.image_url || '',
         booking_days: nights,
+        duration: `${nights} Nights / ${nights + 1} Days`,
         total_amount: totalAmount,
+        wallet_amount_used: appliedWalletAmount,
         amount_paid: payableNow,
-        remaining_amount: totalAmount - payableNow,
+        total_paid: totalAmount,
+        paid_amount: payableNow,
+        remaining_amount: isPayAtHotel ? finalTotalPayable : Math.max(0, finalTotalPayable - payableNow),
+        pending_amount: isPayAtHotel ? finalTotalPayable : Math.max(0, finalTotalPayable - payableNow),
+        driver_required: driverRequired ? 1 : 0,
+        driver_charge: driverCharge,
+        driver_service_type: driverRequired ? driverServiceType : '',
         status: isPayAtHotel ? 'Confirmed' : 'Pending',
         payment_status: isPayAtHotel ? 'Pay at Hotel (Pending)' : (payableNow > 0 ? 'Submitted' : 'Pending'),
         payment_verification_status: isPayAtHotel ? 'Not Required' : 'Pending',
@@ -204,17 +314,47 @@ export default function HotelBookingModal({
         price_breakdown_json: JSON.stringify(priceBreakdown),
         customizations: JSON.stringify({
             selected_room_type: selectedRoom?.id,
-            selected_room_name: selectedRoom?.name
+            selected_room_name: selectedRoom?.name,
+            num_guests: numGuests,
+            num_rooms: numRooms,
+            driver_required: driverRequired,
+            driver_service: driverRequired ? driverServiceType : null,
+            driver_charge: driverCharge,
+            hotel_location: selectedBookingItem.area || selectedBookingItem.location || 'Goa'
         })
       };
 
-      const res = await api.createBooking(bookingPayload);
-      const assignedId = res?.booking_id || `BK-${Math.floor(100000 + Math.random() * 900000)}`;
+      let assignedId = `BK-${Math.floor(100000 + Math.random() * 900000)}`;
+      try {
+        const res = await api.createBooking(bookingPayload);
+        if (res?.booking_id || res?.id) assignedId = res.booking_id || res.id;
+      } catch (err) {
+        console.warn("Backend booking submission note:", err);
+      }
+
+      const fullBookingRecord = { ...bookingPayload, id: assignedId, booking_id: assignedId };
       setBookingId(assignedId);
+
+      // Save customer phone and booking to both localStorage and sessionStorage for instant Customer Portal access
+      try {
+        sessionStorage.setItem('customer_login_phone', cleanGuestPhone);
+        sessionStorage.setItem('last_created_booking', JSON.stringify(fullBookingRecord));
+        localStorage.setItem('customer_login_phone', cleanGuestPhone);
+        localStorage.setItem('last_created_booking', JSON.stringify(fullBookingRecord));
+
+        const existingLocal = JSON.parse(localStorage.getItem('local_bookings') || '[]');
+        const updatedLocal = [fullBookingRecord, ...existingLocal.filter(b => String(b.id) !== String(assignedId))];
+        localStorage.setItem('local_bookings', JSON.stringify(updatedLocal));
+      } catch (e) {}
+
       setStep(4);
     } catch (err) {
       console.warn("Booking fallback transition:", err);
-      setBookingId(`BK-${Math.floor(100000 + Math.random() * 900000)}`);
+      const fallbackId = `BK-${Math.floor(100000 + Math.random() * 900000)}`;
+      setBookingId(fallbackId);
+      try {
+        sessionStorage.setItem('customer_login_phone', String(guestPhone).replace(/\D/g, ''));
+      } catch (e) {}
       setStep(4);
     } finally {
       setIsProcessing(false);
@@ -306,16 +446,73 @@ export default function HotelBookingModal({
         
         <div className="row g-3 mb-4">
             <div className="col-md-12">
-                <label className="form-label small fw-bold">Lead Guest Name</label>
-                <input type="text" className="form-control" placeholder="Full Name as per ID" value={guestName} onChange={e => setGuestName(e.target.value)} />
+                <label className="form-label small fw-bold">Lead Guest Name <span className="text-danger">*</span></label>
+                <input type="text" className="form-control" placeholder="Full Name as per ID" value={guestName} onChange={e => setGuestName(e.target.value)} required />
             </div>
             <div className="col-md-6">
-                <label className="form-label small fw-bold">Mobile Number</label>
-                <input type="tel" className="form-control" placeholder="+91" value={guestPhone} onChange={e => setGuestPhone(e.target.value)} />
+                <label className="form-label small fw-bold">
+                  Mobile Number <span className="text-danger">* (Required for Tracking)</span>
+                </label>
+                <div className="input-group">
+                  <span className="input-group-text bg-light fw-bold text-xs">+91</span>
+                  <input 
+                    type="tel" 
+                    className={`form-control ${guestPhone && String(guestPhone).replace(/\D/g, '').length < 10 ? 'is-invalid' : ''}`} 
+                    placeholder="10-digit mobile number" 
+                    value={guestPhone} 
+                    onChange={e => setGuestPhone(e.target.value)} 
+                    required 
+                  />
+                </div>
+                <small className="text-muted" style={{ fontSize: '11px' }}>
+                  Your Customer Portal login & trip updates will be linked to this number.
+                </small>
             </div>
             <div className="col-md-6">
                 <label className="form-label small fw-bold">Email Address</label>
-                <input type="email" className="form-control" placeholder="Email for confirmation" value={guestEmail} onChange={e => setGuestEmail(e.target.value)} />
+                <input type="email" className="form-control" placeholder="Email for booking confirmation" value={guestEmail} onChange={e => setGuestEmail(e.target.value)} />
+            </div>
+
+            {/* Date of Birth Mandatory Field with Auto-Retrieval for Repeat Guests */}
+            <div className="col-md-12">
+              {isDobSaved ? (
+                <div className="p-2.5 rounded-3 bg-success bg-opacity-10 border border-success border-opacity-25 d-flex align-items-center justify-content-between animate-fade-in">
+                  <div className="d-flex align-items-center gap-2">
+                    <div className="rounded-circle bg-success text-white d-flex align-items-center justify-content-center" style={{ width: '28px', height: '28px', minWidth: '28px' }}>
+                      <Cake size={14} />
+                    </div>
+                    <div>
+                      <div className="text-xs fw-bold text-success d-flex align-items-center gap-1">
+                        <ShieldCheck size={13} /> Verified DOB on WOW GOA Account
+                      </div>
+                      <div className="text-xs text-dark mt-0.5">
+                        🎂 Date of Birth: <strong>{guestDob}</strong> <span className="text-muted">(Saved for birthday benefits & member rewards)</span>
+                      </div>
+                    </div>
+                  </div>
+                  <span className="badge bg-success text-white text-xs px-2 py-1 rounded-pill">Saved</span>
+                </div>
+              ) : (
+                <div className="animate-fade-in">
+                  <label className="form-label small fw-bold d-flex align-items-center justify-content-between">
+                    <span className="d-flex align-items-center gap-1">
+                      <Cake size={14} className="text-warning" /> Date of Birth <span className="text-danger">*</span>
+                    </span>
+                    <span className="text-muted" style={{ fontSize: '11px' }}>[ DD / MM / YYYY ]</span>
+                  </label>
+                  <input 
+                    type="date" 
+                    className="form-control" 
+                    value={guestDob}
+                    onChange={e => setGuestDob(e.target.value)}
+                    required 
+                    max={new Date().toISOString().split('T')[0]}
+                  />
+                  <small className="text-muted d-block mt-1" style={{ fontSize: '11px', color: '#64748b' }}>
+                    Date of Birth is required to provide birthday benefits and special offers from WOW GOA.
+                  </small>
+                </div>
+              )}
             </div>
         </div>
         
@@ -340,26 +537,114 @@ export default function HotelBookingModal({
             </div>
         </div>
 
+        {/* ─── Dedicated Goa Chauffeur & Driver Service Option ─── */}
+        <div className="p-3 rounded-3 mb-4" style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
+          <div className="form-check d-flex align-items-center gap-2 mb-2">
+            <input
+              type="checkbox"
+              className="form-check-input mt-0"
+              id="hotel_driver_req"
+              checked={driverRequired}
+              onChange={(e) => setDriverRequired(e.target.checked)}
+              style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+            />
+            <label className="form-check-label fw-bold text-dark mb-0 font-heading" htmlFor="hotel_driver_req" style={{ cursor: 'pointer' }}>
+              🚗 Need a Dedicated Goa Chauffeur / Private Cab Service?
+            </label>
+          </div>
+          <p className="text-muted text-xs ps-4 mb-2">
+            Add a verified local chauffeur for airport transfers, beach sightseeing, and effortless travel during your stay at {selectedBookingItem.name}.
+          </p>
+
+          {driverRequired && (
+            <div className="mt-3 pt-3 border-top border-warning border-opacity-40 ps-4 animate-fade-in">
+              <div className="row g-2 mb-3">
+                {[
+                  { id: 'airport_transfer', label: '✈️ Airport / Railway Station Pickup & Drop', price: 800, desc: 'Dedicated AC cab for airport / train station transfer to hotel' },
+                  { id: 'full_day', label: '🌴 1-Day Goa Sightseeing Chauffeur', price: 1800, desc: '8 Hours / 80 KM sightseeing across North or South Goa' },
+                  { id: 'entire_stay', label: `⭐ Dedicated Chauffeur for Entire Stay (${nights} Nights)`, price: 1500 * nights, desc: `Exclusive AC chauffeur on standby for all ${nights} nights` }
+                ].map(opt => (
+                  <div key={opt.id} className="col-12">
+                    <div 
+                      className={`p-2.5 rounded-3 border cursor-pointer transition ${driverServiceType === opt.id ? 'bg-warning bg-opacity-20 border-warning fw-bold' : 'bg-white border-light-subtle'}`}
+                      onClick={() => setDriverServiceType(opt.id)}
+                    >
+                      <div className="d-flex justify-content-between align-items-center">
+                        <div>
+                          <span className="text-xs text-dark">{opt.label}</span>
+                          <small className="text-muted d-block text-xxs">{opt.desc}</small>
+                        </div>
+                        <span className="badge bg-dark text-warning fw-bold px-2 py-1 text-xs">
+                          +₹{opt.price.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="row g-2">
+                <div className="col-sm-7">
+                  <label className="form-label text-xxs text-muted fw-bold mb-1">Driver Pickup Point</label>
+                  <select 
+                    className="form-select form-select-sm text-xs"
+                    value={driverPickupLoc}
+                    onChange={e => setDriverPickupLoc(e.target.value)}
+                  >
+                    <option value="Goa Airport (Dabolim / Mopa)">✈️ Goa Airport (Dabolim / Mopa)</option>
+                    <option value="Dabolim Airport (GOI)">✈️ Dabolim Airport (GOI)</option>
+                    <option value="Mopa Airport (GOX)">✈️ Manohar International Airport (Mopa / GOX)</option>
+                    <option value="Madgaon Railway Station">🚆 Madgaon Railway Station</option>
+                    <option value="Thivim Railway Station">🚆 Thivim Railway Station</option>
+                    <option value="Hotel Direct Pickup">🏨 Hotel Direct Pickup</option>
+                  </select>
+                </div>
+                <div className="col-sm-5">
+                  <label className="form-label text-xxs text-muted fw-bold mb-1">Pickup Time</label>
+                  <input 
+                    type="time" 
+                    className="form-control form-control-sm text-xs" 
+                    value={driverPickupTime} 
+                    onChange={e => setDriverPickupTime(e.target.value)} 
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
         <div className="row g-3 mb-4">
             <div className="col-md-6">
-                <label className="form-label small fw-bold">Expected Arrival Time</label>
+                <label className="form-label small fw-bold">Expected Hotel Check-in / Arrival Time</label>
                 <input type="time" className="form-control" value={arrivalTime} onChange={e => setArrivalTime(e.target.value)} />
             </div>
             <div className="col-md-12">
                 <label className="form-label small fw-bold">Special Requests (Optional)</label>
-                <textarea className="form-control" rows="2" placeholder="e.g. early check-in, high floor" value={specialRequests} onChange={e => setSpecialRequests(e.target.value)}></textarea>
+                <textarea className="form-control" rows="2" placeholder="e.g. early check-in, sea view room, airport coordination" value={specialRequests} onChange={e => setSpecialRequests(e.target.value)}></textarea>
             </div>
         </div>
 
-        <div className="mt-4 text-end">
+        {/* Live Total preview */}
+        <div className="p-3 bg-light rounded-3 d-flex justify-content-between align-items-center mb-4 border">
+          <div>
+            <span className="text-muted text-xs d-block">Total Stay &amp; Services ({nights} Night{nights>1?'s':''})</span>
+            <strong className="text-dark fs-5 font-heading">₹{totalAmount.toLocaleString('en-IN')}</strong>
+            {driverRequired && <span className="badge bg-warning text-dark text-xxs ms-2">✓ Chauffeur Included (+₹{driverCharge.toLocaleString('en-IN')})</span>}
+          </div>
           <button 
-              className="btn btn-primary px-5 fw-bold" 
-              disabled={!guestName || !guestPhone} 
-              onClick={() => setStep(3)}
+              className="btn btn-primary px-4 py-2 fw-bold" 
+              disabled={!guestName.trim() || String(guestPhone).replace(/\D/g, '').length < 10} 
+              onClick={() => {
+                if (String(guestPhone).replace(/\D/g, '').length < 10) {
+                  alert("Please enter a valid 10-digit mobile number for booking confirmation.");
+                  return;
+                }
+                setStep(3);
+              }}
           >
               Proceed to Payment <ArrowRight size={16} className="ms-1"/>
           </button>
-      </div>
+        </div>
     </div>
   );
 
@@ -539,12 +824,65 @@ export default function HotelBookingModal({
             </div>
             <div className="d-flex justify-content-between">
                 <span className="text-muted small">Total Payable</span>
-                <span className="fw-bold text-dark">₹{totalAmount.toLocaleString('en-IN')}</span>
+                <span className="fw-bold text-dark">₹{finalTotalPayable.toLocaleString('en-IN')}</span>
             </div>
+            {appliedWalletAmount > 0 && (
+              <div className="d-flex justify-content-between text-success fw-bold small mt-1">
+                <span>Wallet Cashback Used</span>
+                <span>-₹{appliedWalletAmount.toLocaleString('en-IN')}</span>
+              </div>
+            )}
         </div>
 
-        <button className="btn btn-primary px-5 py-2 fw-bold rounded-pill shadow-sm" onClick={() => setSelectedBookingItem(null)}>
-          Done / Close
+        {/* 10% Cashback Notification Card */}
+        <div className="card border-0 shadow-sm rounded-4 p-3.5 my-3 text-start mx-auto" style={{ maxWidth: '420px', background: 'linear-gradient(135deg, #0B192C 0%, #1E3E62 100%)', color: '#ffffff' }}>
+          <div className="d-flex align-items-center gap-2 mb-1.5">
+            <div className="rounded-circle p-1.5 bg-warning text-dark d-flex align-items-center justify-content-center" style={{ width: '28px', height: '28px' }}>
+              <Gift size={16} />
+            </div>
+            <h6 className="fw-black text-white mb-0 font-heading" style={{ fontSize: '15px' }}>
+              🎁 Cashback You Can Earn: ₹{projectedCashback.toLocaleString('en-IN')}
+            </h6>
+          </div>
+          <p className="text-white-50 text-xs mb-2">
+            💰 <strong>10% Cashback (₹{projectedCashback.toLocaleString('en-IN')})</strong> will be added to your <strong>WOW GOA Wallet</strong> after your hotel stay is marked <strong>Completed</strong>.
+          </p>
+          <div className="text-warning text-xxs fw-semibold d-flex align-items-center gap-1">
+            <Clock size={12} />
+            <span>⏳ Valid for 30 days upon completion. Usable on future Car, Hotel & Trip bookings.</span>
+          </div>
+        </div>
+
+        <div className="card border-0 shadow-sm rounded-4 p-4 my-3 text-start bg-light mx-auto" style={{ maxWidth: '420px', border: '1px solid #e2e8f0' }}>
+            <div className="d-flex align-items-center gap-2 mb-1.5">
+                <Compass size={20} className="text-warning" />
+                <h6 className="fw-bold text-dark mb-0 font-heading" style={{ fontSize: '15px' }}>
+                    Track in WOW GOA Customer Portal
+                </h6>
+            </div>
+            <p className="text-muted text-xs mb-3">
+                Track your hotel stay reservation, check-in schedule, wallet cashback and loyalty tier from your WOW GOA Customer Portal.
+            </p>
+            <button 
+                type="button" 
+                className="btn btn-warning text-dark fw-bold rounded-pill px-4 py-2.5 text-xs d-flex align-items-center justify-content-center gap-2 shadow-sm w-100 font-heading"
+                onClick={() => {
+                    if (guestPhone) {
+                        try {
+                            sessionStorage.setItem('customer_login_phone', guestPhone);
+                            localStorage.removeItem('customerUser');
+                        } catch (e) {}
+                    }
+                    setSelectedBookingItem(null);
+                    window.location.href = '/customer';
+                }}
+            >
+                <span>View My Booking & Wallet →</span>
+            </button>
+        </div>
+
+        <button className="btn btn-link text-muted text-xs text-decoration-none mt-1" onClick={() => setSelectedBookingItem(null)}>
+          Done / Close & Return to Hotels
         </button>
     </div>
   );
@@ -639,9 +977,55 @@ export default function HotelBookingModal({
                                 <span>Platform Fee:</span>
                                 <span>₹{platformFee.toLocaleString('en-IN')}</span>
                             </div>
+
+                            {walletBalance > 0 && (
+                                <div className="p-2.5 rounded-3 my-2" style={{ background: '#ecfdf5', border: '1px solid #a7f3d0' }}>
+                                    <div className="d-flex align-items-center justify-content-between">
+                                        <div className="d-flex align-items-center gap-1.5">
+                                            <Wallet size={15} className="text-success" />
+                                            <div>
+                                                <div className="fw-bold text-dark text-xs">WOW GOA Wallet</div>
+                                                <div className="text-muted" style={{ fontSize: '10px' }}>Available: ₹{walletBalance.toLocaleString('en-IN')}</div>
+                                            </div>
+                                        </div>
+                                        <div className="form-check form-switch mb-0">
+                                            <input 
+                                                type="checkbox" 
+                                                className="form-check-input" 
+                                                id="useHotelWalletCashback"
+                                                checked={useWalletCashback}
+                                                onChange={(e) => setUseWalletCashback(e.target.checked)}
+                                                style={{ cursor: 'pointer' }}
+                                            />
+                                            <label className="form-check-label text-xs fw-bold text-success" htmlFor="useHotelWalletCashback">
+                                                Use ₹{Math.min(walletBalance, totalAmount).toLocaleString('en-IN')}
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {appliedWalletAmount > 0 && (
+                                <div className="d-flex justify-content-between mb-2 text-success fw-bold">
+                                    <span>Wallet Cashback Applied:</span>
+                                    <span>-₹{appliedWalletAmount.toLocaleString('en-IN')}</span>
+                                </div>
+                            )}
+
                             <div className="d-flex justify-content-between border-top border-dark pt-2 fw-bold text-primary" style={{ fontSize: '16px' }}>
                                 <span>Total Payable:</span>
-                                <span>₹{totalAmount.toLocaleString('en-IN')}</span>
+                                <span>₹{finalTotalPayable.toLocaleString('en-IN')}</span>
+                            </div>
+
+                            {/* 10% Cashback Earning Preview */}
+                            <div className="mt-2.5 p-2 rounded-3 text-center" style={{ background: '#fef3c7', border: '1px solid #fde68a' }}>
+                                <div className="text-xs fw-bold text-dark d-flex align-items-center justify-content-center gap-1">
+                                    <Gift size={13} className="text-warning" />
+                                    <span>10% Cashback You Will Earn: <strong className="text-success font-heading">₹{projectedCashback.toLocaleString('en-IN')}</strong></span>
+                                </div>
+                                <div className="text-muted text-xxs mt-0.5">
+                                    Credited to your wallet on trip completion • Valid 30 days
+                                </div>
                             </div>
                         </div>
                         

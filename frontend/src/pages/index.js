@@ -37,4 +37,8 @@ export { default as PackageCheckoutStep2 } from './customer/PackageCheckoutStep2
 export { default as PackageCheckoutStep3 } from './customer/PackageCheckoutStep3';
 export { default as PackageCustomizationPage } from './customer/PackageCustomizationPage';
 export { default as SelfDrivePage } from './customer/SelfDrivePage';
+export { default as AdminDriverManagement } from './admin/AdminDriverManagement';
+export { default as DriverPortalPage } from './driver/DriverPortalPage';
+export { default as DriverLoginPage } from './driver/DriverLoginPage';
+export { default as CustomerPortalPage } from './customer/CustomerPortalPage';
 

@@ -19,6 +19,7 @@ import DynamicFeaturedHotels from './components/widgets/DynamicFeaturedHotels';
 import DynamicFeaturedVehicles from './components/widgets/DynamicFeaturedVehicles';
 import DynamicPopularPackages from './components/widgets/DynamicPopularPackages';
 import FeaturesGrid from './components/widgets/FeaturesGrid';
+import SelfDriveCategoryShowcase from './components/widgets/SelfDriveCategoryShowcase';
 
 // Import Pages
 import {
@@ -41,7 +42,10 @@ import {
   CraftMyTripPage,
   AIPlannerPage,
   CustomerDashboard,
-  SubAdminPortalPage
+  SubAdminPortalPage,
+  DriverPortalPage,
+  DriverLoginPage,
+  CustomerPortalPage
 } from './pages';
 import CustomTripEnquiryPage from './pages/customer/CustomTripEnquiryPage';
 
@@ -107,6 +111,7 @@ export default function App() {
   const [userPhone, setUserPhone] = useState('');
   const [userLicense, setUserLicense] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
+  const [lastConfirmedBooking, setLastConfirmedBooking] = useState(null);
 
   // Users & Role-Based Auth States
   const [currentUser, setCurrentUser] = useState(() => {
@@ -331,7 +336,10 @@ export default function App() {
         localStorage.setItem('currentUser', JSON.stringify(user));
       } catch (e) {}
       setShowLoginModal(false);
-      if (user.role === 'customer' || user.role === 'user') {
+      if (user.role === 'driver') {
+        setActiveTab('driver');
+        window.history.pushState(null, '', '/driver');
+      } else if (user.role === 'customer' || user.role === 'user') {
         setActiveTab('dashboard');
       } else {
         setActiveTab('portal');
@@ -349,7 +357,10 @@ export default function App() {
           localStorage.setItem('currentUser', JSON.stringify(user));
         } catch (e) {}
         setShowLoginModal(false);
-        if (user.role === 'customer' || user.role === 'user') {
+        if (user.role === 'driver') {
+          setActiveTab('driver');
+          window.history.pushState(null, '', '/driver');
+        } else if (user.role === 'customer' || user.role === 'user') {
           setActiveTab('dashboard');
         } else {
           setActiveTab('portal');
@@ -518,45 +529,126 @@ export default function App() {
     }, 100);
   };
 
-  const handleConfirmBooking = async () => {
-    if (!userName || !userPhone) {
-      alert("Please fill in Name and Phone Number");
+  const handleConfirmBooking = async (e, paymentMethodId, extraDetails = {}) => {
+    if (e && e.preventDefault) e.preventDefault();
+    const cleanPhone = String(userPhone || '').replace(/\D/g, '');
+    if (!userName || cleanPhone.length < 10) {
+      alert("Please enter your name and a valid 10-digit mobile phone number for booking confirmation & tracking.");
       return;
     }
-    const val = validateBookingDates(pickupDate, dropDate);
+    const pDate = extraDetails.pickupDate || pickupDate;
+    const dDate = extraDetails.dropDate || dropDate;
+    const val = validateBookingDates(pDate, dDate);
     if (!val.valid) {
       alert(val.error);
       return;
     }
     try {
-      const days = bookingDays || val.days || 1;
-      const totalCost = (selectedBookingItem.price || 0) * days;
+      const days = extraDetails.bookingDays || bookingDays || val.days || 1;
+      const totalCost = extraDetails.total || ((selectedBookingItem.price || 0) * days);
       
+      const isSelfDrivePkg = selectedBookingItem.package_type === 'Self Drive Package' || selectedBookingItem.type === 'selfdrive' || (selectedBookingItem.name && selectedBookingItem.name.toLowerCase().includes('self drive'));
+      const isTripPkg = !isSelfDrivePkg && (selectedBookingItem.package_type === 'Trip Package' || selectedBookingItem.type === 'package' || String(selectedBookingItem.id || '').startsWith('pkg-') || String(selectedBookingItem.id || '').startsWith('package-') || Boolean(selectedBookingItem.duration && !selectedBookingItem.seating && !selectedBookingItem.engine));
+      const isHotel = selectedBookingItem.type === 'hotel' || Boolean(selectedBookingItem.stars || selectedBookingItem.hotel_name);
+      const isFlight = selectedBookingItem.type === 'flight' || Boolean(selectedBookingItem.airline);
+      const isCar = !isTripPkg && !isSelfDrivePkg && (selectedBookingItem.type === 'car' || String(selectedBookingItem.id || '').startsWith('car-') || Boolean(selectedBookingItem.seating));
+      const isBike = !isTripPkg && !isSelfDrivePkg && (selectedBookingItem.type === 'bike' || String(selectedBookingItem.id || '').startsWith('bike-') || Boolean(selectedBookingItem.engine));
+
+      let detectedType = 'selfdrive';
+      let detectedPkgType = 'Self Drive Package';
+
+      if (isTripPkg) {
+        detectedType = 'package';
+        detectedPkgType = selectedBookingItem.package_type || 'Trip Package';
+      } else if (isSelfDrivePkg) {
+        detectedType = 'selfdrive';
+        detectedPkgType = 'Self Drive Package';
+      } else if (isHotel) {
+        detectedType = 'hotel';
+        detectedPkgType = 'Hotel Stay';
+      } else if (isFlight) {
+        detectedType = 'flight';
+        detectedPkgType = 'Flight Booking';
+      } else if (isCar) {
+        detectedType = 'car';
+        detectedPkgType = 'Car Rental';
+      } else if (isBike) {
+        detectedType = 'bike';
+        detectedPkgType = 'Bike Rental';
+      }
+      
+      const customerId = currentUser?.id || `c_${cleanPhone || Date.now()}`;
+      const customerEmail = currentUser?.email || `${cleanPhone || 'guest'}@guest.wowgoa.com`;
+
       const payload = {
         name: userName,
-        phone: userPhone,
+        customer_name: userName,
+        phone: cleanPhone,
+        customer_phone: cleanPhone,
+        email: customerEmail,
+        customer_email: customerEmail,
+        customer_id: customerId,
         license: userLicense,
-        pickup_loc: pickupLoc || 'Goa Airport',
-        pickup_date: pickupDate,
-        pickup_time: pickupTime,
-        drop_date: dropDate,
-        drop_time: dropTime,
+        pickup_loc: extraDetails.pickupLoc || pickupLoc || 'Goa Airport',
+        pickup_location: extraDetails.pickupLoc || pickupLoc || 'Goa Airport',
+        pickup_date: pDate,
+        pickup_time: extraDetails.pickupTime || pickupTime || '10:00 AM',
+        drop_date: dDate,
+        drop_location: extraDetails.pickupLoc || pickupLoc || 'Goa Airport',
+        drop_time: extraDetails.dropTime || dropTime || '10:00 AM',
         item_id: selectedBookingItem.id || 'custom',
-        item_name: selectedBookingItem.name || 'Trip Booking',
+        item_name: selectedBookingItem.name || (isTripPkg ? 'Trip Package' : 'Trip Booking'),
+        package_name: selectedBookingItem.name || (isTripPkg ? 'Trip Package' : 'Self Drive Holiday'),
+        package_type: detectedPkgType,
+        type: detectedType,
+        vehicle_name: selectedBookingItem.car_included || selectedBookingItem.name || (isTripPkg ? '' : 'Self Drive Vehicle'),
+        vehicle_image: selectedBookingItem.image || selectedBookingItem.image_url || '',
         booking_days: days,
+        duration: (isTripPkg || isSelfDrivePkg) ? (selectedBookingItem.duration || `${days} Days / ${Math.max(1, days - 1)} Nights`) : `${days} Days`,
         total_amount: totalCost,
+        amount_paid: totalCost,
         total_paid: totalCost,
+        driver_required: extraDetails.driver_required ? 1 : 0,
+        driver_charge: typeof extraDetails.driver_charge === 'number' ? extraDetails.driver_charge : 0,
+        driver_days: typeof extraDetails.driver_days === 'number' ? extraDetails.driver_days : 0,
+        driver_earning: typeof extraDetails.driver_earning === 'number' ? extraDetails.driver_earning : (extraDetails.driver_charge || 0),
+        driver_pickup_enabled: extraDetails.driver_pickup_enabled ? 1 : 0,
+        driver_pickup_date: extraDetails.driver_pickup_date || '',
+        driver_pickup_time: extraDetails.driver_pickup_time || '',
+        driver_pickup_loc: extraDetails.driver_pickup_loc || '',
+        driver_drop_enabled: extraDetails.driver_drop_enabled ? 1 : 0,
+        driver_drop_date: extraDetails.driver_drop_date || '',
+        driver_drop_time: extraDetails.driver_drop_time || '',
+        driver_drop_loc: extraDetails.driver_drop_loc || '',
+        driver_fullday_enabled: extraDetails.driver_fullday_enabled ? 1 : 0,
+        driver_fullday_start: extraDetails.driver_fullday_start || '',
+        driver_fullday_end: extraDetails.driver_fullday_end || '',
+        driver_fullday_days: extraDetails.driver_fullday_days || 0,
+        driver_details: extraDetails.driver_details ? JSON.stringify(extraDetails.driver_details) : '',
         status: 'Confirmed'
       };
 
       const res = await api.createBooking(payload);
+      const confirmedBooking = (res && (res.id || res.booking_id)) 
+        ? { ...payload, id: res.id || res.booking_id } 
+        : { ...payload, id: `WG${Math.floor(1000 + Math.random() * 9000)}` };
+      
+      setLastConfirmedBooking(confirmedBooking);
+
+      // Set customer phone and local bookings for instant Customer Portal access
+      try {
+        sessionStorage.setItem('customer_login_phone', cleanPhone);
+        sessionStorage.setItem('last_created_booking', JSON.stringify(confirmedBooking));
+        localStorage.setItem('customer_login_phone', cleanPhone);
+        localStorage.setItem('last_created_booking', JSON.stringify(confirmedBooking));
+        const existingLocal = JSON.parse(localStorage.getItem('local_bookings') || '[]');
+        const updatedLocal = [confirmedBooking, ...existingLocal.filter(b => String(b.id) !== String(confirmedBooking.id))];
+        localStorage.setItem('local_bookings', JSON.stringify(updatedLocal));
+      } catch (e) {}
+
       setShowSuccess(true);
       const freshBookings = await api.fetchBookings();
       setBookingsList(freshBookings);
-      setTimeout(() => {
-        setShowSuccess(false);
-        setSelectedBookingItem(null);
-      }, 2000);
     } catch (e) {
       alert("Failed to submit booking. Please try again.");
     }
@@ -573,6 +665,52 @@ export default function App() {
           <p className="text-muted small">Loading packages and verified inventory</p>
         </div>
       </div>
+    );
+  }
+
+  // ─── DRIVER PORTAL ROUTING ────────────────────────────────────────────────
+  if (path.startsWith('/driver') || currentUser?.role === 'driver' || activeTab === 'driver') {
+    if (!currentUser || currentUser.role !== 'driver') {
+      return (
+        <DriverLoginPage
+          onLoginSuccess={(user) => {
+            setCurrentUser(user);
+            try { localStorage.setItem('currentUser', JSON.stringify(user)); } catch (e) {}
+            setActiveTab('driver');
+            window.history.pushState(null, '', '/driver');
+          }}
+          onNavigateHome={() => {
+            setActiveTab('packages');
+            window.history.pushState(null, '', '/');
+          }}
+        />
+      );
+    }
+    return (
+      <DriverPortalPage
+        currentUser={currentUser}
+        onLogout={handleLogout}
+        onNavigateHome={() => {
+          setActiveTab('packages');
+          window.history.pushState(null, '', '/');
+        }}
+      />
+    );
+  }
+
+  // ─── CUSTOMER PORTAL & DASHBOARD ─────────────────────────────────────────
+  if (path.startsWith('/customer') || activeTab === 'customer') {
+    return (
+      <CustomerPortalPage
+        currentUser={currentUser}
+        onLogout={handleLogout}
+        bookings={bookings}
+        packages={packages}
+        cars={cars}
+        bikes={bikes}
+        hotels={hotels}
+        flights={flights}
+      />
     );
   }
 
@@ -807,13 +945,6 @@ export default function App() {
                 appliedFilters={appliedFilters}
                 setAppliedFilters={setAppliedFilters}
               />
-              <DynamicPopularPackages
-                packages={packages}
-                onBookPackage={(pkg) => handleOpenBooking(pkg, true)}
-                onViewPackage={(pkg) => handleOpenDetails(pkg, 'package')}
-                onBook={(pkg) => handleOpenBooking(pkg, true)}
-                onViewDetails={(pkg) => handleOpenDetails(pkg, 'package')}
-              />
               <DynamicFeaturedHotels
                 hotels={hotels}
                 onBookHotel={handleOpenHotelBooking}
@@ -835,6 +966,17 @@ export default function App() {
 
           {activeTab === 'selfdrive' && (
             <>
+              {/* Primary Showcase: 3-Category Self Drive Layout (Two Wheelers, Four Wheelers, Luxury Cars) */}
+              <SelfDriveCategoryShowcase
+                cars={cars}
+                bikes={bikes}
+                onBookVehicle={handleOpenBooking}
+                onViewVehicle={(veh) => handleOpenDetails(veh, 'vehicle')}
+                setActiveTab={handleTabChange}
+                searchQuery={dropLoc || searchQuery}
+              />
+
+              {/* Self Drive Tour Itineraries & Bundles */}
               <SelfDrivePage
                 packageFilterDuration={packageFilterDuration}
                 setPackageFilterDuration={setPackageFilterDuration}
@@ -848,21 +990,6 @@ export default function App() {
                 markups={markups}
                 appliedFilters={appliedFilters}
                 setAppliedFilters={setAppliedFilters}
-              />
-              <DynamicPopularPackages
-                packages={packages}
-                onBookPackage={(pkg) => handleOpenBooking(pkg, true)}
-                onViewPackage={(pkg) => handleOpenDetails(pkg, 'package')}
-                onBook={(pkg) => handleOpenBooking(pkg, true)}
-                onViewDetails={(pkg) => handleOpenDetails(pkg, 'package')}
-              />
-              <DynamicFeaturedVehicles
-                cars={cars}
-                bikes={bikes}
-                onBookVehicle={handleOpenBooking}
-                onViewVehicle={(veh) => handleOpenDetails(veh, 'vehicle')}
-                onBook={handleOpenBooking}
-                onViewDetails={(veh) => handleOpenDetails(veh, 'vehicle')}
               />
               <FeaturesGrid />
             </>
@@ -1076,6 +1203,7 @@ export default function App() {
             dropTime={dropTime}
             bookingDays={bookingDays}
             handleConfirmBooking={handleConfirmBooking}
+            lastConfirmedBooking={lastConfirmedBooking}
             allPackages={packages}
             allCars={cars}
             allBikes={bikes}

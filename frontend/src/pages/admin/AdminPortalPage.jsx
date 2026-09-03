@@ -23,6 +23,7 @@ import PMSPaymentSettings from '../vendor/pms/PMSPaymentSettings';
 import AdminEnquiryCRM from './AdminEnquiryCRM';
 import LeadManagement from './LeadManagement';
 import AdminSubscriptionPanel from '../../components/admin/AdminSubscriptionPanel';
+import AdminDriverManagement from './AdminDriverManagement';
 
 const SIDEBAR_GROUPS = [
   {
@@ -44,6 +45,7 @@ const SIDEBAR_GROUPS = [
   {
     label: 'Partners',
     items: [
+      { id: 'drivers', label: 'Driver Management', icon: <Users size={15} /> },
       { id: 'vendors', label: 'Vendor Management', icon: <Building size={15} /> },
       { id: 'wallets', label: 'Vendor Wallets & Payouts', icon: <CreditCard size={15} /> },
     ]
@@ -177,6 +179,7 @@ export default function AdminPortalPage({
     if (currentPath === '/admin/customers') return 'customers';
     if (currentPath === '/admin/add-users') return 'add_users';
     if (currentPath === '/admin/bookings') return 'bookings';
+    if (currentPath === '/admin/drivers') return 'drivers';
     return localStorage.getItem('adminActiveTab') || 'overview';
   });
 
@@ -194,6 +197,8 @@ export default function AdminPortalPage({
         window.history.replaceState(null, '', '/admin/add-users');
       } else if (tabId === 'bookings') {
         window.history.replaceState(null, '', '/admin/bookings');
+      } else if (tabId === 'drivers') {
+        window.history.replaceState(null, '', '/admin/drivers');
       } else if (tabId === 'overview') {
         window.history.replaceState(null, '', '/admin');
       }
@@ -325,6 +330,9 @@ export default function AdminPortalPage({
     switch (adminActiveTab) {
       case 'overview':
         return <AdminDashboardOverview vendors={vendors} allPackages={allPackages} hotels={hotels} cars={cars} bikes={bikes} bookings={bookings} currentUser={currentUser} />;
+
+      case 'drivers':
+        return <AdminDriverManagement currentUser={currentUser} bookings={bookings} />;
 
       case 'subscription':
         return <AdminSubscriptionPanel currentUser={currentUser} />;

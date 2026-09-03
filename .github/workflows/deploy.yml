@@ -1,0 +1,66 @@
+name: Deploy to cPanel
+
+on:
+  push:
+    branches:
+      - main
+      - feature/implementation
+  workflow_dispatch:
+
+jobs:
+  web-deploy:
+    name: Build & Auto-Deploy to cPanel
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🚚 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 📦 Install Frontend Dependencies & Build
+        run: |
+          cd frontend
+          npm install
+          npm run build
+
+      - name: 🗂️ Package Deployment Bundle
+        run: |
+          mkdir -p deploy_staging
+          cp -r frontend/dist/* deploy_staging/
+          if [ -f .htaccess ]; then cp .htaccess deploy_staging/; fi
+          mkdir -p deploy_staging/backend
+          cp -r backend/* deploy_staging/backend/
+          rm -f deploy_staging/backend/database.sqlite
+          rm -f deploy_staging/backend/*.log
+          rm -f deploy_staging/backend/*.zip
+          rm -f deploy_staging/backend/test_*.php
+          cd deploy_staging
+          zip -r ../deploy_bundle.zip .
+          cd ..
+
+      - name: 🚀 Send Deployment to cPanel
+        run: |
+          echo "Uploading deploy package to cPanel (Binary Stream)..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "X-Deploy-Secret: WowGoaDeploySecret_2026_SecureKey" \
+            -H "Content-Type: application/octet-stream" \
+            -H "Host: wowgoa.in" \
+            --data-binary "@deploy_bundle.zip" \
+            "http://172.236.179.228/backend/deploy_receiver.php")
+          
+          HTTP_BODY=$(echo "$RESPONSE" | sed '$d')
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          
+          echo "Server Response: $HTTP_BODY"
+          echo "HTTP Code: $HTTP_CODE"
+          
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            echo "❌ Deployment failed with HTTP Code $HTTP_CODE"
+            exit 1
+          fi
+          echo "🎉 Deployment Deployed & Applied Successfully to cPanel!"

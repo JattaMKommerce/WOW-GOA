@@ -453,13 +453,22 @@ export default function PackageCustomizationPage({
     const activeRetDate = pkg?.returnDate || pkg?.drop_date || pkg?.dropDate || dropDate || new Date(Date.now() + 86400000 * activeNights).toISOString().slice(0, 10);
     const durationStr = pkg?.duration || `${activeNights} Nights / ${activeDays} Days`;
 
+    const cleanPhone = String(contactPhone || '9876543210').replace(/\D/g, '');
+    const isSelfDrive = cabType === 'self-drive' || (pkg.name && pkg.name.toLowerCase().includes('self drive')) || (pkg.package_type === 'Self Drive Package');
+
     const bookingPayload = {
       name: leadName,
+      customer_name: leadName,
       phone: contactPhone || '9876543210',
+      customer_phone: contactPhone || '9876543210',
       email: contactEmail || '',
+      customer_email: contactEmail || '',
+      customer_id: `c_${cleanPhone || Date.now()}`,
       license: drivingLicense || '',
       pickup_loc: vehiclePickupLoc || 'Goa Airport',
+      pickup_location: vehiclePickupLoc || 'Goa Airport',
       drop_loc: vehicleDropLoc || 'Goa Airport',
+      drop_location: vehicleDropLoc || 'Goa Airport',
       pickup_date: activeDepDate,
       drop_date: activeRetDate,
       departure_date: activeDepDate,
@@ -469,11 +478,20 @@ export default function PackageCustomizationPage({
       duration: durationStr,
       item_id: pkg.id,
       item_name: pkg.name,
+      package_name: pkg.name,
+      package_type: isSelfDrive ? 'Self Drive Package' : (pkg.package_type || 'Trip Package'),
+      type: isSelfDrive ? 'selfdrive' : 'package',
+      vehicle_name: customizations?.cab?.name || pkg.car_included || (isSelfDrive ? 'Self Drive Vehicle' : ''),
+      vehicle_image: customizations?.cab?.image || pkg.image || pkg.image_url || '',
+      image: pkg.image || pkg.image_url || '',
+      hotel_name: customizations?.hotel?.name || pkg.hotel_included || '',
       booking_days: activeNights,
       total_paid: actualPaid,
       total_amount: actualTotal,
       amount_paid: actualPaid,
+      paid_amount: actualPaid,
       remaining_amount: actualTotal - actualPaid,
+      pending_amount: actualTotal - actualPaid,
       status: 'Confirmed',
       payment_status: isAdvance ? 'Partial' : 'Full',
       payment_mode: paymentMode,
@@ -485,8 +503,14 @@ export default function PackageCustomizationPage({
 
     try {
       const res = await api.createBooking(bookingPayload);
-      const createdRecord = res.booking || { ...bookingPayload, id: res.booking_id };
+      const createdRecord = res.booking || { ...bookingPayload, id: res.booking_id || res.id || `TG-${Math.floor(100000 + Math.random() * 900000)}` };
       setConfirmedBooking(createdRecord);
+
+      try {
+        sessionStorage.setItem('customer_login_phone', contactPhone);
+        sessionStorage.setItem('last_created_booking', JSON.stringify(createdRecord));
+      } catch (e) {}
+
       if (onConfirmBooking) {
         onConfirmBooking(createdRecord, customizations, actualTotal);
       }
@@ -496,6 +520,10 @@ export default function PackageCustomizationPage({
       console.error("Booking error:", err);
       const fallbackRecord = { ...bookingPayload, id: `TG-${Math.floor(100000 + Math.random() * 900000)}` };
       setConfirmedBooking(fallbackRecord);
+      try {
+        sessionStorage.setItem('customer_login_phone', contactPhone);
+        sessionStorage.setItem('last_created_booking', JSON.stringify(fallbackRecord));
+      } catch (e) {}
       if (onConfirmBooking) {
         onConfirmBooking(fallbackRecord, customizations, actualTotal);
       }

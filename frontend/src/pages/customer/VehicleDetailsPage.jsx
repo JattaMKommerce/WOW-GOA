@@ -1,14 +1,65 @@
-import React from 'react';
-import { ChevronRight, ArrowLeft, Star, MapPin, Users, Fuel, CheckCircle, Shield, Settings, Zap } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { ChevronRight, ArrowLeft, Star, MapPin, Users, Fuel, CheckCircle, Shield, Settings, Zap, Camera } from 'lucide-react';
+import ImageCarousel from '../../components/common/ImageCarousel';
 
 export default function VehicleDetailsPage({ vehicle, type, onBack, onBook }) {
-  const isBike = type === 'bike';
+  if (!vehicle) return null;
+
+  const isBike = type === 'bike' || !vehicle.seating;
   const features = isBike 
-    ? ['Helmet Included', 'Full Tank', 'Well Maintained', 'Instant Booking']
-    : ['AC', 'Music System', 'Airbags', 'Power Windows', 'Clean Interior'];
+    ? ['Helmet Included', 'Full Tank', 'Well Maintained', 'Instant Booking', '24/7 Roadside Assistance']
+    : ['AC', 'Music System', 'Airbags', 'Power Windows', 'Clean Interior', '24/7 Roadside Assistance'];
     
   const price = parseFloat(vehicle.price) || 0;
   const originalPrice = Math.round(price * 1.25); // 25% markup for strikethrough
+
+  // Collect all images for the vehicle (main, images_json, documents, etc.)
+  const vehicleImages = useMemo(() => {
+    const list = [];
+    const addImg = (img) => {
+      if (!img) return;
+      if (typeof img === 'string' && img.trim().length > 0 && !list.includes(img.trim())) {
+        list.push(img.trim());
+      } else if (Array.isArray(img)) {
+        img.forEach(addImg);
+      }
+    };
+
+    addImg(vehicle.image);
+    addImg(vehicle.image_url);
+
+    if (vehicle.images_json) {
+      try {
+        const parsed = typeof vehicle.images_json === 'string' ? JSON.parse(vehicle.images_json) : vehicle.images_json;
+        addImg(parsed);
+      } catch (e) {}
+    }
+
+    if (vehicle.documents_json) {
+      try {
+        const parsed = typeof vehicle.documents_json === 'string' ? JSON.parse(vehicle.documents_json) : vehicle.documents_json;
+        addImg(parsed);
+      } catch (e) {}
+    }
+
+    if (list.length === 0) {
+      if (isBike) {
+        list.push(
+          'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=1000&q=80',
+          'https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?auto=format&fit=crop&w=1000&q=80',
+          'https://images.unsplash.com/photo-1558980664-769d59546b3d?auto=format&fit=crop&w=1000&q=80'
+        );
+      } else {
+        list.push(
+          'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=1000&q=80',
+          'https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1000&q=80',
+          'https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=1000&q=80'
+        );
+      }
+    }
+
+    return list;
+  }, [vehicle, isBike]);
 
   return (
     <div className="vehicle-details-page animate-fade-in-up pb-5" style={{ background: '#f8f9fa', minHeight: '100vh' }}>
@@ -32,9 +83,14 @@ export default function VehicleDetailsPage({ vehicle, type, onBack, onBook }) {
           {/* Header Info */}
           <div className="mb-4">
             <div className="d-flex align-items-center gap-2 text-muted mb-2">
-              <span className="badge bg-primary bg-opacity-10 text-primary">{vehicle.category}</span>
+              <span className="badge bg-primary bg-opacity-10 text-primary">{vehicle.category || (isBike ? 'Bike' : 'Self-Drive Car')}</span>
               {isBike ? <Zap size={16} /> : <Settings size={16} />} 
               <span>{vehicle.transmission || (isBike ? 'Manual' : 'Automatic')}</span>
+              {vehicleImages.length > 1 && (
+                <span className="badge bg-secondary bg-opacity-10 text-secondary d-flex align-items-center gap-1">
+                  <Camera size={13} /> {vehicleImages.length} Photos
+                </span>
+              )}
             </div>
             <h2 className="fw-bold mb-2 d-flex align-items-center gap-2">
               {vehicle.name}
@@ -48,13 +104,14 @@ export default function VehicleDetailsPage({ vehicle, type, onBack, onBook }) {
           </div>
 
           <div className="row g-5">
-            {/* Left Col: Image & Details */}
+            {/* Left Col: Interactive Multi-Image Carousel & Specs */}
             <div className="col-12 col-lg-8">
-              <div className="rounded-4 overflow-hidden mb-5 bg-light d-flex align-items-center justify-content-center" style={{ height: '400px' }}>
-                <img 
-                  src={vehicle.image || 'https://placehold.co/800x400?text=No+Image'} 
-                  alt={vehicle.name} 
-                  className="w-100 h-100 object-fit-contain p-4"
+              <div className="mb-4">
+                <ImageCarousel 
+                  images={vehicleImages}
+                  alt={vehicle.name}
+                  height="420px"
+                  rounded="20px"
                 />
               </div>
 
@@ -64,7 +121,7 @@ export default function VehicleDetailsPage({ vehicle, type, onBack, onBook }) {
                   <div className="border rounded-3 p-3 text-center bg-light">
                     <Users className="text-primary mb-2 mx-auto" size={24} />
                     <div className="text-muted small">Seating</div>
-                    <div className="fw-bold">{vehicle.seating || '2'} Seats</div>
+                    <div className="fw-bold">{vehicle.seating || (isBike ? '2' : '5')} Seats</div>
                   </div>
                 </div>
                 <div className="col-6 col-md-3">
@@ -78,7 +135,7 @@ export default function VehicleDetailsPage({ vehicle, type, onBack, onBook }) {
                   <div className="border rounded-3 p-3 text-center bg-light">
                     <Settings className="text-primary mb-2 mx-auto" size={24} />
                     <div className="text-muted small">Transmission</div>
-                    <div className="fw-bold">{vehicle.transmission || 'Manual'}</div>
+                    <div className="fw-bold">{vehicle.transmission || (isBike ? 'Manual' : 'Automatic')}</div>
                   </div>
                 </div>
                 <div className="col-6 col-md-3">
@@ -120,31 +177,31 @@ export default function VehicleDetailsPage({ vehicle, type, onBack, onBook }) {
                   <span className="text-muted ms-1">/ day</span>
                 </div>
 
-                <ul className="list-unstyled mb-4">
-                  <li className="d-flex align-items-start gap-2 mb-3">
-                    <CheckCircle size={18} className="text-success mt-1" />
-                    <span className="text-muted small">Zero hidden charges. Transparent pricing always.</span>
-                  </li>
-                  <li className="d-flex align-items-start gap-2 mb-3">
-                    <CheckCircle size={18} className="text-success mt-1" />
-                    <span className="text-muted small">Free cancellation up to 24 hours before pickup.</span>
-                  </li>
-                  <li className="d-flex align-items-start gap-2">
-                    <CheckCircle size={18} className="text-success mt-1" />
-                    <span className="text-muted small">24/7 Roadside Assistance included in your trip.</span>
-                  </li>
-                </ul>
+                <div className="d-flex flex-column gap-3 mb-4">
+                  <div className="d-flex justify-content-between text-muted">
+                    <span>Base Fare (1 Day)</span>
+                    <span className="fw-bold text-dark">₹ {price.toLocaleString()}</span>
+                  </div>
+                  <div className="d-flex justify-content-between text-muted">
+                    <span>Taxes & GST (18%)</span>
+                    <span className="fw-bold text-dark">₹ {Math.round(price * 0.18).toLocaleString()}</span>
+                  </div>
+                  <hr className="my-1" />
+                  <div className="d-flex justify-content-between fs-5 fw-bold">
+                    <span>Estimated Total</span>
+                    <span className="text-primary">₹ {Math.round(price * 1.18).toLocaleString()}</span>
+                  </div>
+                </div>
 
                 <button 
-                  className="btn btn-primary w-100 py-3 rounded-pill fw-bold fs-6 d-flex align-items-center justify-content-center gap-2 hover-scale" 
-                  onClick={() => onBook(vehicle)}
+                  onClick={() => onBook && onBook(vehicle)} 
+                  className="btn btn-primary btn-lg w-100 rounded-pill fw-bold shadow-sm d-flex align-items-center justify-content-center gap-2"
                 >
-                  Book Now <ChevronRight size={20} />
+                  Book Now <ChevronRight size={18} />
                 </button>
               </div>
             </div>
           </div>
-
         </div>
       </div>
     </div>

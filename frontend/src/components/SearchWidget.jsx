@@ -795,9 +795,240 @@ export default function SearchWidget({
               </div>
 
             </div>
+          ) : activeTab === 'selfdrive' ? (
+            /* ──────────────────────────────────────────────────────────────────
+                TAB: SELF DRIVE HOLIDAYS (Reference Image Style)
+            ────────────────────────────────────────────────────────────────── */
+            <div className="booking-inputs-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+              
+              {/* Self-Drive Field 1: Pickup Location */}
+              <div 
+                className="input-block position-relative" 
+                onClick={() => setActiveDropdown(activeDropdown === 'sd-pickup' ? null : 'sd-pickup')}
+              >
+                <span className="input-block-label d-flex align-items-center justify-content-between">
+                  <span className="d-flex align-items-center gap-1"><MapPin size={13} className="text-warning" /> Pickup Location</span>
+                  <ChevronDown size={14} />
+                </span>
+                <div className="input-block-val">{pickupLoc || 'Goa Airport'}</div>
+                <span className="input-block-sub">Goa, India</span>
+
+                {activeDropdown === 'sd-pickup' && (
+                  <div className="tg-popover-card shadow-xl p-3" onClick={e => e.stopPropagation()}>
+                    <div className="d-flex justify-content-between align-items-center pb-2 mb-2 border-bottom">
+                      <span className="fw-bold text-dark small"><MapPin size={14} className="text-primary me-1" /> Choose Pickup Point</span>
+                      <button type="button" className="btn btn-sm btn-link p-0 text-muted" onClick={() => setActiveDropdown(null)}><X size={16} /></button>
+                    </div>
+
+                    <div className="position-relative mb-2">
+                      <SearchIcon size={16} className="position-absolute text-muted" style={{ top: '10px', left: '10px' }} />
+                      <input 
+                        type="text" 
+                        className="form-control form-control-sm ps-4" 
+                        placeholder="Search Goa Airport, Baga, Candolim..." 
+                        value={fromSearchQuery} 
+                        onChange={e => setFromSearchQuery(e.target.value)} 
+                        autoFocus 
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      className="btn btn-light w-100 text-start d-flex align-items-center gap-2 p-2 rounded-2 mb-2"
+                      style={{ background: '#fff7ed', color: '#c2410c' }}
+                      onClick={() => handleUseCurrentLocation('pickup')}
+                      disabled={isLocating}
+                    >
+                      {isLocating ? <Loader2 size={16} className="animate-spin" /> : <Navigation size={16} />}
+                      <span className="fw-bold small">{isLocating ? 'Detecting...' : '📍 Use Current Location (GPS)'}</span>
+                    </button>
+
+                    <div className="text-muted small fw-bold mb-1">Popular Pickup Locations</div>
+                    <div className="tg-scroll-area">
+                      {[
+                        { name: 'Goa Airport', full: 'Goa Airport (Dabolim - GOI)', note: 'Free airport handover' },
+                        { name: 'Mopa Airport', full: 'Manohar Intl Airport (Mopa - GOX)', note: 'North Goa Airport delivery' },
+                        { name: 'Calangute', full: 'Calangute Beach / Circle', note: 'Free delivery' },
+                        { name: 'Baga Beach', full: 'Baga Beach & Tito\'s Lane', note: 'Free delivery' },
+                        { name: 'Candolim', full: 'Candolim Beach Road', note: 'Free delivery' },
+                        { name: 'Panaji', full: 'Panaji Bus Stand / Latin Quarter', note: 'Central Goa hub' },
+                        { name: 'Anjuna / Vagator', full: 'Anjuna & Vagator Coast', note: 'North Goa delivery' },
+                        { name: 'Madgaon', full: 'Madgaon Railway Station', note: 'South Goa delivery' },
+                        { name: 'South Goa', full: 'Colva / Benaulim / Varca', note: 'Resort delivery' }
+                      ].filter(loc => 
+                        loc.name.toLowerCase().includes(fromSearchQuery.toLowerCase()) || 
+                        loc.full.toLowerCase().includes(fromSearchQuery.toLowerCase())
+                      ).map(loc => (
+                        <button
+                          key={loc.name}
+                          type="button"
+                          className="btn btn-light w-100 text-start p-2 d-flex justify-content-between align-items-center mb-1 border-0"
+                          onClick={() => { setPickupLoc(loc.name); setActiveDropdown('sd-drop'); }}
+                        >
+                          <div>
+                            <div className="fw-bold text-dark">{loc.name}</div>
+                            <div className="text-muted" style={{ fontSize: '11px' }}>{loc.full} · {loc.note}</div>
+                          </div>
+                          <span className="badge bg-success bg-opacity-10 text-success small">Free Handover</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Self-Drive Field 2: Drop Location */}
+              <div 
+                className="input-block position-relative" 
+                onClick={() => setActiveDropdown(activeDropdown === 'sd-drop' ? null : 'sd-drop')}
+              >
+                <span className="input-block-label d-flex align-items-center justify-content-between">
+                  <span className="d-flex align-items-center gap-1"><Navigation size={13} className="text-info" /> Drop Location</span>
+                  <ChevronDown size={14} />
+                </span>
+                <div className="input-block-val">{dropLoc || 'North Goa'}</div>
+                <span className="input-block-sub text-success fw-bold">Free delivery</span>
+
+                {activeDropdown === 'sd-drop' && (
+                  <div className="tg-popover-card shadow-xl p-3" onClick={e => e.stopPropagation()}>
+                    <div className="d-flex justify-content-between align-items-center pb-2 mb-2 border-bottom">
+                      <span className="fw-bold text-dark small"><Navigation size={14} className="text-primary me-1" /> Choose Return Point</span>
+                      <button type="button" className="btn btn-sm btn-link p-0 text-muted" onClick={() => setActiveDropdown(null)}><X size={16} /></button>
+                    </div>
+
+                    <div className="text-muted small fw-bold mb-1">Return / Drop Locations</div>
+                    <div className="tg-scroll-area">
+                      {[
+                        { name: 'North Goa', desc: 'Calangute, Baga, Candolim, Anjuna', badge: 'Free delivery' },
+                        { name: 'Goa Airport', desc: 'Dabolim Airport Drop-off', badge: 'Free delivery' },
+                        { name: 'Mopa Airport', desc: 'Manohar Intl Airport Drop-off', badge: 'Free delivery' },
+                        { name: 'South Goa', desc: 'Colva, Benaulim, Madgaon', badge: 'Free delivery' },
+                        { name: 'Panaji City', desc: 'Capital city return point', badge: 'Free delivery' },
+                        { name: 'Same as Pickup Location', desc: 'Return at pickup spot', badge: 'Standard' }
+                      ].map(item => (
+                        <button
+                          key={item.name}
+                          type="button"
+                          className="btn btn-light w-100 text-start p-2 d-flex justify-content-between align-items-center mb-1 border-0"
+                          onClick={() => { setDropLoc(item.name === 'Same as Pickup Location' ? (pickupLoc || 'Goa Airport') : item.name); setActiveDropdown(null); }}
+                        >
+                          <div>
+                            <div className="fw-bold text-dark">{item.name}</div>
+                            <div className="text-muted" style={{ fontSize: '11px' }}>{item.desc}</div>
+                          </div>
+                          <span className="badge bg-success bg-opacity-10 text-success small">{item.badge}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Self-Drive Field 3: Pickup Date & Time */}
+              <div 
+                className="input-block position-relative" 
+                onClick={() => setActiveDropdown(activeDropdown === 'sd-pickup-date' ? null : 'sd-pickup-date')}
+              >
+                <span className="input-block-label d-flex align-items-center justify-content-between">
+                  <span className="d-flex align-items-center gap-1"><CalendarIcon size={13} className="text-primary" /> Pickup Date</span>
+                  <ChevronDown size={14} />
+                </span>
+                <div className="d-flex align-items-baseline gap-1 mt-1">
+                  <span className="fw-black text-dark" style={{ fontSize: '26px', lineHeight: '1' }}>{displayPickupDay}</span>
+                  <span className="text-dark fw-bold" style={{ fontSize: '15px' }}>{displayPickupMonthYear}</span>
+                </div>
+                <span className="input-block-sub">{displayPickupWeekday} · <span className="fw-semibold text-primary">{pickupTime || '10:00 AM'}</span></span>
+
+                {activeDropdown === 'sd-pickup-date' && (
+                  <div className="tg-popover-card shadow-xl p-3" onClick={e => e.stopPropagation()}>
+                    <CalendarPickerView
+                      title="Select Pickup Date"
+                      selectedDate={pickupDate}
+                      minDate={todayStr}
+                      onSelect={(d) => {
+                        setPickupDate(d);
+                        if (!dropDate || dropDate < d) {
+                          setDropDate(d);
+                        }
+                      }}
+                      onClose={() => setActiveDropdown(null)}
+                    />
+                    <div className="mt-3 pt-2 border-top">
+                      <div className="text-muted small fw-bold mb-2">Pickup Time</div>
+                      <div className="d-flex flex-wrap gap-1">
+                        {['08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '01:00 PM', '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM', '06:00 PM', '07:00 PM', '08:00 PM'].map(t => (
+                          <button
+                            key={t}
+                            type="button"
+                            className={`btn btn-sm ${pickupTime === t ? 'btn-primary text-white' : 'btn-light'} py-1 px-2`}
+                            style={{ fontSize: '11px' }}
+                            onClick={() => {
+                              if (setPickupTime) setPickupTime(t);
+                              setActiveDropdown('sd-return-date');
+                            }}
+                          >
+                            {t}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Self-Drive Field 4: Return Date & Time */}
+              <div 
+                className="input-block position-relative" 
+                onClick={() => setActiveDropdown(activeDropdown === 'sd-return-date' ? null : 'sd-return-date')}
+              >
+                <span className="input-block-label d-flex align-items-center justify-content-between">
+                  <span className="d-flex align-items-center gap-1"><CalendarIcon size={13} className="text-primary" /> Return Date</span>
+                  <ChevronDown size={14} />
+                </span>
+                <div className="d-flex align-items-baseline gap-1 mt-1">
+                  <span className="fw-black text-dark" style={{ fontSize: '26px', lineHeight: '1' }}>{displayDropDay}</span>
+                  <span className="text-dark fw-bold" style={{ fontSize: '15px' }}>{displayDropMonthYear}</span>
+                </div>
+                <span className="input-block-sub">{displayDropWeekday} · <span className="fw-semibold text-primary">{dropTime || '10:00 AM'}</span></span>
+
+                {activeDropdown === 'sd-return-date' && (
+                  <div className="tg-popover-card shadow-xl p-3" onClick={e => e.stopPropagation()}>
+                    <CalendarPickerView
+                      title="Select Return Date"
+                      selectedDate={dropDate}
+                      minDate={pickupDate || todayStr}
+                      onSelect={(d) => {
+                        setDropDate(d);
+                      }}
+                      onClose={() => setActiveDropdown(null)}
+                    />
+                    <div className="mt-3 pt-2 border-top">
+                      <div className="text-muted small fw-bold mb-2">Return Time</div>
+                      <div className="d-flex flex-wrap gap-1">
+                        {['08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '01:00 PM', '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM', '06:00 PM', '07:00 PM', '08:00 PM'].map(t => (
+                          <button
+                            key={t}
+                            type="button"
+                            className={`btn btn-sm ${dropTime === t ? 'btn-primary text-white' : 'btn-light'} py-1 px-2`}
+                            style={{ fontSize: '11px' }}
+                            onClick={() => {
+                              if (setDropTime) setDropTime(t);
+                              setActiveDropdown(null);
+                            }}
+                          >
+                            {t}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+            </div>
           ) : (
             /* ──────────────────────────────────────────────────────────────────
-                TABS: TRIP PACKAGES & SELF DRIVE HOLIDAYS
+                TAB: TRIP PACKAGES
             ────────────────────────────────────────────────────────────────── */
             <div className="booking-inputs-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
               
@@ -1228,7 +1459,7 @@ export default function SearchWidget({
           {activeTab !== 'craftmytrip' && (
             <div className="search-btn-container">
               <button type="submit" className="btn-widget-search">
-                SEARCH
+                {activeTab === 'selfdrive' ? 'SEARCH VEHICLES' : activeTab === 'hotels' ? 'SEARCH HOTELS' : activeTab === 'flights' ? 'SEARCH FLIGHTS' : 'SEARCH PACKAGES'}
               </button>
             </div>
           )}

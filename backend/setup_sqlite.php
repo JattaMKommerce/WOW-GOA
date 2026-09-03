@@ -12,12 +12,19 @@ DROP TABLE IF EXISTS users;
 CREATE TABLE users (
   id VARCHAR(50) PRIMARY KEY,
   username VARCHAR(100) UNIQUE,
+  name VARCHAR(255) DEFAULT '',
   email VARCHAR(100) UNIQUE,
+  phone VARCHAR(50) DEFAULT '',
+  city VARCHAR(100) DEFAULT 'Goa',
   password_hash VARCHAR(255),
   role VARCHAR(50),
   billing_price DECIMAL(10,2) DEFAULT 0,
   status VARCHAR(50) DEFAULT 'active',
+  kyc_status VARCHAR(50) DEFAULT 'verified',
   plain_password VARCHAR(255),
+  is_online INT DEFAULT 0,
+  last_active_at DATETIME,
+  date_of_birth VARCHAR(50) DEFAULT NULL,
   admin_id VARCHAR(50),
   created_at DATETIME
 );
@@ -422,7 +429,53 @@ $alterColumns = [
     "ALTER TABLE bookings ADD COLUMN payment_method VARCHAR(50) DEFAULT 'Cash'",
     "ALTER TABLE bookings ADD COLUMN status VARCHAR(50) DEFAULT 'Confirmed'",
     "ALTER TABLE bookings ADD COLUMN payment_status VARCHAR(50) DEFAULT 'Paid'",
-    "ALTER TABLE bookings ADD COLUMN customizations TEXT"
+    "ALTER TABLE bookings ADD COLUMN customizations TEXT",
+    "ALTER TABLE bookings ADD COLUMN driver_required INT DEFAULT 0",
+    "ALTER TABLE bookings ADD COLUMN assigned_driver_id VARCHAR(50) DEFAULT NULL",
+    "ALTER TABLE bookings ADD COLUMN driver_assigned_at DATETIME DEFAULT NULL",
+    "ALTER TABLE bookings ADD COLUMN driver_job_status VARCHAR(50) DEFAULT NULL",
+    "ALTER TABLE bookings ADD COLUMN driver_notes TEXT DEFAULT NULL",
+    "ALTER TABLE bookings ADD COLUMN package_type VARCHAR(100) DEFAULT NULL",
+    "ALTER TABLE bookings ADD COLUMN type VARCHAR(100) DEFAULT NULL",
+    "ALTER TABLE bookings ADD COLUMN package_name VARCHAR(255) DEFAULT NULL",
+    "ALTER TABLE bookings ADD COLUMN hotel_name VARCHAR(255) DEFAULT NULL",
+    "ALTER TABLE bookings ADD COLUMN vehicle_name VARCHAR(255) DEFAULT NULL",
+    "CREATE TABLE IF NOT EXISTS drivers (
+        id VARCHAR(50) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        phone VARCHAR(50) NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        password_hash VARCHAR(255),
+        plain_password VARCHAR(255),
+        address TEXT,
+        profile_photo TEXT,
+        aadhaar_card TEXT,
+        pan_card TEXT,
+        license_number VARCHAR(100),
+        license_card TEXT,
+        experience_years VARCHAR(50),
+        vehicle_details TEXT,
+        status VARCHAR(50) DEFAULT 'Pending',
+        admin_id VARCHAR(50) DEFAULT 'admin',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )",
+    "CREATE TABLE IF NOT EXISTS driver_assignments (
+        id VARCHAR(50) PRIMARY KEY,
+        driver_id VARCHAR(50) NOT NULL,
+        booking_id VARCHAR(50) NOT NULL,
+        customer_name VARCHAR(255),
+        customer_phone VARCHAR(50),
+        pickup_loc VARCHAR(255),
+        drop_loc VARCHAR(255),
+        date VARCHAR(50),
+        time VARCHAR(50),
+        status VARCHAR(50) DEFAULT 'Assigned',
+        assigned_by VARCHAR(50) DEFAULT 'admin',
+        assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        notes TEXT
+    )"
 ];
 foreach ($alterColumns as $q) {
     try { $pdo->exec($q); } catch (Exception $e) {}
@@ -438,6 +491,46 @@ $stmt->execute(['u-3', 'goa_operations', 'operations@wowgoa.com', '$2y$10$F6B0yJ
 $stmt->execute(['u-4', 'vendor', 'vendor@tripgalileo.com', '$2y$10$F6B0yJvE1t19m1B11w12X.mGj7uXg4vY6.2m47H1oB11z19M1A1oK', 'vendor', 2500, 'active']);
 $stmt->execute(['u-5', 'hotel_vendor', 'hotel_vendor@tripgalileo.com', '$2y$10$F6B0yJvE1t19m1B11w12X.mGj7uXg4vY6.2m47H1oB11z19M1A1oK', 'hotel_vendor', 3500, 'active']);
 $stmt->execute(['u-6', 'flight_vendor', 'flight_vendor@tripgalileo.com', '$2y$10$F6B0yJvE1t19m1B11w12X.mGj7uXg4vY6.2m47H1oB11z19M1A1oK', 'flight_vendor', 4000, 'active']);
+$stmt->execute(['u-drv-1', 'driver', 'driver@wowgoa.com', '$2y$10$F6B0yJvE1t19m1B11w12X.mGj7uXg4vY6.2m47H1oB11z19M1A1oK', 'driver', 0, 'active']);
+
+// Drivers
+$stmt = $pdo->prepare("INSERT OR REPLACE INTO drivers (id, name, phone, email, password_hash, plain_password, address, profile_photo, aadhaar_card, pan_card, license_number, license_card, experience_years, vehicle_details, status, admin_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+$stmt->execute([
+    'drv-1',
+    'Rajesh Naik',
+    '+91 98221 23456',
+    'driver@wowgoa.com',
+    password_hash('Driver@123', PASSWORD_DEFAULT),
+    'Driver@123',
+    'House No. 42, Near Calangute Beach, North Goa, 403516',
+    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
+    'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=600&q=80',
+    'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=600&q=80',
+    'GA-01-20180012345',
+    'https://images.unsplash.com/photo-1563986768609-322da13575f3?auto=format&fit=crop&w=600&q=80',
+    '6 Years in Goa Sightseeing & Airport Transfers',
+    'Toyota Innova Crysta (Commercial Tourist Permit)',
+    'Approved',
+    'admin'
+]);
+$stmt->execute([
+    'drv-2',
+    'Suresh Gawde',
+    '+91 97654 89012',
+    'suresh@wowgoa.com',
+    password_hash('Driver@123', PASSWORD_DEFAULT),
+    'Driver@123',
+    'Plot 18, Near Panaji Bus Stand, Central Goa, 403001',
+    'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80',
+    'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=600&q=80',
+    'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=600&q=80',
+    'GA-07-20200054321',
+    'https://images.unsplash.com/photo-1563986768609-322da13575f3?auto=format&fit=crop&w=600&q=80',
+    '3 Years Local Goa Driving',
+    'Maruti Ertiga (Commercial)',
+    'Pending',
+    'admin'
+]);
 
 // Vendors
 $stmt = $pdo->prepare("INSERT OR REPLACE INTO vendors (id, name, email, phone, city, role, created_at) VALUES (?, ?, ?, ?, ?, ?, date('now'))");

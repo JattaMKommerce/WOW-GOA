@@ -67,10 +67,40 @@ function MyBookingsTab({ bookings, currentUser }) {
                   <div className="fw-bold" style={{ color: '#0D1B2E', fontSize: '14px' }}>{b.item_name}</div>
                   <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>Booked on {b.created_at?.slice(0, 10)}</div>
                   <div className="mt-1">
-                    {b.check_in && <span style={{ fontSize: '0.72rem', color: '#475569' }}>📅 Check-in: {b.check_in}</span>}
-                    {b.pickup && <span style={{ fontSize: '0.72rem', color: '#475569' }}>🚗 Pickup: {b.pickup}</span>}
+                    {b.check_in && <span style={{ fontSize: '0.72rem', color: '#475569' }}>📅 Check-in: {b.check_in} </span>}
+                    {b.pickup && <span style={{ fontSize: '0.72rem', color: '#475569' }}>🚗 Pickup: {b.pickup} </span>}
                     {b.travel_date && <span style={{ fontSize: '0.72rem', color: '#475569' }}>✈️ Travel: {b.travel_date}</span>}
                   </div>
+
+                  {(b.driver_required == 1 || b.driver_required === 'yes' || b.driver_required === true) && (
+                    <div className="mt-2">
+                      {b.assigned_driver_id ? (
+                        <div className="p-2 rounded-2 bg-success bg-opacity-10 border border-success border-opacity-25 d-flex align-items-center justify-content-between flex-wrap gap-1" style={{ fontSize: '0.74rem' }}>
+                          <div className="d-flex align-items-center gap-1.5 text-success fw-bold">
+                            <span>🟢 Assigned Chauffeur:</span>
+                            <span className="text-dark">{b.assigned_driver_name || b.assigned_driver_id}</span>
+                            {b.assigned_driver_phone && <span className="text-muted fw-normal">({b.assigned_driver_phone})</span>}
+                          </div>
+                          <div className="d-flex align-items-center gap-2">
+                            <span className="text-secondary small">🚗 Driver Charge: ₹{(b.driver_charge || (800 * Math.max(1, parseInt(b.driver_days || b.booking_days || 1)))).toLocaleString()} (₹800/d)</span>
+                            {b.assigned_driver_vehicle && (
+                              <span className="text-secondary small">• {b.assigned_driver_vehicle}</span>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-2 rounded-2 bg-warning bg-opacity-10 border border-warning border-opacity-25 d-flex align-items-center justify-content-between flex-wrap gap-1 text-dark" style={{ fontSize: '0.73rem' }}>
+                          <div className="d-flex align-items-center gap-1.5">
+                            <span className="fw-bold text-dark">🚗 Driver Service:</span>
+                            <span className="text-secondary">Requested • Awaiting chauffeur acceptance</span>
+                          </div>
+                          <span className="badge bg-warning text-dark fw-bold" style={{ fontSize: '0.68rem' }}>
+                            ₹800/day • Driver Fee: ₹{(b.driver_charge || (800 * Math.max(1, parseInt(b.driver_days || b.booking_days || 1)))).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="text-end flex-shrink-0">
