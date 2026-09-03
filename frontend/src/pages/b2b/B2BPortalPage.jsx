@@ -179,15 +179,24 @@ export default function B2BPortalPage({ onNavigateHome }) {
             {/* Database Approved Mode Indicator (No free switching) */}
             <div className="d-none d-md-flex align-items-center gap-1.5">
               {hasCommission && hasNonCommission ? (
-                <span className="badge bg-success bg-opacity-15 text-success border border-success text-xxs px-2.5 py-1 rounded-pill fw-bold">
+                <span 
+                  className="badge text-xxs px-2.5 py-1 rounded-pill fw-bold"
+                  style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' }}
+                >
                   ✓ Dual Mode Active (Commission + Net)
                 </span>
               ) : hasCommission ? (
-                <span className="badge bg-warning bg-opacity-20 text-dark border border-warning text-xxs px-2.5 py-1 rounded-pill fw-bold">
+                <span 
+                  className="badge text-xxs px-2.5 py-1 rounded-pill fw-bold"
+                  style={{ background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a' }}
+                >
                   💰 Commission Mode Approved
                 </span>
               ) : hasNonCommission ? (
-                <span className="badge bg-primary bg-opacity-15 text-primary border border-primary text-xxs px-2.5 py-1 rounded-pill fw-bold">
+                <span 
+                  className="badge text-xxs px-2.5 py-1 rounded-pill fw-bold"
+                  style={{ background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}
+                >
                   🏷️ Non-Commission Net Mode Approved
                 </span>
               ) : null}
@@ -246,11 +255,31 @@ export default function B2BPortalPage({ onNavigateHome }) {
       </header>
 
       {/* Main Layout: Dynamic Sidebar + Workspace */}
-      <div className="container-fluid px-0 flex-grow-1 d-flex">
+      <div className="container-fluid px-0 flex-grow-1 d-flex position-relative">
+        {/* Mobile Backdrop */}
+        {sidebarOpen && (
+          <div 
+            className="position-fixed top-0 start-0 w-100 h-100 bg-dark bg-opacity-50 d-lg-none"
+            style={{ zIndex: 1025 }}
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+
         {/* Dynamic Sidebar according to Requirements 4 & 27 */}
         <aside 
-          className={`bg-white border-end d-flex flex-column justify-content-between p-3 position-fixed position-lg-sticky top-0 bottom-0 ${sidebarOpen ? 'd-flex' : 'd-none d-lg-flex'}`}
-          style={{ width: '255px', zIndex: 1030, height: 'calc(100vh - 58px)', top: '58px' }}
+          className={`bg-white border-end d-flex flex-column justify-content-between p-3 ${
+            sidebarOpen ? 'd-flex position-fixed shadow-lg' : 'd-none d-lg-flex position-sticky'
+          }`}
+          style={{ 
+            width: '260px', 
+            minWidth: '260px',
+            maxWidth: '260px',
+            flexShrink: 0,
+            zIndex: 1030, 
+            height: 'calc(100vh - 58px)', 
+            top: '58px',
+            left: 0
+          }}
         >
           <div className="overflow-y-auto">
             {/* Dashboard Link */}
@@ -281,7 +310,7 @@ export default function B2BPortalPage({ onNavigateHome }) {
                     }`}
                   >
                     <Compass size={15} />
-                    <span>Main Website Services</span>
+                    <span>Commission Inventory</span>
                   </button>
                   <button
                     onClick={() => { setActiveTab('commission_bookings'); setSidebarOpen(false); }}
@@ -320,7 +349,7 @@ export default function B2BPortalPage({ onNavigateHome }) {
                     }`}
                   >
                     <Compass size={15} />
-                    <span>Main Website Services</span>
+                    <span>Net Wholesale Inventory</span>
                   </button>
                   <button
                     onClick={() => { setActiveTab('non_commission_bookings'); setSidebarOpen(false); }}
@@ -329,7 +358,7 @@ export default function B2BPortalPage({ onNavigateHome }) {
                     }`}
                   >
                     <FileText size={15} />
-                    <span>Net Bookings</span>
+                    <span>Net Wholesale Bookings</span>
                   </button>
                 </nav>
               </div>

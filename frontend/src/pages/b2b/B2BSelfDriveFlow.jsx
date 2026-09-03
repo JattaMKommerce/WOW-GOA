@@ -201,7 +201,7 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
   }, [vehicles, filterCategory]);
 
   return (
-    <div className="animate-fade-in">
+    <div className="animate-fade-in pb-5">
       {/* Header Banner */}
       <div className="p-4 rounded-4 mb-4 text-white position-relative overflow-hidden shadow-sm" style={{ background: 'linear-gradient(135deg, #0D1B2E 0%, #162E4C 100%)' }}>
         <div className="position-relative z-1">

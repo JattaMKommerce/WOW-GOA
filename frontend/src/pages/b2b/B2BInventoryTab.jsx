@@ -204,11 +204,13 @@ export default function B2BInventoryTab({
         <div className="d-flex flex-wrap align-items-center justify-content-between gap-3">
           {/* Mode Pill (Strictly based on DB approval) */}
           <div className="d-flex align-items-center gap-2">
-            <div className={`px-3 py-1.5 rounded-pill text-xs fw-bold d-flex align-items-center gap-2 ${
-              mode === 'COMMISSION' 
-                ? 'bg-warning bg-opacity-15 text-warning border border-warning' 
-                : 'bg-primary bg-opacity-15 text-primary border border-primary'
-            }`}>
+            <div 
+              className="px-3 py-1.5 rounded-pill text-xs fw-bold d-flex align-items-center gap-2"
+              style={mode === 'COMMISSION' 
+                ? { background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a' }
+                : { background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }
+              }
+            >
               {mode === 'COMMISSION' ? (
                 <>
                   <Gift size={15} />
@@ -221,7 +223,7 @@ export default function B2BInventoryTab({
                 </>
               )}
             </div>
-            <span className="badge bg-light text-muted border text-xxs d-none d-md-inline-block">
+            <span className="badge bg-light text-secondary border text-xxs d-none d-md-inline-block px-2.5 py-1 rounded-pill">
               Admin Approved Active Mode
             </span>
           </div>
