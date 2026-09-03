@@ -185,25 +185,13 @@ export default function CustomerPortalPage({
       }
     } catch (e) {}
 
-    // 4. Query dedicated customer phone endpoint
+    // 4. Query dedicated customer booking existence check
     try {
-      const custBookings = await api.fetchCustomerBookings(clean);
-      if (Array.isArray(custBookings) && custBookings.length > 0) {
-        match = searchInList(custBookings);
-        if (match) return match;
+      const exists = await api.checkCustomerBookingExists(clean);
+      if (exists) {
+        return { phone: clean, customer_name: 'Valued Guest', status: 'Confirmed' };
       }
     } catch (e) {}
-
-    // 5. Query backend API for live booking records
-    try {
-      const freshBookings = await api.fetchBookings();
-      if (Array.isArray(freshBookings)) {
-        match = searchInList(freshBookings);
-        if (match) return match;
-      }
-    } catch (err) {
-      console.warn("Could not query fresh bookings for login check:", err);
-    }
 
     // 6. Check recently used session phone
     try {

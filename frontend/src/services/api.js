@@ -13,12 +13,24 @@ export function getTenantId() {
   return tenant;
 }
 
+export function getAuthToken() {
+  try {
+    return localStorage.getItem('auth_token') || localStorage.getItem('b2b_partner_token') || '';
+  } catch (e) {
+    return '';
+  }
+}
+
 export async function apiFetch(url, options = {}) {
   const tenantId = getTenantId();
+  const token = getAuthToken();
   const headers = {
     ...options.headers,
     'X-Tenant-ID': tenantId
   };
+  if (token && !headers['Authorization']) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
   return fetch(url, { ...options, headers });
 }
 
@@ -235,9 +247,9 @@ export async function fetchCustomerBookings(mobile) {
 
   // Merge with any matching local/cached bookings
   try {
-    const allBookings = await fetchBookings();
+    const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
     const cleanLast10 = clean.length >= 10 ? clean.slice(-10) : clean;
-    const matched = allBookings.filter(b => {
+    const matched = localBookings.filter(b => {
       const bPhone = String(b.customer_phone || b.phone || '').replace(/\D/g, '');
       return bPhone === clean || (cleanLast10 && bPhone.endsWith(cleanLast10));
     });
@@ -247,6 +259,41 @@ export async function fetchCustomerBookings(mobile) {
   } catch (e) {}
 
   return list;
+}
+
+export async function checkCustomerBookingExists(mobile) {
+  const clean = String(mobile || '').replace(/\D/g, '');
+  if (!clean || clean.length < 10) return false;
+  try {
+    const res = await apiFetch(`${API_BASE}?resource=check_customer_booking_exists&mobile=${encodeURIComponent(clean)}`);
+    if (res.ok) {
+      const data = await res.json();
+      return !!data.exists;
+    }
+  } catch (err) {
+    console.warn('[API] Check customer booking exists error:', err.message);
+  }
+  return false;
+}
+
+export async function checkAvailability(serviceType, itemId, pickupDate, dropDate, excludeBookingId = '') {
+  try {
+    const params = new URLSearchParams({
+      resource: 'check_availability',
+      service_type: serviceType || '',
+      item_id: itemId || '',
+      pickup_date: pickupDate || '',
+      drop_date: dropDate || ''
+    });
+    if (excludeBookingId) params.append('exclude_booking_id', excludeBookingId);
+    const res = await apiFetch(`${API_BASE}?${params.toString()}`);
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn('[API] Check availability fetch error:', err.message);
+  }
+  return { success: true, available: true };
 }
 
 export async function fetchCustomerLoyalty(phone, customerId = '') {
@@ -453,6 +500,12 @@ export async function b2bLogin(username, password) {
   const data = await res.json();
   if (!res.ok || !data.success) {
     throw new Error(data.error || 'B2B login failed. Please check credentials.');
+  }
+  if (data.token) {
+    try {
+      localStorage.setItem('auth_token', data.token);
+      localStorage.setItem('b2b_partner_token', data.token);
+    } catch (e) {}
   }
   return data;
 }
@@ -955,6 +1008,11 @@ export async function loginUser(username, password) {
     if (res.ok) {
       const data = await res.json();
       if (data && data.success && data.user) {
+        if (data.token) {
+          try {
+            localStorage.setItem('auth_token', data.token);
+          } catch (e) {}
+        }
         return data.user;
       }
     }

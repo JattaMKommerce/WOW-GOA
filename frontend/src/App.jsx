@@ -385,6 +385,10 @@ export default function App() {
         } else {
           setActiveTab('portal');
         }
+        try {
+          const userBookings = await api.fetchBookings();
+          if (Array.isArray(userBookings)) setBookingsList(userBookings);
+        } catch (be) {}
         return true;
       }
     } catch (e) {
@@ -395,8 +399,13 @@ export default function App() {
 
   const handleLogout = () => {
     setCurrentUser(null);
+    setBookingsList([]);
     try {
       localStorage.removeItem('currentUser');
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('b2b_partner_token');
+      localStorage.removeItem('b2b_partner_user');
+      localStorage.removeItem('driverUser');
     } catch (e) {}
     setActiveTab('packages');
   };

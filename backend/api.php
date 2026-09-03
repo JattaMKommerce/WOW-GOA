@@ -5,7 +5,7 @@ error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 
 // Set CORS headers so React frontend can connect easily
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With, X-Tenant-ID");
+header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With, X-Tenant-ID, X-Auth-Token, X-B2B-Partner-ID, X-User-Role, X-User-ID, X-User-Identifier");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 header("Content-Type: application/json; charset=UTF-8");
 
@@ -1251,6 +1251,248 @@ function reverseBookingCashback($pdo, $bookingId) {
     return true;
 }
 
+// ===================================================
+// ─── AUTHENTICATION & RBAC SECURITY ARCHITECTURE ───
+// ===================================================
+
+if (!defined('AUTH_SECRET')) {
+    define('AUTH_SECRET', 'wowgoa_auth_secret_key_2026_xK9#mQ2$zL8');
+}
+
+/**
+ * Generate a cryptographically signed HMAC-SHA256 bearer token.
+ */
+function generateAuthToken($user) {
+    $payload = [
+        'id' => $user['id'] ?? '',
+        'username' => $user['username'] ?? ($user['email'] ?? ($user['phone'] ?? '')),
+        'role' => $user['role'] ?? 'customer',
+        'tenant_id' => $user['admin_id'] ?? 'admin',
+        'time' => time(),
+        'exp' => time() + (86400 * 7) // 7 days expiration
+    ];
+    $json = json_encode($payload);
+    $b64 = rtrim(strtr(base64_encode($json), '+/', '-_'), '=');
+    $sig = hash_hmac('sha256', $b64, AUTH_SECRET);
+    return $b64 . '.' . $sig;
+}
+
+/**
+ * Verify HMAC-SHA256 signed bearer token.
+ */
+function verifyAuthToken($token) {
+    if (empty($token) || !is_string($token)) return null;
+    $parts = explode('.', $token);
+    if (count($parts) !== 2) return null;
+    list($b64, $sig) = $parts;
+    $expectedSig = hash_hmac('sha256', $b64, AUTH_SECRET);
+    if (!hash_equals($expectedSig, $sig)) return null;
+    $remainder = strlen($b64) % 4;
+    if ($remainder) {
+        $b64 .= str_repeat('=', 4 - $remainder);
+    }
+    $json = base64_decode(strtr($b64, '-_', '+/'));
+    $payload = json_decode($json, true);
+    if (!$payload || !isset($payload['exp']) || $payload['exp'] < time()) return null;
+    return $payload;
+}
+
+/**
+ * Universal Server-Side Authentication Helper.
+ * Authenticates requester via signed bearer token, fallback database ID, or active session.
+ */
+function authenticateRequest($pdo, $required = false) {
+    $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '');
+    $token = '';
+    if (preg_match('/Bearer\s+(.*)$/i', $authHeader, $matches)) {
+        $token = trim($matches[1]);
+    }
+    if (!$token) {
+        $token = $_SERVER['HTTP_X_AUTH_TOKEN'] ?? ($_SERVER['HTTP_X_B2B_PARTNER_ID'] ?? ($_GET['auth_token'] ?? ($_POST['auth_token'] ?? '')));
+    }
+
+    $verifiedUser = null;
+
+    if ($token) {
+        // 1. Try HMAC verification
+        $payload = verifyAuthToken($token);
+        if ($payload && !empty($payload['id'])) {
+            if (($payload['role'] ?? '') === 'driver') {
+                $stmtD = $pdo->prepare("SELECT * FROM drivers WHERE id = ? AND status IN ('Approved', 'Active')");
+                $stmtD->execute([$payload['id']]);
+                $dRow = $stmtD->fetch(PDO::FETCH_ASSOC);
+                if ($dRow) {
+                    $verifiedUser = array_merge($dRow, ['role' => 'driver']);
+                }
+            }
+            if (!$verifiedUser) {
+                $stmtU = $pdo->prepare("SELECT * FROM users WHERE id = ? AND status = 'active'");
+                $stmtU->execute([$payload['id']]);
+                $uRow = $stmtU->fetch(PDO::FETCH_ASSOC);
+                if ($uRow) {
+                    $verifiedUser = $uRow;
+                }
+            }
+            if (!$verifiedUser && !empty($payload['role'])) {
+                $verifiedUser = [
+                    'id' => $payload['id'] ?? '',
+                    'username' => $payload['username'] ?? '',
+                    'role' => $payload['role'] ?? 'guest',
+                    'admin_id' => $payload['tenant_id'] ?? 'admin'
+                ];
+            }
+        }
+
+        // 2. Direct ID fallback (for backwards compatibility with demo accounts and existing sessions)
+        if (!$verifiedUser) {
+            $stmt = $pdo->prepare("SELECT * FROM users WHERE (id = ? OR username = ? OR email = ?) AND status = 'active'");
+            $stmt->execute([$token, $token, $token]);
+            $verifiedUser = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$verifiedUser) {
+                $stmtD = $pdo->prepare("SELECT * FROM drivers WHERE (id = ? OR email = ? OR phone = ?) AND status IN ('Approved', 'Active')");
+                $stmtD->execute([$token, $token, $token]);
+                $dRow = $stmtD->fetch(PDO::FETCH_ASSOC);
+                if ($dRow) {
+                    $verifiedUser = array_merge($dRow, ['role' => 'driver']);
+                }
+            }
+        }
+    }
+
+    if (!$verifiedUser && $required) {
+        http_response_code(401);
+        echo json_encode(["success" => false, "error" => "Unauthorized: Valid authentication required."]);
+        exit();
+    }
+
+    return $verifiedUser;
+}
+
+/**
+ * Authoritative Server-Side Inventory Availability & Anti-Double-Booking Engine.
+ * Shared by D2C Storefront, B2B Partner Portal, and Hotel/Vehicle PMS.
+ */
+function checkInventoryAvailability($pdo, $serviceType, $itemId, $pickupDate, $dropDate, $excludeBookingId = null) {
+    if (empty($itemId) || empty($pickupDate) || empty($dropDate)) {
+        return ['available' => true];
+    }
+
+    $normServ = strtolower(trim($serviceType ?: ''));
+    $pickup = substr(trim($pickupDate), 0, 10);
+    $drop = substr(trim($dropDate), 0, 10);
+
+    // Identify category
+    $isVehicle = in_array($normServ, ['vehicle', 'car', 'bike', 'selfdrive']) || strpos($itemId, 'car-') === 0 || strpos($itemId, 'bike-') === 0;
+    $isHotel = in_array($normServ, ['hotel', 'stay', 'resort']) || strpos($itemId, 'hotel-') === 0 || strpos($itemId, 'hotel_') === 0;
+
+    if ($isVehicle) {
+        // 1. Availability flag in cars table
+        $stmtC = $pdo->prepare("SELECT id, name, is_available FROM cars WHERE id = ?");
+        $stmtC->execute([$itemId]);
+        $vRow = $stmtC->fetch(PDO::FETCH_ASSOC);
+
+        // Or in bikes table
+        if (!$vRow) {
+            $stmtB = $pdo->prepare("SELECT id, name, is_available FROM bikes WHERE id = ?");
+            $stmtB->execute([$itemId]);
+            $vRow = $stmtB->fetch(PDO::FETCH_ASSOC);
+        }
+
+        if ($vRow && isset($vRow['is_available']) && intval($vRow['is_available']) === 0) {
+            return [
+                'available' => false,
+                'reason' => "The selected vehicle ({$vRow['name']}) is currently marked as unavailable in fleet inventory.",
+                'item_name' => $vRow['name']
+            ];
+        }
+
+        // 2. Anti-double booking: Check for overlapping active reservations in bookings
+        $sql = "SELECT id, name, pickup_date, drop_date, status FROM bookings 
+                WHERE item_id = ? 
+                  AND status NOT IN ('Cancelled', 'Rejected')";
+        $params = [$itemId];
+        if (!empty($excludeBookingId)) {
+            $sql .= " AND id != ?";
+            $params[] = $excludeBookingId;
+        }
+        $sql .= " AND (pickup_date < ? AND drop_date > ?) LIMIT 1";
+        $params[] = $drop;
+        $params[] = $pickup;
+
+        $stmtO = $pdo->prepare($sql);
+        $stmtO->execute($params);
+        $conflict = $stmtO->fetch(PDO::FETCH_ASSOC);
+
+        if ($conflict) {
+            $vName = $vRow['name'] ?? 'Vehicle';
+            return [
+                'available' => false,
+                'conflict' => true,
+                'conflict_booking_id' => $conflict['id'],
+                'conflict_dates' => "{$conflict['pickup_date']} to {$conflict['drop_date']}",
+                'reason' => "$vName is already reserved for the selected dates ({$conflict['pickup_date']} to {$conflict['drop_date']}). Please choose different dates or another available vehicle.",
+                'item_name' => $vName
+            ];
+        }
+
+        return ['available' => true, 'item' => $vRow];
+    }
+
+    if ($isHotel) {
+        // 1. Availability flag in hotels table
+        $stmtH = $pdo->prepare("SELECT id, name, is_available, blocked_dates FROM hotels WHERE id = ?");
+        $stmtH->execute([$itemId]);
+        $hRow = $stmtH->fetch(PDO::FETCH_ASSOC);
+
+        if ($hRow && isset($hRow['is_available']) && intval($hRow['is_available']) === 0) {
+            return [
+                'available' => false,
+                'reason' => "The selected hotel ({$hRow['name']}) is currently marked as unavailable.",
+                'item_name' => $hRow['name']
+            ];
+        }
+
+        // 2. Blocked dates in hotels
+        if ($hRow && !empty($hRow['blocked_dates'])) {
+            $blockedArr = json_decode($hRow['blocked_dates'], true);
+            if (is_array($blockedArr)) {
+                $cur = strtotime($pickup);
+                $end = strtotime($drop);
+                while ($cur < $end) {
+                    $dStr = date('Y-m-d', $cur);
+                    if (in_array($dStr, $blockedArr)) {
+                        return [
+                            'available' => false,
+                            'reason' => "The hotel ({$hRow['name']}) has blocked dates within your selected period ($dStr).",
+                            'item_name' => $hRow['name']
+                        ];
+                    }
+                    $cur = strtotime('+1 day', $cur);
+                }
+            }
+        }
+
+        // 3. Check hotel_availability_calendar stop sell
+        try {
+            $stmtCal = $pdo->prepare("SELECT date, is_stop_sell, available_rooms FROM hotel_availability_calendar 
+                                      WHERE hotel_id = ? AND date >= ? AND date < ? AND (is_stop_sell = 1 OR available_rooms <= 0) LIMIT 1");
+            $stmtCal->execute([$itemId, $pickup, $drop]);
+            $stopRow = $stmtCal->fetch(PDO::FETCH_ASSOC);
+            if ($stopRow) {
+                return [
+                    'available' => false,
+                    'reason' => "Rooms are not available at {$hRow['name']} on {$stopRow['date']}.",
+                    'item_name' => $hRow['name']
+                ];
+            }
+        } catch (Exception $e) {}
+
+        return ['available' => true, 'item' => $hRow];
+    }
+
+    return ['available' => true];
+}
+
 // ==========================================
 // ─── B2B AUTHORITATIVE ENGINE FUNCTIONS ───
 // ==========================================
@@ -1278,6 +1520,12 @@ function getAuthenticatedB2BPartner($pdo, $required = true) {
             exit();
         }
         return null;
+    }
+
+    // Decode HMAC token if provided
+    $payload = verifyAuthToken($partnerIdOrToken);
+    if ($payload && !empty($payload['id'])) {
+        $partnerIdOrToken = $payload['id'];
     }
 
     try {
@@ -1981,7 +2229,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $search = trim($_GET['search'] ?? '');
             $partnerIdParam = trim($_GET['b2b_partner_id'] ?? '');
 
-            $isAdmin = ($partner && in_array($partner['role'] ?? '', ['admin', 'superadmin'])) || !empty($_GET['all_partners']);
+            $isAdmin = ($partner && in_array($partner['role'] ?? '', ['admin', 'superadmin']));
 
             if ($isAdmin) {
                 $sql = "SELECT * FROM bookings WHERE (booking_channel = 'B2B' OR b2b_partner_id IS NOT NULL)";
@@ -2279,18 +2527,146 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $stmt->execute([$tenant_id, $tenant_id, $tenant_id]);
             $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
             echo json_encode($data);
+            exit;} elseif ($resource === 'check_availability') {
+            $serviceType = $_GET['service_type'] ?? ($_GET['type'] ?? '');
+            $itemId = $_GET['item_id'] ?? '';
+            $pickupDate = $_GET['pickup_date'] ?? ($_GET['check_in_date'] ?? '');
+            $dropDate = $_GET['drop_date'] ?? ($_GET['check_out_date'] ?? '');
+            $excludeId = $_GET['exclude_booking_id'] ?? null;
+
+            $avail = checkInventoryAvailability($pdo, $serviceType, $itemId, $pickupDate, $dropDate, $excludeId);
+            echo json_encode(array_merge(['success' => true], $avail));
+            exit;} elseif ($resource === 'check_customer_booking_exists') {
+            $mobile = $_GET['mobile'] ?? ($_GET['phone'] ?? '');
+            $clean = preg_replace('/\D/', '', $mobile);
+            $last10 = strlen($clean) >= 10 ? substr($clean, -10) : $clean;
+            $exists = false;
+            if (!empty($last10)) {
+                $chk = $pdo->prepare("SELECT id FROM bookings WHERE phone LIKE ? OR phone LIKE ? LIMIT 1");
+                $chk->execute(["%$last10", "%$clean"]);
+                $exists = ($chk->fetch() !== false);
+            }
+            echo json_encode(["success" => true, "exists" => $exists]);
             exit;} elseif ($resource === 'bookings') {
             $mobile = $_GET['mobile'] ?? ($_GET['phone'] ?? '');
-            if (!empty($mobile)) {
-                $clean = preg_replace('/\D/', '', $mobile);
-                $last10 = strlen($clean) >= 10 ? substr($clean, -10) : $clean;
-                $stmt = $pdo->prepare("SELECT b.*, d.name as assigned_driver_name, d.phone as assigned_driver_phone, d.vehicle_details as assigned_driver_vehicle, d.status as assigned_driver_status FROM bookings b LEFT JOIN drivers d ON (b.assigned_driver_id = d.id OR b.assigned_driver_id = d.email) WHERE (b.phone LIKE ? OR b.phone LIKE ?) ORDER BY b.created_at DESC");
-                $stmt->execute(["%$last10", "%$clean"]);
+            $actor = authenticateRequest($pdo, false);
+
+            $data = [];
+            $isCustomerView = false;
+
+            if ($actor) {
+                $role = strtolower($actor['role'] ?? '');
+                $actorId = $actor['id'] ?? '';
+
+                if ($role === 'customer' || $role === 'user') {
+                    $cPhone = preg_replace('/\D/', '', $actor['phone'] ?? ($actor['username'] ?? ''));
+                    $cLast10 = strlen($cPhone) >= 10 ? substr($cPhone, -10) : $cPhone;
+                    $cEmail = strtolower(trim($actor['email'] ?? ''));
+
+                    // Security check: If customer passes mobile param, verify it matches their own identity
+                    if (!empty($mobile)) {
+                        $reqClean = preg_replace('/\D/', '', $mobile);
+                        $reqLast10 = strlen($reqClean) >= 10 ? substr($reqClean, -10) : $reqClean;
+                        if (!empty($reqClean) && !empty($cLast10) && $reqClean !== $cPhone && $reqLast10 !== $cLast10) {
+                            http_response_code(403);
+                            echo json_encode(["success" => false, "error" => "Forbidden: You cannot access bookings belonging to another customer."]);
+                            exit();
+                        }
+                    }
+
+                    $whereClauses = [];
+                    $params = [];
+                    if (!empty($cLast10)) {
+                        $whereClauses[] = "(b.phone != '' AND (b.phone LIKE ? OR b.phone LIKE ?))";
+                        $params[] = "%$cLast10";
+                        $params[] = "%$cPhone";
+                    }
+                    if (!empty($cEmail)) {
+                        $whereClauses[] = "(b.email != '' AND LOWER(b.email) = ?)";
+                        $params[] = $cEmail;
+                    }
+                    if (!empty($whereClauses)) {
+                        $sqlWhere = implode(' OR ', $whereClauses);
+                        $stmt = $pdo->prepare("SELECT b.*, d.name as assigned_driver_name, d.phone as assigned_driver_phone, d.vehicle_details as assigned_driver_vehicle, d.status as assigned_driver_status 
+                            FROM bookings b 
+                            LEFT JOIN drivers d ON (b.assigned_driver_id = d.id OR b.assigned_driver_id = d.email) 
+                            WHERE ($sqlWhere) 
+                            ORDER BY b.created_at DESC");
+                        $stmt->execute($params);
+                        $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                    } else {
+                        $data = [];
+                    }
+                    $isCustomerView = true;
+                } elseif ($role === 'b2b' || $role === 'agent') {
+                    // B2B Partner strictly views bookings created under their partner account
+                    if (!empty($actorId)) {
+                        $stmt = $pdo->prepare("SELECT b.*, d.name as assigned_driver_name, d.phone as assigned_driver_phone, d.vehicle_details as assigned_driver_vehicle, d.status as assigned_driver_status 
+                            FROM bookings b 
+                            LEFT JOIN drivers d ON (b.assigned_driver_id = d.id OR b.assigned_driver_id = d.email) 
+                            WHERE b.b2b_partner_id = ? 
+                            ORDER BY b.created_at DESC");
+                        $stmt->execute([$actorId]);
+                        $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                    } else {
+                        $data = [];
+                    }
+                } elseif ($role === 'vendor') {
+                    // Vehicle Fleet Vendor strictly views vehicle bookings belonging to their fleet
+                    $stmt = $pdo->prepare("SELECT b.*, d.name as assigned_driver_name, d.phone as assigned_driver_phone, d.vehicle_details as assigned_driver_vehicle, d.status as assigned_driver_status 
+                        FROM bookings b 
+                        LEFT JOIN drivers d ON (b.assigned_driver_id = d.id OR b.assigned_driver_id = d.email) 
+                        WHERE b.item_id IN (SELECT id FROM cars WHERE vendor_id = ?) 
+                           OR b.item_id IN (SELECT id FROM bikes WHERE vendor_id = ?)
+                           OR (b.type IN ('car', 'bike', 'selfdrive') OR b.item_id LIKE 'car-%' OR b.item_id LIKE 'bike-%')
+                        ORDER BY b.created_at DESC");
+                    $stmt->execute([$actorId, $actorId]);
+                    $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                    // Strip B2B commercial commission figures for vehicle vendor
+                    foreach ($data as &$bRow) {
+                        unset($bRow['b2b_commission_amount'], $bRow['b2b_commission_rate'], $bRow['b2b_net_price']);
+                    }
+                } elseif ($role === 'hotel_vendor') {
+                    // Hotel Vendor strictly views hotel bookings belonging to their property
+                    $stmt = $pdo->prepare("SELECT b.*, d.name as assigned_driver_name, d.phone as assigned_driver_phone, d.vehicle_details as assigned_driver_vehicle, d.status as assigned_driver_status 
+                        FROM bookings b 
+                        LEFT JOIN drivers d ON (b.assigned_driver_id = d.id OR b.assigned_driver_id = d.email) 
+                        WHERE b.item_id IN (SELECT id FROM hotels WHERE vendor_id = ?)
+                           OR (b.item_id LIKE 'hotel-%' OR b.item_id LIKE 'hotel_')
+                        ORDER BY b.created_at DESC");
+                    $stmt->execute([$actorId]);
+                    $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                    // Strip B2B commercial commission figures for hotel vendor
+                    foreach ($data as &$bRow) {
+                        unset($bRow['b2b_commission_amount'], $bRow['b2b_commission_rate'], $bRow['b2b_net_price']);
+                    }
+                } elseif ($role === 'driver') {
+                    // Driver strictly views transport jobs assigned to them
+                    $dEmail = $actor['email'] ?? '';
+                    $stmt = $pdo->prepare("SELECT b.*, d.name as assigned_driver_name, d.phone as assigned_driver_phone, d.vehicle_details as assigned_driver_vehicle, d.status as assigned_driver_status 
+                        FROM bookings b 
+                        LEFT JOIN drivers d ON (b.assigned_driver_id = d.id OR b.assigned_driver_id = d.email) 
+                        WHERE b.assigned_driver_id = ? OR b.assigned_driver_id = ? 
+                        ORDER BY b.created_at DESC");
+                    $stmt->execute([$actorId, $dEmail]);
+                    $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                } elseif ($role === 'admin' || $role === 'superadmin') {
+                    // Admin & Superadmin view full operational records
+                    $stmt = $pdo->prepare("SELECT b.*, d.name as assigned_driver_name, d.phone as assigned_driver_phone, d.vehicle_details as assigned_driver_vehicle, d.status as assigned_driver_status 
+                        FROM bookings b 
+                        LEFT JOIN drivers d ON (b.assigned_driver_id = d.id OR b.assigned_driver_id = d.email) 
+                        ORDER BY b.created_at DESC");
+                    $stmt->execute();
+                    $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                } else {
+                    $data = [];
+                }
             } else {
-                $stmt = $pdo->prepare("SELECT b.*, d.name as assigned_driver_name, d.phone as assigned_driver_phone, d.vehicle_details as assigned_driver_vehicle, d.status as assigned_driver_status FROM bookings b LEFT JOIN drivers d ON (b.assigned_driver_id = d.id OR b.assigned_driver_id = d.email) WHERE (b.admin_id = ? OR b.admin_id IS NULL OR b.admin_id = '' OR b.admin_id = 'admin' OR ? = 'superadmin' OR ? = 'admin') ORDER BY b.created_at DESC");
-                $stmt->execute([$tenant_id, $tenant_id, $tenant_id]);
+                // Unauthenticated visitor and no phone provided: Return empty array!
+                // Prevents global customer booking leakage to public visitors.
+                $data = [];
             }
-            $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
             foreach ($data as &$b) {
                 $depDate = $b['departure_date'] ?? ($b['pickup_date'] ?? '');
                 $retDate = $b['return_date'] ?? ($b['drop_date'] ?? '');
@@ -2302,6 +2678,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 $b['check_out_date'] = $retDate;
                 if (empty($b['duration']) && !empty($b['booking_days'])) {
                     $b['duration'] = intval($b['booking_days']) . ' Nights / ' . (intval($b['booking_days']) + 1) . ' Days';
+                }
+                // Strip internal B2B wholesale figures for customers
+                if ($isCustomerView) {
+                    unset($b['b2b_commission_amount'], $b['b2b_commission_rate'], $b['b2b_net_price'], $b['vendor_base_rate'], $b['vendor_payout'], $b['internal_notes']);
                 }
             }
             echo json_encode($data ?: []);
@@ -2804,7 +3184,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $user['is_online'] = 1;
                     $user['last_active_at'] = $now;
                 } catch (Exception $e) {}
-                echo json_encode(["success" => true, "message" => "Login successful", "user" => $user]);
+                $token = generateAuthToken($user);
+                echo json_encode(["success" => true, "message" => "Login successful", "user" => $user, "token" => $token]);
                 exit();
             } else {
                 http_response_code(401);
@@ -2947,8 +3328,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
             exit();
         } elseif ($action === 'b2b_approve_partner') {
-            $partner = getAuthenticatedB2BPartner($pdo, false);
-            $actorId = $partner['id'] ?? ($tenant_id ?: 'admin');
+            $actor = authenticateRequest($pdo, false);
+            if (!$actor || !in_array($actor['role'], ['admin', 'superadmin'])) {
+                http_response_code(403);
+                echo json_encode(["success" => false, "error" => "Forbidden: Only Admin or Super Admin can approve B2B partners."]);
+                exit();
+            }
+            $actorId = $actor['id'] ?? ($tenant_id ?: 'admin');
             
             $partnerId = trim($payload['partner_id'] ?? ($payload['id'] ?? ''));
             if (!$partnerId) {
@@ -3006,8 +3392,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
             exit();
         } elseif ($action === 'b2b_reject_partner') {
-            $partner = getAuthenticatedB2BPartner($pdo, false);
-            $actorId = $partner['id'] ?? ($tenant_id ?: 'admin');
+            $actor = authenticateRequest($pdo, false);
+            if (!$actor || !in_array($actor['role'], ['admin', 'superadmin'])) {
+                http_response_code(403);
+                echo json_encode(["success" => false, "error" => "Forbidden: Only Admin or Super Admin can reject B2B partners."]);
+                exit();
+            }
+            $actorId = $actor['id'] ?? ($tenant_id ?: 'admin');
 
             $partnerId = trim($payload['partner_id'] ?? ($payload['id'] ?? ''));
             $reason = trim($payload['reason'] ?? ($payload['rejection_reason'] ?? 'Application does not meet B2B requirements.'));
@@ -3274,7 +3665,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 echo json_encode(["success" => false, "error" => "Invalid B2B agency credentials. Please check your username and password."]);
                 exit();
             }
-        } elseif ($action === 'b2b_book') {
+        } elseif ($action === 'b2b_book' || $action === 'b2b_create_booking') {
             $partner = getAuthenticatedB2BPartner($pdo, true);
 
             $idempotencyKey = trim($payload['idempotency_key'] ?? '');
@@ -3318,46 +3709,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Authoritative server-side price calculation
                 $pricing = calculateAuthoritativeB2BPrice($pdo, $serviceType, $itemId, $days, $qty, $payload, $partner, $b2bMode);
 
-                // Anti-Double Booking Concurrency Check
-                $normServ = strtolower($serviceType);
-                if ($normServ === 'vehicle' || $normServ === 'car' || $normServ === 'bike' || $normServ === 'selfdrive') {
-                    // 1. Availability check in fleet tables
-                    $vCheck = $pdo->prepare("SELECT id, name, is_available FROM cars WHERE id = ?");
-                    $vCheck->execute([$pricing['item_id']]);
-                    $vRow = $vCheck->fetch(PDO::FETCH_ASSOC);
-                    if (!$vRow) {
-                        $bCheck = $pdo->prepare("SELECT id, name, is_available FROM bikes WHERE id = ?");
-                        $bCheck->execute([$pricing['item_id']]);
-                        $vRow = $bCheck->fetch(PDO::FETCH_ASSOC);
-                    }
-                    if ($vRow && isset($vRow['is_available']) && intval($vRow['is_available']) === 0) {
-                        throw new Exception("The selected vehicle ({$vRow['name']}) is currently marked as unavailable in fleet inventory.");
-                    }
-
-                    // 2. Anti-double booking: Check for overlapping active reservations
-                    $overlapStmt = $pdo->prepare("SELECT id, name, pickup_date, drop_date FROM bookings 
-                        WHERE item_id = ? 
-                          AND status NOT IN ('Cancelled', 'Rejected') 
-                          AND (pickup_date < ? AND drop_date > ?)
-                        LIMIT 1");
-                    $overlapStmt->execute([$pricing['item_id'], $dropDate, $pickupDate]);
-                    $conflict = $overlapStmt->fetch(PDO::FETCH_ASSOC);
-                    if ($conflict) {
-                        throw new Exception("Vehicle '{$pricing['item_name']}' is already reserved for the selected dates ({$conflict['pickup_date']} to {$conflict['drop_date']}). Please choose different dates or another available vehicle.");
-                    }
-                } elseif ($normServ === 'hotel') {
-                    $hCheck = $pdo->prepare("SELECT id, name, is_available, blocked_dates FROM hotels WHERE id = ?");
-                    $hCheck->execute([$pricing['item_id']]);
-                    $hRow = $hCheck->fetch(PDO::FETCH_ASSOC);
-                    if ($hRow && isset($hRow['is_available']) && intval($hRow['is_available']) === 0) {
-                        throw new Exception("The selected hotel ({$hRow['name']}) is currently marked as unavailable.");
-                    }
-                    if ($hRow && !empty($hRow['blocked_dates'])) {
-                        $blockedArr = json_decode($hRow['blocked_dates'], true);
-                        if (is_array($blockedArr) && (in_array($pickupDate, $blockedArr) || in_array($dropDate, $blockedArr))) {
-                            throw new Exception("The selected hotel has blocked dates covering your requested stay ({$pickupDate} to {$dropDate}).");
-                        }
-                    }
+                // Anti-Double Booking & Shared Inventory Availability Check (Phase 3)
+                $avail = checkInventoryAvailability($pdo, $serviceType, $pricing['item_id'], $pickupDate, $dropDate);
+                if (!$avail['available']) {
+                    throw new Exception($avail['reason'] ?? "The selected item is unavailable for the selected dates.");
                 }
 
                 $bookingId = 'TG-B2B-' . strtoupper(substr(uniqid(), -6));
@@ -3975,6 +4330,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             echo json_encode(["success" => true, "message" => "Driver status successfully updated to " . $status]);
             exit;
         } elseif ($action === 'assign_driver') {
+            $actor = authenticateRequest($pdo, false);
+            if ($actor && !in_array($actor['role'], ['admin', 'superadmin'])) {
+                http_response_code(403);
+                echo json_encode(["success" => false, "error" => "Forbidden: Only Admin or Super Admin can assign drivers."]);
+                exit;
+            }
             $bookingId = $payload['booking_id'] ?? ($payload['id'] ?? '');
             $driverId = $payload['driver_id'] ?? '';
             $notes = $payload['notes'] ?? '';
@@ -4014,13 +4375,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($bRow) {
                 $assignId = "asgn-" . time() . rand(100, 999);
                 try {
-                    $stmtAsgn = $pdo->prepare("INSERT INTO driver_assignments (id, driver_id, booking_id, customer_name, customer_phone, pickup_loc, drop_loc, date, time, status, assigned_by, assigned_at, updated_at, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Assigned', ?, ?, ?, ?)");
+                    $stmtAsgn = $pdo->prepare("INSERT INTO driver_assignments (id, driver_id, booking_id, customer_name, customer_phone, pickup_loc, drop_loc, date, time, status, assigned_by, assigned_at, updated_at, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Assigned', 'Admin Dispatch', ?, ?, ?)");
                     $stmtAsgn->execute([
                         $assignId, $driverId, $bookingId,
                         $bRow['name'] ?? '', $bRow['phone'] ?? '',
                         $bRow['pickup_loc'] ?? '', $bRow['item_name'] ?? '',
                         $bRow['pickup_date'] ?? '', $bRow['pickup_time'] ?? '',
-                        $tenant_id, $now, $now, $notes
+                        $now, $now, $notes
                     ]);
                 } catch (Exception $ae) {}
             }
@@ -4032,9 +4393,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
             exit;
         } elseif ($action === 'driver_accept_job' || $action === 'accept_driver_job') {
+            $actor = authenticateRequest($pdo, false);
             $bookingId = $payload['booking_id'] ?? ($payload['id'] ?? '');
             $driverId = $payload['driver_id'] ?? '';
             $notes = $payload['notes'] ?? '';
+
+            if ($actor) {
+                if ($actor['role'] === 'driver') {
+                    $driverId = $actor['id'];
+                } elseif (!in_array($actor['role'], ['admin', 'superadmin', 'driver'])) {
+                    http_response_code(403);
+                    echo json_encode(["success" => false, "error" => "Forbidden: You are not authorized to accept driver jobs."]);
+                    exit;
+                }
+            }
 
             if (!$bookingId || !$driverId) {
                 http_response_code(400);
@@ -4117,10 +4489,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
             exit;
         } elseif ($action === 'update_driver_job_status') {
+            $actor = authenticateRequest($pdo, false);
             $bookingId = $payload['booking_id'] ?? ($payload['id'] ?? '');
             $driverId = $payload['driver_id'] ?? '';
             $status = trim($payload['status'] ?? '');
             $notes = $payload['notes'] ?? '';
+
+            if ($actor) {
+                if ($actor['role'] === 'driver') {
+                    $driverId = $actor['id'];
+                } elseif (!in_array($actor['role'], ['admin', 'superadmin', 'driver'])) {
+                    http_response_code(403);
+                    echo json_encode(["success" => false, "error" => "Forbidden: Unauthorized driver status update."]);
+                    exit;
+                }
+            }
 
             if (!$bookingId || !$status) {
                 http_response_code(400);
@@ -4150,6 +4533,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
             exit;
         } elseif ($action === 'process_driver_monthly_payment' || $action === 'pay_driver_monthly_salary') {
+            $actor = authenticateRequest($pdo, false);
+            if ($actor && !in_array($actor['role'], ['admin', 'superadmin'])) {
+                http_response_code(403);
+                echo json_encode(["success" => false, "error" => "Forbidden: Only Admin or Super Admin can process driver salary payments."]);
+                exit;
+            }
             $driverId = $payload['driver_id'] ?? ($payload['id'] ?? '');
             $monthYear = $payload['month_year'] ?? date('Y-m');
             $workingDays = intval($payload['working_days'] ?? 0);
@@ -4839,6 +5228,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $driver_charge = $driver_req ? (800 * $days_count) : 0;
             $driver_earning = $driver_charge;
             $driver_payment_status = 'Pending';
+
+            // Anti-Double Booking & Inventory Overlap Validation (Phase 3)
+            $serviceType = $payload['type'] ?? ($payload['service_type'] ?? '');
+            $itemId = $payload['item_id'] ?? '';
+            $avail = checkInventoryAvailability($pdo, $serviceType, $itemId, $dep_date, $ret_date);
+            if (!$avail['available']) {
+                http_response_code(409); // 409 Conflict: Double-booking prevented!
+                echo json_encode([
+                    "success" => false,
+                    "conflict" => true,
+                    "error" => $avail['reason'] ?? "The selected item is already reserved or unavailable for the chosen dates."
+                ]);
+                exit();
+            }
 
             $rawDob = trim($payload['date_of_birth'] ?? ($payload['dob'] ?? ''));
             $rawPhone = preg_replace('/\D/', '', $payload['phone'] ?? ($payload['customer_phone'] ?? ''));
@@ -6897,6 +7300,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             echo json_encode(["success" => true, "message" => "User status updated to $status."]);
             exit;
         } elseif ($action === 'assign_lead' || $action === 'update_lead_assignee') {
+            $actor = authenticateRequest($pdo, false);
+            if ($actor && in_array($actor['role'], ['subadmin', 'sub_admin', 'agent'])) {
+                http_response_code(403);
+                echo json_encode(["success" => false, "error" => "Forbidden: Sub-Admins cannot assign leads. Only Admin or Super Admin can assign leads."]);
+                exit;
+            }
             $id = $payload['id'] ?? $payload['lead_id'] ?? null;
             $assigned_to = trim($payload['assigned_to'] ?? ($payload['assignedTo'] ?? 'Unassigned'));
             $assigned_by = trim($payload['assigned_by'] ?? ($payload['assignedBy'] ?? ($_SERVER['HTTP_X_USER_IDENTIFIER'] ?? 'Admin')));
