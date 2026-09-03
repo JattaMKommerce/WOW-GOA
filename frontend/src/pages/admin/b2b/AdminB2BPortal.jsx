@@ -108,9 +108,9 @@ export default function AdminB2BPortal({ activeSubTab = 'b2b_dashboard', onNavig
   };
 
   // Filter helpers
-  const pendingApplications = partners.filter(p => p.status === 'pending');
-  const commissionPartners = partners.filter(p => p.allow_commission == 1);
-  const nonCommissionPartners = partners.filter(p => p.allow_non_commission == 1);
+  const pendingApplications = partners.filter(p => p.status?.toLowerCase() === 'pending');
+  const commissionPartners = partners.filter(p => p.allow_commission == 1 || p.allow_commission === '1');
+  const nonCommissionPartners = partners.filter(p => p.allow_non_commission == 1 || p.allow_non_commission === '1');
   const commissionBookings = bookings.filter(b => b.b2b_mode === 'COMMISSION');
   const nonCommissionBookings = bookings.filter(b => b.b2b_mode === 'NON_COMMISSION');
 

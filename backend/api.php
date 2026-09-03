@@ -203,6 +203,7 @@ try {
             "ALTER TABLE users ADD COLUMN contact_name VARCHAR(255) DEFAULT NULL",
             "ALTER TABLE users ADD COLUMN contact_email VARCHAR(255) DEFAULT NULL",
             "ALTER TABLE users ADD COLUMN contact_phone VARCHAR(50) DEFAULT NULL",
+            "ALTER TABLE users ADD COLUMN gst_number VARCHAR(50) DEFAULT NULL",
             "ALTER TABLE users ADD COLUMN rejection_reason TEXT DEFAULT NULL",
             "ALTER TABLE users ADD COLUMN approved_at DATETIME DEFAULT NULL",
             "ALTER TABLE users ADD COLUMN approved_by VARCHAR(100) DEFAULT NULL",
@@ -481,6 +482,7 @@ function seedDatabaseIfEmpty($pdo) {
         "ALTER TABLE users ADD COLUMN contact_name VARCHAR(255) DEFAULT NULL",
         "ALTER TABLE users ADD COLUMN contact_email VARCHAR(255) DEFAULT NULL",
         "ALTER TABLE users ADD COLUMN contact_phone VARCHAR(50) DEFAULT NULL",
+        "ALTER TABLE users ADD COLUMN gst_number VARCHAR(50) DEFAULT NULL",
         "ALTER TABLE users ADD COLUMN rejection_reason TEXT DEFAULT NULL",
         "ALTER TABLE users ADD COLUMN approved_at DATETIME DEFAULT NULL",
         "ALTER TABLE users ADD COLUMN approved_by VARCHAR(100) DEFAULT NULL",
@@ -1242,9 +1244,15 @@ function getAuthenticatedB2BPartner($pdo, $required = true) {
         return null;
     }
 
-    $stmt = $pdo->prepare("SELECT id, username, email, phone, name, company_name, city, address, gst_number, role, status, allow_commission, allow_non_commission, default_commission_rate, default_net_discount_rate, credit_limit, wallet_balance, initial_mode, requested_mode, mode_request_status, mode_requested_at, mode_rejection_reason, created_at FROM users WHERE (id = ? OR username = ? OR email = ?) AND status = 'active' AND role IN ('b2b', 'agent', 'admin', 'superadmin')");
-    $stmt->execute([$partnerIdOrToken, $partnerIdOrToken, $partnerIdOrToken]);
-    $partner = $stmt->fetch(PDO::FETCH_ASSOC);
+    try {
+        $stmt = $pdo->prepare("SELECT id, username, email, phone, name, company_name, city, address, gst_number, role, status, allow_commission, allow_non_commission, default_commission_rate, default_net_discount_rate, credit_limit, wallet_balance, initial_mode, requested_mode, mode_request_status, mode_requested_at, mode_rejection_reason, created_at FROM users WHERE (id = ? OR username = ? OR email = ?) AND status = 'active' AND role IN ('b2b', 'agent', 'admin', 'superadmin')");
+        $stmt->execute([$partnerIdOrToken, $partnerIdOrToken, $partnerIdOrToken]);
+        $partner = $stmt->fetch(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {
+        $stmt = $pdo->prepare("SELECT * FROM users WHERE (id = ? OR username = ? OR email = ?) AND status = 'active' AND role IN ('b2b', 'agent', 'admin', 'superadmin')");
+        $stmt->execute([$partnerIdOrToken, $partnerIdOrToken, $partnerIdOrToken]);
+        $partner = $stmt->fetch(PDO::FETCH_ASSOC);
+    }
 
     if (!$partner) {
         if ($required) {
@@ -2062,7 +2070,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 $partners = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 echo json_encode($partners ?: []);
             } catch (Exception $e) {
-                echo json_encode([]);
+                try {
+                    $stmt = $pdo->query("SELECT * FROM users WHERE role IN ('b2b', 'agent') ORDER BY created_at DESC");
+                    $partners = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                    echo json_encode($partners ?: []);
+                } catch (Exception $e2) {
+                    echo json_encode([]);
+                }
             }
             exit;} elseif ($resource === 'b2b_pricing_rules') {
             try {
@@ -2097,7 +2111,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 $reqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 echo json_encode($reqs ?: []);
             } catch (Exception $e) {
-                echo json_encode([]);
+                try {
+                    $stmt = $pdo->query("SELECT * FROM users WHERE role IN ('b2b', 'agent') AND requested_mode IS NOT NULL AND mode_request_status = 'PENDING' ORDER BY mode_requested_at DESC");
+                    $reqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                    echo json_encode($reqs ?: []);
+                } catch (Exception $e2) {
+                    echo json_encode([]);
+                }
             }
             exit;} elseif ($resource === 'b2b_notifications') {
             $partner = getAuthenticatedB2BPartner($pdo, false);
