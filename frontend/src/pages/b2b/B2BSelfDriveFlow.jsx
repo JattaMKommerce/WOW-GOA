@@ -620,17 +620,119 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
                 </div>
               ) : (
                 <form onSubmit={handleConfirmBooking}>
-                  {/* Summary bar */}
+                  {/* Interactive Calendar & Schedule Selector */}
                   <div className="p-3 bg-white rounded-3 border mb-3">
-                    <div className="row g-2 text-xs">
-                      <div className="col-6">
-                        <span className="text-muted d-block text-xxs">Rental Period:</span>
-                        <strong className="text-dark">{pickupDate} → {dropDate} ({daysCount} Days)</strong>
+                    <div className="d-flex align-items-center justify-content-between mb-2">
+                      <div className="d-flex align-items-center gap-1.5">
+                        <Calendar size={15} className="text-warning" />
+                        <span className="text-xxs fw-bold text-uppercase text-dark">
+                          Select Rental Dates ({daysCount} {daysCount === 1 ? 'Day' : 'Days'})
+                        </span>
                       </div>
-                      <div className="col-6">
-                        <span className="text-muted d-block text-xxs">Pickup Location:</span>
-                        <strong className="text-dark text-truncate d-block">{pickupLoc}</strong>
+                      <span className="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 text-3xs rounded-pill">
+                        Live Pricing & Inventory Synced
+                      </span>
+                    </div>
+
+                    {/* Quick Date Presets (After 1 Month, After 2 Months, Tomorrow, Next Weekend) */}
+                    <div className="d-flex align-items-center gap-1.5 flex-wrap mb-2.5">
+                      <span className="text-3xs text-muted fw-semibold">Quick Jump:</span>
+                      {[
+                        { label: 'Tomorrow', startOffset: 1, duration: 3 },
+                        { label: 'Next Weekend', startOffset: 5, duration: 3 },
+                        { label: 'After 1 Month', startOffset: 30, duration: 3 },
+                        { label: 'After 2 Months', startOffset: 60, duration: 3 },
+                        { label: 'After 3 Months', startOffset: 90, duration: 4 },
+                      ].map(preset => (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          onClick={() => {
+                            const s = new Date();
+                            s.setDate(s.getDate() + preset.startOffset);
+                            const e = new Date(s);
+                            e.setDate(e.getDate() + preset.duration);
+                            setPickupDate(s.toISOString().split('T')[0]);
+                            setDropDate(e.toISOString().split('T')[0]);
+                          }}
+                          className="btn btn-xs py-0.5 px-2 rounded-pill border text-3xs btn-light text-dark bg-light hover-bg-warning-subtle"
+                        >
+                          📅 {preset.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Date and Time Inputs */}
+                    <div className="row g-2">
+                      <div className="col-12 col-sm-6">
+                        <label className="form-label text-xxs fw-bold text-muted mb-1 d-flex align-items-center gap-1">
+                          <Clock size={11} className="text-primary" /> Pickup Date & Time *
+                        </label>
+                        <div className="input-group input-group-sm">
+                          <input
+                            type="date"
+                            min={new Date().toISOString().split('T')[0]}
+                            value={pickupDate}
+                            onChange={(e) => {
+                              const newPickup = e.target.value;
+                              setPickupDate(newPickup);
+                              if (new Date(newPickup) >= new Date(dropDate)) {
+                                const nextDay = new Date(newPickup);
+                                nextDay.setDate(nextDay.getDate() + 3);
+                                setDropDate(nextDay.toISOString().split('T')[0]);
+                              }
+                            }}
+                            className="form-control form-control-sm text-xs fw-bold"
+                            required
+                          />
+                          <input
+                            type="time"
+                            value={pickupTime}
+                            onChange={(e) => setPickupTime(e.target.value)}
+                            className="form-control form-control-sm text-xs px-1"
+                            style={{ maxWidth: '80px' }}
+                          />
+                        </div>
                       </div>
+
+                      <div className="col-12 col-sm-6">
+                        <label className="form-label text-xxs fw-bold text-muted mb-1 d-flex align-items-center gap-1">
+                          <Clock size={11} className="text-danger" /> Drop-off Date & Time *
+                        </label>
+                        <div className="input-group input-group-sm">
+                          <input
+                            type="date"
+                            min={pickupDate || new Date().toISOString().split('T')[0]}
+                            value={dropDate}
+                            onChange={(e) => setDropDate(e.target.value)}
+                            className="form-control form-control-sm text-xs fw-bold"
+                            required
+                          />
+                          <input
+                            type="time"
+                            value={dropTime}
+                            onChange={(e) => setDropTime(e.target.value)}
+                            className="form-control form-control-sm text-xs px-1"
+                            style={{ maxWidth: '80px' }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Pickup Location Hub */}
+                    <div className="mt-2.5 pt-2 border-top">
+                      <label className="form-label text-xxs fw-bold text-muted mb-1 d-flex align-items-center gap-1">
+                        <MapPin size={11} className="text-warning" /> Pickup Location Hub *
+                      </label>
+                      <select
+                        value={pickupLoc}
+                        onChange={(e) => setPickupLoc(e.target.value)}
+                        className="form-select form-select-sm text-xs"
+                      >
+                        {GOA_LOCATIONS.map(loc => (
+                          <option key={loc.id} value={loc.name}>{loc.name} ({loc.type})</option>
+                        ))}
+                      </select>
                     </div>
                   </div>
 

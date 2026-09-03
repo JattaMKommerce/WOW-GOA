@@ -791,6 +791,34 @@ export default function B2BInventoryTab({
                         </div>
                       </div>
 
+                      {/* Quick Check-in Jump */}
+                      <div className="d-flex align-items-center gap-1.5 flex-wrap mb-2">
+                        <span className="text-3xs text-muted fw-semibold">Check-in Jump:</span>
+                        {[
+                          { label: 'Tomorrow', offset: 1 },
+                          { label: 'Next Weekend', offset: 5 },
+                          { label: 'After 1 Month', offset: 30 },
+                          { label: 'After 2 Months', offset: 60 }
+                        ].map(preset => (
+                          <button
+                            key={preset.label}
+                            type="button"
+                            onClick={() => {
+                              const s = new Date(Date.now() + preset.offset * 86400000);
+                              const e = new Date(s.getTime() + 2 * 86400000);
+                              setGuestDetails(prev => ({
+                                ...prev,
+                                checkInDate: s.toISOString().split('T')[0],
+                                checkOutDate: e.toISOString().split('T')[0]
+                              }));
+                            }}
+                            className="btn btn-xs py-0.5 px-2 rounded-pill border text-3xs btn-light text-muted bg-light"
+                          >
+                            📅 {preset.label}
+                          </button>
+                        ))}
+                      </div>
+
                       {/* Quick Stay Duration Presets (1-click date setting without browser calendar hassle) */}
                       <div className="d-flex align-items-center gap-1.5 flex-wrap mb-2.5">
                         <span className="text-3xs text-muted fw-semibold">Quick Duration:</span>
@@ -879,7 +907,8 @@ export default function B2BInventoryTab({
                           { label: 'Tomorrow', offset: 1 },
                           { label: 'In 3 Days', offset: 3 },
                           { label: 'Next Weekend', offset: 5 },
-                          { label: 'Next Week', offset: 7 }
+                          { label: 'After 1 Month', offset: 30 },
+                          { label: 'After 2 Months', offset: 60 }
                         ].map(preset => (
                           <button
                             key={preset.offset}
