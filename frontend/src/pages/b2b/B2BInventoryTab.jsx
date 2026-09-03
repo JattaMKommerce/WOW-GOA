@@ -22,13 +22,21 @@ export default function B2BInventoryTab({
   // Selected item for rich details modal
   const [detailItem, setDetailItem] = useState(null);
 
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const tomorrowStr = useMemo(() => new Date(Date.now() + 86400000).toISOString().split('T')[0], []);
+  const dayAfterTomorrowStr = useMemo(() => new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0], []);
+
   // Selected item for booking modal
   const [bookingItem, setBookingItem] = useState(null);
   const [guestDetails, setGuestDetails] = useState({
     name: '',
     phone: '',
     email: '',
-    date: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+    checkInDate: tomorrowStr,
+    checkOutDate: dayAfterTomorrowStr,
+    date: tomorrowStr,
+    rooms: 1,
+    guests: 2,
     daysOrQty: 1,
     special_requests: '',
     payment_method: 'B2B Account / Cash'
@@ -36,6 +44,18 @@ export default function B2BInventoryTab({
   const [bookingLoading, setBookingLoading] = useState(false);
   const [bookingError, setBookingError] = useState('');
   const [bookingSuccess, setBookingSuccess] = useState(null);
+
+  const calculateHotelNights = () => {
+    try {
+      const inD = new Date(guestDetails.checkInDate || tomorrowStr);
+      const outD = new Date(guestDetails.checkOutDate || dayAfterTomorrowStr);
+      const diffTime = outD.getTime() - inD.getTime();
+      const diffDays = Math.round(diffTime / (1000 * 3600 * 24));
+      return Math.max(1, diffDays);
+    } catch {
+      return 1;
+    }
+  };
 
   // Commission and Net discount rate from partner profile or default
   const commRate = parseFloat(partnerUser?.default_commission_rate || 10.00);
@@ -135,7 +155,11 @@ export default function B2BInventoryTab({
       name: '',
       phone: '',
       email: '',
-      date: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+      checkInDate: tomorrowStr,
+      checkOutDate: dayAfterTomorrowStr,
+      date: tomorrowStr,
+      rooms: 1,
+      guests: 2,
       daysOrQty: 1,
       special_requests: '',
       payment_method: 'B2B Account / Cash'
@@ -153,8 +177,14 @@ export default function B2BInventoryTab({
     setBookingLoading(true);
     setBookingError('');
 
-    const pricing = getItemPricing(bookingItem);
-    const serviceType = activeService === 'hotels' ? 'hotel' : (activeService === 'flights' ? 'flight' : 'package');
+    const pr = getItemPricing(bookingItem);
+    const isHotel = activeService === 'hotels';
+    const nights = isHotel ? calculateHotelNights() : (parseInt(guestDetails.daysOrQty) || 1);
+    const rooms = isHotel ? (parseInt(guestDetails.rooms) || 1) : 1;
+    const qty = isHotel ? (nights * rooms) : (parseInt(guestDetails.daysOrQty) || 1);
+    const serviceType = isHotel ? 'hotel' : (activeService === 'flights' ? 'flight' : 'package');
+
+    const totalSelling = pr.sellingPrice * qty;
 
     const payload = {
       b2b_partner_id: partnerUser?.id,
@@ -162,17 +192,20 @@ export default function B2BInventoryTab({
       service_type: serviceType,
       item_id: bookingItem.id,
       item_name: bookingItem.name || bookingItem.title || 'WOW Goa Service',
-      days: parseInt(guestDetails.daysOrQty) || 1,
-      qty: parseInt(guestDetails.daysOrQty) || 1,
-      pickup_date: guestDetails.date,
+      days: nights,
+      qty: qty,
+      pickup_date: isHotel ? guestDetails.checkInDate : guestDetails.date,
+      drop_date: isHotel ? guestDetails.checkOutDate : undefined,
       guest_name: guestDetails.name,
       guest_phone: guestDetails.phone,
       guest_email: guestDetails.email,
       payment_method: guestDetails.payment_method,
       extra_details: {
-        total_amount: pricing.sellingPrice,
+        total_amount: totalSelling,
         special_requests: guestDetails.special_requests,
-        room_price: activeService === 'hotels' ? pricing.sellingPrice : undefined,
+        room_price: isHotel ? pr.sellingPrice : undefined,
+        rooms: isHotel ? rooms : undefined,
+        nights: isHotel ? nights : undefined,
         airline: activeService === 'flights' ? (bookingItem.airline || 'Airline') : undefined
       }
     };
@@ -614,7 +647,7 @@ export default function B2BInventoryTab({
         >
           <div 
             className="card border-0 shadow-2xl rounded-4 overflow-hidden animate-fade-in"
-            style={{ maxWidth: '600px', width: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', background: '#ffffff' }}
+            style={{ maxWidth: '680px', width: '100%', maxHeight: '92vh', display: 'flex', flexDirection: 'column', background: '#ffffff' }}
           >
             <div className="p-3.5 text-white d-flex align-items-center justify-content-between" style={{ background: '#0D1B2E' }}>
               <div>
@@ -699,27 +732,6 @@ export default function B2BInventoryTab({
                       />
                     </div>
                     <div className="col-12 col-md-6">
-                      <label className="form-label text-xxs fw-bold text-muted mb-1">Service Date *</label>
-                      <input
-                        type="date"
-                        className="form-control form-control-sm"
-                        value={guestDetails.date}
-                        onChange={(e) => setGuestDetails(prev => ({ ...prev, date: e.target.value }))}
-                        required
-                      />
-                    </div>
-                    <div className="col-12 col-md-6">
-                      <label className="form-label text-xxs fw-bold text-muted mb-1">Days / Guests Count</label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="20"
-                        className="form-control form-control-sm"
-                        value={guestDetails.daysOrQty}
-                        onChange={(e) => setGuestDetails(prev => ({ ...prev, daysOrQty: e.target.value }))}
-                      />
-                    </div>
-                    <div className="col-12 col-md-6">
                       <label className="form-label text-xxs fw-bold text-muted mb-1">Payment Method</label>
                       <select
                         className="form-select form-select-sm"
@@ -732,16 +744,168 @@ export default function B2BInventoryTab({
                         <option value="Credit Balance">Partner Credit Balance</option>
                       </select>
                     </div>
-                    <div className="col-12">
-                      <label className="form-label text-xxs fw-bold text-muted mb-1">Special Notes / Instructions</label>
-                      <input
-                        type="text"
-                        className="form-control form-control-sm"
-                        placeholder="Add special instructions, arrival time, room preferences..."
-                        value={guestDetails.special_requests}
-                        onChange={(e) => setGuestDetails(prev => ({ ...prev, special_requests: e.target.value }))}
-                      />
+                  </div>
+
+                  {/* DEDICATED DATE & CAPACITY SECTION (No calendar overlap, strict min=today) */}
+                  {activeService === 'hotels' ? (
+                    <div className="p-3 rounded-3 bg-white border mb-3 shadow-xs">
+                      <div className="d-flex align-items-center justify-content-between mb-2 pb-2 border-bottom">
+                        <span className="text-xxs fw-bold text-dark text-uppercase d-flex align-items-center gap-1.5 font-heading">
+                          <Calendar size={14} className="text-warning" /> Hotel Stay Dates & Capacity
+                        </span>
+                        <span className="badge bg-dark text-white text-xxs px-2.5 py-1 rounded-pill">
+                          {calculateHotelNights()} Night{calculateHotelNights() > 1 ? 's' : ''} • {guestDetails.rooms || 1} Room{(guestDetails.rooms || 1) > 1 ? 's' : ''}
+                        </span>
+                      </div>
+
+                      <div className="row g-2 mb-2">
+                        <div className="col-12 col-sm-6">
+                          <label className="form-label text-xxs fw-bold text-muted mb-1">Check-in Date *</label>
+                          <input
+                            type="date"
+                            className="form-control form-control-sm"
+                            min={todayStr}
+                            value={guestDetails.checkInDate}
+                            onChange={(e) => {
+                              const newIn = e.target.value;
+                              setGuestDetails(prev => {
+                                const nextDay = new Date(new Date(newIn).getTime() + 86400000).toISOString().split('T')[0];
+                                const newOut = (!prev.checkOutDate || prev.checkOutDate <= newIn) ? nextDay : prev.checkOutDate;
+                                return { ...prev, checkInDate: newIn, checkOutDate: newOut };
+                              });
+                            }}
+                            required
+                          />
+                        </div>
+
+                        <div className="col-12 col-sm-6">
+                          <label className="form-label text-xxs fw-bold text-muted mb-1">Check-out Date *</label>
+                          <input
+                            type="date"
+                            className="form-control form-control-sm"
+                            min={guestDetails.checkInDate || todayStr}
+                            value={guestDetails.checkOutDate}
+                            onChange={(e) => setGuestDetails(prev => ({ ...prev, checkOutDate: e.target.value }))}
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      {/* Quick Stay Duration Presets (1-click date setting without browser calendar hassle) */}
+                      <div className="d-flex align-items-center gap-1.5 flex-wrap mb-2.5">
+                        <span className="text-3xs text-muted fw-semibold">Quick Duration:</span>
+                        {[
+                          { label: '1 Night', days: 1 },
+                          { label: '2 Nights', days: 2 },
+                          { label: '3 Nights', days: 3 },
+                          { label: '5 Nights', days: 5 },
+                          { label: '7 Nights', days: 7 }
+                        ].map(preset => (
+                          <button
+                            key={preset.days}
+                            type="button"
+                            onClick={() => {
+                              const inDate = guestDetails.checkInDate || tomorrowStr;
+                              const newOut = new Date(new Date(inDate).getTime() + preset.days * 86400000).toISOString().split('T')[0];
+                              setGuestDetails(prev => ({ ...prev, checkInDate: inDate, checkOutDate: newOut }));
+                            }}
+                            className={`btn btn-xs py-0.5 px-2 rounded-pill border text-3xs fw-semibold ${
+                              calculateHotelNights() === preset.days ? 'btn-dark text-white' : 'btn-light text-muted bg-light'
+                            }`}
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="row g-2">
+                        <div className="col-6">
+                          <label className="form-label text-xxs fw-bold text-muted mb-1">Rooms Count</label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="20"
+                            className="form-control form-control-sm"
+                            value={guestDetails.rooms}
+                            onChange={(e) => setGuestDetails(prev => ({ ...prev, rooms: parseInt(e.target.value) || 1 }))}
+                          />
+                        </div>
+                        <div className="col-6">
+                          <label className="form-label text-xxs fw-bold text-muted mb-1">Guests Count</label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="40"
+                            className="form-control form-control-sm"
+                            value={guestDetails.guests}
+                            onChange={(e) => setGuestDetails(prev => ({ ...prev, guests: parseInt(e.target.value) || 1 }))}
+                          />
+                        </div>
+                      </div>
                     </div>
+                  ) : (
+                    <div className="p-3 rounded-3 bg-white border mb-3 shadow-xs">
+                      <div className="row g-2 mb-2">
+                        <div className="col-12 col-sm-6">
+                          <label className="form-label text-xxs fw-bold text-muted mb-1">Service / Travel Date *</label>
+                          <input
+                            type="date"
+                            className="form-control form-control-sm"
+                            min={todayStr}
+                            value={guestDetails.date}
+                            onChange={(e) => setGuestDetails(prev => ({ ...prev, date: e.target.value }))}
+                            required
+                          />
+                        </div>
+                        <div className="col-12 col-sm-6">
+                          <label className="form-label text-xxs fw-bold text-muted mb-1">
+                            {activeService === 'flights' ? 'Passengers Count' : 'Guests / Travelers Count'}
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="50"
+                            className="form-control form-control-sm"
+                            value={guestDetails.daysOrQty}
+                            onChange={(e) => setGuestDetails(prev => ({ ...prev, daysOrQty: e.target.value }))}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Quick Date Presets */}
+                      <div className="d-flex align-items-center gap-1.5 flex-wrap">
+                        <span className="text-3xs text-muted fw-semibold">Quick Dates:</span>
+                        {[
+                          { label: 'Tomorrow', offset: 1 },
+                          { label: 'In 3 Days', offset: 3 },
+                          { label: 'Next Weekend', offset: 5 },
+                          { label: 'Next Week', offset: 7 }
+                        ].map(preset => (
+                          <button
+                            key={preset.offset}
+                            type="button"
+                            onClick={() => {
+                              const d = new Date(Date.now() + preset.offset * 86400000).toISOString().split('T')[0];
+                              setGuestDetails(prev => ({ ...prev, date: d }));
+                            }}
+                            className="btn btn-xs py-0.5 px-2 rounded-pill border text-3xs btn-light text-muted bg-light"
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mb-3">
+                    <label className="form-label text-xxs fw-bold text-muted mb-1">Special Notes / Instructions</label>
+                    <input
+                      type="text"
+                      className="form-control form-control-sm"
+                      placeholder="Add special instructions, arrival time, room preferences..."
+                      value={guestDetails.special_requests}
+                      onChange={(e) => setGuestDetails(prev => ({ ...prev, special_requests: e.target.value }))}
+                    />
                   </div>
 
                   {/* Financial calculation breakdown */}
@@ -751,7 +915,10 @@ export default function B2BInventoryTab({
                     </h6>
                     {(() => {
                       const pr = getItemPricing(bookingItem);
-                      const qty = parseInt(guestDetails.daysOrQty) || 1;
+                      const isHotel = activeService === 'hotels';
+                      const nights = isHotel ? calculateHotelNights() : (parseInt(guestDetails.daysOrQty) || 1);
+                      const rooms = isHotel ? (parseInt(guestDetails.rooms) || 1) : 1;
+                      const qty = isHotel ? (nights * rooms) : (parseInt(guestDetails.daysOrQty) || 1);
                       const totalSelling = pr.sellingPrice * qty;
                       const totalComm = pr.commAmount * qty;
                       const totalNetPayable = pr.netPayable * qty;
@@ -761,7 +928,9 @@ export default function B2BInventoryTab({
                       return mode === 'COMMISSION' ? (
                         <div className="text-xs">
                           <div className="d-flex justify-content-between py-1 text-muted">
-                            <span>Selling Price (×{qty}):</span>
+                            <span>
+                              Selling Price {isHotel ? `(₹${pr.sellingPrice.toLocaleString()} × ${nights}N × ${rooms}R)` : `(×${qty})`}:
+                            </span>
                             <span>₹{totalSelling.toLocaleString()}</span>
                           </div>
                           <div className="d-flex justify-content-between py-1 text-success fw-semibold">
@@ -776,7 +945,9 @@ export default function B2BInventoryTab({
                       ) : (
                         <div className="text-xs">
                           <div className="d-flex justify-content-between py-1 text-muted">
-                            <span>Main Website Price (×{qty}):</span>
+                            <span>
+                              Main Website Price {isHotel ? `(₹${pr.sellingPrice.toLocaleString()} × ${nights}N × ${rooms}R)` : `(×${qty})`}:
+                            </span>
                             <span className="text-decoration-line-through">₹{totalSelling.toLocaleString()}</span>
                           </div>
                           <div className="d-flex justify-content-between py-1 text-primary fw-semibold">
