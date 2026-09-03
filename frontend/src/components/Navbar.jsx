@@ -26,21 +26,19 @@ export default function Navbar({ activeTab, setActiveTab, currentUser, triggerOp
         <div className="collapse navbar-collapse justify-content-end" id="navbarNav">
           <ul className="navbar-nav align-items-center gap-1">
             {headerLinks.map(link => {
-              // Strip leading slash for active tab matching if needed, or exact match
-              const isActive = activeTab === link.id || activeTab === link.href.replace('/', '');
+              // Active state match
+              const isActive = activeTab === link.id || 
+                (link.id === 'craftmytrip' && (activeTab === 'craftmytrip' || activeTab === 'craft')) ||
+                (link.id === 'selfdrive' && (activeTab === 'selfdrive' || activeTab === 'home')) ||
+                activeTab === link.href.replace('/', '');
               return (
                 <li key={link.id} className="nav-item">
                   <a 
                     className={`nav-link ${isActive ? 'active' : ''}`} 
                     href={link.href} 
                     onClick={(e) => {
-                      if(link.href.startsWith('/')) {
-                        e.preventDefault();
-                        setActiveTab(link.id);
-                        // Also push state so URL updates correctly
-                        window.history.pushState({}, '', link.href);
-                        window.dispatchEvent(new PopStateEvent('popstate'));
-                      }
+                      e.preventDefault();
+                      setActiveTab(link.id);
                     }}
                   >
                     {link.label}
@@ -57,11 +55,23 @@ export default function Navbar({ activeTab, setActiveTab, currentUser, triggerOp
                 onClick={(e) => {
                   e.preventDefault();
                   setActiveTab('customer');
-                  window.history.pushState({}, '', '/customer');
-                  window.dispatchEvent(new PopStateEvent('popstate'));
                 }}
               >
                 <span>🎫 Track Booking</span>
+              </a>
+            </li>
+
+            {/* B2B Partner Portal Link */}
+            <li className="nav-item">
+              <a 
+                className={`nav-link ${activeTab === 'b2b' ? 'active' : ''}`} 
+                href="/b2b" 
+                onClick={(e) => {
+                  e.preventDefault();
+                  setActiveTab('b2b');
+                }}
+              >
+                <span>💼 B2B Portal</span>
               </a>
             </li>
 

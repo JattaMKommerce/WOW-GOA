@@ -1,0 +1,7 @@
+---
+deployment:
+  tasks:
+    - export DEPLOYPATH=/home/wowgoa/public_html
+    - /bin/cp -R backend $DEPLOYPATH/
+    - if [ -d "frontend/dist" ]; then /bin/cp -R frontend/dist/* $DEPLOYPATH/; fi
+    - if [ -f ".htaccess" ]; then /bin/cp .htaccess $DEPLOYPATH/; fi

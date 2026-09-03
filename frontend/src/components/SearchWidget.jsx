@@ -353,7 +353,7 @@ export default function SearchWidget({
   const totalPassengers = (flightAdults || 1) + (flightChildren || 0) + (flightInfants || 0);
 
   return (
-    <div className="container booking-widget-wrapper" ref={widgetRef}>
+    <div className="container booking-widget-wrapper" id="search" ref={widgetRef} style={{ scrollMarginTop: '80px' }}>
       <div className="booking-widget-card">
         
         {/* ─── BOOKING TYPE TABS ────────────────────────────────────────────── */}

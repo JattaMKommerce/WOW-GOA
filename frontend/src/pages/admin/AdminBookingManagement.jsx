@@ -43,6 +43,7 @@ export default function AdminBookingManagement({
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [channelFilter, setChannelFilter] = useState('all');
   
   // Modals
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -135,14 +136,25 @@ export default function AdminBookingManagement({
   const filteredBookings = (bookingsList || []).filter(b => {
     const s = (b.status || 'pending').toLowerCase();
     const matchStatus = statusFilter === 'all' || s === statusFilter.toLowerCase();
+    
+    // Channel filter
+    const ch = (b.booking_channel || 'D2C').toUpperCase();
+    const mode = (b.b2b_mode || '').toUpperCase();
+    let matchChannel = true;
+    if (channelFilter === 'D2C') matchChannel = ch === 'D2C';
+    else if (channelFilter === 'B2B') matchChannel = ch === 'B2B';
+    else if (channelFilter === 'COMMISSION') matchChannel = ch === 'B2B' && mode === 'COMMISSION';
+    else if (channelFilter === 'NON_COMMISSION') matchChannel = ch === 'B2B' && mode === 'NON_COMMISSION';
+
     const query = search.toLowerCase();
     const matchSearch =
       String(b.id || '').toLowerCase().includes(query) ||
       String(b.name || b.customer_name || '').toLowerCase().includes(query) ||
       String(b.phone || '').toLowerCase().includes(query) ||
       String(b.item_name || '').toLowerCase().includes(query) ||
+      String(b.b2b_partner_name || '').toLowerCase().includes(query) ||
       String(b.email || '').toLowerCase().includes(query);
-    return matchStatus && matchSearch;
+    return matchStatus && matchChannel && matchSearch;
   });
 
   // Calculate Metrics
@@ -375,7 +387,20 @@ export default function AdminBookingManagement({
               />
             </div>
           </div>
-          <div className="col-12 col-md-7 d-flex justify-content-md-end gap-1.5 flex-wrap">
+          <div className="col-12 col-md-7 d-flex justify-content-md-end align-items-center gap-1.5 flex-wrap">
+            <select
+              className="form-select form-select-sm bg-light"
+              value={channelFilter}
+              onChange={e => setChannelFilter(e.target.value)}
+              style={{ width: 'auto', fontSize: '0.75rem', fontWeight: '600' }}
+            >
+              <option value="all">🌐 All Channels</option>
+              <option value="D2C">🔵 D2C Website</option>
+              <option value="B2B">💼 All B2B Partners</option>
+              <option value="COMMISSION">💰 B2B Commission</option>
+              <option value="NON_COMMISSION">🏷️ B2B Non-Commission</option>
+            </select>
+
             {['all', 'confirmed', 'pending', 'completed', 'cancelled'].map(tab => (
               <button
                 key={tab}
@@ -398,6 +423,7 @@ export default function AdminBookingManagement({
             <thead className="table-light text-muted fw-semibold" style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
               <tr>
                 <th className="ps-3 py-3">Booking ID</th>
+                <th className="py-3">Channel</th>
                 <th className="py-3">Customer</th>
                 <th className="py-3">Service / Item</th>
                 <th className="py-3">Travel Dates</th>
@@ -410,7 +436,7 @@ export default function AdminBookingManagement({
             <tbody>
               {filteredBookings.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="text-center py-5 text-muted">
+                  <td colSpan="9" className="text-center py-5 text-muted">
                     <Calendar size={36} className="text-muted opacity-50 mb-2" />
                     <div>No bookings found matching the current filters.</div>
                   </td>
@@ -422,11 +448,31 @@ export default function AdminBookingManagement({
                   const cPhone = b.phone || '—';
                   const itemName = b.item_name || b.service_name || 'Package / Stay';
                   const amount = Number(b.total_amount || b.total_paid || b.price || 0);
+                  const isB2B = (b.booking_channel || '').toUpperCase() === 'B2B';
+                  const b2bMode = (b.b2b_mode || '').toUpperCase();
                   
                   return (
                     <tr key={bId}>
                       <td className="ps-3 fw-bold text-dark font-monospace" style={{ fontSize: '0.8rem' }}>
                         #{bId}
+                      </td>
+                      <td>
+                        {isB2B ? (
+                          <div>
+                            <span className={`badge rounded-pill px-2 py-0.5 fw-bold ${b2bMode === 'COMMISSION' ? 'bg-success bg-opacity-10 text-success' : 'bg-primary bg-opacity-10 text-primary'}`} style={{ fontSize: '0.68rem' }}>
+                              {b2bMode === 'COMMISSION' ? '💰 B2B Comm' : '🏷️ B2B Net'}
+                            </span>
+                            {b.b2b_partner_name && (
+                              <div className="text-muted text-xxs mt-0.5 text-truncate" style={{ maxWidth: '110px' }} title={b.b2b_partner_name}>
+                                {b.b2b_partner_name}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="badge bg-secondary bg-opacity-10 text-secondary rounded-pill px-2 py-0.5 fw-bold text-xxs">
+                            🔵 D2C
+                          </span>
+                        )}
                       </td>
                       <td>
                         <div className="fw-bold text-dark">{cName}</div>

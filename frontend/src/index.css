@@ -161,3 +161,18 @@ h1, h2, h3, h4, h5, h6 {
 .float-animation {
   animation: float 4s ease-in-out infinite;
 }
+
+@keyframes tabSlideUp {
+  0% {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tab-slide-enter {
+  animation: tabSlideUp 0.38s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}

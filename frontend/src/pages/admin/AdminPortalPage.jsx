@@ -2,10 +2,12 @@ import React, { useState } from 'react';
 import {
   Compass, LogOut, Box, Building, MessageSquare, CreditCard, Calendar,
   Plane, Hotel, Shield, LayoutDashboard, Globe, Users, Tag, BarChart2,
-  ChevronDown, ChevronRight, Menu, Bell, Layers, FileText, Star, PlusCircle, Settings, X, UserPlus
+  ChevronDown, ChevronRight, Menu, Bell, Layers, FileText, Star, PlusCircle, Settings, X, UserPlus,
+  Briefcase, Gift, Clock, AlertCircle
 } from 'lucide-react';
 import AdminDashboard from './AdminDashboard';
 import AdminDashboardOverview from './AdminDashboardOverview';
+import AdminB2BPortal from './b2b/AdminB2BPortal';
 
 import AdminCMS from './AdminCMS';
 import AdminCustomerManagement from './AdminCustomerManagement';
@@ -30,6 +32,21 @@ const SIDEBAR_GROUPS = [
     label: 'Overview',
     items: [
       { id: 'overview', label: 'Dashboard', icon: <LayoutDashboard size={15} /> },
+    ]
+  },
+
+  {
+    label: 'B2B Distribution',
+    items: [
+      { id: 'b2b_dashboard', label: 'B2B Dashboard', icon: <Briefcase size={15} /> },
+      { id: 'b2b_applications', label: 'Partner Applications', icon: <Clock size={15} /> },
+      { id: 'b2b_all_partners', label: 'All Partners', icon: <Users size={15} /> },
+      { id: 'b2b_commission_partners', label: 'Commission Partners', icon: <Gift size={15} /> },
+      { id: 'b2b_non_commission_partners', label: 'Non-Commission Partners', icon: <Tag size={15} /> },
+      { id: 'b2b_mode_requests', label: 'Mode Change Requests', icon: <AlertCircle size={15} /> },
+      { id: 'b2b_commission_bookings', label: 'Commission Bookings', icon: <FileText size={15} /> },
+      { id: 'b2b_non_commission_bookings', label: 'Non-Commission Bookings', icon: <FileText size={15} /> },
+      { id: 'b2b_settings', label: 'B2B Settings & Rules', icon: <Settings size={15} /> },
     ]
   },
 
@@ -91,7 +108,7 @@ const SIDEBAR_GROUPS = [
 ];
 
 function SidebarGroup({ group, activeTab, onSelect, defaultOpen }) {
-  const [open, setOpen] = useState(group.label === 'Customers' || group.label === 'Overview' || defaultOpen || group.items.some(i => i.id === activeTab));
+  const [open, setOpen] = useState(group.label === 'Customers' || group.label === 'Overview' || group.label === 'B2B Distribution' || defaultOpen || group.items.some(i => i.id === activeTab));
   return (
     <div className="mb-1">
       <button onClick={() => setOpen(!open)} className="btn w-100 d-flex align-items-center justify-content-between px-3 py-1 border-0" style={{ background: 'transparent', fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', color: 'rgba(255,255,255,0.3)' }}>
@@ -217,6 +234,15 @@ export default function AdminPortalPage({
   });
 
   const getAdminBookingCategory = (b) => {
+    if (b.booking_channel === 'B2B' || b.b2b_mode) {
+      const isNet = b.b2b_mode === 'NON_COMMISSION';
+      return { 
+        tab: isNet ? 'b2b_non_commission_bookings' : 'b2b_commission_bookings', 
+        type: isNet ? 'B2B Net Booking' : 'B2B Commission Booking', 
+        color: isNet ? '#3b82f6' : '#eab308' 
+      };
+    }
+
     const itemId = String(b.item_id || '').toLowerCase();
     const itemName = String(b.item_name || '').toLowerCase();
     const type = String(b.type || b.item_type || '').toLowerCase();
@@ -330,6 +356,17 @@ export default function AdminPortalPage({
     switch (adminActiveTab) {
       case 'overview':
         return <AdminDashboardOverview vendors={vendors} allPackages={allPackages} hotels={hotels} cars={cars} bikes={bikes} bookings={bookings} currentUser={currentUser} />;
+
+      case 'b2b_dashboard':
+      case 'b2b_applications':
+      case 'b2b_all_partners':
+      case 'b2b_commission_partners':
+      case 'b2b_non_commission_partners':
+      case 'b2b_mode_requests':
+      case 'b2b_commission_bookings':
+      case 'b2b_non_commission_bookings':
+      case 'b2b_settings':
+        return <AdminB2BPortal activeSubTab={adminActiveTab} onNavigateSubTab={(sub) => setAdminActiveTab(sub)} />;
 
       case 'drivers':
         return <AdminDriverManagement currentUser={currentUser} bookings={bookings} />;

@@ -4,7 +4,7 @@ export default function Hero({ config }) {
   if (config && !config.visible) return null;
 
   return (
-    <header className="hero-section" id="search" style={{ position: 'relative', overflow: 'hidden', background: 'none' }}>
+    <header className="hero-section" id="hero-banner" style={{ position: 'relative', overflow: 'hidden', background: 'none' }}>
       {/* Background Video */}
       <video
         autoPlay

@@ -64,7 +64,8 @@ export default function CustomerPortalPage({
   cars = [],
   bikes = [],
   hotels = [],
-  flights = []
+  flights = [],
+  onNavigateHome
 }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -492,7 +493,16 @@ export default function CustomerPortalPage({
             
             {/* ── LEFT: Brand Logo & Customer Portal Title ── */}
             <div className="d-flex align-items-center gap-3">
-              <a href="/" className="d-flex align-items-center gap-2 text-decoration-none">
+              <a 
+                href="/" 
+                onClick={(e) => {
+                  if (onNavigateHome) {
+                    e.preventDefault();
+                    onNavigateHome();
+                  }
+                }}
+                className="d-flex align-items-center gap-2 text-decoration-none"
+              >
                 <div className="bg-warning text-dark rounded-circle p-1.5 d-flex align-items-center justify-content-center shadow-sm flex-shrink-0" style={{ width: '36px', height: '36px' }}>
                   <Compass size={22} className="animate-spin-slow" />
                 </div>
@@ -546,6 +556,12 @@ export default function CustomerPortalPage({
               {/* Direct Storefront Link */}
               <a 
                 href="/" 
+                onClick={(e) => {
+                  if (onNavigateHome) {
+                    e.preventDefault();
+                    onNavigateHome();
+                  }
+                }}
                 className="btn btn-outline-dark btn-sm rounded-pill px-3 py-1.5 text-xs d-none d-xl-flex align-items-center gap-1.5 fw-bold"
               >
                 <span>Storefront</span>

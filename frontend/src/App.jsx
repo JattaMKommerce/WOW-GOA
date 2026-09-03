@@ -48,6 +48,7 @@ import {
   CustomerPortalPage
 } from './pages';
 import CustomTripEnquiryPage from './pages/customer/CustomTripEnquiryPage';
+import B2BPortalPage from './pages/b2b/B2BPortalPage';
 
 // Import Mock Data & API Service
 import { 
@@ -242,17 +243,19 @@ export default function App() {
     const syncTabFromUrl = () => {
       const p = window.location.pathname.toLowerCase();
       setCurrentPath(p);
-      const cleanPath = p.replace('/', '');
+      const cleanPath = p.replace(/^\//, '').split('/')[0];
       if (cleanPath === 'packages') setActiveTab('packages');
-      else if (cleanPath === 'self-drive' || cleanPath === 'selfdrive') setActiveTab('selfdrive');
+      else if (cleanPath === 'self-drive' || cleanPath === 'selfdrive' || cleanPath === '') setActiveTab('selfdrive');
       else if (cleanPath === 'hotels') setActiveTab('hotels');
       else if (cleanPath === 'cars') setActiveTab('cars');
       else if (cleanPath === 'bikes') setActiveTab('bikes');
       else if (cleanPath === 'flights') setActiveTab('flights');
       else if (cleanPath === 'craft' || cleanPath === 'craftmytrip') setActiveTab('craftmytrip');
       else if (cleanPath === 'custom-trip') setActiveTab('custom-trip');
+      else if (cleanPath === 'customer' || cleanPath.startsWith('customer')) setActiveTab('customer');
       else if (cleanPath === 'admin' || cleanPath === 'portal' || cleanPath === 'superadmin' || cleanPath === 'vendor' || cleanPath === 'hotel-vendor' || cleanPath === 'hotel-pms' || cleanPath === 'flight-vendor' || cleanPath === 'sub-admin' || cleanPath === 'subadmin') setActiveTab('portal');
       else if (cleanPath === 'dashboard' || cleanPath === 'my-bookings') setActiveTab('dashboard');
+      else if (cleanPath === 'b2b' || cleanPath.startsWith('b2b')) setActiveTab('b2b');
     };
 
     syncTabFromUrl();
@@ -264,12 +267,14 @@ export default function App() {
     let normalizedTab = newTab;
     if (normalizedTab === 'self drive') normalizedTab = 'selfdrive';
     if (normalizedTab === 'trip packages') normalizedTab = 'packages';
+    if (normalizedTab === 'self-drive') normalizedTab = 'selfdrive';
+    if (normalizedTab === 'craft' || normalizedTab === 'craft-my-trip') normalizedTab = 'craftmytrip';
+    if (normalizedTab === 'my-trips' || normalizedTab === 'track-booking') normalizedTab = 'customer';
 
     if (activeTab === 'customize' && normalizedTab !== 'customize') {
       setSelectedBookingItem(null);
     }
     setActiveTab(normalizedTab);
-    window.scrollTo(0, 0);
 
     const pathMap = {
       'packages': '/packages',
@@ -280,18 +285,33 @@ export default function App() {
       'flights': '/flights',
       'craftmytrip': '/craft',
       'custom-trip': '/custom-trip',
+      'customer': '/customer',
+      'b2b': '/b2b',
       'portal': currentUser?.role === 'hotel_vendor' ? '/hotel-vendor' : (currentUser?.role === 'flight_vendor' ? '/flight-vendor' : (currentUser?.role === 'vendor' ? '/vendor' : (currentUser?.role === 'superadmin' ? '/superadmin' : '/admin'))),
       'dashboard': '/dashboard'
     };
-    if (pathMap[normalizedTab]) {
-      window.history.pushState({}, '', pathMap[normalizedTab]);
-      setCurrentPath(pathMap[normalizedTab].toLowerCase());
-    }
-    if (normalizedTab === 'home' || normalizedTab === 'packages' || normalizedTab === 'cars') {
-      setSearchTriggered(false);
-    } else {
+    const targetPath = pathMap[normalizedTab] || `/${normalizedTab}`;
+    window.history.pushState({}, '', targetPath);
+    setCurrentPath(targetPath.toLowerCase());
+
+    if (['hotels', 'flights', 'craftmytrip'].includes(normalizedTab)) {
       setSearchTriggered(true);
+    } else if (['selfdrive', 'packages', 'cars', 'home'].includes(normalizedTab)) {
+      setSearchTriggered(false);
     }
+
+    // Slide and show directly that section
+    setTimeout(() => {
+      const el = document.getElementById('results-section');
+      if (el) {
+        const navbarHeight = 72;
+        const targetPos = el.getBoundingClientRect().top + window.pageYOffset - navbarHeight;
+        window.scrollTo({
+          top: Math.max(0, targetPos),
+          behavior: 'smooth'
+        });
+      }
+    }, 40);
   };
 
   const handleOpenBooking = (item, isCustomization = false) => {
@@ -668,6 +688,17 @@ export default function App() {
     );
   }
 
+  // ─── B2B TRAVEL AGENT / PARTNER PORTAL ROUTING ────────────────────────────
+  if (path.startsWith('/b2b') || activeTab === 'b2b') {
+    return (
+      <B2BPortalPage
+        onNavigateHome={() => {
+          handleTabChange('selfdrive');
+        }}
+      />
+    );
+  }
+
   // ─── DRIVER PORTAL ROUTING ────────────────────────────────────────────────
   if (path.startsWith('/driver') || currentUser?.role === 'driver' || activeTab === 'driver') {
     if (!currentUser || currentUser.role !== 'driver') {
@@ -680,8 +711,7 @@ export default function App() {
             window.history.pushState(null, '', '/driver');
           }}
           onNavigateHome={() => {
-            setActiveTab('packages');
-            window.history.pushState(null, '', '/');
+            handleTabChange('selfdrive');
           }}
         />
       );
@@ -691,8 +721,7 @@ export default function App() {
         currentUser={currentUser}
         onLogout={handleLogout}
         onNavigateHome={() => {
-          setActiveTab('packages');
-          window.history.pushState(null, '', '/');
+          handleTabChange('selfdrive');
         }}
       />
     );
@@ -710,6 +739,9 @@ export default function App() {
         bikes={bikes}
         hotels={hotels}
         flights={flights}
+        onNavigateHome={() => {
+          handleTabChange('selfdrive');
+        }}
       />
     );
   }
@@ -926,8 +958,9 @@ export default function App() {
       />
 
       {/* Dynamic Results & Content Section */}
-      <main className="py-5" id="results-section">
+      <main className="py-5" id="results-section" style={{ scrollMarginTop: '80px' }}>
         <div className="container">
+          <div key={activeTab} className="tab-slide-enter">
           
           {activeTab === 'packages' && (
             <>
@@ -1169,6 +1202,7 @@ export default function App() {
             <AIPlannerPage onNavigate={(t) => setActiveTab(t)} />
           )}
 
+          </div>
         </div>
       </main>
 

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Users, Search, Eye, Wallet, Calendar, Star, Filter, ChevronRight, X, Download, 
   UserPlus, Shield, Plus, CheckCircle, AlertCircle, RefreshCw, Key, Phone, Mail, MapPin, 
-  UserCheck, ToggleLeft, ToggleRight, Cake, Send, Gift, Crown, History, Settings, Sparkles, CheckCircle2, Car, Hotel, Compass
+  UserCheck, ToggleLeft, ToggleRight, Cake, Send, Gift, Crown, History, Settings, Sparkles, CheckCircle2, Car, Hotel, Compass, Building2, Tag, Edit2
 } from 'lucide-react';
 import * as api from '../../services/api';
 import { calculateLoyaltyTiers, formatBirthdayDisplay } from '../../utils/loyaltyHelper';
@@ -97,6 +97,148 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
       setSelectedWallet(null);
     }
   }, [selected]);
+
+  // B2B Partner & Pricing Rules State
+  const [b2bPartners, setB2bPartners] = useState([]);
+  const [loadingPartners, setLoadingPartners] = useState(false);
+  const [b2bRules, setB2bRules] = useState([]);
+  const [loadingRules, setLoadingRules] = useState(false);
+  const [b2bAuditLogs, setB2bAuditLogs] = useState([]);
+  const [loadingAuditLogs, setLoadingAuditLogs] = useState(false);
+  const [b2bSubTab, setB2bSubTab] = useState('partners'); // 'partners' | 'rules' | 'logs'
+  const [b2bStatusFilter, setB2bStatusFilter] = useState('all'); // 'all' | 'pending' | 'active' | 'rejected'
+  const [viewingPartner, setViewingPartner] = useState(null);
+  const [rejectingPartner, setRejectingPartner] = useState(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [showPartnerModal, setShowPartnerModal] = useState(false);
+  const [partnerFormData, setPartnerFormData] = useState({
+    id: '',
+    username: '',
+    company_name: '',
+    business_type: 'Travel Agency',
+    name: '',
+    phone: '',
+    email: '',
+    website: '',
+    contact_name: '',
+    contact_email: '',
+    contact_phone: '',
+    address: '',
+    city: '',
+    state: 'Goa',
+    country: 'India',
+    pincode: '',
+    password: '',
+    default_commission_rate: 10.0,
+    default_net_discount_rate: 10.0,
+    allow_commission: 1,
+    allow_non_commission: 1,
+    status: 'active'
+  });
+  const [showRuleModal, setShowRuleModal] = useState(false);
+  const [ruleFormData, setRuleFormData] = useState({
+    partner_id: 'all',
+    service_type: 'all',
+    commission_percent: 10.0,
+    net_discount_percent: 10.0,
+    is_active: 1,
+    notes: ''
+  });
+
+  const loadB2BData = async () => {
+    setLoadingPartners(true);
+    setLoadingRules(true);
+    setLoadingAuditLogs(true);
+    try {
+      const [pts, rls, logs] = await Promise.all([
+        api.fetchB2BPartners(),
+        api.fetchB2BPricingRules(),
+        api.fetchB2BAuditLogs()
+      ]);
+      setB2bPartners(Array.isArray(pts) ? pts : []);
+      setB2bRules(Array.isArray(rls) ? rls : []);
+      setB2bAuditLogs(Array.isArray(logs) ? logs : []);
+    } catch (err) {
+      console.warn('Failed to load B2B admin data:', err);
+    } finally {
+      setLoadingPartners(false);
+      setLoadingRules(false);
+      setLoadingAuditLogs(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeMainTab === 'b2b_partners') {
+      loadB2BData();
+    }
+  }, [activeMainTab]);
+
+  const handleApprovePartner = async (partnerId) => {
+    const target = b2bPartners.find(p => p.id === partnerId);
+    const agencyName = target ? (target.company_name || target.name) : 'Partner';
+    if (!window.confirm(`Are you sure you want to APPROVE B2B Partner "${agencyName}"? This will enable their B2B Portal access.`)) {
+      return;
+    }
+    try {
+      await api.b2bApprovePartner(partnerId);
+      if (viewingPartner && viewingPartner.id === partnerId) {
+        setViewingPartner(prev => ({ ...prev, status: 'active', approved_at: new Date().toISOString() }));
+      }
+      await loadB2BData();
+      setActionAlert({ type: 'success', text: `B2B Partner "${agencyName}" has been APPROVED and activated.` });
+      setTimeout(() => setActionAlert(null), 3500);
+    } catch (err) {
+      alert(err.message || 'Failed to approve partner.');
+    }
+  };
+
+  const handleRejectPartnerSubmit = async (e) => {
+    e.preventDefault();
+    if (!rejectingPartner) return;
+    try {
+      await api.b2bRejectPartner(rejectingPartner.id, rejectReason);
+      if (viewingPartner && viewingPartner.id === rejectingPartner.id) {
+        setViewingPartner(prev => ({ ...prev, status: 'rejected', rejection_reason: rejectReason }));
+      }
+      setRejectingPartner(null);
+      setRejectReason('');
+      await loadB2BData();
+      setActionAlert({ type: 'success', text: `B2B Partner "${rejectingPartner.company_name || rejectingPartner.name}" application was rejected.` });
+      setTimeout(() => setActionAlert(null), 3500);
+    } catch (err) {
+      alert(err.message || 'Failed to reject partner.');
+    }
+  };
+
+  const handleSavePartnerSubmit = async (e) => {
+    e.preventDefault();
+    if (!partnerFormData.company_name || !partnerFormData.phone) {
+      alert('Please provide Agency Company Name and Phone.');
+      return;
+    }
+    try {
+      await api.saveB2BPartner(partnerFormData);
+      setShowPartnerModal(false);
+      await loadB2BData();
+      setActionAlert({ type: 'success', text: `B2B Partner Agency ${partnerFormData.company_name} saved successfully!` });
+      setTimeout(() => setActionAlert(null), 3500);
+    } catch (err) {
+      alert(err.message || 'Failed to save partner.');
+    }
+  };
+
+  const handleSaveRuleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api.saveB2BPricingRule(ruleFormData);
+      setShowRuleModal(false);
+      await loadB2BData();
+      setActionAlert({ type: 'success', text: `B2B Pricing Rule saved successfully!` });
+      setTimeout(() => setActionAlert(null), 3500);
+    } catch (err) {
+      alert(err.message || 'Failed to save rule.');
+    }
+  };
 
   // Add Users / Team Management Modal State
   const [showUsersModal, setShowUsersModal] = useState(initialOpenAddUser);
@@ -504,6 +646,20 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
           style={{ fontSize: '0.85rem' }}
         >
           <Settings size={16} /> Birthday Offer Settings
+        </button>
+
+        <button
+          onClick={() => setActiveMainTab('b2b_partners')}
+          className={`btn btn-sm fw-bold px-3.5 py-2.5 rounded-top-3 border-0 d-flex align-items-center gap-2 ${activeMainTab === 'b2b_partners' ? 'bg-white text-dark shadow-sm border-bottom border-dark border-2' : 'text-muted'}`}
+          style={{ fontSize: '0.85rem' }}
+        >
+          <Building2 size={16} className="text-warning" /> 
+          <span>💼 B2B Partners & Rules</span>
+          {b2bPartners.length > 0 && (
+            <span className="badge bg-dark text-warning rounded-pill px-2 py-0.5 text-xs">
+              {b2bPartners.length}
+            </span>
+          )}
         </button>
       </div>
 
@@ -929,6 +1085,734 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
                 );
               })}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── TAB 5: B2B PARTNERS & PRICING RULES ─── */}
+      {activeMainTab === 'b2b_partners' && (
+        <div className="animate-fade-in">
+          {/* Header & Subtabs */}
+          <div className="card border-0 shadow-sm rounded-4 p-3.5 mb-4 bg-white d-flex flex-wrap justify-content-between align-items-center gap-3">
+            <div className="d-flex align-items-center gap-2">
+              <button
+                onClick={() => setB2bSubTab('partners')}
+                className={`btn btn-sm rounded-pill px-3 py-1.5 fw-bold text-xs ${b2bSubTab === 'partners' ? 'btn-dark text-white' : 'btn-light border'}`}
+              >
+                <Building2 size={14} className="me-1" /> Partner Agencies ({b2bPartners.length})
+              </button>
+              <button
+                onClick={() => setB2bSubTab('rules')}
+                className={`btn btn-sm rounded-pill px-3 py-1.5 fw-bold text-xs ${b2bSubTab === 'rules' ? 'btn-dark text-white' : 'btn-light border'}`}
+              >
+                <Tag size={14} className="me-1" /> Pricing Rules ({b2bRules.length})
+              </button>
+              <button
+                onClick={() => setB2bSubTab('logs')}
+                className={`btn btn-sm rounded-pill px-3 py-1.5 fw-bold text-xs ${b2bSubTab === 'logs' ? 'btn-dark text-white' : 'btn-light border'}`}
+              >
+                <History size={14} className="me-1" /> Audit Trail ({b2bAuditLogs.length})
+              </button>
+            </div>
+
+            <div className="d-flex gap-2">
+              {b2bSubTab === 'partners' && (
+                <button
+                  onClick={() => {
+                    setPartnerFormData({
+                      id: '',
+                      username: '',
+                      company_name: '',
+                      name: '',
+                      phone: '',
+                      email: '',
+                      password: '',
+                      default_commission_rate: 10.0,
+                      default_net_discount_rate: 10.0,
+                      allow_commission: 1,
+                      allow_non_commission: 1,
+                      status: 'active'
+                    });
+                    setShowPartnerModal(true);
+                  }}
+                  className="btn btn-warning text-dark fw-bold btn-sm rounded-pill px-3 py-1.5 text-xs d-flex align-items-center gap-1.5 shadow-sm font-heading"
+                >
+                  <Plus size={15} /> Add B2B Agency
+                </button>
+              )}
+              {b2bSubTab === 'rules' && (
+                <button
+                  onClick={() => {
+                    setRuleFormData({
+                      partner_id: 'all',
+                      service_type: 'all',
+                      commission_percent: 10.0,
+                      net_discount_percent: 10.0,
+                      is_active: 1,
+                      notes: ''
+                    });
+                    setShowRuleModal(true);
+                  }}
+                  className="btn btn-warning text-dark fw-bold btn-sm rounded-pill px-3 py-1.5 text-xs d-flex align-items-center gap-1.5 shadow-sm font-heading"
+                >
+                  <Plus size={15} /> Add Pricing Rule
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Subtab 1: B2B Partners Table */}
+          {b2bSubTab === 'partners' && (
+            <div>
+              {/* Status Filter Bar */}
+              <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
+                {[
+                  { id: 'all', label: 'All Applications', count: b2bPartners.length, color: 'btn-dark' },
+                  { id: 'pending', label: '⏳ Pending Verification', count: b2bPartners.filter(p => (p.status || '').toLowerCase() === 'pending').length, color: 'btn-warning text-dark' },
+                  { id: 'active', label: '✅ Approved / Active', count: b2bPartners.filter(p => (p.status || '').toLowerCase() === 'active').length, color: 'btn-success text-white' },
+                  { id: 'rejected', label: '❌ Rejected', count: b2bPartners.filter(p => (p.status || '').toLowerCase() === 'rejected').length, color: 'btn-danger text-white' }
+                ].map(f => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setB2bStatusFilter(f.id)}
+                    className={`btn btn-sm rounded-pill px-3 py-1 text-xs fw-bold ${b2bStatusFilter === f.id ? f.color : 'btn-light border'}`}
+                  >
+                    {f.label} ({f.count})
+                  </button>
+                ))}
+              </div>
+
+              <div className="card border-0 shadow-sm rounded-4 bg-white overflow-hidden">
+                <div className="table-responsive">
+                  <table className="table table-hover align-middle mb-0" style={{ fontSize: '0.83rem' }}>
+                    <thead className="table-light text-muted fw-semibold" style={{ fontSize: '0.72rem', textTransform: 'uppercase' }}>
+                      <tr>
+                        <th className="ps-3 py-3">Agency</th>
+                        <th className="py-3">Business Type</th>
+                        <th className="py-3">Contact Person</th>
+                        <th className="py-3">Business Contact</th>
+                        <th className="py-3">City / State</th>
+                        <th className="py-3">Status</th>
+                        <th className="py-3">Registered Date</th>
+                        <th className="pe-3 py-3 text-end">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {loadingPartners ? (
+                        <tr>
+                          <td colSpan="8" className="text-center py-4 text-muted">Loading B2B partner applications...</td>
+                        </tr>
+                      ) : b2bPartners.filter(p => b2bStatusFilter === 'all' || (p.status || 'pending').toLowerCase() === b2bStatusFilter).length === 0 ? (
+                        <tr>
+                          <td colSpan="8" className="text-center py-4 text-muted">No partner applications found matching current filter.</td>
+                        </tr>
+                      ) : (
+                        b2bPartners
+                          .filter(p => b2bStatusFilter === 'all' || (p.status || 'pending').toLowerCase() === b2bStatusFilter)
+                          .map(p => {
+                            const pStatus = (p.status || 'pending').toLowerCase();
+                            return (
+                              <tr key={p.id}>
+                                <td className="ps-3">
+                                  <div className="fw-bold text-dark font-heading">{p.company_name || p.name}</div>
+                                  <div className="text-muted text-xxs font-monospace">@{p.username || p.email} • ID: {p.id}</div>
+                                </td>
+                                <td>
+                                  <span className="badge bg-light text-dark border rounded-pill px-2.5 py-1 text-xs">
+                                    {p.business_type || 'Travel Agency'}
+                                  </span>
+                                </td>
+                                <td className="fw-semibold text-dark">
+                                  {p.contact_name || p.name || '—'}
+                                </td>
+                                <td>
+                                  <div>{p.phone}</div>
+                                  <div className="text-muted text-xxs">{p.email}</div>
+                                </td>
+                                <td>
+                                  <div>{p.city || '—'}</div>
+                                  <div className="text-muted text-xxs">{p.state || p.country || 'India'}</div>
+                                </td>
+                                <td>
+                                  {pStatus === 'active' ? (
+                                    <span className="badge bg-success bg-opacity-10 text-success rounded-pill px-2.5 py-1 fw-bold text-xxs">
+                                      ✅ ACTIVE
+                                    </span>
+                                  ) : pStatus === 'pending' ? (
+                                    <span className="badge bg-warning bg-opacity-20 text-dark rounded-pill px-2.5 py-1 fw-bold text-xxs font-heading">
+                                      ⏳ PENDING
+                                    </span>
+                                  ) : (
+                                    <span className="badge bg-danger bg-opacity-10 text-danger rounded-pill px-2.5 py-1 fw-bold text-xxs">
+                                      ❌ REJECTED
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="text-muted text-xxs">
+                                  {p.created_at ? p.created_at.slice(0, 10) : '—'}
+                                </td>
+                                <td className="pe-3 text-end">
+                                  <div className="d-flex justify-content-end gap-1">
+                                    <button
+                                      onClick={() => setViewingPartner(p)}
+                                      className="btn btn-outline-secondary btn-sm rounded-circle p-1.5"
+                                      title="View Application Details"
+                                      style={{ width: '28px', height: '28px' }}
+                                    >
+                                      <Eye size={13} />
+                                    </button>
+
+                                    {pStatus === 'pending' && (
+                                      <>
+                                        <button
+                                          onClick={() => handleApprovePartner(p.id)}
+                                          className="btn btn-success btn-sm rounded-pill px-2.5 py-1 text-xs fw-bold"
+                                          title="Approve Partner Application"
+                                        >
+                                          <CheckCircle size={12} className="me-1" /> Approve
+                                        </button>
+                                        <button
+                                          onClick={() => {
+                                            setRejectingPartner(p);
+                                            setRejectReason('');
+                                          }}
+                                          className="btn btn-outline-danger btn-sm rounded-pill px-2.5 py-1 text-xs"
+                                          title="Reject Application"
+                                        >
+                                          <X size={12} className="me-1" /> Reject
+                                        </button>
+                                      </>
+                                    )}
+
+                                    {pStatus === 'active' && (
+                                      <>
+                                        <button
+                                          onClick={() => {
+                                            setPartnerFormData({
+                                              id: p.id,
+                                              username: p.username || '',
+                                              company_name: p.company_name || '',
+                                              business_type: p.business_type || 'Travel Agency',
+                                              name: p.name || '',
+                                              phone: p.phone || '',
+                                              email: p.email || '',
+                                              website: p.website || '',
+                                              contact_name: p.contact_name || p.name || '',
+                                              contact_email: p.contact_email || p.email || '',
+                                              contact_phone: p.contact_phone || p.phone || '',
+                                              address: p.address || '',
+                                              city: p.city || '',
+                                              state: p.state || 'Goa',
+                                              country: p.country || 'India',
+                                              pincode: p.pincode || '',
+                                              password: '',
+                                              default_commission_rate: p.default_commission_rate || 10.0,
+                                              default_net_discount_rate: p.default_net_discount_rate || 10.0,
+                                              allow_commission: p.allow_commission !== undefined ? p.allow_commission : 1,
+                                              allow_non_commission: p.allow_non_commission !== undefined ? p.allow_non_commission : 1,
+                                              status: p.status || 'active'
+                                            });
+                                            setShowPartnerModal(true);
+                                          }}
+                                          className="btn btn-outline-dark btn-sm rounded-pill px-2.5 py-1 text-xs"
+                                          title="Edit Partner Agency Terms"
+                                        >
+                                          <Edit2 size={12} className="me-1" /> Edit
+                                        </button>
+                                        <button
+                                          onClick={() => {
+                                            setRejectingPartner(p);
+                                            setRejectReason('Account suspended by admin');
+                                          }}
+                                          className="btn btn-outline-danger btn-sm rounded-circle p-1.5"
+                                          title="Suspend / Reject Partner"
+                                          style={{ width: '28px', height: '28px' }}
+                                        >
+                                          <X size={13} />
+                                        </button>
+                                      </>
+                                    )}
+
+                                    {pStatus === 'rejected' && (
+                                      <button
+                                        onClick={() => handleApprovePartner(p.id)}
+                                        className="btn btn-outline-success btn-sm rounded-pill px-2.5 py-1 text-xs fw-bold"
+                                        title="Re-Approve Partner"
+                                      >
+                                        <CheckCircle size={12} className="me-1" /> Re-Approve
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Subtab 2: Pricing Rules Table */}
+          {b2bSubTab === 'rules' && (
+            <div className="card border-0 shadow-sm rounded-4 bg-white overflow-hidden">
+              <div className="table-responsive">
+                <table className="table table-hover align-middle mb-0" style={{ fontSize: '0.83rem' }}>
+                  <thead className="table-light text-muted fw-semibold" style={{ fontSize: '0.72rem', textTransform: 'uppercase' }}>
+                    <tr>
+                      <th className="ps-3 py-3">Partner Target</th>
+                      <th className="py-3">Service Scope</th>
+                      <th className="py-3">Commission %</th>
+                      <th className="py-3">Net Discount %</th>
+                      <th className="py-3">Rule Status</th>
+                      <th className="py-3">Notes</th>
+                      <th className="pe-3 py-3 text-end">Edit</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loadingRules ? (
+                      <tr>
+                        <td colSpan="7" className="text-center py-4 text-muted">Loading pricing rules...</td>
+                      </tr>
+                    ) : b2bRules.length === 0 ? (
+                      <tr>
+                        <td colSpan="7" className="text-center py-4 text-muted">No pricing rules defined.</td>
+                      </tr>
+                    ) : (
+                      b2bRules.map(r => (
+                        <tr key={r.id}>
+                          <td className="ps-3 fw-bold font-heading">
+                            {r.partner_id === 'all' ? (
+                              <span className="badge bg-dark text-white rounded-pill px-2.5 py-1">🌐 All Partners (Global)</span>
+                            ) : (
+                              <span>{r.company_name || r.partner_id}</span>
+                            )}
+                          </td>
+                          <td>
+                            <span className="badge bg-light text-dark border rounded-pill px-2.5 py-1 text-uppercase">
+                              {r.service_type || 'all'}
+                            </span>
+                          </td>
+                          <td className="fw-bold text-success">{r.commission_percent}%</td>
+                          <td className="fw-bold text-primary">{r.net_discount_percent}%</td>
+                          <td>
+                            <span className={`badge rounded-pill px-2 py-0.5 ${r.is_active ? 'bg-success text-white' : 'bg-secondary text-white'}`}>
+                              {r.is_active ? 'Active' : 'Disabled'}
+                            </span>
+                          </td>
+                          <td className="text-muted text-xxs">{r.notes || '—'}</td>
+                          <td className="pe-3 text-end">
+                            <button
+                              onClick={() => {
+                                setRuleFormData({
+                                  partner_id: r.partner_id || 'all',
+                                  service_type: r.service_type || 'all',
+                                  commission_percent: r.commission_percent || 10.0,
+                                  net_discount_percent: r.net_discount_percent || 10.0,
+                                  is_active: r.is_active !== undefined ? r.is_active : 1,
+                                  notes: r.notes || ''
+                                });
+                                setShowRuleModal(true);
+                              }}
+                              className="btn btn-outline-dark btn-sm rounded-pill px-2.5 py-1 text-xs"
+                            >
+                              <Edit2 size={12} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Subtab 3: Audit Logs Table */}
+          {b2bSubTab === 'logs' && (
+            <div className="card border-0 shadow-sm rounded-4 bg-white overflow-hidden">
+              <div className="table-responsive">
+                <table className="table table-hover align-middle mb-0" style={{ fontSize: '0.80rem' }}>
+                  <thead className="table-light text-muted fw-semibold" style={{ fontSize: '0.72rem', textTransform: 'uppercase' }}>
+                    <tr>
+                      <th className="ps-3 py-3">Timestamp</th>
+                      <th className="py-3">Action</th>
+                      <th className="py-3">Partner ID</th>
+                      <th className="py-3">Booking ID</th>
+                      <th className="py-3">Reason / Details</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loadingAuditLogs ? (
+                      <tr>
+                        <td colSpan="5" className="text-center py-4 text-muted">Loading audit logs...</td>
+                      </tr>
+                    ) : b2bAuditLogs.length === 0 ? (
+                      <tr>
+                        <td colSpan="5" className="text-center py-4 text-muted">No audit trail records found.</td>
+                      </tr>
+                    ) : (
+                      b2bAuditLogs.map(l => (
+                        <tr key={l.id}>
+                          <td className="ps-3 text-muted text-xxs font-monospace">{l.created_at}</td>
+                          <td>
+                            <span className="badge bg-dark text-warning rounded-pill px-2 py-0.5 text-xxs font-monospace">
+                              {l.action}
+                            </span>
+                          </td>
+                          <td className="font-monospace text-xs">{l.partner_id}</td>
+                          <td className="font-monospace text-primary text-xs">{l.booking_id ? `#${l.booking_id}` : '—'}</td>
+                          <td className="text-muted text-xs">{l.reason || '—'}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Partner View Details Modal */}
+      {viewingPartner && (
+        <div className="checkout-modal-backdrop animate-fade-in" onClick={() => setViewingPartner(null)} style={{ zIndex: 1060 }}>
+          <div className="checkout-modal-content rounded-4 p-4 shadow-2xl bg-white" style={{ maxWidth: '620px', width: '95%' }} onClick={(e) => e.stopPropagation()}>
+            <div className="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+              <div>
+                <h5 className="fw-bold text-dark font-heading mb-0">{viewingPartner.company_name || viewingPartner.name}</h5>
+                <span className="text-muted text-xs">Application ID: {viewingPartner.id}</span>
+              </div>
+              <button className="btn btn-link text-muted p-0 border-0" onClick={() => setViewingPartner(null)}>✕</button>
+            </div>
+
+            {/* Application Overview Sections */}
+            <div className="p-3 bg-light rounded-3 mb-3 border">
+              <div className="d-flex justify-content-between align-items-center mb-2">
+                <span className="text-xs fw-bold text-muted text-uppercase">Account Status</span>
+                <span className={`badge rounded-pill px-3 py-1 fw-bold text-xs ${
+                  viewingPartner.status === 'active' ? 'bg-success text-white' : 
+                  viewingPartner.status === 'pending' ? 'bg-warning text-dark' : 'bg-danger text-white'
+                }`}>
+                  {viewingPartner.status?.toUpperCase() || 'PENDING'}
+                </span>
+              </div>
+              {viewingPartner.rejection_reason && (
+                <div className="alert alert-danger py-1.5 px-2.5 rounded-2 text-xs mb-0 mt-2">
+                  <strong>Rejection Reason:</strong> {viewingPartner.rejection_reason}
+                </div>
+              )}
+            </div>
+
+            <div className="row g-3 mb-3">
+              {/* Business Info */}
+              <div className="col-12 col-md-6">
+                <div className="p-3 border rounded-3 h-100">
+                  <h6 className="fw-bold text-xs text-uppercase text-muted border-bottom pb-1.5 mb-2 font-heading">
+                    🏢 Business Information
+                  </h6>
+                  <div className="text-xs mb-1.5"><span className="text-muted">Type:</span> <strong>{viewingPartner.business_type || 'Travel Agency'}</strong></div>
+                  <div className="text-xs mb-1.5"><span className="text-muted">Business Email:</span> <strong>{viewingPartner.email}</strong></div>
+                  <div className="text-xs mb-1.5"><span className="text-muted">Business Phone:</span> <strong>{viewingPartner.phone}</strong></div>
+                  <div className="text-xs mb-0"><span className="text-muted">Website:</span> <strong>{viewingPartner.website || '—'}</strong></div>
+                </div>
+              </div>
+
+              {/* Primary Contact */}
+              <div className="col-12 col-md-6">
+                <div className="p-3 border rounded-3 h-100">
+                  <h6 className="fw-bold text-xs text-uppercase text-muted border-bottom pb-1.5 mb-2 font-heading">
+                    👤 Primary Contact
+                  </h6>
+                  <div className="text-xs mb-1.5"><span className="text-muted">Name:</span> <strong>{viewingPartner.contact_name || viewingPartner.name || '—'}</strong></div>
+                  <div className="text-xs mb-1.5"><span className="text-muted">Contact Email:</span> <strong>{viewingPartner.contact_email || viewingPartner.email || '—'}</strong></div>
+                  <div className="text-xs mb-0"><span className="text-muted">Mobile:</span> <strong>{viewingPartner.contact_phone || viewingPartner.phone || '—'}</strong></div>
+                </div>
+              </div>
+
+              {/* Address */}
+              <div className="col-12">
+                <div className="p-3 border rounded-3">
+                  <h6 className="fw-bold text-xs text-uppercase text-muted border-bottom pb-1.5 mb-2 font-heading">
+                    📍 Registered Address
+                  </h6>
+                  <div className="text-xs mb-1"><strong>{viewingPartner.address || '—'}</strong></div>
+                  <div className="text-xs text-muted">
+                    {viewingPartner.city || '—'}, {viewingPartner.state || '—'} - {viewingPartner.pincode || '—'}, {viewingPartner.country || 'India'}
+                  </div>
+                </div>
+              </div>
+
+              {/* System Details */}
+              <div className="col-12">
+                <div className="p-3 border rounded-3 bg-light">
+                  <div className="row g-2 text-xxs text-muted">
+                    <div className="col-6">Username: <strong className="text-dark">@{viewingPartner.username}</strong></div>
+                    <div className="col-6">Registered: <strong className="text-dark">{viewingPartner.created_at || '—'}</strong></div>
+                    <div className="col-6">Approved Date: <strong className="text-dark">{viewingPartner.approved_at || '—'}</strong></div>
+                    <div className="col-6">Approved By: <strong className="text-dark">{viewingPartner.approved_by || '—'}</strong></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="d-flex justify-content-between align-items-center pt-2 border-top">
+              <button type="button" className="btn btn-light btn-sm rounded-pill px-3" onClick={() => setViewingPartner(null)}>
+                Close
+              </button>
+
+              <div className="d-flex gap-2">
+                {viewingPartner.status !== 'rejected' && (
+                  <button
+                    type="button"
+                    className="btn btn-outline-danger btn-sm rounded-pill px-3"
+                    onClick={() => {
+                      setRejectingPartner(viewingPartner);
+                      setRejectReason('');
+                    }}
+                  >
+                    Reject Application
+                  </button>
+                )}
+                {viewingPartner.status !== 'active' && (
+                  <button
+                    type="button"
+                    className="btn btn-success btn-sm rounded-pill px-4 fw-bold"
+                    onClick={() => handleApprovePartner(viewingPartner.id)}
+                  >
+                    Approve Application
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject Partner Modal */}
+      {rejectingPartner && (
+        <div className="checkout-modal-backdrop animate-fade-in" onClick={() => setRejectingPartner(null)} style={{ zIndex: 1070 }}>
+          <div className="checkout-modal-content rounded-4 p-4 shadow-2xl bg-white" style={{ maxWidth: '460px', width: '95%' }} onClick={(e) => e.stopPropagation()}>
+            <div className="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+              <h5 className="fw-bold text-danger font-heading mb-0">Reject B2B Application</h5>
+              <button className="btn btn-link text-muted p-0 border-0" onClick={() => setRejectingPartner(null)}>✕</button>
+            </div>
+            <form onSubmit={handleRejectPartnerSubmit}>
+              <p className="text-muted text-xs mb-3">
+                Are you sure you want to reject the B2B application for <strong>{rejectingPartner.company_name || rejectingPartner.name}</strong>?
+              </p>
+              <div className="mb-3">
+                <label className="form-label text-xs fw-bold text-muted mb-1">Reason for Rejection (Optional but recommended)</label>
+                <textarea
+                  className="form-control form-control-sm text-xs"
+                  rows="3"
+                  placeholder="e.g. Incomplete business documents or invalid contact details."
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                />
+              </div>
+              <div className="d-flex justify-content-end gap-2 pt-2 border-top">
+                <button type="button" className="btn btn-light btn-sm rounded-pill px-3" onClick={() => setRejectingPartner(null)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-danger btn-sm rounded-pill px-3 fw-bold">
+                  Confirm Rejection
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Partner Modal */}
+      {showPartnerModal && (
+        <div className="checkout-modal-backdrop animate-fade-in" onClick={() => setShowPartnerModal(false)} style={{ zIndex: 1060 }}>
+          <div className="checkout-modal-content rounded-4 p-4 shadow-2xl bg-white" style={{ maxWidth: '580px', width: '95%' }} onClick={(e) => e.stopPropagation()}>
+            <div className="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+              <h5 className="fw-bold text-dark font-heading mb-0">{partnerFormData.id ? 'Edit B2B Partner Agency' : 'Add New B2B Agency Partner'}</h5>
+              <button className="btn btn-link text-muted p-0 border-0" onClick={() => setShowPartnerModal(false)}>✕</button>
+            </div>
+            <form onSubmit={handleSavePartnerSubmit}>
+              <div className="row g-2 mb-2.5">
+                <div className="col-8">
+                  <label className="form-label text-xs fw-bold text-muted mb-1">Company / Agency Name *</label>
+                  <input
+                    type="text"
+                    className="form-control form-control-sm"
+                    placeholder="e.g. Royal Goa Holidays Pvt Ltd"
+                    value={partnerFormData.company_name}
+                    onChange={(e) => setPartnerFormData({ ...partnerFormData, company_name: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="col-4">
+                  <label className="form-label text-xs fw-bold text-muted mb-1">Business Type</label>
+                  <select
+                    className="form-select form-select-sm"
+                    value={partnerFormData.business_type}
+                    onChange={(e) => setPartnerFormData({ ...partnerFormData, business_type: e.target.value })}
+                  >
+                    <option value="Travel Agency">Travel Agency</option>
+                    <option value="Tour Operator">Tour Operator</option>
+                    <option value="Travel Consultant">Travel Consultant</option>
+                    <option value="Corporate Travel">Corporate Travel</option>
+                    <option value="Online Travel Agency">Online Travel Agency</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+              </div>
+              <div className="row g-2 mb-2.5">
+                <div className="col-6">
+                  <label className="form-label text-xs fw-bold text-muted mb-1">Contact Person Name</label>
+                  <input
+                    type="text"
+                    className="form-control form-control-sm"
+                    placeholder="e.g. Rajesh Kumar"
+                    value={partnerFormData.name}
+                    onChange={(e) => setPartnerFormData({ ...partnerFormData, name: e.target.value })}
+                  />
+                </div>
+                <div className="col-6">
+                  <label className="form-label text-xs fw-bold text-muted mb-1">Contact Phone *</label>
+                  <input
+                    type="tel"
+                    className="form-control form-control-sm"
+                    placeholder="10-digit mobile"
+                    value={partnerFormData.phone}
+                    onChange={(e) => setPartnerFormData({ ...partnerFormData, phone: e.target.value })}
+                    required
+                  />
+                </div>
+              </div>
+              <div className="row g-2 mb-2.5">
+                <div className="col-6">
+                  <label className="form-label text-xs fw-bold text-muted mb-1">Agency Email</label>
+                  <input
+                    type="email"
+                    className="form-control form-control-sm"
+                    placeholder="agent@agency.com"
+                    value={partnerFormData.email}
+                    onChange={(e) => setPartnerFormData({ ...partnerFormData, email: e.target.value })}
+                  />
+                </div>
+                <div className="col-6">
+                  <label className="form-label text-xs fw-bold text-muted mb-1">Password {partnerFormData.id && '(Leave blank to keep current)'}</label>
+                  <input
+                    type="password"
+                    className="form-control form-control-sm"
+                    placeholder="Partner password"
+                    value={partnerFormData.password}
+                    onChange={(e) => setPartnerFormData({ ...partnerFormData, password: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="row g-2 mb-3">
+                <div className="col-6">
+                  <label className="form-label text-xs fw-bold text-muted mb-1">Default Commission (%)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    className="form-control form-control-sm"
+                    value={partnerFormData.default_commission_rate}
+                    onChange={(e) => setPartnerFormData({ ...partnerFormData, default_commission_rate: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+                <div className="col-6">
+                  <label className="form-label text-xs fw-bold text-muted mb-1">Default Net Discount (%)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    className="form-control form-control-sm"
+                    value={partnerFormData.default_net_discount_rate}
+                    onChange={(e) => setPartnerFormData({ ...partnerFormData, default_net_discount_rate: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+              </div>
+              <div className="d-flex gap-2 justify-content-end pt-2 border-top">
+                <button type="button" className="btn btn-light btn-sm rounded-pill px-3" onClick={() => setShowPartnerModal(false)}>Cancel</button>
+                <button type="submit" className="btn btn-warning text-dark fw-bold btn-sm rounded-pill px-4">Save Agency</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Pricing Rule Modal */}
+      {showRuleModal && (
+        <div className="checkout-modal-backdrop animate-fade-in" onClick={() => setShowRuleModal(false)} style={{ zIndex: 1060 }}>
+          <div className="checkout-modal-content rounded-4 p-4 shadow-2xl bg-white" style={{ maxWidth: '480px', width: '95%' }} onClick={(e) => e.stopPropagation()}>
+            <div className="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+              <h5 className="fw-bold text-dark font-heading mb-0">Save B2B Pricing Rule</h5>
+              <button className="btn btn-link text-muted p-0 border-0" onClick={() => setShowRuleModal(false)}>✕</button>
+            </div>
+            <form onSubmit={handleSaveRuleSubmit}>
+              <div className="mb-2.5">
+                <label className="form-label text-xs fw-bold text-muted mb-1">Target Partner</label>
+                <select
+                  className="form-select form-select-sm"
+                  value={ruleFormData.partner_id}
+                  onChange={(e) => setRuleFormData({ ...ruleFormData, partner_id: e.target.value })}
+                >
+                  <option value="all">🌐 All Partners (Global Standard)</option>
+                  {b2bPartners.map(p => (
+                    <option key={p.id} value={p.id}>{p.company_name || p.name} ({p.id})</option>
+                  ))}
+                </select>
+              </div>
+              <div className="mb-2.5">
+                <label className="form-label text-xs fw-bold text-muted mb-1">Service Scope</label>
+                <select
+                  className="form-select form-select-sm"
+                  value={ruleFormData.service_type}
+                  onChange={(e) => setRuleFormData({ ...ruleFormData, service_type: e.target.value })}
+                >
+                  <option value="all">All Services (Hotel, Vehicle, Package)</option>
+                  <option value="hotel">Hotels & Resorts Only</option>
+                  <option value="vehicle">Vehicles & Fleets Only</option>
+                  <option value="package">Holiday Packages & Tours Only</option>
+                </select>
+              </div>
+              <div className="row g-2 mb-2.5">
+                <div className="col-6">
+                  <label className="form-label text-xs fw-bold text-muted mb-1">Commission Rate (%)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    className="form-control form-control-sm"
+                    value={ruleFormData.commission_percent}
+                    onChange={(e) => setRuleFormData({ ...ruleFormData, commission_percent: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+                <div className="col-6">
+                  <label className="form-label text-xs fw-bold text-muted mb-1">Net Discount Rate (%)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    className="form-control form-control-sm"
+                    value={ruleFormData.net_discount_percent}
+                    onChange={(e) => setRuleFormData({ ...ruleFormData, net_discount_percent: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+              </div>
+              <div className="mb-3">
+                <label className="form-label text-xs fw-bold text-muted mb-1">Internal Notes</label>
+                <input
+                  type="text"
+                  className="form-control form-control-sm"
+                  placeholder="e.g. Standard Season B2B Contract"
+                  value={ruleFormData.notes}
+                  onChange={(e) => setRuleFormData({ ...ruleFormData, notes: e.target.value })}
+                />
+              </div>
+              <div className="d-flex gap-2 justify-content-end pt-2 border-top">
+                <button type="button" className="btn btn-light btn-sm rounded-pill px-3" onClick={() => setShowRuleModal(false)}>Cancel</button>
+                <button type="submit" className="btn btn-warning text-dark fw-bold btn-sm rounded-pill px-4">Save Pricing Rule</button>
+              </div>
+            </form>
           </div>
         </div>
       )}

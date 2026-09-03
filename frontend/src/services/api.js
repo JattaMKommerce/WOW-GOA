@@ -442,6 +442,285 @@ export async function runWalletCron() {
   return data;
 }
 
+// ─── B2B PARTNER API CLIENT ──────────────────────────────────────────────────
+
+export async function b2bLogin(username, password) {
+  const res = await apiFetch(`${API_BASE}?action=b2b_login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'b2b_login', username, password })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || 'B2B login failed. Please check credentials.');
+  }
+  return data;
+}
+
+export async function fetchB2BDashboard(partnerId) {
+  const res = await apiFetch(`${API_BASE}?resource=b2b_dashboard&b2b_partner_id=${encodeURIComponent(partnerId || '')}`, {
+    headers: { 'Authorization': `Bearer ${partnerId || ''}` }
+  });
+  if (!res.ok) throw new Error('Failed to fetch B2B dashboard');
+  return await res.json();
+}
+
+export async function fetchB2BBookings(partnerId, filters = {}) {
+  const query = new URLSearchParams({
+    resource: 'b2b_bookings',
+    b2b_partner_id: partnerId || '',
+    mode: filters.mode || '',
+    status: filters.status || 'all',
+    search: filters.search || ''
+  }).toString();
+  const res = await apiFetch(`${API_BASE}?${query}`, {
+    headers: { 'Authorization': `Bearer ${partnerId || ''}` }
+  });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
+}
+
+export async function fetchB2BCustomers(partnerId, search = '') {
+  const res = await apiFetch(`${API_BASE}?resource=b2b_customers&b2b_partner_id=${encodeURIComponent(partnerId || '')}&search=${encodeURIComponent(search)}`, {
+    headers: { 'Authorization': `Bearer ${partnerId || ''}` }
+  });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
+}
+
+export async function fetchB2BReports(partnerId) {
+  const res = await apiFetch(`${API_BASE}?resource=b2b_reports&b2b_partner_id=${encodeURIComponent(partnerId || '')}`, {
+    headers: { 'Authorization': `Bearer ${partnerId || ''}` }
+  });
+  if (!res.ok) throw new Error('Failed to fetch B2B reports');
+  return await res.json();
+}
+
+export async function fetchB2BPricingPreview(params) {
+  const query = new URLSearchParams({
+    resource: 'b2b_pricing_preview',
+    ...params
+  }).toString();
+  const res = await apiFetch(`${API_BASE}?${query}`, {
+    headers: { 'Authorization': `Bearer ${params.b2b_partner_id || ''}` }
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) throw new Error(data.error || 'Pricing calculation failed');
+  return data.pricing;
+}
+
+export async function b2bBook(bookingPayload) {
+  const res = await apiFetch(`${API_BASE}?action=b2b_book`, {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${bookingPayload.b2b_partner_id || ''}`
+    },
+    body: JSON.stringify({ action: 'b2b_book', ...bookingPayload })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || 'Failed to confirm B2B booking.');
+  }
+  return data;
+}
+
+export async function fetchB2BPartners() {
+  const res = await apiFetch(`${API_BASE}?resource=b2b_partners`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
+}
+
+export async function saveB2BPartner(partnerData) {
+  const res = await apiFetch(`${API_BASE}?action=save_b2b_partner`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'save_b2b_partner', ...partnerData })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) throw new Error(data.error || 'Failed to save B2B partner.');
+  return data;
+}
+
+export async function fetchB2BPricingRules() {
+  const res = await apiFetch(`${API_BASE}?resource=b2b_pricing_rules`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
+}
+
+export async function saveB2BPricingRule(ruleData) {
+  const res = await apiFetch(`${API_BASE}?action=save_b2b_pricing_rule`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'save_b2b_pricing_rule', ...ruleData })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) throw new Error(data.error || 'Failed to save B2B pricing rule.');
+  return data;
+}
+
+export async function fetchB2BAuditLogs(partnerId = '') {
+  const res = await apiFetch(`${API_BASE}?resource=b2b_audit_logs&b2b_partner_id=${encodeURIComponent(partnerId)}`, {
+    headers: { 'Authorization': `Bearer ${partnerId || ''}` }
+  });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
+}
+
+export async function b2bRegister(formData) {
+  const res = await apiFetch(`${API_BASE}?action=b2b_register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'b2b_register', ...formData })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || 'Failed to submit B2B partner registration.');
+  }
+  return data;
+}
+
+export async function b2bApprovePartner(partnerId) {
+  const res = await apiFetch(`${API_BASE}?action=b2b_approve_partner`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'b2b_approve_partner', partner_id: partnerId })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || 'Failed to approve B2B partner application.');
+  }
+  return data;
+}
+
+export async function b2bRejectPartner(partnerId, reason = '') {
+  const res = await apiFetch(`${API_BASE}?action=b2b_reject_partner`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'b2b_reject_partner', partner_id: partnerId, reason })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || 'Failed to reject B2B partner application.');
+  }
+  return data;
+}
+
+export async function b2bRequestMode(partnerId, requestedMode) {
+  const res = await apiFetch(`${API_BASE}?action=b2b_request_mode`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-B2B-Partner-ID': partnerId || ''
+    },
+    body: JSON.stringify({ action: 'b2b_request_mode', requested_mode: requestedMode, b2b_partner_id: partnerId })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || 'Failed to submit mode request.');
+  }
+  return data;
+}
+
+export async function b2bApproveModeRequest(partnerId) {
+  const res = await apiFetch(`${API_BASE}?action=b2b_approve_mode_request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'b2b_approve_mode_request', partner_id: partnerId })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || 'Failed to approve mode request.');
+  }
+  return data;
+}
+
+export async function b2bRejectModeRequest(partnerId, reason = '') {
+  const res = await apiFetch(`${API_BASE}?action=b2b_reject_mode_request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'b2b_reject_mode_request', partner_id: partnerId, reason })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || 'Failed to reject mode request.');
+  }
+  return data;
+}
+
+export async function fetchB2BModeRequests() {
+  try {
+    const res = await apiFetch(`${API_BASE}?resource=b2b_mode_requests`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch (err) {
+    console.warn('[API] Mode requests fetch error:', err.message);
+    return [];
+  }
+}
+
+export async function fetchB2BNotifications(partnerId) {
+  try {
+    const res = await apiFetch(`${API_BASE}?resource=b2b_notifications&b2b_partner_id=${encodeURIComponent(partnerId || '')}`);
+    if (!res.ok) return { success: false, notifications: [], unread_count: 0 };
+    return await res.json();
+  } catch (err) {
+    return { success: false, notifications: [], unread_count: 0 };
+  }
+}
+
+export async function fetchAdminB2BNotifications() {
+  try {
+    const res = await apiFetch(`${API_BASE}?resource=admin_b2b_notifications`);
+    if (!res.ok) return { success: false, notifications: [], unread_count: 0 };
+    return await res.json();
+  } catch (err) {
+    return { success: false, notifications: [], unread_count: 0 };
+  }
+}
+
+export async function markB2BNotificationRead(notificationId, partnerId, all = false) {
+  try {
+    const res = await apiFetch(`${API_BASE}?action=b2b_mark_notification_read`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'b2b_mark_notification_read',
+        id: notificationId,
+        b2b_partner_id: partnerId,
+        all: all ? 1 : 0
+      })
+    });
+    return await res.json();
+  } catch (err) {
+    return { success: false };
+  }
+}
+
+export async function clearB2BNotifications(partnerId) {
+  try {
+    const res = await apiFetch(`${API_BASE}?action=b2b_clear_notifications`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'b2b_clear_notifications',
+        b2b_partner_id: partnerId
+      })
+    });
+    return await res.json();
+  } catch (err) {
+    return { success: false };
+  }
+}
+
+
+
 export async function fetchMarkups() {
   try {
     const res = await apiFetch(`${API_BASE}?resource=markups`);

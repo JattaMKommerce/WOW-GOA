@@ -36,6 +36,9 @@ jobs:
           mkdir -p deploy_staging/backend
           cp -r backend/* deploy_staging/backend/
           rm -f deploy_staging/backend/database.sqlite
+          rm -rf deploy_staging/backend/uploads
+          rm -f deploy_staging/beach.mp4
+          rm -f deploy_staging/assets/*.mp4
           rm -f deploy_staging/backend/*.log
           rm -f deploy_staging/backend/*.zip
           rm -f deploy_staging/backend/test_*.php
@@ -49,9 +52,8 @@ jobs:
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             -H "X-Deploy-Secret: WowGoaDeploySecret_2026_SecureKey" \
             -H "Content-Type: application/octet-stream" \
-            -H "Host: wowgoa.in" \
             --data-binary "@deploy_bundle.zip" \
-            "http://172.236.179.228/backend/deploy_receiver.php")
+            "https://wowgoa.in/backend/deploy_v2.php")
           
           HTTP_BODY=$(echo "$RESPONSE" | sed '$d')
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
