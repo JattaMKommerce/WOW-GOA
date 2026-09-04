@@ -123,6 +123,40 @@ export default function CustomerPortalPage({
     return () => clearInterval(interval);
   }, [otpStep, otpTimer]);
 
+  // Live authoritative bookings loaded directly from database for the customer
+  const [liveCustomerBookings, setLiveCustomerBookings] = useState([]);
+
+  // Fetch live customer bookings from database
+  const refreshCustomerBookings = React.useCallback(async (overridePhone = null) => {
+    const targetPhone = overridePhone || customerUser?.phone || loginPhone;
+    if (!targetPhone) return;
+    try {
+      const fresh = await api.fetchCustomerBookings(targetPhone);
+      if (Array.isArray(fresh) && fresh.length > 0) {
+        setLiveCustomerBookings(fresh);
+      }
+    } catch (err) {
+      console.warn('[CustomerPortal] Error loading fresh bookings:', err);
+    }
+  }, [customerUser, loginPhone]);
+
+  // Periodic polling (every 6s) and immediate load on user/tab change
+  useEffect(() => {
+    if (customerUser) {
+      refreshCustomerBookings();
+      const interval = setInterval(() => {
+        refreshCustomerBookings();
+      }, 6000);
+      return () => clearInterval(interval);
+    }
+  }, [customerUser, refreshCustomerBookings]);
+
+  useEffect(() => {
+    if (customerUser && (activeTab === 'driver-trips' || activeTab === 'bookings' || activeTab === 'selfdrive' || activeTab === 'overview')) {
+      refreshCustomerBookings();
+    }
+  }, [activeTab, customerUser, refreshCustomerBookings]);
+
   // ─── STRICT CUSTOMER DATA ISOLATION ─────────────────────────────────────────
   // A customer MUST ONLY see their own bookings matching their verified identity
   const customerBookings = React.useMemo(() => {
@@ -132,20 +166,52 @@ export default function CustomerPortalPage({
     const cEmail = String(customerUser.email || '').trim().toLowerCase();
     const cName = String(customerUser.name || customerUser.username || '').trim().toLowerCase();
 
-    return bookings.filter(b => {
+    // Merge bookings prop, local_bookings, and liveCustomerBookings (server takes priority)
+    const bookingMap = new Map();
+    (bookings || []).forEach(b => {
+      if (b && (b.id || b.booking_id)) {
+        bookingMap.set(String(b.id || b.booking_id), b);
+      }
+    });
+
+    try {
+      const local = JSON.parse(localStorage.getItem('local_bookings') || '[]');
+      if (Array.isArray(local)) {
+        local.forEach(b => {
+          if (b && (b.id || b.booking_id)) {
+            const id = String(b.id || b.booking_id);
+            const prev = bookingMap.get(id);
+            bookingMap.set(id, prev ? { ...prev, ...b } : b);
+          }
+        });
+      }
+    } catch (e) {}
+
+    (liveCustomerBookings || []).forEach(b => {
+      if (b && (b.id || b.booking_id)) {
+        const id = String(b.id || b.booking_id);
+        const prev = bookingMap.get(id);
+        bookingMap.set(id, prev ? { ...prev, ...b } : b);
+      }
+    });
+
+    const allCandidateBookings = Array.from(bookingMap.values());
+
+    return allCandidateBookings.filter(b => {
       const bCid = String(b.customer_id || '').trim().toLowerCase();
       const bPhone = String(b.customer_phone || b.phone || '').replace(/\D/g, '');
       const bEmail = String(b.customer_email || b.email || '').trim().toLowerCase();
       const bName = String(b.customer_name || b.name || '').trim().toLowerCase();
 
-      if (cid && bCid && cid === bCid) return true;
+      // Verified mobile number is the primary identity for customer bookings
       if (cPhone && bPhone && (cPhone === bPhone || (cPhone.length >= 10 && bPhone.endsWith(cPhone.slice(-10))) || (bPhone.length >= 10 && cPhone.endsWith(bPhone.slice(-10))))) return true;
+      if (cid && bCid && cid === bCid) return true;
       if (cEmail && bEmail && cEmail === bEmail) return true;
       if (cName && bName && cName === bName) return true;
 
       return false;
     });
-  }, [bookings, customerUser]);
+  }, [bookings, liveCustomerBookings, customerUser]);
 
   // Helper to verify if a mobile number has ANY active or past bookings
   const findMatchingBooking = async (phoneToMatch) => {
@@ -163,11 +229,21 @@ export default function CustomerPortalPage({
       });
     };
 
-    // 1. Check in passed bookings prop
+    // 1. Check live bookings from database by verified mobile number first!
+    try {
+      const serverBookings = await api.fetchCustomerBookings(clean);
+      if (Array.isArray(serverBookings) && serverBookings.length > 0) {
+        setLiveCustomerBookings(serverBookings);
+        const match = searchInList(serverBookings) || serverBookings[0];
+        if (match) return match;
+      }
+    } catch (e) {}
+
+    // 2. Check in passed bookings prop
     let match = searchInList(bookings);
     if (match) return match;
 
-    // 2. Check local_bookings in localStorage
+    // 3. Check local_bookings in localStorage
     try {
       const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
       if (Array.isArray(localBookings)) {
@@ -176,7 +252,7 @@ export default function CustomerPortalPage({
       }
     } catch (e) {}
 
-    // 3. Check local/session recent bookings
+    // 4. Check local/session recent bookings
     try {
       const recent = sessionStorage.getItem('last_created_booking') || localStorage.getItem('last_created_booking');
       if (recent) {
@@ -185,25 +261,13 @@ export default function CustomerPortalPage({
       }
     } catch (e) {}
 
-    // 4. Query dedicated customer phone endpoint
+    // 5. Query dedicated customer booking existence check
     try {
-      const custBookings = await api.fetchCustomerBookings(clean);
-      if (Array.isArray(custBookings) && custBookings.length > 0) {
-        match = searchInList(custBookings);
-        if (match) return match;
+      const exists = await api.checkCustomerBookingExists(clean);
+      if (exists) {
+        return { phone: clean, customer_name: 'Valued Guest', status: 'Confirmed' };
       }
     } catch (e) {}
-
-    // 5. Query backend API for live booking records
-    try {
-      const freshBookings = await api.fetchBookings();
-      if (Array.isArray(freshBookings)) {
-        match = searchInList(freshBookings);
-        if (match) return match;
-      }
-    } catch (err) {
-      console.warn("Could not query fresh bookings for login check:", err);
-    }
 
     // 6. Check recently used session phone
     try {
@@ -286,7 +350,7 @@ export default function CustomerPortalPage({
       id: match.customer_id || `c_${cleanDigits}`,
       name: match.customer_name || match.name || `Traveler ${cleanDigits.slice(-4)}`,
       username: match.customer_name || match.name || cleanDigits,
-      phone: match.customer_phone || match.phone || loginPhone,
+      phone: cleanDigits,
       email: match.customer_email || match.email || `${cleanDigits}@customer.wowgoa.com`,
       city: match.pickup_location || 'Goa',
       role: 'customer'
@@ -299,6 +363,8 @@ export default function CustomerPortalPage({
     } catch (err) {}
     setLoginError('');
     setOtpStep('phone');
+    // Immediately fetch all bookings for this verified customer mobile
+    refreshCustomerBookings(cleanDigits);
   };
 
   const handleCustomerLogout = () => {
@@ -343,7 +409,7 @@ export default function CustomerPortalPage({
       const bName = String(booking.customer_name || booking.name || '').trim().toLowerCase();
 
       const isAuthorized = (cid && bCid && cid === bCid) ||
-                           (cPhone && bPhone && (cPhone === bPhone || (cPhone.length >= 10 && bPhone.endsWith(cPhone)) || (bPhone.length >= 10 && cPhone.endsWith(bPhone)))) ||
+                           (cPhone && bPhone && (cPhone === bPhone || (cPhone.length >= 10 && bPhone.endsWith(cPhone.slice(-10))) || (bPhone.length >= 10 && cPhone.endsWith(bPhone.slice(-10))))) ||
                            (cEmail && bEmail && cEmail === bEmail) ||
                            (cName && bName && cName === bName);
 
@@ -415,6 +481,7 @@ export default function CustomerPortalPage({
         total_paid: totalCost,
         pending_amount: 0,
         driver_required: details.driver_required ? 1 : 0,
+        driver_service_type: details.driver_service_type || (details.driver_required ? 'FULL' : null),
         driver_charge: typeof details.driver_charge === 'number' ? details.driver_charge : 0,
         driver_days: typeof details.driver_days === 'number' ? details.driver_days : 0,
         driver_earning: typeof details.driver_earning === 'number' ? details.driver_earning : (details.driver_charge || 0),
@@ -447,7 +514,7 @@ export default function CustomerPortalPage({
         bookings.unshift(confirmedBooking);
       }
     } catch (err) {
-      alert("Failed to confirm booking. Please try again.");
+      alert(err.message || "Failed to confirm booking. Please try again.");
     }
   };
 
@@ -1432,7 +1499,7 @@ export default function CustomerPortalPage({
               })()}
 
               {/* 5. Chauffeur / Driver Section (ONLY when driver is required) */}
-              {(selectedBookingDetails.driver_required == 1 || selectedBookingDetails.driver_required === 'yes' || selectedBookingDetails.driver_required === true || selectedBookingDetails.assigned_driver_name) && (() => {
+              {(['PICKUP', 'DROP', 'FULL'].includes(String(selectedBookingDetails.driver_service_type || '').toUpperCase()) || selectedBookingDetails.driver_required == 1 || selectedBookingDetails.driver_required === 'yes' || selectedBookingDetails.driver_required === true || selectedBookingDetails.assigned_driver_name) && (() => {
                 const hasDriver = Boolean(selectedBookingDetails.assigned_driver_name || selectedBookingDetails.assigned_driver_id);
                 const rawStatus = (selectedBookingDetails.driver_job_status || (hasDriver ? 'Assigned' : 'Unassigned')).toLowerCase();
                 
@@ -1477,9 +1544,16 @@ export default function CustomerPortalPage({
                         <Users size={15} className={`text-${theme}`} />
                         <span>Dedicated Chauffeur Status: <strong className={`text-${theme}`}>{label}</strong></span>
                       </span>
-                      <span className={`badge bg-${theme} bg-opacity-10 text-${theme} border border-${theme} border-opacity-25 text-xxs px-2.5 py-1 rounded-pill fw-bold`}>
-                        {label}
-                      </span>
+                      <div className="d-flex align-items-center gap-1.5">
+                        {selectedBookingDetails.driver_service_type && (
+                          <span className="badge bg-warning text-dark border text-xxs px-2 py-0.5 rounded-pill fw-bold">
+                            🚗 {selectedBookingDetails.driver_service_type}
+                          </span>
+                        )}
+                        <span className={`badge bg-${theme} bg-opacity-10 text-${theme} border border-${theme} border-opacity-25 text-xxs px-2.5 py-1 rounded-pill fw-bold`}>
+                          {label}
+                        </span>
+                      </div>
                     </div>
 
                     {/* Driver Progress Bar */}
@@ -1522,27 +1596,29 @@ export default function CustomerPortalPage({
                               {selectedBookingDetails.assigned_driver_name || 'Assigned Chauffeur'}
                             </div>
                             <div className="text-muted text-xs">
-                              Phone: <strong>{selectedBookingDetails.assigned_driver_phone || '+91 98765 00000'}</strong> • Vehicle: <strong>{selectedBookingDetails.assigned_driver_vehicle || selectedBookingDetails.vehicle_name || 'Assigned Cab'}</strong>
+                              Phone: <strong>{selectedBookingDetails.assigned_driver_phone || 'Phone number will appear on dispatch'}</strong> • Service: <strong>{selectedBookingDetails.driver_service_type || 'FULL'}</strong> • Vehicle: <strong>{selectedBookingDetails.assigned_driver_vehicle || selectedBookingDetails.vehicle_name || 'Assigned Vehicle'}</strong>
                             </div>
                           </div>
-                          <div className="d-flex gap-2">
-                            <a 
-                              href={`tel:${selectedBookingDetails.assigned_driver_phone || ''}`} 
-                              className="btn btn-sm btn-dark text-white rounded-pill px-3 py-1 text-xs fw-bold d-flex align-items-center gap-1 shadow-sm"
-                            >
-                              <Phone size={13} className="text-warning" />
-                              <span>Call Driver</span>
-                            </a>
-                            <a 
-                              href={`https://wa.me/${String(selectedBookingDetails.assigned_driver_phone || '').replace(/\D/g, '')}?text=Hi%20${encodeURIComponent(selectedBookingDetails.assigned_driver_name || 'Driver')}%2C%20I%20am%20your%20passenger%20for%20Booking%20%23${selectedBookingDetails.id}`} 
-                              target="_blank" 
-                              rel="noreferrer"
-                              className="btn btn-sm btn-success text-white rounded-pill px-3 py-1 text-xs fw-bold d-flex align-items-center gap-1 shadow-sm"
-                            >
-                              <MessageCircle size={13} />
-                              <span>WhatsApp</span>
-                            </a>
-                          </div>
+                          {selectedBookingDetails.assigned_driver_phone && (
+                            <div className="d-flex gap-2">
+                              <a 
+                                href={`tel:${selectedBookingDetails.assigned_driver_phone}`} 
+                                className="btn btn-sm btn-dark text-white rounded-pill px-3 py-1 text-xs fw-bold d-flex align-items-center gap-1 shadow-sm"
+                              >
+                                <Phone size={13} className="text-warning" />
+                                <span>Call Driver</span>
+                              </a>
+                              <a 
+                                href={`https://wa.me/${String(selectedBookingDetails.assigned_driver_phone).replace(/\D/g, '')}?text=Hi%20${encodeURIComponent(selectedBookingDetails.assigned_driver_name || 'Driver')}%2C%20I%20am%20your%20passenger%20for%20Booking%20%23${selectedBookingDetails.id}`} 
+                                target="_blank" 
+                                rel="noreferrer" 
+                                className="btn btn-sm btn-success text-white rounded-pill px-3 py-1 text-xs fw-bold d-flex align-items-center gap-1 shadow-sm"
+                              >
+                                <MessageCircle size={13} />
+                                <span>WhatsApp</span>
+                              </a>
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <div className="text-xs text-muted">

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Send, Upload, MapPin, Calendar, Users, DollarSign, Hotel, Utensils, Plane, Train, Car, Bike, Info, CheckCircle2, User, Compass, AlertCircle, Loader2 } from 'lucide-react';
+import { Send, Upload, MapPin, Calendar, Users, DollarSign, Hotel, Utensils, Plane, Train, Car, Bike, Info, CheckCircle2, User, Compass, AlertCircle, Loader2, CalendarDays, Sparkles, X } from 'lucide-react';
 import * as api from '../../services/api';
+import { getTodayDateStr, addDays, formatDisplayDate } from '../../utils/dateUtils';
 
 export default function CustomTripEnquiryPage({ setActiveTab, currentUser }) {
   const [formData, setFormData] = useState({
@@ -34,6 +35,48 @@ export default function CustomTripEnquiryPage({ setActiveTab, currentUser }) {
   const [validationError, setValidationError] = useState('');
   const [success, setSuccess] = useState(false);
   const [enquiryId, setEnquiryId] = useState('');
+
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const today = getTodayDateStr();
+
+  const updateTravelDatesString = (start, end, flexible) => {
+    let result = '';
+    if (start && end) {
+      result = `${formatDisplayDate(start)} to ${formatDisplayDate(end)}`;
+      if (flexible) result += ' (Flexible)';
+    } else if (start) {
+      result = `From ${formatDisplayDate(start)}`;
+      if (flexible) result += ' (Flexible)';
+    } else if (flexible) {
+      result = 'Flexible dates';
+    }
+    setFormData(prev => ({
+      ...prev,
+      travel_dates: result,
+      flexible_dates: flexible
+    }));
+  };
+
+  const handleStartDateChange = (val) => {
+    setStartDate(val);
+    let newEnd = endDate;
+    if (endDate && endDate < val) {
+      newEnd = val;
+      setEndDate(newEnd);
+    }
+    updateTravelDatesString(val, newEnd, formData.flexible_dates);
+  };
+
+  const handleEndDateChange = (val) => {
+    setEndDate(val);
+    updateTravelDatesString(startDate, val, formData.flexible_dates);
+  };
+
+  const handleFlexibleToggle = (checked) => {
+    setFormData(prev => ({ ...prev, flexible_dates: checked }));
+    updateTravelDatesString(startDate, endDate, checked);
+  };
 
   useEffect(() => {
     if (currentUser) {
@@ -220,13 +263,36 @@ export default function CustomTripEnquiryPage({ setActiveTab, currentUser }) {
                 <label className="form-label fw-semibold">Destination(s) *</label>
                 <input type="text" className="form-control bg-light border-0 py-2" name="destinations" required value={formData.destinations} onChange={handleChange} placeholder="e.g. North Goa, South Goa" />
               </div>
-              <div className="col-md-6">
-                <label className="form-label fw-semibold">Travel Dates</label>
-                <input type="text" className="form-control bg-light border-0 py-2" name="travel_dates" value={formData.travel_dates} onChange={handleChange} placeholder="e.g. 15 Oct - 20 Oct" />
+              <div className="col-md-3">
+                <label className="form-label fw-semibold">Departure Date</label>
+                <input 
+                  type="date" 
+                  className="form-control bg-light border-0 py-2" 
+                  min={today}
+                  value={startDate} 
+                  onChange={(e) => handleStartDateChange(e.target.value)} 
+                />
+              </div>
+              <div className="col-md-3">
+                <label className="form-label fw-semibold">Return Date</label>
+                <input 
+                  type="date" 
+                  className="form-control bg-light border-0 py-2" 
+                  min={startDate || today}
+                  value={endDate} 
+                  onChange={(e) => handleEndDateChange(e.target.value)} 
+                />
               </div>
               <div className="col-md-6 d-flex align-items-center mt-auto">
                 <div className="form-check form-switch fs-5">
-                  <input className="form-check-input" type="checkbox" id="flexDates" name="flexible_dates" checked={formData.flexible_dates} onChange={handleChange} />
+                  <input 
+                    className="form-check-input" 
+                    type="checkbox" 
+                    id="flexDates" 
+                    name="flexible_dates" 
+                    checked={formData.flexible_dates} 
+                    onChange={(e) => handleFlexibleToggle(e.target.checked)} 
+                  />
                   <label className="form-check-label fs-6 fw-semibold text-muted ms-2" htmlFor="flexDates">My dates are flexible</label>
                 </div>
               </div>

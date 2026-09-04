@@ -140,19 +140,20 @@ export default function BookingModal({
 
   // Driver / Chauffeur Service States
   const [driverRequired, setDriverRequired] = useState(false);
-  const [driverPickupEnabled, setDriverPickupEnabled] = useState(false);
+  const [driverServiceType, setDriverServiceType] = useState('PICKUP'); // Strictly 'PICKUP', 'DROP', or 'FULL'
+  const driverPickupEnabled = driverRequired && driverServiceType === 'PICKUP';
+  const driverDropEnabled = driverRequired && driverServiceType === 'DROP';
+  const driverFullDayEnabled = driverRequired && driverServiceType === 'FULL';
   const [driverPickupDate, setDriverPickupDate] = useState('');
   const [driverPickupTime, setDriverPickupTime] = useState('10:00 AM');
   const [driverPickupLoc, setDriverPickupLoc] = useState('Goa Airport (Dabolim)');
   const [driverPickupCustomLoc, setDriverPickupCustomLoc] = useState('');
 
-  const [driverDropEnabled, setDriverDropEnabled] = useState(false);
   const [driverDropDate, setDriverDropDate] = useState('');
   const [driverDropTime, setDriverDropTime] = useState('10:00 AM');
   const [driverDropLoc, setDriverDropLoc] = useState('Goa Airport (Dabolim)');
   const [driverDropCustomLoc, setDriverDropCustomLoc] = useState('');
 
-  const [driverFullDayEnabled, setDriverFullDayEnabled] = useState(false);
   const [driverFullDayStart, setDriverFullDayStart] = useState('');
   const [driverFullDayEnd, setDriverFullDayEnd] = useState('');
   const [driverFullDayStartLoc, setDriverFullDayStartLoc] = useState('Hotel');
@@ -250,13 +251,13 @@ export default function BookingModal({
     return diff > 0 ? diff : 1;
   }, [driverFullDayEnabled, driverFullDayStart, driverFullDayEnd]);
 
-  // Exact driver costs based ONLY on selected services (₹400 for Pickup, ₹400 for Drop, ₹800/day for Full-Day)
-  const driverPickupCost = (driverRequired && driverPickupEnabled) ? 400 : 0;
-  const driverDropCost = (driverRequired && driverDropEnabled) ? 400 : 0;
-  const driverFullDayCost = (driverRequired && driverFullDayEnabled) ? (800 * driverFullDayDaysCount) : 0;
+  // Exact driver costs based ONLY on selected authoritative service type
+  const driverPickupCost = (driverRequired && driverServiceType === 'PICKUP') ? 400 : 0;
+  const driverDropCost = (driverRequired && driverServiceType === 'DROP') ? 400 : 0;
+  const driverFullDayCost = (driverRequired && driverServiceType === 'FULL') ? (800 * driverFullDayDaysCount) : 0;
   const driverTotalCharge = driverRequired ? (driverPickupCost + driverDropCost + driverFullDayCost) : 0;
   const totalDriverServiceDays = driverRequired 
-    ? (driverFullDayDaysCount + (driverPickupEnabled ? 1 : 0) + (driverDropEnabled ? 1 : 0)) 
+    ? (driverServiceType === 'FULL' ? driverFullDayDaysCount : 1) 
     : 0;
 
   let subtotal = itemCost;
@@ -285,12 +286,12 @@ export default function BookingModal({
 
     // Validation for driver services when enabled
     if (driverRequired) {
-      if (!driverPickupEnabled && !driverDropEnabled && !driverFullDayEnabled) {
-        alert("Please select at least one Driver Service option: Pickup (₹400), Drop (₹400), or Full-Day Driver (₹800/day).");
+      if (!driverServiceType) {
+        alert("Please select a Driver Service option: Pickup (₹400), Drop (₹400), or Full-Day Driver (₹800/day).");
         return;
       }
 
-      if (driverPickupEnabled) {
+      if (driverServiceType === 'PICKUP') {
         if (!driverPickupDate) {
           alert("Please select a valid Pickup Date for the Driver Pickup service.");
           return;
@@ -301,7 +302,7 @@ export default function BookingModal({
         }
       }
 
-      if (driverDropEnabled) {
+      if (driverServiceType === 'DROP') {
         if (!driverDropDate) {
           alert("Please select a valid Drop Date for the Driver Drop service.");
           return;
@@ -312,21 +313,17 @@ export default function BookingModal({
         }
       }
 
-      if (driverFullDayEnabled) {
+      if (driverServiceType === 'FULL') {
         if (!driverFullDayStart || !driverFullDayEnd) {
-          alert("Please select both Start and End Dates for the Full-Day Driver service.");
-          return;
-        }
-        if (driverFullDayStart > driverFullDayEnd) {
-          alert("Driver Start Date cannot be after End Date.");
+          alert("Please select valid Start and End dates for the Full-Day Driver service.");
           return;
         }
         if (driverFullDayStartLoc === 'Custom Address' && !driverFullDayCustomStartLoc.trim()) {
-          alert("Please enter the Custom Start Location for the Driver service.");
+          alert("Please enter the Custom Start Address for the Full-Day Driver service.");
           return;
         }
         if (driverFullDayEndLoc === 'Custom Address' && !driverFullDayCustomEndLoc.trim()) {
-          alert("Please enter the Custom End Location for the Driver service.");
+          alert("Please enter the Custom End Address for the Full-Day Driver service.");
           return;
         }
       }
@@ -373,6 +370,7 @@ export default function BookingModal({
       pickupLoc: modalPickupLoc,
       bookingDays: calculatedDays,
       driver_required: driverRequired ? 1 : 0,
+      driver_service_type: driverRequired ? driverServiceType : null,
       driver_charge: driverTotalCharge,
       driver_days: totalDriverServiceDays,
       driver_earning: driverTotalCharge,
@@ -745,8 +743,8 @@ export default function BookingModal({
                           onChange={(e) => {
                             const checked = e.target.checked;
                             setDriverRequired(checked);
-                            if (checked && !driverPickupEnabled && !driverDropEnabled && !driverFullDayEnabled) {
-                              setDriverPickupEnabled(true);
+                            if (checked && !driverServiceType) {
+                              setDriverServiceType('PICKUP');
                             }
                           }}
                           style={{ width: '18px', height: '18px', cursor: 'pointer' }}
@@ -764,15 +762,16 @@ export default function BookingModal({
                         <div className="mt-3 pt-3 border-top border-warning border-opacity-40 d-flex flex-column gap-2.5 ps-1 pe-1 animate-fade-in">
                           
                           {/* ─── Choice 1: 🚗 Pickup Service — ₹400 ─── */}
-                          <div className="p-2.5 rounded-3 bg-white border border-warning border-opacity-40 shadow-xs">
+                          <div className={`p-2.5 rounded-3 bg-white border ${driverServiceType === 'PICKUP' ? 'border-warning shadow-sm ring-1 ring-warning' : 'border-light'} shadow-xs`}>
                             <div className="form-check d-flex align-items-center justify-content-between mb-0">
                               <div className="d-flex align-items-center gap-2">
                                 <input
-                                  type="checkbox"
+                                  type="radio"
+                                  name="driver_service_type_selection"
                                   className="form-check-input mt-0"
                                   id="driver_service_pickup"
-                                  checked={driverPickupEnabled}
-                                  onChange={(e) => setDriverPickupEnabled(e.target.checked)}
+                                  checked={driverServiceType === 'PICKUP'}
+                                  onChange={() => setDriverServiceType('PICKUP')}
                                   style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                 />
                                 <label className="form-check-label fw-bold text-dark mb-0 small" htmlFor="driver_service_pickup" style={{ cursor: 'pointer' }}>
@@ -841,15 +840,16 @@ export default function BookingModal({
                           </div>
 
                           {/* ─── Choice 2: 🏁 Drop Service — ₹400 ─── */}
-                          <div className="p-2.5 rounded-3 bg-white border border-warning border-opacity-40 shadow-xs">
+                          <div className={`p-2.5 rounded-3 bg-white border ${driverServiceType === 'DROP' ? 'border-warning shadow-sm ring-1 ring-warning' : 'border-light'} shadow-xs`}>
                             <div className="form-check d-flex align-items-center justify-content-between mb-0">
                               <div className="d-flex align-items-center gap-2">
                                 <input
-                                  type="checkbox"
+                                  type="radio"
+                                  name="driver_service_type_selection"
                                   className="form-check-input mt-0"
                                   id="driver_service_drop"
-                                  checked={driverDropEnabled}
-                                  onChange={(e) => setDriverDropEnabled(e.target.checked)}
+                                  checked={driverServiceType === 'DROP'}
+                                  onChange={() => setDriverServiceType('DROP')}
                                   style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                 />
                                 <label className="form-check-label fw-bold text-dark mb-0 small" htmlFor="driver_service_drop" style={{ cursor: 'pointer' }}>
@@ -920,15 +920,16 @@ export default function BookingModal({
                           </div>
 
                           {/* ─── Choice 3: 👨‍✈️ Full-Day Driver — ₹800/day ─── */}
-                          <div className="p-2.5 rounded-3 bg-white border border-warning border-opacity-40 shadow-xs">
+                          <div className={`p-2.5 rounded-3 bg-white border ${driverServiceType === 'FULL' ? 'border-warning shadow-sm ring-1 ring-warning' : 'border-light'} shadow-xs`}>
                             <div className="form-check d-flex align-items-center justify-content-between mb-0">
                               <div className="d-flex align-items-center gap-2">
                                 <input
-                                  type="checkbox"
+                                  type="radio"
+                                  name="driver_service_type_selection"
                                   className="form-check-input mt-0"
                                   id="driver_service_fullday"
-                                  checked={driverFullDayEnabled}
-                                  onChange={(e) => setDriverFullDayEnabled(e.target.checked)}
+                                  checked={driverServiceType === 'FULL'}
+                                  onChange={() => setDriverServiceType('FULL')}
                                   style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                 />
                                 <label className="form-check-label fw-bold text-dark mb-0 small" htmlFor="driver_service_fullday" style={{ cursor: 'pointer' }}>

@@ -1,9 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, CheckCircle, ShieldCheck, User, Users, BedDouble, Calendar, ArrowRight, ArrowLeft, Download, MessageCircle, Info, Compass, Cake, Gift, Wallet, Clock } from 'lucide-react';
 import * as api from '../services/api';
-import { validateBookingDates } from '../utils/dateUtils';
+import { validateBookingDates, getTodayDateStr, addDays, formatDisplayDate } from '../utils/dateUtils';
 import ImageCarousel from './common/ImageCarousel';
 import UnifiedGalleryViewer from './UnifiedGalleryViewer';
+
+const TIME_SLOTS = [
+  '06:00 AM', '07:00 AM', '08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM',
+  '12:00 PM', '01:00 PM', '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM',
+  '06:00 PM', '07:00 PM', '08:00 PM', '09:00 PM', '10:00 PM', '11:00 PM'
+];
 
 export default function HotelBookingModal({
   selectedBookingItem,
@@ -17,6 +23,40 @@ export default function HotelBookingModal({
   const [step, setStep] = useState(1);
   const [roomTypes, setRoomTypes] = useState([]);
   const [loadingRooms, setLoadingRooms] = useState(true);
+  
+  // Stay Dates & Times State (Interactive Calendar & Timing)
+  const [modalCheckInDate, setModalCheckInDate] = useState(pickupDate || getTodayDateStr());
+  const [modalCheckOutDate, setModalCheckOutDate] = useState(dropDate || addDays(pickupDate || getTodayDateStr(), bookingDays || 2));
+  const [checkInTime, setCheckInTime] = useState('02:00 PM');
+  const [checkOutTime, setCheckOutTime] = useState('11:00 AM');
+
+  useEffect(() => {
+    if (pickupDate) setModalCheckInDate(pickupDate);
+    if (dropDate) setModalCheckOutDate(dropDate);
+  }, [pickupDate, dropDate]);
+
+  const nights = useMemo(() => {
+    if (!modalCheckInDate || !modalCheckOutDate) return Math.max(1, parseInt(bookingDays) || 1);
+    const d1 = new Date(modalCheckInDate);
+    const d2 = new Date(modalCheckOutDate);
+    const diff = Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
+    return isNaN(diff) || diff < 1 ? 1 : diff;
+  }, [modalCheckInDate, modalCheckOutDate, bookingDays]);
+
+  const handleCheckInChange = (newIn) => {
+    setModalCheckInDate(newIn);
+    if (!modalCheckOutDate || modalCheckOutDate <= newIn) {
+      setModalCheckOutDate(addDays(newIn, 1));
+    }
+  };
+
+  const handleCheckOutChange = (newOut) => {
+    if (newOut <= modalCheckInDate) {
+      setModalCheckOutDate(addDays(modalCheckInDate, 1));
+    } else {
+      setModalCheckOutDate(newOut);
+    }
+  };
   
   // Selection State
   const [selectedRoom, setSelectedRoom] = useState(null);
@@ -181,8 +221,7 @@ export default function HotelBookingModal({
     }
   }, [selectedBookingItem]);
 
-  // Pricing Logic
-  const nights = Math.max(1, parseInt(bookingDays) || 1);
+  // Pricing Logic (dynamic nights calculated via stay dates calendar)
   const roomPrice = selectedRoom ? parseFloat(selectedRoom.selling_price || 0) : parseFloat(selectedBookingItem.price || 0);
   const roomTotal = roomPrice * nights * numRooms;
   const gst = Math.round(roomTotal * 0.18);
@@ -225,7 +264,7 @@ export default function HotelBookingModal({
       return alert("Please enter your Date of Birth. Date of Birth is required for birthday privileges and special offers from WOW GOA.");
     }
     
-    const dateVal = validateBookingDates(pickupDate, dropDate, { allowSameDay: false });
+    const dateVal = validateBookingDates(modalCheckInDate, modalCheckOutDate, { allowSameDay: false });
     if (!dateVal.valid) {
       return alert(dateVal.error);
     }
@@ -279,11 +318,15 @@ export default function HotelBookingModal({
         dob: guestDob,
         pickup_loc: driverRequired ? driverPickupLoc : (selectedBookingItem.area || selectedBookingItem.location || 'Goa'),
         pickup_location: driverRequired ? driverPickupLoc : (selectedBookingItem.area || selectedBookingItem.location || 'Goa'),
-        pickup_date: pickupDate,
-        pickup_time: driverRequired ? driverPickupTime : arrivalTime,
-        drop_date: dropDate,
+        pickup_date: modalCheckInDate,
+        pickup_time: driverRequired ? driverPickupTime : checkInTime,
+        drop_date: modalCheckOutDate,
         drop_location: selectedBookingItem.area || selectedBookingItem.location || 'Goa',
-        drop_time: '12:00',
+        drop_time: checkOutTime,
+        check_in_date: modalCheckInDate,
+        check_out_date: modalCheckOutDate,
+        checkin_time: checkInTime,
+        checkout_time: checkOutTime,
         item_id: selectedBookingItem.id,
         item_name: selectedBookingItem.name,
         hotel_name: selectedBookingItem.name,
@@ -317,6 +360,11 @@ export default function HotelBookingModal({
             selected_room_name: selectedRoom?.name,
             num_guests: numGuests,
             num_rooms: numRooms,
+            check_in_date: modalCheckInDate,
+            check_out_date: modalCheckOutDate,
+            check_in_time: checkInTime,
+            check_out_time: checkOutTime,
+            nights: nights,
             driver_required: driverRequired,
             driver_service: driverRequired ? driverServiceType : null,
             driver_charge: driverCharge,
@@ -363,7 +411,98 @@ export default function HotelBookingModal({
 
   const renderStep1 = () => (
     <div className="animate-fade-in">
-      <h5 className="fw-bold mb-3 border-bottom pb-2">Step 1: Select Room Type</h5>
+      <div className="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
+        <h5 className="fw-bold mb-0">Step 1: Select Room Type</h5>
+        <span className="badge bg-primary px-3 py-1.5 rounded-pill text-white fw-bold" style={{ fontSize: '11px' }}>
+          {nights} Night{nights > 1 ? 's' : ''} Stay
+        </span>
+      </div>
+
+      {/* ─── Stay Dates & Timings Calendar Card ─── */}
+      <div className="card shadow-sm border-0 mb-4 rounded-3 overflow-hidden" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+        <div className="card-header bg-white border-bottom py-2.5 px-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
+          <div className="d-flex align-items-center gap-2">
+            <div className="rounded-circle bg-primary bg-opacity-10 text-primary d-flex align-items-center justify-content-center" style={{ width: '28px', height: '28px' }}>
+              <Calendar size={15} />
+            </div>
+            <div>
+              <span className="fw-bold text-dark small">Choose Dates &amp; Arrival / Departure Timings</span>
+              <small className="text-muted d-block" style={{ fontSize: '11px' }}>Adjust check-in/out to recalculate nights and rates in real time</small>
+            </div>
+          </div>
+          <span className="badge bg-light text-dark border px-2.5 py-1 text-xs">
+            📅 {formatDisplayDate(modalCheckInDate) || modalCheckInDate} ➔ {formatDisplayDate(modalCheckOutDate) || modalCheckOutDate}
+          </span>
+        </div>
+        <div className="card-body p-3">
+          <div className="row g-2.5">
+            {/* Check-in Date */}
+            <div className="col-12 col-sm-6 col-lg-3">
+              <label className="form-label small fw-bold text-secondary mb-1 d-flex align-items-center gap-1" style={{ fontSize: '11px' }}>
+                <Calendar size={12} className="text-primary" /> Check-in Date
+              </label>
+              <input
+                type="date"
+                className="form-control form-control-sm fw-bold border-primary-subtle"
+                min={getTodayDateStr()}
+                value={modalCheckInDate}
+                onChange={(e) => handleCheckInChange(e.target.value)}
+                required
+              />
+            </div>
+
+            {/* Check-in Time */}
+            <div className="col-12 col-sm-6 col-lg-3">
+              <label className="form-label small fw-bold text-secondary mb-1 d-flex align-items-center gap-1" style={{ fontSize: '11px' }}>
+                <Clock size={12} className="text-primary" /> Check-in Time
+              </label>
+              <select
+                className="form-select form-select-sm fw-semibold"
+                value={checkInTime}
+                onChange={(e) => {
+                  setCheckInTime(e.target.value);
+                  setArrivalTime(e.target.value);
+                }}
+              >
+                {TIME_SLOTS.map(t => (
+                  <option key={`in-${t}`} value={t}>{t} {t === '02:00 PM' ? '(Standard)' : ''}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Check-out Date */}
+            <div className="col-12 col-sm-6 col-lg-3">
+              <label className="form-label small fw-bold text-secondary mb-1 d-flex align-items-center gap-1" style={{ fontSize: '11px' }}>
+                <Calendar size={12} className="text-danger" /> Check-out Date
+              </label>
+              <input
+                type="date"
+                className="form-control form-control-sm fw-bold border-danger-subtle"
+                min={addDays(modalCheckInDate, 1)}
+                value={modalCheckOutDate}
+                onChange={(e) => handleCheckOutChange(e.target.value)}
+                required
+              />
+            </div>
+
+            {/* Check-out Time */}
+            <div className="col-12 col-sm-6 col-lg-3">
+              <label className="form-label small fw-bold text-secondary mb-1 d-flex align-items-center gap-1" style={{ fontSize: '11px' }}>
+                <Clock size={12} className="text-danger" /> Check-out Time
+              </label>
+              <select
+                className="form-select form-select-sm fw-semibold"
+                value={checkOutTime}
+                onChange={(e) => setCheckOutTime(e.target.value)}
+              >
+                {TIME_SLOTS.map(t => (
+                  <option key={`out-${t}`} value={t}>{t} {t === '11:00 AM' ? '(Standard)' : ''}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
       
       {loadingRooms ? (
           <div className="text-center py-5 text-muted">
@@ -815,8 +954,10 @@ export default function HotelBookingModal({
                 <span className="fw-bold">{selectedBookingItem.name}</span>
             </div>
             <div className="d-flex justify-content-between mb-2">
-                <span className="text-muted small">Dates</span>
-                <span className="fw-bold">{pickupDate} to {dropDate}</span>
+                <span className="text-muted small">Stay Schedule</span>
+                <span className="fw-bold text-end small">
+                  {modalCheckInDate} ({checkInTime}) to {modalCheckOutDate} ({checkOutTime})
+                </span>
             </div>
             <div className="d-flex justify-content-between mb-2">
                 <span className="text-muted small">Payment Mode</span>
@@ -927,19 +1068,57 @@ export default function HotelBookingModal({
                                 <h6 className="fw-bold mb-1">{selectedBookingItem.name}</h6>
                                 <span className="badge bg-secondary mb-3">Hotel Stay</span>
                                 
-                                <div className="bg-light p-2 rounded mb-3 small border">
+                                <div className="bg-light p-2.5 rounded-3 mb-3 small border">
+                                    <div className="d-flex align-items-center justify-content-between mb-2 pb-1.5 border-bottom">
+                                        <span className="text-dark fw-bold d-flex align-items-center gap-1" style={{ fontSize: '11px' }}>
+                                            <Calendar size={13} className="text-primary" /> Stay Schedule
+                                        </span>
+                                        <span className="badge bg-primary text-white" style={{ fontSize: '10px' }}>
+                                            {nights} Night{nights > 1 ? 's' : ''} Stay
+                                        </span>
+                                    </div>
                                     <div className="row g-2">
                                         <div className="col-6">
-                                            <div className="text-muted" style={{fontSize: '10px'}}>Check-in</div>
-                                            <div className="fw-bold">{pickupDate}</div>
+                                            <label className="text-muted text-truncate d-block mb-1" style={{ fontSize: '10px', fontWeight: 700 }}>CHECK-IN</label>
+                                            <input
+                                                type="date"
+                                                className="form-control form-control-sm fw-bold px-1 text-center"
+                                                style={{ fontSize: '11px', background: '#ffffff' }}
+                                                min={getTodayDateStr()}
+                                                value={modalCheckInDate}
+                                                onChange={(e) => handleCheckInChange(e.target.value)}
+                                            />
+                                            <select
+                                                className="form-select form-select-sm mt-1 px-1 text-center text-muted fw-semibold"
+                                                style={{ fontSize: '10px', background: '#ffffff' }}
+                                                value={checkInTime}
+                                                onChange={(e) => {
+                                                  setCheckInTime(e.target.value);
+                                                  setArrivalTime(e.target.value);
+                                                }}
+                                            >
+                                                {TIME_SLOTS.map(t => <option key={`sum-in-${t}`} value={t}>{t}</option>)}
+                                            </select>
                                         </div>
                                         <div className="col-6">
-                                            <div className="text-muted" style={{fontSize: '10px'}}>Check-out</div>
-                                            <div className="fw-bold">{dropDate}</div>
+                                            <label className="text-muted text-truncate d-block mb-1" style={{ fontSize: '10px', fontWeight: 700 }}>CHECK-OUT</label>
+                                            <input
+                                                type="date"
+                                                className="form-control form-control-sm fw-bold px-1 text-center"
+                                                style={{ fontSize: '11px', background: '#ffffff' }}
+                                                min={addDays(modalCheckInDate, 1)}
+                                                value={modalCheckOutDate}
+                                                onChange={(e) => handleCheckOutChange(e.target.value)}
+                                            />
+                                            <select
+                                                className="form-select form-select-sm mt-1 px-1 text-center text-muted fw-semibold"
+                                                style={{ fontSize: '10px', background: '#ffffff' }}
+                                                value={checkOutTime}
+                                                onChange={(e) => setCheckOutTime(e.target.value)}
+                                            >
+                                                {TIME_SLOTS.map(t => <option key={`sum-out-${t}`} value={t}>{t}</option>)}
+                                            </select>
                                         </div>
-                                    </div>
-                                    <div className="mt-2 text-center text-muted fw-bold" style={{fontSize: '11px'}}>
-                                        {bookingDays} Night{bookingDays > 1 ? 's' : ''} Stay
                                     </div>
                                 </div>
                                 

@@ -11,7 +11,7 @@ import * as api from '../../services/api';
 import SubscriptionPlansManager from '../../components/superadmin/SubscriptionPlansManager';
 import PaymentGatewayManager from '../../components/superadmin/PaymentGatewayManager';
 import WalletApprovalCenter from '../../components/superadmin/WalletApprovalCenter';
-import AdminAnalytics from '../admin/AdminAnalytics';
+import AnalyticsView from '../../components/shared/AnalyticsView';
 
 // ─── STAT CARD ───────────────────────────────────────────────────────────────
 function StatCard({ label, value, icon, color, trend, sub }) {
@@ -321,7 +321,14 @@ function EditAdminModal({ editing, onClose, onUpdateUser }) {
     if (editing) {
       const userPassMap = JSON.parse(localStorage.getItem('user_passwords') || '{}');
       const storedPass = userPassMap[editing.id] || userPassMap[editing.username] || userPassMap[editing.email];
-      const displayPass = storedPass || editing.plain_password || editing.password || (editing.username === 'superadmin' ? 'superadmin' : 'admin@2026');
+      let defaultEditPass = 'Admin@Goa2026';
+      if (editing.username === 'superadmin') defaultEditPass = 'superadmin';
+      else if (editing.username === 'goa_operations') defaultEditPass = 'Ops@Goa2026';
+      else if (editing.username) defaultEditPass = `${editing.username}@2026`;
+
+      const displayPass = (storedPass && storedPass !== 'admin@2026')
+        ? storedPass
+        : (editing.plain_password && editing.plain_password !== 'admin@2026' ? editing.plain_password : defaultEditPass);
       setEditForm({
         username: editing.username || '',
         email: editing.email || '',
@@ -412,10 +419,16 @@ function AdminManagementTab({ usersList = [], onAddUser, onUpdateUser, onDeleteU
   const [editing, setEditing] = useState(null);
   const [visiblePassMap, setVisiblePassMap] = useState({});
 
-  const admins = usersList.filter(u => ['admin', 'superadmin'].includes(u.role) && (
-    (u.username || '').toLowerCase().includes(search.toLowerCase()) ||
-    (u.email || '').toLowerCase().includes(search.toLowerCase())
-  ));
+  const admins = usersList.filter(u => {
+    const role = String(u.role || '').toLowerCase().trim();
+    const isAdmin = ['admin', 'superadmin', 'subadmin', 'sub_admin', 'administrator'].includes(role);
+    if (!isAdmin) return false;
+    if (!search) return true;
+    const s = search.toLowerCase().trim();
+    return (u.username || '').toLowerCase().includes(s) ||
+           (u.email || '').toLowerCase().includes(s) ||
+           (u.name || '').toLowerCase().includes(s);
+  });
 
   return (
     <Section
@@ -447,7 +460,14 @@ function AdminManagementTab({ usersList = [], onAddUser, onUpdateUser, onDeleteU
         {admins.map((u, i) => {
           const userPassMap = JSON.parse(localStorage.getItem('user_passwords') || '{}');
           const storedPass = userPassMap[u.id] || userPassMap[u.username] || userPassMap[u.email];
-          const displayPass = storedPass || u.plain_password || u.password || (u.username === 'superadmin' ? 'superadmin' : 'admin@2026');
+          let defaultAdminPass = 'Admin@Goa2026';
+          if (u.username === 'superadmin') defaultAdminPass = 'superadmin';
+          else if (u.username === 'goa_operations') defaultAdminPass = 'Ops@Goa2026';
+          else if (u.username) defaultAdminPass = `${u.username}@2026`;
+
+          const displayPass = (storedPass && storedPass !== 'admin@2026')
+            ? storedPass
+            : (u.plain_password && u.plain_password !== 'admin@2026' ? u.plain_password : defaultAdminPass);
           return (
             <tr key={u.id}>
               <td className="px-3 py-2 text-muted" style={{ fontSize: '0.75rem' }}>{i + 1}</td>
@@ -530,8 +550,12 @@ function UserManagementTab({ usersList = [] }) {
   const roles = ['all', 'superadmin', 'admin', 'hotel_vendor', 'vendor', 'customer'];
   
   const filtered = usersList.filter(u => {
-    const matchRole = roleFilter === 'all' || u.role === roleFilter;
-    const matchSearch = (u.username || '').toLowerCase().includes(search.toLowerCase()) || (u.email || '').toLowerCase().includes(search.toLowerCase());
+    const uRole = String(u.role || '').toLowerCase().trim();
+    const matchRole = roleFilter === 'all' || uRole === roleFilter.toLowerCase().trim();
+    const s = search.toLowerCase().trim();
+    const matchSearch = !s || (u.username || '').toLowerCase().includes(s) || 
+                               (u.email || '').toLowerCase().includes(s) ||
+                               (u.name || '').toLowerCase().includes(s);
     return matchRole && matchSearch;
   });
 
@@ -562,31 +586,53 @@ function UserManagementTab({ usersList = [] }) {
         {filtered.map((u, i) => {
           const userPassMap = JSON.parse(localStorage.getItem('user_passwords') || '{}');
           const storedPass = userPassMap[u.id] || userPassMap[u.username] || userPassMap[u.email];
-          const displayPass = storedPass || u.plain_password || u.password || (u.username === 'superadmin' ? 'superadmin' : 'admin@2026');
+          const isCustomer = u.role === 'customer';
+
+          let defaultUserPass = `${u.username || 'User'}@2026`;
+          if (u.username === 'superadmin') defaultUserPass = 'superadmin';
+          else if (u.username === 'admin') defaultUserPass = 'Admin@Goa2026';
+          else if (u.username === 'goa_operations') defaultUserPass = 'Ops@Goa2026';
+          else if (u.role === 'hotel_vendor') defaultUserPass = 'Hotel@Goa2026';
+          else if (u.role === 'flight_vendor') defaultUserPass = 'Flight@Goa2026';
+          else if (u.role === 'vendor') defaultUserPass = 'Vendor@Fleet26';
+          else if (u.role === 'b2b') defaultUserPass = `Partner@${String(u.username || u.id || '').slice(-4)}`;
+
+          const displayPass = isCustomer
+            ? ((storedPass && storedPass !== 'admin@2026' && storedPass !== 'Pass@123') ? storedPass : (u.plain_password && u.plain_password !== 'admin@2026' ? u.plain_password : 'OTP Login'))
+            : ((storedPass && storedPass !== 'admin@2026') ? storedPass : (u.plain_password && u.plain_password !== 'admin@2026' ? u.plain_password : defaultUserPass));
+
+          const isOtpAuth = isCustomer && (displayPass === 'OTP Login' || displayPass === 'OTP-Auth');
+
           return (
             <tr key={u.id}>
               <td className="px-3 py-2 text-muted" style={{ fontSize: '0.75rem' }}>{i + 1}</td>
               <td className="px-3 py-2 fw-bold">{u.username}</td>
               <td className="px-3 py-2 text-muted">{u.email || '—'}</td>
               <td className="px-3 py-2">
-                <div className="d-flex align-items-center gap-1.5">
-                  <span className="font-monospace fw-bold" style={{ fontSize: '0.78rem', color: visibleUserPassMap[u.id] ? '#FF6333' : '#0f172a' }}>
-                    {visibleUserPassMap[u.id] ? displayPass : '••••••••'}
+                {isOtpAuth ? (
+                  <span className="badge rounded-pill fw-semibold" style={{ background: '#f0f9ff', color: '#0284c7', border: '1px solid #bae6fd', fontSize: '0.72rem', padding: '3px 8px' }}>
+                    📱 Phone / OTP Login
                   </span>
-                  <button
-                    type="button"
-                    className="btn btn-sm p-0 text-muted border-0 ms-1"
-                    style={{ background: 'transparent' }}
-                    onClick={() => setVisibleUserPassMap(prev => ({ ...prev, [u.id]: !prev[u.id] }))}
-                    title={visibleUserPassMap[u.id] ? "Hide password" : "Show password"}
-                  >
-                    {visibleUserPassMap[u.id] ? <EyeOff size={13} /> : <Eye size={13} />}
-                  </button>
-                </div>
+                ) : (
+                  <div className="d-flex align-items-center gap-1.5">
+                    <span className="font-monospace fw-bold" style={{ fontSize: '0.78rem', color: visibleUserPassMap[u.id] ? '#FF6333' : '#0f172a' }}>
+                      {visibleUserPassMap[u.id] ? displayPass : '••••••••'}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-sm p-0 text-muted border-0 ms-1"
+                      style={{ background: 'transparent' }}
+                      onClick={() => setVisibleUserPassMap(prev => ({ ...prev, [u.id]: !prev[u.id] }))}
+                      title={visibleUserPassMap[u.id] ? "Hide password" : "Show password"}
+                    >
+                      {visibleUserPassMap[u.id] ? <EyeOff size={13} /> : <Eye size={13} />}
+                    </button>
+                  </div>
+                )}
               </td>
               <td className="px-3 py-2">{renderRoleBadge(u.role)}</td>
               <td className="px-3 py-2"><StatusBadge status={u.status || 'active'} /></td>
-              <td className="px-3 py-2"><StatusBadge status={u.kyc_status || 'pending'} /></td>
+              <td className="px-3 py-2"><StatusBadge status={u.kyc_status || 'verified'} /></td>
             </tr>
           );
         })}
@@ -2189,7 +2235,7 @@ export default function SuperAdminDashboard({
     case 'commission':
       return <CommissionTab vendors={vendors} />;
     case 'reports':
-      return <AdminAnalytics bookings={bookings} hotels={hotels} cars={cars} bikes={bikes} vendors={vendors} allPackages={[]} />;
+      return <AnalyticsView bookings={bookings} hotels={hotels} cars={cars} bikes={bikes} vendors={vendors} allPackages={[]} />;
     case 'global_settings':
       return <GlobalSettingsTab />;
     case 'notifications':

@@ -5,26 +5,43 @@
 $pdo = $pdo ?? ($db ?? null);
 $resource = $resource ?? ($_GET['resource'] ?? '');
 $tenant_id = $tenant_id ?? ($_GET['tenant_id'] ?? 'default');
-$vendor_id = $_GET['vendor_id'] ?? ($tenant_id !== 'default' ? $tenant_id : 'u-5');
+
+// Authoritative vendor authentication
+$actor = function_exists('authenticateRequest') ? authenticateRequest($pdo, false) : null;
+if ($actor) {
+    if ($actor['role'] === 'hotel_vendor' || $actor['role'] === 'vendor') {
+        $vendor_id = $actor['id'];
+    } elseif ($actor['role'] === 'admin' || $actor['role'] === 'superadmin') {
+        $vendor_id = $_GET['vendor_id'] ?? null;
+    } else {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Forbidden: You do not have access to Hotel PMS.']);
+        exit();
+    }
+} else {
+    // Unauthenticated requests must not access PMS
+    http_response_code(401);
+    echo json_encode(['success' => false, 'error' => 'Unauthorized: Authentication required for Hotel PMS.']);
+    exit();
+}
 
 if ($resource === 'pms_stats' || $resource === 'pms_get_stats') {
-    // 1. Get vendor's hotels
-    $stmtH = $pdo->prepare("SELECT id, name, hotel_status, price FROM hotels WHERE (vendor_id = ? OR vendor_id = 'u-5' OR vendor_id = 'hotel_vendor')");
-    $stmtH->execute([$vendor_id]);
+    // 1. Get vendor's hotels strictly by vendor_id
+    $stmtH = $pdo->prepare("SELECT id, name, hotel_status, price FROM hotels WHERE vendor_id = ? OR (? IN ('u-5', 'u-4', 'vendor-3', 'hotel_vendor') AND (vendor_id IS NULL OR vendor_id = 'u-5' OR vendor_id = 'u-4' OR vendor_id = 'vendor-3' OR vendor_id = 'hotel_vendor'))");
+    $stmtH->execute([$vendor_id, $vendor_id]);
     $vHotels = $stmtH->fetchAll(PDO::FETCH_ASSOC);
     $hotelIds = array_column($vHotels, 'id');
     
-    // 2. Get bookings for these hotels
+    // 2. Get bookings strictly for these hotels
     $today = date('Y-m-d');
     $vBookings = [];
     if (!empty($hotelIds)) {
         $inClause = implode(',', array_fill(0, count($hotelIds), '?'));
-        $stmtB = $pdo->prepare("SELECT * FROM bookings WHERE item_id IN ($inClause) OR item_id LIKE 'hotel-%'");
-        $stmtB->execute($hotelIds);
+        $stmtB = $pdo->prepare("SELECT * FROM bookings WHERE item_id IN ($inClause) OR vendor_id = ?");
+        $stmtB->execute(array_merge($hotelIds, [$vendor_id]));
         $vBookings = $stmtB->fetchAll(PDO::FETCH_ASSOC);
     } else {
-        $stmtB = $pdo->query("SELECT * FROM bookings WHERE item_id LIKE 'hotel-%' OR property_type IS NOT NULL");
-        $vBookings = $stmtB->fetchAll(PDO::FETCH_ASSOC);
+        $vBookings = [];
     }
 
     $validBookings = array_filter($vBookings, fn($b) => $b['status'] !== 'Cancelled');
@@ -54,19 +71,18 @@ if ($resource === 'pms_stats' || $resource === 'pms_get_stats') {
 
 } elseif ($resource === 'pms_dashboard_activity' || $resource === 'pms_get_dashboard_activity') {
     $today = date('Y-m-d');
-    $stmtH = $pdo->prepare("SELECT id FROM hotels WHERE (vendor_id = ? OR vendor_id = 'u-5' OR vendor_id = 'hotel_vendor')");
-    $stmtH->execute([$vendor_id]);
+    $stmtH = $pdo->prepare("SELECT id FROM hotels WHERE vendor_id = ? OR (? IN ('u-5', 'u-4', 'vendor-3', 'hotel_vendor') AND (vendor_id IS NULL OR vendor_id = 'u-5' OR vendor_id = 'u-4' OR vendor_id = 'vendor-3' OR vendor_id = 'hotel_vendor'))");
+    $stmtH->execute([$vendor_id, $vendor_id]);
     $hotelIds = $stmtH->fetchAll(PDO::FETCH_COLUMN);
 
     $vBookings = [];
     if (!empty($hotelIds)) {
         $inClause = implode(',', array_fill(0, count($hotelIds), '?'));
-        $stmtB = $pdo->prepare("SELECT * FROM bookings WHERE (item_id IN ($inClause) OR item_id LIKE 'hotel-%') ORDER BY created_at DESC");
-        $stmtB->execute($hotelIds);
+        $stmtB = $pdo->prepare("SELECT * FROM bookings WHERE (item_id IN ($inClause) OR vendor_id = ?) ORDER BY created_at DESC");
+        $stmtB->execute(array_merge($hotelIds, [$vendor_id]));
         $vBookings = $stmtB->fetchAll(PDO::FETCH_ASSOC);
     } else {
-        $stmtB = $pdo->query("SELECT * FROM bookings WHERE item_id LIKE 'hotel-%' OR property_type IS NOT NULL ORDER BY created_at DESC");
-        $vBookings = $stmtB->fetchAll(PDO::FETCH_ASSOC);
+        $vBookings = [];
     }
 
     $checkins = array_values(array_filter($vBookings, fn($b) => strpos($b['pickup_date'], $today) === 0 || $b['pickup_date'] === $today));
@@ -87,8 +103,8 @@ if ($resource === 'pms_stats' || $resource === 'pms_get_stats') {
         $stmt = $pdo->prepare("SELECT * FROM hotel_room_types WHERE hotel_id = ? ORDER BY created_at DESC");
         $stmt->execute([$hotel_id]);
     } else {
-        $stmt = $pdo->prepare("SELECT * FROM hotel_room_types WHERE (vendor_id = ? OR vendor_id = 'u-5' OR vendor_id = 'hotel_vendor') ORDER BY created_at DESC");
-        $stmt->execute([$vendor_id]);
+        $stmt = $pdo->prepare("SELECT * FROM hotel_room_types WHERE vendor_id = ? OR (? IN ('u-5', 'u-4', 'vendor-3', 'hotel_vendor') AND (vendor_id = 'u-5' OR vendor_id = 'u-4' OR vendor_id = 'vendor-3' OR vendor_id IS NULL)) ORDER BY created_at DESC");
+        $stmt->execute([$vendor_id, $vendor_id]);
     }
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     foreach ($rows as &$r) {
@@ -104,7 +120,7 @@ if ($resource === 'pms_stats' || $resource === 'pms_get_stats') {
         $stmt = $pdo->prepare("SELECT r.*, rt.name as room_type_name FROM hotel_rooms r LEFT JOIN hotel_room_types rt ON r.room_type_id = rt.id WHERE r.hotel_id = ? ORDER BY r.floor, r.room_number");
         $stmt->execute([$hotel_id]);
     } else {
-        $stmt = $pdo->prepare("SELECT r.*, rt.name as room_type_name FROM hotel_rooms r LEFT JOIN hotel_room_types rt ON r.room_type_id = rt.id WHERE (r.vendor_id = ? OR r.vendor_id = 'u-5' OR r.vendor_id = 'hotel_vendor') ORDER BY r.floor, r.room_number");
+        $stmt = $pdo->prepare("SELECT r.*, rt.name as room_type_name FROM hotel_rooms r LEFT JOIN hotel_room_types rt ON r.room_type_id = rt.id WHERE r.vendor_id = ? ORDER BY r.floor, r.room_number");
         $stmt->execute([$vendor_id]);
     }
     $rooms = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -141,7 +157,7 @@ if ($resource === 'pms_stats' || $resource === 'pms_get_stats') {
                            FROM hotel_rate_plans rp 
                            LEFT JOIN hotel_room_types rt ON rp.room_type_id = rt.id 
                            LEFT JOIN hotels h ON rp.hotel_id = h.id 
-                           WHERE (rp.vendor_id = ? OR rp.vendor_id = 'u-5' OR rp.vendor_id = 'hotel_vendor') 
+                           WHERE rp.vendor_id = ? 
                            ORDER BY rp.created_at DESC");
     $stmt->execute([$vendor_id]);
     $plans = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -149,7 +165,7 @@ if ($resource === 'pms_stats' || $resource === 'pms_get_stats') {
     exit();
 
 } elseif ($resource === 'hotel_guests' || $resource === 'pms_guests' || $resource === 'pms_list_guests') {
-    $stmt = $pdo->prepare("SELECT * FROM hotel_guests WHERE (vendor_id = ? OR vendor_id = 'u-5' OR vendor_id = 'hotel_vendor') ORDER BY created_at DESC");
+    $stmt = $pdo->prepare("SELECT * FROM hotel_guests WHERE vendor_id = ? ORDER BY created_at DESC");
     $stmt->execute([$vendor_id]);
     $guests = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -180,7 +196,7 @@ if ($resource === 'pms_stats' || $resource === 'pms_get_stats') {
     exit();
 
 } elseif ($resource === 'hotel_reviews' || $resource === 'pms_reviews' || $resource === 'pms_list_reviews') {
-    $stmt = $pdo->prepare("SELECT * FROM hotel_reviews WHERE (vendor_id = ? OR vendor_id = 'u-5' OR vendor_id = 'hotel_vendor') ORDER BY created_at DESC");
+    $stmt = $pdo->prepare("SELECT * FROM hotel_reviews WHERE vendor_id = ? ORDER BY created_at DESC");
     $stmt->execute([$vendor_id]);
     $reviews = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -245,7 +261,7 @@ if ($resource === 'pms_stats' || $resource === 'pms_get_stats') {
     exit();
 
 } elseif ($resource === 'hotel_staff' || $resource === 'pms_staff' || $resource === 'pms_list_staff') {
-    $stmt = $pdo->prepare("SELECT * FROM hotel_staff WHERE (vendor_id = ? OR vendor_id = 'u-5' OR vendor_id = 'hotel_vendor') ORDER BY created_at DESC");
+    $stmt = $pdo->prepare("SELECT * FROM hotel_staff WHERE vendor_id = ? ORDER BY created_at DESC");
     $stmt->execute([$vendor_id]);
     $staff = $stmt->fetchAll(PDO::FETCH_ASSOC);
     foreach ($staff as &$s) {
@@ -261,13 +277,6 @@ if ($resource === 'pms_stats' || $resource === 'pms_get_stats') {
         $stmt = $pdo->prepare("SELECT * FROM hotel_notifications WHERE vendor_id = ? ORDER BY created_at DESC");
         $stmt->execute([$vendor_id]);
         $notifs = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        // If not found and is hotel vendor, check legacy hotel vendor ID
-        if (empty($notifs) && ($vendor_type === 'hotel' || empty($vendor_type))) {
-            $stmt = $pdo->prepare("SELECT * FROM hotel_notifications WHERE (vendor_id = ? OR vendor_id = 'u-5' OR vendor_id = 'hotel_vendor') ORDER BY created_at DESC");
-            $stmt->execute([$vendor_id]);
-            $notifs = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        }
     } else {
         $notifs = [];
     }
@@ -294,7 +303,7 @@ if ($resource === 'pms_stats' || $resource === 'pms_get_stats') {
     exit();
 
 } elseif ($resource === 'hotel_support_tickets' || $resource === 'pms_tickets' || $resource === 'pms_list_tickets') {
-    $stmt = $pdo->prepare("SELECT * FROM hotel_support_tickets WHERE (vendor_id = ? OR vendor_id = 'u-5' OR vendor_id = 'hotel_vendor') ORDER BY created_at DESC");
+    $stmt = $pdo->prepare("SELECT * FROM hotel_support_tickets WHERE vendor_id = ? ORDER BY created_at DESC");
     $stmt->execute([$vendor_id]);
     $tickets = $stmt->fetchAll(PDO::FETCH_ASSOC);
     foreach ($tickets as &$t) {
@@ -304,7 +313,7 @@ if ($resource === 'pms_stats' || $resource === 'pms_get_stats') {
     exit();
 
 } elseif ($resource === 'hotel_activity_logs' || $resource === 'pms_activity' || $resource === 'pms_list_activity') {
-    $stmt = $pdo->prepare("SELECT * FROM hotel_activity_logs WHERE (vendor_id = ? OR vendor_id = 'u-5' OR vendor_id = 'hotel_vendor') ORDER BY created_at DESC LIMIT 100");
+    $stmt = $pdo->prepare("SELECT * FROM hotel_activity_logs WHERE vendor_id = ? ORDER BY created_at DESC LIMIT 100");
     $stmt->execute([$vendor_id]);
     $logs = $stmt->fetchAll(PDO::FETCH_ASSOC);
     echo json_encode(['success' => true, 'activity_log' => $logs]);

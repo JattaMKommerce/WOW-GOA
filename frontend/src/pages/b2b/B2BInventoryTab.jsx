@@ -3,7 +3,7 @@ import {
   Hotel, Car, Compass, Plane, Wand2, Search, Filter, Gift, Tag, Check, Star, 
   Users, Calendar, Sparkles, MapPin, ArrowRight, ShieldCheck, Clock, 
   Eye, CheckCircle2, AlertCircle, X, Shield, PlaneTakeoff, PlaneLanding,
-  CreditCard, Fuel, Gauge, Award, FileText
+  CreditCard, Fuel, Gauge, Award, FileText, Wallet
 } from 'lucide-react';
 import * as api from '../../services/api';
 import B2BSelfDriveFlow from './B2BSelfDriveFlow';
@@ -39,7 +39,7 @@ export default function B2BInventoryTab({
     guests: 2,
     daysOrQty: 1,
     special_requests: '',
-    payment_method: 'B2B Account / Cash'
+    payment_method: 'Prepaid Agent Wallet'
   });
   const [bookingLoading, setBookingLoading] = useState(false);
   const [bookingError, setBookingError] = useState('');
@@ -162,7 +162,7 @@ export default function B2BInventoryTab({
       guests: 2,
       daysOrQty: 1,
       special_requests: '',
-      payment_method: 'B2B Account / Cash'
+      payment_method: 'Prepaid Agent Wallet'
     });
   };
 
@@ -435,30 +435,30 @@ export default function B2BInventoryTab({
                         <div className="p-2.5 rounded-3 bg-warning bg-opacity-10 border border-warning border-opacity-25 mb-2.5">
                           <div className="d-flex align-items-center justify-content-between mb-1">
                             <span className="text-xxs text-muted">Customer Selling Price:</span>
-                            <span className="text-xs fw-bold text-dark">₹{pricing.sellingPrice.toLocaleString()}</span>
+                            <span className="text-xs fw-bold text-dark">₹{(pricing.sellingPrice || 0).toLocaleString()}</span>
                           </div>
                           <div className="d-flex align-items-center justify-content-between mb-1 text-success">
-                            <span className="text-xxs fw-semibold">Agent Commission ({pricing.commPercent}%):</span>
-                            <span className="text-xs fw-bold">+₹{pricing.commAmount.toLocaleString()}</span>
+                            <span className="text-xxs fw-semibold">Agent Commission ({pricing.commPercent || 0}%):</span>
+                            <span className="text-xs fw-bold">+₹{(pricing.commAmount || 0).toLocaleString()}</span>
                           </div>
                           <div className="d-flex align-items-center justify-content-between pt-1 border-top border-warning border-opacity-25">
                             <span className="text-xxs fw-bold text-dark">Net Payout to WOW Goa:</span>
-                            <span className="text-sm fw-black text-dark">₹{pricing.netPayable.toLocaleString()}</span>
+                            <span className="text-sm fw-black text-dark">₹{(pricing.netPayable || 0).toLocaleString()}</span>
                           </div>
                         </div>
                       ) : (
                         <div className="p-2.5 rounded-3 bg-primary bg-opacity-10 border border-primary border-opacity-25 mb-2.5">
                           <div className="d-flex align-items-center justify-content-between mb-1">
                             <span className="text-xxs text-muted">Retail D2C Price:</span>
-                            <span className="text-xs text-muted text-decoration-line-through">₹{pricing.sellingPrice.toLocaleString()}</span>
+                            <span className="text-xs text-muted text-decoration-line-through">₹{(pricing.sellingPrice || 0).toLocaleString()}</span>
                           </div>
                           <div className="d-flex align-items-center justify-content-between mb-1 text-primary">
-                            <span className="text-xxs fw-semibold">B2B Net Discount ({pricing.netDiscountPercent}%):</span>
-                            <span className="text-xs fw-bold">-₹{pricing.discountAmount.toLocaleString()}</span>
+                            <span className="text-xxs fw-semibold">B2B Net Discount ({pricing.netDiscountPercent || 0}%):</span>
+                            <span className="text-xs fw-bold">-₹{(pricing.discountAmount || 0).toLocaleString()}</span>
                           </div>
                           <div className="d-flex align-items-center justify-content-between pt-1 border-top border-primary border-opacity-25">
                             <span className="text-xxs fw-bold text-dark">B2B Net Rate Payable:</span>
-                            <span className="text-sm fw-black text-primary">₹{pricing.netPrice.toLocaleString()}</span>
+                            <span className="text-sm fw-black text-primary">₹{(pricing.netPrice || 0).toLocaleString()}</span>
                           </div>
                         </div>
                       )}
@@ -791,6 +791,34 @@ export default function B2BInventoryTab({
                         </div>
                       </div>
 
+                      {/* Quick Check-in Jump */}
+                      <div className="d-flex align-items-center gap-1.5 flex-wrap mb-2">
+                        <span className="text-3xs text-muted fw-semibold">Check-in Jump:</span>
+                        {[
+                          { label: 'Tomorrow', offset: 1 },
+                          { label: 'Next Weekend', offset: 5 },
+                          { label: 'After 1 Month', offset: 30 },
+                          { label: 'After 2 Months', offset: 60 }
+                        ].map(preset => (
+                          <button
+                            key={preset.label}
+                            type="button"
+                            onClick={() => {
+                              const s = new Date(Date.now() + preset.offset * 86400000);
+                              const e = new Date(s.getTime() + 2 * 86400000);
+                              setGuestDetails(prev => ({
+                                ...prev,
+                                checkInDate: s.toISOString().split('T')[0],
+                                checkOutDate: e.toISOString().split('T')[0]
+                              }));
+                            }}
+                            className="btn btn-xs py-0.5 px-2 rounded-pill border text-3xs btn-light text-muted bg-light"
+                          >
+                            📅 {preset.label}
+                          </button>
+                        ))}
+                      </div>
+
                       {/* Quick Stay Duration Presets (1-click date setting without browser calendar hassle) */}
                       <div className="d-flex align-items-center gap-1.5 flex-wrap mb-2.5">
                         <span className="text-3xs text-muted fw-semibold">Quick Duration:</span>
@@ -879,7 +907,8 @@ export default function B2BInventoryTab({
                           { label: 'Tomorrow', offset: 1 },
                           { label: 'In 3 Days', offset: 3 },
                           { label: 'Next Weekend', offset: 5 },
-                          { label: 'Next Week', offset: 7 }
+                          { label: 'After 1 Month', offset: 30 },
+                          { label: 'After 2 Months', offset: 60 }
                         ].map(preset => (
                           <button
                             key={preset.offset}
@@ -961,6 +990,29 @@ export default function B2BInventoryTab({
                         </div>
                       );
                     })()}
+                  </div>
+
+                  {/* Settlement Method */}
+                  <div className="mb-3">
+                    <label className="form-label text-xxs fw-bold text-muted text-uppercase mb-1">
+                      Settlement Method *
+                    </label>
+                    <div className="p-2.5 rounded-3 bg-light border d-flex align-items-center justify-content-between">
+                      <div className="d-flex align-items-center gap-2">
+                        <span className="p-1.5 rounded-circle bg-warning text-dark">
+                          <Wallet size={14} />
+                        </span>
+                        <div>
+                          <strong className="text-dark d-block text-xs">Prepaid Agent Wallet</strong>
+                          <span className="text-muted text-xxs">
+                            Available: ₹{parseFloat(partnerUser?.wallet_balance || 0).toLocaleString('en-IN')}
+                          </span>
+                        </div>
+                      </div>
+                      <span className="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 text-3xs rounded-pill">
+                        Instant Booking Debit
+                      </span>
+                    </div>
                   </div>
 
                   <button

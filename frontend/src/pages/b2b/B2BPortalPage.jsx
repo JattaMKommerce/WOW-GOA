@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Building2, LayoutDashboard, Gift, Tag, Hotel, Car, Compass, 
   FileText, Users, TrendingUp, User, LogOut, Globe, Menu, X, ArrowLeft,
-  Lock, Clock, ShieldCheck, Plane, Wand2
+  Lock, Clock, ShieldCheck, Plane, Wand2, Wallet
 } from 'lucide-react';
 import * as api from '../../services/api';
 import B2BLoginPage from './B2BLoginPage';
@@ -13,6 +13,7 @@ import B2BBookingsTab from './B2BBookingsTab';
 import B2BCustomersTab from './B2BCustomersTab';
 import B2BReportsTab from './B2BReportsTab';
 import B2BProfileTab from './B2BProfileTab';
+import B2BWalletTab from './B2BWalletTab';
 import B2BNotificationBell from '../../components/b2b/B2BNotificationBell';
 
 export default function B2BPortalPage({ onNavigateHome }) {
@@ -62,6 +63,7 @@ export default function B2BPortalPage({ onNavigateHome }) {
     setPartnerUser(user);
     try {
       localStorage.setItem('b2b_partner_user', JSON.stringify(user));
+      if (user?.id) localStorage.setItem('b2b_partner_token', user.id);
     } catch (e) {}
   };
 
@@ -69,8 +71,19 @@ export default function B2BPortalPage({ onNavigateHome }) {
     setPartnerUser(null);
     try {
       localStorage.removeItem('b2b_partner_user');
+      localStorage.removeItem('b2b_partner_token');
     } catch (e) {}
   };
+
+  const handleWalletUpdated = useCallback((newBal) => {
+    setPartnerUser(prev => {
+      if (!prev) return prev;
+      if (parseFloat(prev.wallet_balance || 0) === parseFloat(newBal || 0)) return prev;
+      const updated = { ...prev, wallet_balance: parseFloat(newBal || 0) };
+      try { localStorage.setItem('b2b_partner_user', JSON.stringify(updated)); } catch (e) {}
+      return updated;
+    });
+  }, []);
 
   const loadDashboard = async () => {
     if (!partnerUser || partnerUser.status !== 'active') return;
@@ -210,6 +223,20 @@ export default function B2BPortalPage({ onNavigateHome }) {
               <Globe size={13} />
               <span>Main D2C Site</span>
             </button>
+
+            {/* Prepaid Wallet Quick Balance Pill */}
+            <div 
+              onClick={() => setActiveTab('wallet')}
+              className="cursor-pointer d-flex align-items-center gap-1.5 px-3 py-1 rounded-pill bg-light border hover-bg-warning-subtle transition-all"
+              style={{ cursor: 'pointer' }}
+              title="Click to view Agent Prepaid Wallet & Statement"
+            >
+              <Wallet size={14} className="text-warning flex-shrink-0" />
+              <span className="text-xxs text-muted fw-semibold d-none d-md-inline">Wallet:</span>
+              <strong className="text-dark text-xs">
+                ₹{parseFloat(partnerUser.wallet_balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              </strong>
+            </div>
 
             {/* Real-Time Notification Bell Component (Requirements 18-23) */}
             <B2BNotificationBell 
@@ -410,6 +437,20 @@ export default function B2BPortalPage({ onNavigateHome }) {
                 <span>Guest Directory</span>
               </button>
               <button
+                onClick={() => { setActiveTab('wallet'); setSidebarOpen(false); }}
+                className={`nav-link text-start rounded-3 px-3 py-2 text-xs fw-semibold border-0 d-flex align-items-center justify-content-between ${
+                  activeTab === 'wallet' ? 'bg-dark text-white fw-bold shadow-xs' : 'text-muted bg-transparent hover-bg-light'
+                }`}
+              >
+                <div className="d-flex align-items-center gap-2.5">
+                  <Wallet size={15} className="text-warning" />
+                  <span>Agent Wallet</span>
+                </div>
+                <span className="badge bg-warning text-dark text-3xs font-monospace">
+                  ₹{parseFloat(partnerUser?.wallet_balance || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                </span>
+              </button>
+              <button
                 onClick={() => { setActiveTab('profile'); setSidebarOpen(false); }}
                 className={`nav-link text-start rounded-3 px-3 py-2 text-xs fw-semibold border-0 d-flex align-items-center gap-2.5 ${
                   activeTab === 'profile' ? 'bg-dark text-white fw-bold shadow-xs' : 'text-muted bg-transparent hover-bg-light'
@@ -500,6 +541,14 @@ export default function B2BPortalPage({ onNavigateHome }) {
               partnerUser={partnerUser} 
               onLogout={handleLogout} 
               onPartnerRefresh={loadDashboard}
+            />
+          )}
+
+          {/* Agent Prepaid Wallet */}
+          {activeTab === 'wallet' && (
+            <B2BWalletTab 
+              partnerUser={partnerUser} 
+              onWalletUpdated={handleWalletUpdated}
             />
           )}
         </main>

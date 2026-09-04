@@ -1,0 +1,14 @@
+{
+  "action": "b2b_book",
+  "b2b_partner_id": "b2b_6a99006753753",
+  "b2b_mode": "COMMISSION",
+  "service_type": "vehicle",
+  "item_id": "car-def-1",
+  "guest_name": "Test Double Booking Attempt",
+  "guest_phone": "9876543210",
+  "guest_email": "double@book.com",
+  "pickup_date": "2026-09-11",
+  "drop_date": "2026-09-13",
+  "days": 2,
+  "payment_method": "Prepaid Agent Wallet"
+}

@@ -11,25 +11,14 @@ export default function CustomerDriverTripsTab({
   onOpenBookingDetails
 }) {
   // Filter bookings that requested a chauffeur / driver
-  const driverTrips = bookings.filter(b => {
-    if (!currentUser) return true;
-    const cid = currentUser.id || currentUser.email || currentUser.username;
-    const isUserMatch = (
-      b.customer_id === cid || 
-      b.customer_email === currentUser.email || 
-      b.customer_phone === currentUser.phone || 
-      b.name === currentUser.name || 
-      b.name === currentUser.username ||
-      b.user_id === cid
-    );
-    if (!isUserMatch) return false;
-
+  const driverTrips = (bookings || []).filter(b => {
+    const svcType = String(b.driver_service_type || '').toUpperCase();
     return (
+      ['PICKUP', 'DROP', 'FULL'].includes(svcType) ||
       b.driver_required == 1 || 
       b.driver_required === 'yes' || 
       b.driver_required === true || 
-      b.assigned_driver_id ||
-      (b.item_name && b.item_name.toLowerCase().includes('driver'))
+      Boolean(b.assigned_driver_id)
     );
   });
 
@@ -55,7 +44,11 @@ export default function CustomerDriverTripsTab({
       {/* ─── Driver Trips List ─── */}
       <div className="d-flex flex-column gap-4">
         {driverTrips.map((b, idx) => {
-          const hasDriverAssigned = Boolean(b.assigned_driver_name || b.assigned_driver_id);
+          const hasDriverAssigned = Boolean(
+            b.assigned_driver_name || 
+            b.assigned_driver_id || 
+            (b.driver_job_status && !['unassigned', 'pending', 'null', ''].includes(b.driver_job_status.toLowerCase()))
+          );
           const rawJobStatus = (b.driver_job_status || (hasDriverAssigned ? 'Assigned' : 'Unassigned')).toLowerCase();
           
           let jobStatusLabel = 'Driver Not Assigned';
@@ -92,9 +85,10 @@ export default function CustomerDriverTripsTab({
             statusTheme = 'primary';
           }
 
-          const driverPhone = b.assigned_driver_phone || '+91 98765 43210';
-          const driverName = b.assigned_driver_name || b.assigned_driver_id || 'Assigned Driver';
-          const vehicleInfo = b.assigned_driver_vehicle || b.vehicle_name || b.item_name || 'Assigned Vehicle';
+          const driverPhone = b.assigned_driver_phone || '';
+          const driverName = b.assigned_driver_name || (b.assigned_driver_id && !b.assigned_driver_id.startsWith('drv-') ? b.assigned_driver_id : 'Assigned Driver');
+          const vehicleInfo = b.assigned_driver_vehicle || b.vehicle_details || b.vehicle_name || b.item_name || 'Assigned Vehicle';
+          const driverServiceType = b.driver_service_type || 'FULL';
 
           return (
             <div key={b.id || idx} className="card border-0 shadow-sm rounded-4 overflow-hidden bg-white" style={{ border: '1px solid #eef2f6' }}>
@@ -112,8 +106,8 @@ export default function CustomerDriverTripsTab({
                 </div>
 
                 <div className="text-xs d-flex align-items-center gap-2">
-                  <span className="badge bg-light text-dark border px-2.5 py-1 rounded-pill fw-bold">
-                    🚗 Vehicle + Driver
+                  <span className="badge bg-warning text-dark border px-2.5 py-1 rounded-pill fw-bold">
+                    🚗 Service: {driverServiceType}
                   </span>
                   <span className="badge bg-dark text-white px-2.5 py-1 rounded-pill">
                     Booking #{b.id || b.booking_id || `WOW-DRV-${100 + idx}`}
@@ -177,26 +171,29 @@ export default function CustomerDriverTripsTab({
                               Verified Chauffeur
                             </span>
                           </div>
-                          <div className="text-muted text-xs mb-2">🚗 {vehicleInfo}</div>
+                          <div className="text-muted text-xs mb-1">🚗 {vehicleInfo}</div>
+                          <div className="text-dark text-xs mb-2">📞 Mobile: <strong>{driverPhone || 'Not available'}</strong></div>
                           
-                          <div className="d-flex flex-wrap gap-2">
-                            <a 
-                              href={`tel:${driverPhone}`} 
-                              className="btn btn-sm btn-dark fw-bold rounded-pill px-3 py-1 text-xs d-flex align-items-center gap-1.5 shadow-sm"
-                            >
-                              <Phone size={13} className="text-warning" />
-                              <span>Call Driver</span>
-                            </a>
-                            <a 
-                              href={`https://wa.me/${driverPhone.replace(/\D/g, '')}?text=Hi%20${encodeURIComponent(driverName)}%2C%20I%20am%20your%20passenger%20for%20Booking%20%23${b.id}`} 
-                              target="_blank" 
-                              rel="noreferrer"
-                              className="btn btn-sm btn-success fw-bold rounded-pill px-3 py-1 text-xs d-flex align-items-center gap-1.5 shadow-sm"
-                            >
-                              <MessageCircle size={13} />
-                              <span>WhatsApp</span>
-                            </a>
-                          </div>
+                          {driverPhone && (
+                            <div className="d-flex flex-wrap gap-2">
+                              <a 
+                                href={`tel:${driverPhone}`} 
+                                className="btn btn-sm btn-dark fw-bold rounded-pill px-3 py-1 text-xs d-flex align-items-center gap-1.5 shadow-sm"
+                              >
+                                <Phone size={13} className="text-warning" />
+                                <span>Call Driver</span>
+                              </a>
+                              <a 
+                                href={`https://wa.me/${driverPhone.replace(/\D/g, '')}?text=Hi%20${encodeURIComponent(driverName)}%2C%20I%20am%20your%20passenger%20for%20Booking%20%23${b.id}`} 
+                                target="_blank" 
+                                rel="noreferrer" 
+                                className="btn btn-sm btn-success fw-bold rounded-pill px-3 py-1 text-xs d-flex align-items-center gap-1.5 shadow-sm"
+                              >
+                                <MessageCircle size={13} />
+                                <span>WhatsApp</span>
+                              </a>
+                            </div>
+                          )}
                         </div>
                       </div>
                     ) : (

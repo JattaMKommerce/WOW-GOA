@@ -1,0 +1,14 @@
+{
+  "action": "b2b_book",
+  "b2b_partner_id": "b2b_6a99006753753",
+  "b2b_mode": "COMMISSION",
+  "service_type": "vehicle",
+  "item_id": "car-def-1",
+  "guest_name": "Test Guest Wallet",
+  "guest_phone": "9876543210",
+  "guest_email": "testguest@wallet.com",
+  "pickup_date": "2026-09-10",
+  "drop_date": "2026-09-12",
+  "days": 2,
+  "payment_method": "Prepaid Agent Wallet"
+}

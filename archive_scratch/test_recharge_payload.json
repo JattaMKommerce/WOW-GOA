@@ -1,0 +1,7 @@
+{
+  "action": "b2b_wallet_recharge",
+  "amount": 25000,
+  "payment_method": "UPI",
+  "payment_gateway_ref": "UPI_TXN_987654321",
+  "idempotency_key": "idemp_test_rec_001"
+}

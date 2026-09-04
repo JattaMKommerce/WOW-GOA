@@ -27,7 +27,7 @@ function DriverJobStatusBadge({ status }) {
 }
 
 export default function DriverPortalPage({ currentUser, onLogout, onNavigateHome }) {
-  const driverUser = currentUser || JSON.parse(localStorage.getItem('current_user') || '{}');
+  const driverUser = currentUser || JSON.parse(localStorage.getItem('currentUser') || localStorage.getItem('current_user') || '{}');
   const [activeTab, setActiveTab] = useState('available'); // 'available', 'assigned', 'accepted', 'in_progress', 'completed', 'profile'
   const [jobs, setJobs] = useState([]);
   const [availableJobs, setAvailableJobs] = useState([]);
@@ -39,7 +39,7 @@ export default function DriverPortalPage({ currentUser, onLogout, onNavigateHome
   const [errorMsg, setErrorMsg] = useState('');
   const [previewDoc, setPreviewDoc] = useState(null);
 
-  const driverId = driverProfile.id || 'drv-1';
+  const driverId = driverProfile.id || driverUser.id || 'drv-1';
 
   const loadDriverData = async (isBackground = false) => {
     if (!isBackground) setLoading(true);
@@ -556,7 +556,7 @@ export default function DriverPortalPage({ currentUser, onLogout, onNavigateHome
                                   {isAvailableCard ? 'Trip Request' : 'Booking'} #{job.booking_id || job.id}
                                 </span>
                                 <span className="badge bg-warning bg-opacity-20 text-dark fw-bold" style={{ fontSize: '0.68rem' }}>
-                                  🚗 Driver Required
+                                  🚗 Service: {job.driver_service_type || 'FULL'}
                                 </span>
                               </div>
                               <div className="text-muted small" style={{ fontSize: '0.72rem' }}>
@@ -627,20 +627,22 @@ export default function DriverPortalPage({ currentUser, onLogout, onNavigateHome
                               </div>
                             </div>
 
-                            {/* Driver Fixed Earning: ₹800/day */}
+                            {/* Driver Fixed Earning */}
                             {(() => {
+                              const sType = String(job.driver_service_type || '').toUpperCase();
+                              const isFull = sType === 'FULL';
                               const dCount = Math.max(1, parseInt(job.driver_days || job.booking_days || 1));
-                              const dEarn = parseInt(job.driver_earning || (800 * dCount));
+                              const dEarn = parseInt(job.driver_earning || (sType === 'PICKUP' || sType === 'DROP' ? 400 : 800 * dCount));
                               const pStatus = job.driver_payment_status || (currentStatus === 'completed' ? 'Payable' : 'Pending');
 
                               return (
                                 <div className="mt-2.5 p-2.5 rounded-3 d-flex align-items-center justify-content-between flex-wrap gap-2" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
                                   <div>
                                     <div className="text-muted" style={{ fontSize: '0.66rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
-                                      Driver Earnings (₹800 / day)
+                                      Driver Earnings ({sType === 'PICKUP' || sType === 'DROP' ? '₹400 Fixed' : '₹800 / day'})
                                     </div>
                                     <div className="fw-bold text-success" style={{ fontSize: '0.92rem' }}>
-                                      ₹{dEarn.toLocaleString()} <span className="small text-muted fw-normal" style={{ fontSize: '0.72rem' }}>({dCount} {dCount === 1 ? 'day' : 'days'})</span>
+                                      ₹{dEarn.toLocaleString()} {isFull && <span className="small text-muted fw-normal" style={{ fontSize: '0.72rem' }}>({dCount} {dCount === 1 ? 'day' : 'days'})</span>}
                                     </div>
                                   </div>
                                   <div className="text-end">

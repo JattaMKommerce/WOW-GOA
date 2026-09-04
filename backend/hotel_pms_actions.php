@@ -6,7 +6,26 @@ $pdo = $pdo ?? ($db ?? null);
 $payload = $payload ?? ($inputData ?? ($_POST ?? []));
 $action = $action ?? ($payload['action'] ?? '');
 $tenant_id = $tenant_id ?? ($payload['tenant_id'] ?? 'default');
-$vendor_id = $payload['vendor_id'] ?? ($payload['vendorId'] ?? ($tenant_id !== 'default' ? $tenant_id : 'u-5'));
+
+// Authoritative vendor authentication - do NOT trust payload vendor_id
+$actor = function_exists('authenticateRequest') ? authenticateRequest($pdo, false) : null;
+if ($actor) {
+    if ($actor['role'] === 'hotel_vendor' || $actor['role'] === 'vendor') {
+        $vendor_id = $actor['id'];
+    } elseif ($actor['role'] === 'admin' || $actor['role'] === 'superadmin') {
+        // Admin can specify vendor_id
+        $vendor_id = $payload['vendor_id'] ?? ($payload['vendorId'] ?? null);
+    } else {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Forbidden: You do not have access to Hotel PMS actions.']);
+        exit();
+    }
+} else {
+    // Unauthenticated requests must not perform PMS actions
+    http_response_code(401);
+    echo json_encode(['success' => false, 'error' => 'Unauthorized: Authentication required for Hotel PMS actions.']);
+    exit();
+}
 
 // Helper to log PMS activity
 if (!function_exists('pmsLogAction')) {
@@ -601,7 +620,7 @@ if ($action === 'add_master_hotel' || $action === 'add_hotel' || $action === 'cr
     $all = !empty($payload['all']);
 
     if ($all) {
-        $pdo->prepare("UPDATE hotel_notifications SET is_read = 1 WHERE vendor_id = ? OR vendor_id = 'u-5' OR vendor_id = 'hotel_vendor'")->execute([$vendor_id]);
+        $pdo->prepare("UPDATE hotel_notifications SET is_read = 1 WHERE vendor_id = ?")->execute([$vendor_id]);
     } elseif ($id) {
         $pdo->prepare("UPDATE hotel_notifications SET is_read = 1 WHERE id = ?")->execute([$id]);
     }
@@ -613,7 +632,7 @@ if ($action === 'add_master_hotel' || $action === 'add_hotel' || $action === 'cr
     $all = !empty($payload['all']);
 
     if ($all) {
-        $pdo->prepare("DELETE FROM hotel_notifications WHERE vendor_id = ? OR vendor_id = 'u-5' OR vendor_id = 'hotel_vendor'")->execute([$vendor_id]);
+        $pdo->prepare("DELETE FROM hotel_notifications WHERE vendor_id = ?")->execute([$vendor_id]);
     } elseif ($id) {
         $pdo->prepare("DELETE FROM hotel_notifications WHERE id = ?")->execute([$id]);
     }
@@ -669,64 +688,9 @@ if ($action === 'add_master_hotel' || $action === 'add_hotel' || $action === 'cr
 
 // 12. Manual Booking Creation
 } elseif ($action === 'pms_create_manual_booking') {
-    $bookingId = 'BK-' . rand(10000, 99999);
-    $hotel_id = $payload['hotel_id'] ?? '';
-    $hotel_name = $payload['hotel_name'] ?? 'Hotel Room Booking';
-    $nights = intval($payload['nights'] ?? 1);
-    $total_amount = intval($payload['total_amount'] ?? ($payload['total_paid'] ?? 5000));
-    $amount_paid = intval($payload['amount_paid'] ?? $total_amount);
-    $remaining = max(0, $total_amount - $amount_paid);
-
-    $stmt = $pdo->prepare("INSERT INTO bookings (
-        id, name, phone, email, pickup_loc, pickup_date, pickup_time, drop_date, drop_time,
-        item_id, item_name, booking_days, total_amount, amount_paid, remaining_amount, total_paid,
-        status, payment_status, payment_method, admin_id, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-
-    $stmt->execute([
-        $bookingId,
-        $payload['guest_name'] ?? ($payload['name'] ?? 'Guest'),
-        $payload['phone'] ?? '',
-        $payload['email'] ?? '',
-        $payload['location'] ?? 'Goa',
-        $payload['checkin_date'] ?? ($payload['pickup_date'] ?? date('Y-m-d')),
-        $payload['checkin_time'] ?? '14:00',
-        $payload['checkout_date'] ?? ($payload['drop_date'] ?? date('Y-m-d', strtotime('+1 day'))),
-        $payload['checkout_time'] ?? '11:00',
-        $hotel_id,
-        $hotel_name,
-        $nights,
-        $total_amount,
-        $amount_paid,
-        $remaining,
-        $total_amount,
-        $payload['status'] ?? 'Confirmed',
-        $payload['payment_status'] ?? ($amount_paid >= $total_amount ? 'Paid' : 'Partially Paid'),
-        $payload['payment_method'] ?? 'Cash at Desk',
-        $tenant_id,
-        date('Y-m-d H:i:s')
-    ]);
-
-    // Auto-record in guest directory
-    try {
-        $gstChk = $pdo->prepare("SELECT id FROM hotel_guests WHERE phone = ?");
-        $gstChk->execute([$payload['phone'] ?? '']);
-        if (!$gstChk->fetch() && !empty($payload['guest_name'])) {
-            $gId = 'gst-' . uniqid();
-            $pdo->prepare("INSERT INTO hotel_guests (id, vendor_id, name, phone, email, total_stays, total_spend, last_visit, created_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)")
-                ->execute([$gId, $vendor_id, $payload['guest_name'], $payload['phone'] ?? '', $payload['email'] ?? '', $total_amount, $payload['checkin_date'] ?? date('Y-m-d'), date('Y-m-d H:i:s')]);
-        }
-    } catch (Exception $ge) {}
-
-    pmsLogAction($pdo, $vendor_id, 'Created Manual Reservation', 'Bookings', "Reservation #{$bookingId} created for {$payload['guest_name']}.");
-    
-    // Create notification
-    try {
-        $nId = 'notif-' . uniqid();
-        $pdo->prepare("INSERT INTO hotel_notifications (id, vendor_id, title, message, type, is_read, created_at) VALUES (?, ?, ?, ?, 'booking', 0, ?)")
-            ->execute([$nId, $vendor_id, 'New Booking Created', "Reservation #{$bookingId} created for {$payload['guest_name']}.", date('Y-m-d H:i:s')]);
-    } catch (Exception $ne) {}
-
-    echo json_encode(["success" => true, "id" => $bookingId, "message" => "Reservation created successfully."]);
+    // Phase 10: Use consolidated authoritative PMS manual booking handler
+    require_once __DIR__ . '/api.php';
+    $result = handlePMSManualBooking($pdo, $payload, $vendor_id);
+    echo json_encode($result);
     exit();
 }

@@ -460,7 +460,7 @@ export const usersData = [
     username: 'admin',
     email: 'admin@gmail.com',
     role: 'admin',
-    plain_password: 'admin@2026',
+    plain_password: 'Admin@Goa2026',
     status: 'active',
     billing_price: 5000,
     created_at: '2026-07-07 09:07:22'
@@ -470,7 +470,7 @@ export const usersData = [
     username: 'vendor',
     email: 'vendor@tripgalileo.com',
     role: 'vendor',
-    plain_password: 'admin@2026',
+    plain_password: 'Vendor@Fleet26',
     status: 'active',
     billing_price: 2500,
     created_at: '2026-07-07 09:07:22'
@@ -480,7 +480,7 @@ export const usersData = [
     username: 'rakhi',
     email: 'rakhi@gmail.com',
     role: 'vendor',
-    plain_password: 'admin@2026',
+    plain_password: 'Rakhi@Vendor26',
     status: 'active',
     billing_price: 3000,
     created_at: '2026-07-15 16:54:15'
@@ -490,7 +490,7 @@ export const usersData = [
     username: 'ashwini',
     email: 'as@gmail.com',
     role: 'vendor',
-    plain_password: 'admin@2026',
+    plain_password: 'Ashwini@Fleet26',
     status: 'active',
     billing_price: 3000,
     created_at: '2026-07-16 16:51:51'
@@ -500,7 +500,7 @@ export const usersData = [
     username: 'goa_operations',
     email: 'operations@wowgoa.com',
     role: 'admin',
-    plain_password: 'admin@2026',
+    plain_password: 'Ops@Goa2026',
     status: 'active',
     billing_price: 4500,
     created_at: '2026-08-10 14:15:00'
@@ -510,7 +510,7 @@ export const usersData = [
     username: 'hotel_vendor',
     email: 'hotel_vendor@tripgalileo.com',
     role: 'hotel_vendor',
-    plain_password: 'admin@2026',
+    plain_password: 'Hotel@Goa2026',
     status: 'active',
     billing_price: 3500,
     created_at: '2026-08-15 11:20:00'
@@ -520,7 +520,7 @@ export const usersData = [
     username: 'flight_vendor',
     email: 'flight_vendor@tripgalileo.com',
     role: 'flight_vendor',
-    plain_password: 'admin@2026',
+    plain_password: 'Flight@Goa2026',
     status: 'active',
     billing_price: 4000,
     created_at: '2026-08-18 09:45:00'

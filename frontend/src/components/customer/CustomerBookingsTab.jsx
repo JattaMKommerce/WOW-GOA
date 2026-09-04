@@ -15,19 +15,8 @@ export default function CustomerBookingsTab({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedVoucherBooking, setSelectedVoucherBooking] = useState(null);
 
-  // Filter bookings for current user
-  const myBookings = bookings.filter(b => {
-    if (!currentUser) return true;
-    const cid = currentUser.id || currentUser.email || currentUser.username;
-    return (
-      b.customer_id === cid || 
-      b.customer_email === currentUser.email || 
-      b.customer_phone === currentUser.phone || 
-      b.name === currentUser.name || 
-      b.name === currentUser.username ||
-      b.user_id === cid
-    );
-  });
+  // Bookings passed from CustomerPortalPage are already strictly isolated for the customer
+  const myBookings = Array.isArray(bookings) ? bookings : [];
 
   // ─── Unified Category Helpers ───
   const isCraftBooking = (b) => {
@@ -48,7 +37,9 @@ export default function CustomerBookingsTab({
 
   const isDriverBooking = (b) => {
     if (!b || isCraftBooking(b)) return false;
+    const svcType = String(b.driver_service_type || '').toUpperCase();
     return Boolean(
+      ['PICKUP', 'DROP', 'FULL'].includes(svcType) ||
       b.driver_required == 1 ||
       b.driver_required === 'yes' ||
       b.driver_required === true ||
@@ -178,6 +169,7 @@ export default function CustomerBookingsTab({
       type.includes('vehicle rental') ||
       type === 'vehicle' ||
       itemId.startsWith('car-') ||
+      itemId.startsWith('car_') ||
       itemName.includes('car rental') ||
       itemName.includes('thar') ||
       itemName.includes('swift') ||
