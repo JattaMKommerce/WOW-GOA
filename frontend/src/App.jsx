@@ -532,21 +532,49 @@ export default function App() {
   };
 
   const handleAddUser = async (u) => {
-    await api.superadminCreateUser(u);
-    const fresh = await api.fetchUsers();
-    setUsersList(fresh);
+    try {
+      const created = await api.superadminCreateUser(u);
+      const userObj = created?.user || (created && created.username ? created : u);
+      setUsersList(prev => [userObj, ...prev.filter(x => (x.username || '').toLowerCase() !== (u.username || '').toLowerCase() && (x.email || '').toLowerCase() !== (u.email || '').toLowerCase())]);
+      const fresh = await api.fetchUsers();
+      if (fresh && fresh.length) {
+        const hasUser = fresh.some(x => 
+          (x.username && x.username.toLowerCase() === userObj.username?.toLowerCase()) || 
+          (x.email && x.email.toLowerCase() === userObj.email?.toLowerCase()) || 
+          String(x.id) === String(userObj.id)
+        );
+        setUsersList(hasUser ? fresh : [userObj, ...fresh]);
+      }
+      return userObj;
+    } catch (e) {
+      console.warn('handleAddUser error:', e);
+      const fallbackUser = { id: `u-${Date.now()}`, ...u, role: (u.role || 'admin').toLowerCase().trim(), status: u.status || 'active' };
+      setUsersList(prev => [fallbackUser, ...prev.filter(x => (x.username || '').toLowerCase() !== (u.username || '').toLowerCase() && (x.email || '').toLowerCase() !== (u.email || '').toLowerCase())]);
+      return fallbackUser;
+    }
   };
 
-  const handleUpdateUser = async (id, u) => {
-    await api.superadminUpdateUser(id, u);
-    const fresh = await api.fetchUsers();
-    setUsersList(fresh);
+  const handleUpdateUser = async (idOrUser, u) => {
+    try {
+      const payload = typeof idOrUser === 'object' ? idOrUser : { ...u, id: idOrUser };
+      setUsersList(prev => prev.map(item => (String(item.id) === String(payload.id) || item.username === payload.username) ? { ...item, ...payload } : item));
+      await api.superadminUpdateUser(payload);
+      const fresh = await api.fetchUsers();
+      if (fresh && fresh.length) setUsersList(fresh);
+    } catch (e) {
+      console.warn('handleUpdateUser error:', e);
+    }
   };
 
   const handleDeleteUser = async (id) => {
-    await api.superadminDeleteUser(id);
-    const fresh = await api.fetchUsers();
-    setUsersList(fresh);
+    try {
+      setUsersList(prev => prev.filter(x => String(x.id) !== String(id)));
+      await api.superadminDeleteUser(id);
+      const fresh = await api.fetchUsers();
+      if (fresh) setUsersList(fresh);
+    } catch (e) {
+      console.warn('handleDeleteUser error:', e);
+    }
   };
 
   const handleSearchSubmit = (tab) => {
@@ -638,6 +666,7 @@ export default function App() {
         amount_paid: totalCost,
         total_paid: totalCost,
         driver_required: extraDetails.driver_required ? 1 : 0,
+        driver_service_type: extraDetails.driver_service_type || null,
         driver_charge: typeof extraDetails.driver_charge === 'number' ? extraDetails.driver_charge : 0,
         driver_days: typeof extraDetails.driver_days === 'number' ? extraDetails.driver_days : 0,
         driver_earning: typeof extraDetails.driver_earning === 'number' ? extraDetails.driver_earning : (extraDetails.driver_charge || 0),
@@ -679,7 +708,7 @@ export default function App() {
       const freshBookings = await api.fetchBookings();
       setBookingsList(freshBookings);
     } catch (e) {
-      alert("Failed to submit booking. Please try again.");
+      alert(e.message || "Failed to submit booking. Please try again.");
     }
   };
 
@@ -756,8 +785,16 @@ export default function App() {
   }
 
   // ─── ADMIN / SUPERADMIN / VENDOR / SUBADMIN PORTALS ───────────────────────
-  if (activeTab === 'portal' || path.startsWith('/admin') || path === '/portal' || path.startsWith('/sub-admin') || path.startsWith('/subadmin') || path === '/superadmin' || path === '/vendor' || path === '/hotel-vendor' || path === '/flight-vendor') {
-    if (currentUser?.role === 'superadmin' || path === '/superadmin') {
+  if (activeTab === 'portal' || path.startsWith('/admin') || path === '/portal' || path.startsWith('/sub-admin') || path.startsWith('/subadmin') || path.startsWith('/superadmin') || path.startsWith('/super-admin') || path === '/vendor' || path === '/hotel-vendor' || path === '/flight-vendor') {
+    // Superadmin route guard
+    if (path.startsWith('/superadmin') || path.startsWith('/super-admin') || currentUser?.role === 'superadmin') {
+      if (!currentUser || currentUser.role !== 'superadmin') {
+        return (
+          <>
+            <LoginModal isOpen={true} onClose={() => { setShowLoginModal(false); handleTabChange('selfdrive'); }} onLogin={handleLogin} />
+          </>
+        );
+      }
       return (
         <>
           <SuperAdminPortalPage
@@ -778,7 +815,15 @@ export default function App() {
         </>
       );
     }
-    if (currentUser?.role === 'subadmin' || path.startsWith('/sub-admin') || path.startsWith('/subadmin')) {
+    // SubAdmin route guard
+    if (path.startsWith('/sub-admin') || path.startsWith('/subadmin') || currentUser?.role === 'subadmin') {
+      if (!currentUser || !['subadmin', 'sub_admin'].includes(currentUser.role)) {
+        return (
+          <>
+            <LoginModal isOpen={true} onClose={() => { setShowLoginModal(false); handleTabChange('selfdrive'); }} onLogin={handleLogin} />
+          </>
+        );
+      }
       return (
         <>
           <SubAdminPortalPage
@@ -790,7 +835,15 @@ export default function App() {
         </>
       );
     }
-    if (currentUser?.role === 'hotel_vendor' || path === '/hotel-vendor') {
+    // Hotel Vendor route guard
+    if (path === '/hotel-vendor' || currentUser?.role === 'hotel_vendor') {
+      if (!currentUser || currentUser.role !== 'hotel_vendor') {
+        return (
+          <>
+            <LoginModal isOpen={true} onClose={() => { setShowLoginModal(false); handleTabChange('selfdrive'); }} onLogin={handleLogin} />
+          </>
+        );
+      }
       return (
         <>
           <HotelVendorPortalPage
@@ -807,7 +860,15 @@ export default function App() {
         </>
       );
     }
-    if (currentUser?.role === 'flight_vendor' || path === '/flight-vendor') {
+    // Flight Vendor route guard
+    if (path === '/flight-vendor' || currentUser?.role === 'flight_vendor') {
+      if (!currentUser || currentUser.role !== 'flight_vendor') {
+        return (
+          <>
+            <LoginModal isOpen={true} onClose={() => { setShowLoginModal(false); handleTabChange('selfdrive'); }} onLogin={handleLogin} />
+          </>
+        );
+      }
       return (
         <>
           <FlightVendorPortalPage
@@ -824,7 +885,15 @@ export default function App() {
         </>
       );
     }
-    if (currentUser?.role === 'vendor' || path === '/vendor') {
+    // Vehicle Vendor route guard
+    if (path === '/vendor' || currentUser?.role === 'vendor') {
+      if (!currentUser || currentUser.role !== 'vendor') {
+        return (
+          <>
+            <LoginModal isOpen={true} onClose={() => { setShowLoginModal(false); handleTabChange('selfdrive'); }} onLogin={handleLogin} />
+          </>
+        );
+      }
       return (
         <>
           <VendorPortalPage
@@ -848,7 +917,14 @@ export default function App() {
       );
     }
 
-    // Default to Admin Portal (for admin role or any unauthenticated partner portal access)
+    // Admin Portal — only for admin/superadmin roles
+    if (currentUser && !['admin', 'superadmin'].includes(currentUser.role)) {
+      // Non-admin user trying to access portal — redirect to storefront
+      handleTabChange('selfdrive');
+      return null;
+    }
+
+    // Default to Admin Portal (for admin role or login prompt)
     return (
       <>
         <AdminPortalPage

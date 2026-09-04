@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Building2, LayoutDashboard, Gift, Tag, Hotel, Car, Compass, 
   FileText, Users, TrendingUp, User, LogOut, Globe, Menu, X, ArrowLeft,
@@ -63,6 +63,7 @@ export default function B2BPortalPage({ onNavigateHome }) {
     setPartnerUser(user);
     try {
       localStorage.setItem('b2b_partner_user', JSON.stringify(user));
+      if (user?.id) localStorage.setItem('b2b_partner_token', user.id);
     } catch (e) {}
   };
 
@@ -70,8 +71,19 @@ export default function B2BPortalPage({ onNavigateHome }) {
     setPartnerUser(null);
     try {
       localStorage.removeItem('b2b_partner_user');
+      localStorage.removeItem('b2b_partner_token');
     } catch (e) {}
   };
+
+  const handleWalletUpdated = useCallback((newBal) => {
+    setPartnerUser(prev => {
+      if (!prev) return prev;
+      if (parseFloat(prev.wallet_balance || 0) === parseFloat(newBal || 0)) return prev;
+      const updated = { ...prev, wallet_balance: parseFloat(newBal || 0) };
+      try { localStorage.setItem('b2b_partner_user', JSON.stringify(updated)); } catch (e) {}
+      return updated;
+    });
+  }, []);
 
   const loadDashboard = async () => {
     if (!partnerUser || partnerUser.status !== 'active') return;
@@ -536,13 +548,7 @@ export default function B2BPortalPage({ onNavigateHome }) {
           {activeTab === 'wallet' && (
             <B2BWalletTab 
               partnerUser={partnerUser} 
-              onWalletUpdated={(newBal) => {
-                setPartnerUser(prev => {
-                  const updated = { ...prev, wallet_balance: newBal };
-                  try { localStorage.setItem('b2b_partner_user', JSON.stringify(updated)); } catch (e) {}
-                  return updated;
-                });
-              }}
+              onWalletUpdated={handleWalletUpdated}
             />
           )}
         </main>

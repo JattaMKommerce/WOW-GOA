@@ -435,30 +435,30 @@ export default function B2BInventoryTab({
                         <div className="p-2.5 rounded-3 bg-warning bg-opacity-10 border border-warning border-opacity-25 mb-2.5">
                           <div className="d-flex align-items-center justify-content-between mb-1">
                             <span className="text-xxs text-muted">Customer Selling Price:</span>
-                            <span className="text-xs fw-bold text-dark">₹{pricing.sellingPrice.toLocaleString()}</span>
+                            <span className="text-xs fw-bold text-dark">₹{(pricing.sellingPrice || 0).toLocaleString()}</span>
                           </div>
                           <div className="d-flex align-items-center justify-content-between mb-1 text-success">
-                            <span className="text-xxs fw-semibold">Agent Commission ({pricing.commPercent}%):</span>
-                            <span className="text-xs fw-bold">+₹{pricing.commAmount.toLocaleString()}</span>
+                            <span className="text-xxs fw-semibold">Agent Commission ({pricing.commPercent || 0}%):</span>
+                            <span className="text-xs fw-bold">+₹{(pricing.commAmount || 0).toLocaleString()}</span>
                           </div>
                           <div className="d-flex align-items-center justify-content-between pt-1 border-top border-warning border-opacity-25">
                             <span className="text-xxs fw-bold text-dark">Net Payout to WOW Goa:</span>
-                            <span className="text-sm fw-black text-dark">₹{pricing.netPayable.toLocaleString()}</span>
+                            <span className="text-sm fw-black text-dark">₹{(pricing.netPayable || 0).toLocaleString()}</span>
                           </div>
                         </div>
                       ) : (
                         <div className="p-2.5 rounded-3 bg-primary bg-opacity-10 border border-primary border-opacity-25 mb-2.5">
                           <div className="d-flex align-items-center justify-content-between mb-1">
                             <span className="text-xxs text-muted">Retail D2C Price:</span>
-                            <span className="text-xs text-muted text-decoration-line-through">₹{pricing.sellingPrice.toLocaleString()}</span>
+                            <span className="text-xs text-muted text-decoration-line-through">₹{(pricing.sellingPrice || 0).toLocaleString()}</span>
                           </div>
                           <div className="d-flex align-items-center justify-content-between mb-1 text-primary">
-                            <span className="text-xxs fw-semibold">B2B Net Discount ({pricing.netDiscountPercent}%):</span>
-                            <span className="text-xs fw-bold">-₹{pricing.discountAmount.toLocaleString()}</span>
+                            <span className="text-xxs fw-semibold">B2B Net Discount ({pricing.netDiscountPercent || 0}%):</span>
+                            <span className="text-xs fw-bold">-₹{(pricing.discountAmount || 0).toLocaleString()}</span>
                           </div>
                           <div className="d-flex align-items-center justify-content-between pt-1 border-top border-primary border-opacity-25">
                             <span className="text-xxs fw-bold text-dark">B2B Net Rate Payable:</span>
-                            <span className="text-sm fw-black text-primary">₹{pricing.netPrice.toLocaleString()}</span>
+                            <span className="text-sm fw-black text-primary">₹{(pricing.netPrice || 0).toLocaleString()}</span>
                           </div>
                         </div>
                       )}

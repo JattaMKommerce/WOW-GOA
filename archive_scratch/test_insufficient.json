@@ -1,0 +1,14 @@
+{
+  "action": "b2b_book",
+  "b2b_partner_id": "b2b_6a99006753753",
+  "b2b_mode": "COMMISSION",
+  "service_type": "package",
+  "item_id": "p-1",
+  "total_amount": 50000,
+  "guest_name": "Test Big Group",
+  "guest_phone": "9876543210",
+  "guests": 15,
+  "pickup_date": "2026-09-20",
+  "drop_date": "2026-09-25",
+  "payment_method": "Prepaid Agent Wallet"
+}

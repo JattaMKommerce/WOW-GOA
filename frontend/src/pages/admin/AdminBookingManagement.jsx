@@ -487,10 +487,10 @@ export default function AdminBookingManagement({
                             <MapPin size={11} /> {b.pickup_loc}
                           </div>
                         )}
-                        {(b.driver_required == 1 || b.driver_required === 'yes' || b.driver_required === true) && (
+                        {(['PICKUP', 'DROP', 'FULL'].includes(String(b.driver_service_type || '').toUpperCase()) || b.driver_required == 1 || b.driver_required === 'yes' || b.driver_required === true) && (
                           <div className="mt-1 d-flex align-items-center gap-1 flex-wrap">
                             <span className="badge rounded-pill bg-warning bg-opacity-25 text-dark fw-bold border border-warning" style={{ fontSize: '0.66rem' }}>
-                              🚗 Driver Required (₹800/d: ₹{b.driver_charge || (800 * Math.max(1, parseInt(b.driver_days || b.booking_days || 1)))})
+                              🚗 Driver: {b.driver_service_type || 'FULL'} (₹{b.driver_charge || (String(b.driver_service_type).toUpperCase() === 'FULL' ? (800 * Math.max(1, parseInt(b.driver_days || b.booking_days || 1))) : 400)})
                             </span>
                             {b.assigned_driver_id ? (
                               <span className="badge rounded-pill bg-success-subtle text-success border border-success-subtle fw-semibold" style={{ fontSize: '0.66rem' }}>
@@ -913,11 +913,11 @@ export default function AdminBookingManagement({
                     <span className="small fw-bold text-dark">
                       Driver Requirement:
                     </span>
-                    <span className={`badge rounded-pill px-2.5 py-1 fw-bold ${(viewBooking.driver_required == 1 || viewBooking.driver_required === 'yes') ? 'bg-warning text-dark' : 'bg-secondary-subtle text-secondary'}`} style={{ fontSize: '0.72rem' }}>
-                      {(viewBooking.driver_required == 1 || viewBooking.driver_required === 'yes') ? '🚗 YES (Driver Required)' : 'NO (Self Drive / Unrequested)'}
+                    <span className={`badge rounded-pill px-2.5 py-1 fw-bold ${(['PICKUP', 'DROP', 'FULL'].includes(String(viewBooking.driver_service_type || '').toUpperCase()) || viewBooking.driver_required == 1 || viewBooking.driver_required === 'yes') ? 'bg-warning text-dark' : 'bg-secondary-subtle text-secondary'}`} style={{ fontSize: '0.72rem' }}>
+                      {viewBooking.driver_service_type ? `🚗 YES (${viewBooking.driver_service_type})` : ((viewBooking.driver_required == 1 || viewBooking.driver_required === 'yes') ? '🚗 YES (Driver Required)' : 'NO (Self Drive / Unrequested)')}
                     </span>
                   </div>
-                  {(viewBooking.driver_required == 1 || viewBooking.driver_required === 'yes') && (
+                  {(['PICKUP', 'DROP', 'FULL'].includes(String(viewBooking.driver_service_type || '').toUpperCase()) || viewBooking.driver_required == 1 || viewBooking.driver_required === 'yes') && (
                     <div className="mt-2 pt-2 border-top">
                       {viewBooking.assigned_driver_id ? (
                         <div className="small">
@@ -940,12 +940,12 @@ export default function AdminBookingManagement({
                             </div>
                           )}
                           <div className="d-flex justify-content-between align-items-center mt-1 border-top pt-1">
-                            <span className="text-muted">Driver Charge (₹800/d):</span>
-                            <span className="fw-bold text-dark">₹{(viewBooking.driver_charge || (800 * Math.max(1, parseInt(viewBooking.driver_days || viewBooking.booking_days || 1)))).toLocaleString()}</span>
+                            <span className="text-muted">Driver Service & Fee:</span>
+                            <span className="fw-bold text-dark">{viewBooking.driver_service_type || 'FULL'} • ₹{Number(viewBooking.driver_charge || (String(viewBooking.driver_service_type).toUpperCase() === 'FULL' ? (800 * Math.max(1, parseInt(viewBooking.driver_days || viewBooking.booking_days || 1))) : 400)).toLocaleString()}</span>
                           </div>
                           <div className="d-flex justify-content-between align-items-center mt-1">
                             <span className="text-muted">Driver Earning Payout:</span>
-                            <span className="fw-bold text-success">₹{(viewBooking.driver_earning || (800 * Math.max(1, parseInt(viewBooking.driver_days || viewBooking.booking_days || 1)))).toLocaleString()} • {viewBooking.driver_payment_status || (viewBooking.driver_job_status === 'Completed' ? 'Payable' : 'Pending')}</span>
+                            <span className="fw-bold text-success">₹{Number(viewBooking.driver_earning || viewBooking.driver_charge || (String(viewBooking.driver_service_type).toUpperCase() === 'FULL' ? (800 * Math.max(1, parseInt(viewBooking.driver_days || viewBooking.booking_days || 1))) : 400)).toLocaleString()} • {viewBooking.driver_payment_status || (viewBooking.driver_job_status === 'Completed' ? 'Payable' : 'Pending')}</span>
                           </div>
                         </div>
                       ) : (

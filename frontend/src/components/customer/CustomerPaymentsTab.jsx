@@ -9,19 +9,8 @@ export default function CustomerPaymentsTab({
   bookings = [],
   onOpenBookingDetails
 }) {
-  // Filter bookings for current user
-  const myBookings = bookings.filter(b => {
-    if (!currentUser) return true;
-    const cid = currentUser.id || currentUser.email || currentUser.username;
-    return (
-      b.customer_id === cid || 
-      b.customer_email === currentUser.email || 
-      b.customer_phone === currentUser.phone || 
-      b.name === currentUser.name || 
-      b.name === currentUser.username ||
-      b.user_id === cid
-    );
-  });
+  // Bookings passed from CustomerPortalPage are already strictly isolated for the customer
+  const myBookings = Array.isArray(bookings) ? bookings : [];
 
   const totalSpend = myBookings.reduce((sum, b) => sum + parseFloat(b.total_amount || b.amount || 0), 0);
   const totalPaid = myBookings.reduce((sum, b) => sum + parseFloat(b.paid_amount || b.total_paid || 0), 0);

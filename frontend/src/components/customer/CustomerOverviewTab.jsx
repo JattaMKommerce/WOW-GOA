@@ -42,17 +42,8 @@ export default function CustomerOverviewTab({
   const [selfDriveSubcategory, setSelfDriveSubcategory] = useState('all');
   const [previewItem, setPreviewItem] = useState(null);
 
-  // Filter customer's own bookings
-  const myBookings = bookings.filter(b => {
-    if (!currentUser) return true;
-    const cid = currentUser.id || currentUser.email || currentUser.username;
-    return b.customer_id === cid || 
-           b.customer_email === currentUser.email || 
-           b.customer_phone === currentUser.phone || 
-           b.name === currentUser.name || 
-           b.name === currentUser.username ||
-           b.user_id === cid;
-  });
+  // Bookings passed from CustomerPortalPage are already strictly isolated for the customer
+  const myBookings = Array.isArray(bookings) ? bookings : [];
 
   // Self Drive Holiday bookings
   const selfDriveBookings = myBookings.filter(b => 
@@ -130,7 +121,9 @@ export default function CustomerOverviewTab({
 
   const isDriverBooking = (b) => {
     if (!b || isCraftBooking(b)) return false;
+    const svcType = String(b.driver_service_type || '').toUpperCase();
     return Boolean(
+      ['PICKUP', 'DROP', 'FULL'].includes(svcType) ||
       b.driver_required == 1 ||
       b.driver_required === 'yes' ||
       b.driver_required === true ||
@@ -260,6 +253,7 @@ export default function CustomerOverviewTab({
       type.includes('vehicle rental') ||
       type === 'vehicle' ||
       itemId.startsWith('car-') ||
+      itemId.startsWith('car_') ||
       itemName.includes('car rental') ||
       itemName.includes('thar') ||
       itemName.includes('swift') ||
@@ -753,7 +747,7 @@ export default function CustomerOverviewTab({
               <button onClick={() => onNavigateTab('bookings')} className="btn btn-link text-warning p-0 text-xxs fw-bold text-decoration-none">View All My Bookings →</button>
             </div>
             <div className="row g-2">
-              {myBookings.filter(b => (b.id || b.booking_id) !== (nextHoliday.id || nextHoliday.booking_id)).slice(0, 3).map((otherB, oIdx) => (
+              {myBookings.filter(b => (b.id || b.booking_id) !== (nextHoliday.id || nextHoliday.booking_id)).slice(0, 12).map((otherB, oIdx) => (
                 <div key={otherB.id || oIdx} className="col-md-4">
                   <div 
                     onClick={() => onSelectBooking(otherB)}
@@ -813,7 +807,7 @@ export default function CustomerOverviewTab({
               </tr>
             </thead>
             <tbody>
-              {myBookings.slice(0, 5).map((b, idx) => (
+              {myBookings.slice(0, 12).map((b, idx) => (
                 <tr key={b.id || idx}>
                   <td className="ps-4 fw-bold text-dark">
                     #{b.id || b.booking_id || `WOW-${1000 + idx}`}

@@ -21,25 +21,17 @@ export default function CustomerSelfDriveTab({
   const [selectedItineraryPkg, setSelectedItineraryPkg] = useState(null);
 
   // Filter Self Drive Holiday bookings for current user
-  const selfDriveBookings = bookings.filter(b => {
-    if (!currentUser) return true;
-    const cid = currentUser.id || currentUser.email || currentUser.username;
-    const isUserMatch = (
-      b.customer_id === cid || 
-      b.customer_email === currentUser.email || 
-      b.customer_phone === currentUser.phone || 
-      b.name === currentUser.name || 
-      b.name === currentUser.username ||
-      b.user_id === cid
-    );
-    if (!isUserMatch) return false;
-
+  const selfDriveBookings = (bookings || []).filter(b => {
+    const type = String(b.package_type || b.type || b.service_type || '').toLowerCase();
+    const itemName = String(b.item_name || b.package_name || '').toLowerCase();
     return (
       b.package_type === 'Self Drive Package' || 
       b.type === 'selfdrive' || 
-      (b.item_name && b.item_name.toLowerCase().includes('self drive')) ||
+      type.includes('self drive') ||
+      itemName.includes('self drive') ||
       b.type === 'package' ||
-      b.type === 'vehicle'
+      b.type === 'vehicle' ||
+      type === 'car'
     );
   });
 

@@ -226,9 +226,25 @@ export default function B2BBookingsTab({ partnerUser, forcedMode = null }) {
                         <strong className="text-dark d-block text-truncate" style={{ maxWidth: '180px' }}>
                           {b.item_name || 'WOW Goa Service'}
                         </strong>
-                        <span className="badge bg-light text-muted border text-xxs">
-                          {b.type ? b.type.toUpperCase() : 'B2B'}
-                        </span>
+                        <div className="d-flex align-items-center gap-1 flex-wrap mt-0.5">
+                          <span className="badge bg-light text-muted border text-xxs">
+                            {b.type ? b.type.toUpperCase() : 'B2B'}
+                          </span>
+                          {b.driver_service_type && (
+                            <span className="badge bg-warning text-dark text-xxs fw-bold px-1.5 py-0.5 rounded-pill">
+                              🚗 {b.driver_service_type}
+                            </span>
+                          )}
+                          {b.driver_service_type && (b.assigned_driver_name ? (
+                            <span className="badge bg-success-subtle text-success border border-success-subtle text-xxs px-1.5 py-0.5 rounded-pill">
+                              🟢 {b.assigned_driver_name} {b.assigned_driver_phone ? `(${b.assigned_driver_phone})` : ''}
+                            </span>
+                          ) : (
+                            <span className="badge bg-secondary-subtle text-secondary text-xxs px-1.5 py-0.5 rounded-pill">
+                              ⏳ Driver: Not Assigned
+                            </span>
+                          ))}
+                        </div>
                       </td>
 
                       <td>
@@ -345,6 +361,43 @@ export default function B2BBookingsTab({ partnerUser, forcedMode = null }) {
                   </div>
                 )}
               </div>
+
+              {/* Chauffeur / Driver Details */}
+              {(selectedBooking.driver_service_type || selectedBooking.driver_required == 1) && (
+                <div className="p-3 bg-light rounded-3 border mb-3">
+                  <div className="d-flex align-items-center justify-content-between mb-2">
+                    <span className="text-xxs text-muted text-uppercase fw-bold">Chauffeur Service</span>
+                    <span className="badge bg-warning text-dark text-xxs fw-bold px-2 py-0.5 rounded-pill">
+                      🚗 {selectedBooking.driver_service_type || 'FULL'}
+                    </span>
+                  </div>
+                  {selectedBooking.assigned_driver_name ? (
+                    <div className="row g-2 text-xs">
+                      <div className="col-6">
+                        <span className="text-muted d-block text-xxs">Driver Name:</span>
+                        <strong className="text-success">{selectedBooking.assigned_driver_name}</strong>
+                      </div>
+                      <div className="col-6">
+                        <span className="text-muted d-block text-xxs">Driver Mobile:</span>
+                        <strong className="text-dark">{selectedBooking.assigned_driver_phone || '—'}</strong>
+                      </div>
+                      {selectedBooking.assigned_driver_vehicle && (
+                        <div className="col-12">
+                          <span className="text-muted d-block text-xxs">Vehicle Details:</span>
+                          <strong className="text-dark">{selectedBooking.assigned_driver_vehicle}</strong>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-muted">
+                      <span className="badge bg-warning-subtle text-dark border border-warning-subtle text-xxs px-2 py-0.5 rounded-pill mb-1">
+                        ⏳ Driver Not Assigned
+                      </span>
+                      <div className="text-xxs">Dispatch is currently open for driver acceptance. Details will appear once accepted.</div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Guest Details */}
               <div className="p-3 bg-light rounded-3 border mb-3">

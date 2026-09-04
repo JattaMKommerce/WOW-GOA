@@ -14,16 +14,12 @@ import AdminCustomerManagement from './AdminCustomerManagement';
 import AdminBookingManagement from './AdminBookingManagement';
 import AdminPromotions from './AdminPromotions';
 import AdminAnalytics from './AdminAnalytics';
-import FlightVendorDashboard from '../vendor/FlightVendorDashboard';
-import HotelVendorDashboard from '../vendor/HotelVendorDashboard';
-import VendorDashboard from '../vendor/VendorDashboard';
-import PMSAvailabilityCalendar from '../vendor/pms/PMSAvailabilityCalendar';
+import AnalyticsView from '../../components/shared/AnalyticsView';
 import AdminPlatformSettings from './AdminPlatformSettings';
 import AdminWalletRecharges from './AdminWalletRecharges';
 import AdminMarkupPanel from './AdminMarkupPanel';
-import PMSPaymentSettings from '../vendor/pms/PMSPaymentSettings';
 import AdminEnquiryCRM from './AdminEnquiryCRM';
-import LeadManagement from './LeadManagement';
+import LeadManagement from '../../components/shared/LeadManagement';
 import AdminSubscriptionPanel from '../../components/admin/AdminSubscriptionPanel';
 import AdminDriverManagement from './AdminDriverManagement';
 
@@ -390,21 +386,29 @@ export default function AdminPortalPage({
       case 'promotions':
         return <AdminPromotions />;
       case 'analytics':
-        return <AdminAnalytics bookings={bookings} hotels={hotels} cars={cars} bikes={bikes} vendors={vendors} allPackages={allPackages} />;
-      case 'admin_flights':
-        return <div className="p-4"><div className="rounded-3 shadow-sm border" style={{ background: '#fff' }}><FlightVendorDashboard activeTab="flights" flights={flights} onAddFlight={onAddFlight} onUpdateFlight={onUpdateFlight} onDeleteFlight={onDeleteFlight} bookings={bookings} currentUser={currentUser} /></div></div>;
+        return <AnalyticsView bookings={bookings} hotels={hotels} cars={cars} bikes={bikes} vendors={vendors} allPackages={allPackages} />;
+      case 'admin_flights': {
+        const FlightVendorDashboard = React.lazy(() => import('../vendor/FlightVendorDashboard'));
+        return <div className="p-4"><div className="rounded-3 shadow-sm border" style={{ background: '#fff' }}><React.Suspense fallback={<div className="p-4 text-muted">Loading...</div>}><FlightVendorDashboard activeTab="flights" flights={flights} onAddFlight={onAddFlight} onUpdateFlight={onUpdateFlight} onDeleteFlight={onDeleteFlight} bookings={bookings} currentUser={currentUser} /></React.Suspense></div></div>;
+      }
       case 'admin_hotels':
         return <AdminHotelsView hotels={hotels} onAddHotel={onAddHotel} onUpdateHotel={onUpdateHotel} onDeleteHotel={onDeleteHotel} bookings={bookings} currentUser={currentUser} />;
-      case 'admin_vehicles':
-        return <div className="p-4"><div className="rounded-3 shadow-sm border" style={{ background: '#fff' }}><VendorDashboard activeTab={adminVehiclesInnerTab} setActiveTab={setAdminVehiclesInnerTab} vendors={vendors} cars={cars} bikes={bikes} onAddCar={onAddCar} onUpdateCar={onUpdateCar} onDeleteCar={onDeleteCar} onAddBike={onAddBike} onUpdateBike={onUpdateBike} onDeleteBike={onDeleteBike} bookings={bookings} currentUser={currentUser} /></div></div>;
-      case 'availability':
-        return <div className="p-4"><div className="rounded-3 shadow-sm border" style={{ background: '#fff' }}><PMSAvailabilityCalendar currentUser={currentUser} vendorHotels={hotels} /></div></div>;
+      case 'admin_vehicles': {
+        const VendorDashboard = React.lazy(() => import('../vendor/VendorDashboard'));
+        return <div className="p-4"><div className="rounded-3 shadow-sm border" style={{ background: '#fff' }}><React.Suspense fallback={<div className="p-4 text-muted">Loading...</div>}><VendorDashboard activeTab={adminVehiclesInnerTab} setActiveTab={setAdminVehiclesInnerTab} vendors={vendors} cars={cars} bikes={bikes} onAddCar={onAddCar} onUpdateCar={onUpdateCar} onDeleteCar={onDeleteCar} onAddBike={onAddBike} onUpdateBike={onUpdateBike} onDeleteBike={onDeleteBike} bookings={bookings} currentUser={currentUser} /></React.Suspense></div></div>;
+      }
+      case 'availability': {
+        const PMSAvailabilityCalendar = React.lazy(() => import('../vendor/pms/PMSAvailabilityCalendar'));
+        return <div className="p-4"><div className="rounded-3 shadow-sm border" style={{ background: '#fff' }}><React.Suspense fallback={<div className="p-4 text-muted">Loading...</div>}><PMSAvailabilityCalendar currentUser={currentUser} vendorHotels={hotels} /></React.Suspense></div></div>;
+      }
       case 'markup_reports':
         return <div className="p-4"><div className="rounded-3 shadow-sm border" style={{ background: '#fff' }}><AdminMarkupPanel markups={markups} onSaveMarkup={onSaveMarkup} vendors={vendors} bookings={bookings} flights={flights} hotels={hotels} cars={cars} bikes={bikes} packages={allPackages} /></div></div>;
       case 'platform_settings':
         return <AdminPlatformSettings />;
-      case 'payment_settings':
-        return <div className="p-4"><div className="rounded-3 shadow-sm border" style={{ background: '#fff' }}><PMSPaymentSettings currentUser={currentUser} /></div></div>;
+      case 'payment_settings': {
+        const PMSPaymentSettings = React.lazy(() => import('../vendor/pms/PMSPaymentSettings'));
+        return <div className="p-4"><div className="rounded-3 shadow-sm border" style={{ background: '#fff' }}><React.Suspense fallback={<div className="p-4 text-muted">Loading...</div>}><PMSPaymentSettings currentUser={currentUser} /></React.Suspense></div></div>;
+      }
       case 'wallet_recharges':
         return <AdminWalletRecharges vendors={vendors} />;
       case 'payment':

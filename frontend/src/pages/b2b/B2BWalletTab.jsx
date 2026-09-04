@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Wallet, CreditCard, ArrowUpRight, ArrowDownLeft, RefreshCw, Plus,
   CheckCircle, Clock, AlertTriangle, TrendingUp, Receipt, ShieldCheck,
-  Search, Filter, ExternalLink, ArrowRight, Info
+  Search, Filter, ExternalLink, ArrowRight, Info, Zap
 } from 'lucide-react';
 import { fetchB2BWallet, rechargeB2BWallet } from '../../services/api';
 
@@ -16,11 +16,17 @@ export default function B2BWalletTab({ partnerUser, onWalletUpdated }) {
 
   // Recharge Modal State
   const [isRechargeModalOpen, setIsRechargeModalOpen] = useState(false);
-  const [rechargeAmount, setRechargeAmount] = useState('10000');
+  const [rechargeAmount, setRechargeAmount] = useState('50000');
   const [rechargeMethod, setRechargeMethod] = useState('UPI');
   const [referenceId, setReferenceId] = useState('');
   const [rechargeLoading, setRechargeLoading] = useState(false);
   const [rechargeMessage, setRechargeMessage] = useState({ type: '', text: '' });
+
+  // Ref to prevent circular re-render loops from callback changes
+  const onWalletUpdatedRef = useRef(onWalletUpdated);
+  useEffect(() => {
+    onWalletUpdatedRef.current = onWalletUpdated;
+  }, [onWalletUpdated]);
 
   const loadWallet = useCallback(async (isSilent = false) => {
     if (!partnerUser?.id) return;
@@ -31,7 +37,9 @@ export default function B2BWalletTab({ partnerUser, onWalletUpdated }) {
       const res = await fetchB2BWallet(partnerUser.id);
       if (res && res.success) {
         setWalletData(res);
-        if (onWalletUpdated) onWalletUpdated(res.wallet_balance);
+        if (onWalletUpdatedRef.current && res.wallet_balance !== undefined) {
+          onWalletUpdatedRef.current(res.wallet_balance);
+        }
       }
     } catch (err) {
       console.warn('Failed to load wallet data:', err);
@@ -39,11 +47,35 @@ export default function B2BWalletTab({ partnerUser, onWalletUpdated }) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [partnerUser?.id, onWalletUpdated]);
+  }, [partnerUser?.id]);
 
   useEffect(() => {
     loadWallet();
-  }, [loadWallet]);
+  }, [partnerUser?.id]);
+
+  const handleQuickAddTestFunds = async () => {
+    if (!partnerUser?.id) return;
+    setRefreshing(true);
+    try {
+      const idempotencyKey = `quick_test_${partnerUser.id}_${Date.now()}`;
+      const payload = {
+        partner_id: partnerUser.id,
+        b2b_partner_id: partnerUser.id,
+        amount: 50000,
+        payment_method: 'Admin Test Credit',
+        payment_gateway_ref: `TEST-${Date.now().toString().slice(-6)}`,
+        idempotency_key: idempotencyKey
+      };
+      const res = await rechargeB2BWallet(payload);
+      if (res && res.success) {
+        await loadWallet(true);
+      }
+    } catch (err) {
+      console.warn('Quick recharge error:', err);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const handleRechargeSubmit = async (e) => {
     e.preventDefault();
@@ -126,6 +158,16 @@ export default function B2BWalletTab({ partnerUser, onWalletUpdated }) {
         </div>
 
         <div className="d-flex align-items-center gap-2">
+          <button
+            onClick={handleQuickAddTestFunds}
+            disabled={refreshing}
+            className="btn btn-sm btn-outline-warning text-dark rounded-pill px-3 d-flex align-items-center gap-1.5 text-xs fw-bold shadow-xs"
+            title="Instant +₹50,000 Test Balance Top-up"
+            style={{ backgroundColor: '#fffbeb', borderColor: '#fde68a' }}
+          >
+            <Zap size={13} className="text-warning fill-warning" />
+            <span>+₹50,000 Test Funds</span>
+          </button>
           <button
             onClick={() => loadWallet(true)}
             disabled={refreshing}
@@ -218,19 +260,19 @@ export default function B2BWalletTab({ partnerUser, onWalletUpdated }) {
                 <span className="d-flex align-items-center gap-1.5 text-muted">
                   <ArrowUpRight size={14} className="text-success" /> Total Recharged
                 </span>
-                <strong className="text-success">+₹{stats.total_credited.toLocaleString('en-IN')}</strong>
+                <strong className="text-success">+₹{(stats.total_credited || 0).toLocaleString('en-IN')}</strong>
               </div>
               <div className="d-flex align-items-center justify-content-between p-2 rounded-3 bg-light text-xs mb-1.5">
                 <span className="d-flex align-items-center gap-1.5 text-muted">
                   <ArrowDownLeft size={14} className="text-danger" /> Total Bookings Spent
                 </span>
-                <strong className="text-danger">-₹{stats.total_debited.toLocaleString('en-IN')}</strong>
+                <strong className="text-danger">-₹{(stats.total_debited || 0).toLocaleString('en-IN')}</strong>
               </div>
               <div className="d-flex align-items-center justify-content-between p-2 rounded-3 bg-light text-xs">
                 <span className="d-flex align-items-center gap-1.5 text-muted">
                   <Receipt size={14} className="text-primary" /> Total Refunded
                 </span>
-                <strong className="text-primary">+₹{stats.total_refunded.toLocaleString('en-IN')}</strong>
+                <strong className="text-primary">+₹{(stats.total_refunded || 0).toLocaleString('en-IN')}</strong>
               </div>
             </div>
           </div>

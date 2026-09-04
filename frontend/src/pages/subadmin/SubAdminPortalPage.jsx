@@ -3,7 +3,7 @@ import {
   Shield, Lock, User, LogOut, MessageSquare, CheckCircle, AlertCircle, Sparkles, 
   Phone, Mail, MessageCircle, PhoneCall, RefreshCw, Send, X, Users, Tag, Building, Car, Calendar, Search, Filter, ArrowUpRight
 } from 'lucide-react';
-import LeadManagement from '../admin/LeadManagement';
+import LeadManagement from '../../components/shared/LeadManagement';
 import * as api from '../../services/api';
 
 export default function SubAdminPortalPage({ currentUser: propCurrentUser, onLogout, usersList = [] }) {

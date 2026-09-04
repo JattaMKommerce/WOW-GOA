@@ -15,7 +15,16 @@ export function getTenantId() {
 
 export function getAuthToken() {
   try {
-    return localStorage.getItem('auth_token') || localStorage.getItem('b2b_partner_token') || '';
+    const adminToken = localStorage.getItem('auth_token');
+    if (adminToken) return adminToken;
+    const b2bToken = localStorage.getItem('b2b_partner_token');
+    if (b2bToken) return b2bToken;
+    const custStr = localStorage.getItem('customerUser');
+    if (custStr) {
+      const cust = JSON.parse(custStr);
+      return cust.token || cust.id || cust.phone || '';
+    }
+    return '';
   } catch (e) {
     return '';
   }
@@ -170,8 +179,12 @@ export async function fetchUsers() {
   try {
     const localUsers = JSON.parse(localStorage.getItem('local_users') || '[]');
     if (Array.isArray(localUsers) && localUsers.length > 0) {
-      const existingUsernames = new Set(list.map(u => (u.username || '').toLowerCase()));
-      const uniqueLocal = localUsers.filter(u => !existingUsernames.has((u.username || '').toLowerCase()));
+      const existingUsernames = new Set(list.map(u => (u.username || '').toLowerCase().trim()));
+      const existingIds = new Set(list.map(u => String(u.id)));
+      const uniqueLocal = localUsers.filter(u => 
+        !existingUsernames.has((u.username || '').toLowerCase().trim()) &&
+        !existingIds.has(String(u.id))
+      );
       list = [...uniqueLocal, ...list];
     }
   } catch (e) {}
@@ -182,16 +195,43 @@ export async function fetchUsers() {
     list = list.filter(u => !deletedIds.has(String(u.id)) && !deletedIds.has(String(u.username)));
   } catch (e) {}
 
-  // Enrich with passwords from localStorage user_passwords map
+  // Enrich with passwords from database & local user_passwords map
   try {
     const userPassMap = JSON.parse(localStorage.getItem('user_passwords') || '{}');
     list = list.map(u => {
       const stored = userPassMap[u.id] || userPassMap[u.username] || userPassMap[u.email];
-      const defaultPass = u.plain_password || (u.username === 'superadmin' ? 'superadmin' : 'admin@2026');
+      let pass = u.plain_password;
+
+      if (u.role === 'customer') {
+        pass = (stored && stored !== 'admin@2026' && stored !== 'Pass@123') ? stored : (u.plain_password && u.plain_password !== 'admin@2026' ? u.plain_password : 'OTP Login');
+      } else {
+        if (stored && stored !== 'admin@2026') {
+          pass = stored;
+        } else if (u.plain_password && u.plain_password !== 'admin@2026') {
+          pass = u.plain_password;
+        } else if (u.username === 'superadmin') {
+          pass = 'superadmin';
+        } else if (u.username === 'admin') {
+          pass = 'Admin@Goa2026';
+        } else if (u.username === 'goa_operations') {
+          pass = 'Ops@Goa2026';
+        } else if (u.role === 'vendor' || u.username === 'vendor') {
+          pass = 'Vendor@Fleet26';
+        } else if (u.role === 'hotel_vendor' || u.username === 'hotel_vendor') {
+          pass = 'Hotel@Goa2026';
+        } else if (u.role === 'flight_vendor' || u.username === 'flight_vendor') {
+          pass = 'Flight@Goa2026';
+        } else if (u.role === 'b2b') {
+          pass = stored || u.plain_password || `Partner@${String(u.username || u.id || '').slice(-4)}`;
+        } else {
+          pass = stored || u.plain_password || `${u.username || 'User'}@2026`;
+        }
+      }
+
       return {
         ...u,
-        plain_password: stored || defaultPass,
-        password: stored || defaultPass
+        plain_password: pass,
+        password: pass
       };
     });
   } catch (e) {}
@@ -239,6 +279,16 @@ export async function fetchCustomerBookings(mobile) {
       const data = await res.json();
       if (Array.isArray(data) && data.length > 0) {
         list = data;
+        // Sync local_bookings in localStorage so stale driver status is overwritten with live server status
+        try {
+          const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
+          const liveMap = new Map(data.map(item => [String(item.id), item]));
+          const updatedLocal = localBookings.map(b => {
+            const live = liveMap.get(String(b.id));
+            return live ? { ...b, ...live } : b;
+          });
+          localStorage.setItem('local_bookings', JSON.stringify(updatedLocal));
+        } catch (e) {}
       }
     }
   } catch (err) {
@@ -565,13 +615,23 @@ export async function fetchB2BPricingPreview(params) {
 }
 
 export async function b2bBook(bookingPayload) {
+  const token = bookingPayload.b2b_partner_id 
+    || getAuthToken() 
+    || localStorage.getItem('b2b_partner_token')
+    || (() => { try { return JSON.parse(localStorage.getItem('b2b_partner_user') || '{}')?.id; } catch(e) { return ''; } })()
+    || '';
+  const payloadWithPartner = {
+    ...bookingPayload,
+    b2b_partner_id: bookingPayload.b2b_partner_id || token
+  };
   const res = await apiFetch(`${API_BASE}?action=b2b_book`, {
     method: 'POST',
     headers: { 
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${bookingPayload.b2b_partner_id || ''}`
+      'Authorization': `Bearer ${token}`,
+      'X-B2B-Partner-ID': token
     },
-    body: JSON.stringify({ action: 'b2b_book', ...bookingPayload })
+    body: JSON.stringify({ action: 'b2b_book', ...payloadWithPartner })
   });
   const data = await res.json();
   if (!res.ok || !data.success) {
@@ -1090,13 +1150,17 @@ export async function updateOnlineStatus(userId, isOnline = 1) {
 }
 
 export async function registerUser(userData) {
-  const newUserId = `u-${Date.now()}`;
+  const newUserId = userData.id || `u-${Date.now()}`;
   const password = userData.password || userData.plain_password || 'admin@2026';
+  const role = (userData.role || 'admin').toLowerCase().trim();
   const newUserRecord = {
     id: newUserId,
     username: userData.username,
+    name: userData.name || userData.username,
     email: userData.email,
-    role: userData.role || 'admin',
+    phone: userData.phone || '',
+    city: userData.city || '',
+    role: role,
     billing_price: parseInt(userData.billing_price || userData.billingPrice || 0, 10) || 5000,
     status: userData.status || 'active',
     plain_password: password,
@@ -1104,11 +1168,10 @@ export async function registerUser(userData) {
     created_at: new Date().toISOString().replace('T', ' ').slice(0, 19)
   };
 
-  // Save to local storage cache
+  // Save to local storage cache immediately
   try {
     const localUsers = JSON.parse(localStorage.getItem('local_users') || '[]');
-    // replace if exists with same username, else unshift
-    const filtered = localUsers.filter(u => u.username !== newUserRecord.username);
+    const filtered = localUsers.filter(u => (u.username || '').toLowerCase() !== (newUserRecord.username || '').toLowerCase() && (u.email || '').toLowerCase() !== (newUserRecord.email || '').toLowerCase());
     filtered.unshift(newUserRecord);
     localStorage.setItem('local_users', JSON.stringify(filtered));
 
@@ -1125,13 +1188,23 @@ export async function registerUser(userData) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...userData,
+        action: 'register_user',
         password: password,
+        role: role,
         billing_price: newUserRecord.billing_price
       })
     });
     const data = await res.json();
+    if (data && (data.user_id || data.id)) {
+      newUserRecord.id = data.user_id || data.id;
+      try {
+        const localUsers = JSON.parse(localStorage.getItem('local_users') || '[]');
+        const updated = localUsers.map(u => (u.username || '').toLowerCase() === (newUserRecord.username || '').toLowerCase() ? { ...u, id: newUserRecord.id } : u);
+        localStorage.setItem('local_users', JSON.stringify(updated));
+      } catch (e) {}
+    }
     if (data && data.success) {
-      return { ...data, user: newUserRecord };
+      return { ...data, user: newUserRecord, ...newUserRecord };
     }
   } catch (err) {
     console.warn('[API] Backend register_user fallback used:', err.message);
@@ -1140,7 +1213,8 @@ export async function registerUser(userData) {
   return {
     success: true,
     message: "Administrator account created successfully!",
-    user: newUserRecord
+    user: newUserRecord,
+    ...newUserRecord
   };
 }
 
@@ -1619,20 +1693,31 @@ export async function calculatePackagePrice(data) {
 
 export async function createBooking(bookingData) {
   let createdBookingId = null;
-  try {
-    const res = await apiFetch(`${API_BASE}?action=book`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(bookingData)
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.success) {
-        createdBookingId = data.booking_id;
-      }
+  const res = await apiFetch(`${API_BASE}?action=book`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(bookingData)
+  });
+  if (res.ok) {
+    const data = await res.json();
+    if (data && data.success) {
+      createdBookingId = data.booking_id;
     }
-  } catch (err) {
-    console.warn('[API] Server booking endpoint fallback:', err.message);
+  } else {
+    let errMsg = 'Failed to submit booking on server.';
+    try {
+      const rawText = await res.text();
+      console.warn('Booking rejected by server (HTTP ' + res.status + '):', rawText);
+      try {
+        const errData = JSON.parse(rawText);
+        errMsg = errData.error || errData.message || rawText || errMsg;
+      } catch (parseErr) {
+        errMsg = rawText || errMsg;
+      }
+    } catch (readErr) {
+      console.error('Failed to read server error response:', readErr);
+    }
+    throw new Error(errMsg);
   }
   
   const assignedId = createdBookingId || `BK-${Math.floor(100000 + Math.random() * 900000)}`;
@@ -1673,6 +1758,7 @@ export async function createBooking(bookingData) {
     payment_status: bookingData.payment_status || 'Paid Online',
     payment_method: bookingData.payment_method || 'Online Payment',
     driver_required: bookingData.driver_required || 0,
+    driver_service_type: bookingData.driver_service_type || null,
     driver_charge: bookingData.driver_charge || 0,
     driver_days: bookingData.driver_days || 0,
     driver_earning: bookingData.driver_earning || 0,
@@ -2703,36 +2789,16 @@ export async function pmsCreateManualBooking(payload) {
 }
 
 export async function superadminCreateUser(userData) {
-  const res = await apiFetch(API_BASE, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'superadmin_create_user', ...userData })
-  });
-  const data = await res.json();
-  if (!res.ok || !data.success) throw new Error(data.error || data.message || 'Failed to create user');
-  return data;
+  return await registerUser(userData);
 }
 
 export async function superadminUpdateUser(id, userData) {
-  const res = await apiFetch(API_BASE, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'superadmin_update_user', id, ...userData })
-  });
-  const data = await res.json();
-  if (!res.ok || !data.success) throw new Error(data.error || data.message || 'Failed to update user');
-  return data;
+  const payload = typeof id === 'object' ? id : { ...userData, id };
+  return await updateUser(payload);
 }
 
 export async function superadminDeleteUser(id) {
-  const res = await apiFetch(API_BASE, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'superadmin_delete_user', id })
-  });
-  const data = await res.json();
-  if (!res.ok || !data.success) throw new Error(data.error || data.message || 'Failed to delete user');
-  return data;
+  return await deleteUser(id);
 }
 
 // ==========================================

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Car, Calendar, Clock, MapPin, Fuel, Gauge, Users, Shield, 
   CheckCircle2, AlertCircle, ArrowRight, ChevronRight, User, Phone, 
-  Mail, FileText, Check, DollarSign, Percent, Sparkles, Navigation, X, Wallet
+  Mail, FileText, Check, DollarSign, Percent, Sparkles, Navigation, X, Wallet, UserCheck
 } from 'lucide-react';
 import * as api from '../../services/api';
 
@@ -26,7 +26,34 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
   const [pickupLoc, setPickupLoc] = useState('Manohar International Airport (Mopa - GOX)');
   const [dropLoc, setDropLoc] = useState('Manohar International Airport (Mopa - GOX)');
   const [sameDrop, setSameDrop] = useState(true);
-  const [withDriver, setWithDriver] = useState(false);
+
+  // Driver / Chauffeur Service States (matching main website BookingModal)
+  const [driverRequired, setDriverRequired] = useState(false);
+  const [driverServiceType, setDriverServiceType] = useState('PICKUP'); // Strictly 'PICKUP', 'DROP', or 'FULL'
+  const driverPickupEnabled = driverRequired && driverServiceType === 'PICKUP';
+  const driverDropEnabled = driverRequired && driverServiceType === 'DROP';
+  const driverFullDayEnabled = driverRequired && driverServiceType === 'FULL';
+  const [driverPickupDate, setDriverPickupDate] = useState('');
+  const [driverPickupTime, setDriverPickupTime] = useState('10:00 AM');
+  const [driverPickupLoc, setDriverPickupLoc] = useState('Goa Airport (Dabolim)');
+  const [driverPickupCustomLoc, setDriverPickupCustomLoc] = useState('');
+
+  const [driverDropDate, setDriverDropDate] = useState('');
+  const [driverDropTime, setDriverDropTime] = useState('10:00 AM');
+  const [driverDropLoc, setDriverDropLoc] = useState('Goa Airport (Dabolim)');
+  const [driverDropCustomLoc, setDriverDropCustomLoc] = useState('');
+
+  const [driverFullDayStart, setDriverFullDayStart] = useState('');
+  const [driverFullDayEnd, setDriverFullDayEnd] = useState('');
+  const [driverFullDayStartLoc, setDriverFullDayStartLoc] = useState('Hotel');
+  const [driverFullDayCustomStartLoc, setDriverFullDayCustomStartLoc] = useState('');
+  const [driverFullDayEndLoc, setDriverFullDayEndLoc] = useState('Hotel');
+  const [driverFullDayCustomEndLoc, setDriverFullDayCustomEndLoc] = useState('');
+
+  const getTodayDateStr = () => {
+    const d = new Date();
+    return d.toISOString().split('T')[0];
+  };
 
   // Default dates: tomorrow to 4 days later
   const tomorrow = new Date();
@@ -41,6 +68,18 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
   const [dropDate, setDropDate] = useState(initialDrop);
   const [pickupTime, setPickupTime] = useState('10:00');
   const [dropTime, setDropTime] = useState('10:00');
+
+  // Sync driver default dates with rental pickup/drop dates
+  useEffect(() => {
+    if (pickupDate) {
+      if (!driverPickupDate) setDriverPickupDate(pickupDate);
+      if (!driverFullDayStart) setDriverFullDayStart(pickupDate);
+    }
+    if (dropDate) {
+      if (!driverDropDate) setDriverDropDate(dropDate);
+      if (!driverFullDayEnd) setDriverFullDayEnd(dropDate);
+    }
+  }, [pickupDate, dropDate]);
 
   // Vehicles state
   const [vehicles, setVehicles] = useState([]);
@@ -64,6 +103,11 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
   const [bookingError, setBookingError] = useState('');
   const [bookingSuccessData, setBookingSuccessData] = useState(null);
 
+  // Phase 5: Authoritative backend pricing state
+  const [backendPricing, setBackendPricing] = useState(null);
+  const [pricingLoading, setPricingLoading] = useState(false);
+  const [pricingError, setPricingError] = useState('');
+
   // Calculate rental duration in days
   const daysCount = useMemo(() => {
     if (!pickupDate || !dropDate) return 1;
@@ -73,6 +117,26 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     return Math.max(1, diffDays);
   }, [pickupDate, dropDate]);
+
+  // Calculate Full-Day Driver Days automatically
+  const driverFullDayDaysCount = useMemo(() => {
+    if (!driverFullDayEnabled || !driverFullDayStart || !driverFullDayEnd) return 0;
+    const start = new Date(driverFullDayStart);
+    const end = new Date(driverFullDayEnd);
+    const diff = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+    return diff > 0 ? diff : 1;
+  }, [driverFullDayEnabled, driverFullDayStart, driverFullDayEnd]);
+
+  // Exact driver costs matching main website: ₹400 for Pickup, ₹400 for Drop, ₹800/day for Full-Day
+  const driverPickupCost = (driverRequired && driverServiceType === 'PICKUP') ? 400 : 0;
+  const driverDropCost = (driverRequired && driverServiceType === 'DROP') ? 400 : 0;
+  const driverFullDayCost = (driverRequired && driverServiceType === 'FULL') ? (800 * driverFullDayDaysCount) : 0;
+  const driverTotalCharge = driverRequired ? (driverPickupCost + driverDropCost + driverFullDayCost) : 0;
+  const totalDriverServiceDays = driverRequired 
+    ? (driverServiceType === 'FULL' ? driverFullDayDaysCount : 1) 
+    : 0;
+
+  const withDriver = Boolean(driverRequired);
 
   // Load vehicles and bikes from backend
   useEffect(() => {
@@ -105,49 +169,87 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
     loadVehicles();
   }, []);
 
-  // Compute B2B pricing for a vehicle
-  const calculateVehiclePricing = (veh) => {
+  // Phase 5: Local estimate (used for list display and real-time modal updates)
+  const calculateVehiclePricingEstimate = (veh, driverCharge = driverTotalCharge, days = daysCount) => {
+    if (!veh) {
+      return {
+        sellingPrice: 0,
+        commissionPercent: 10,
+        commissionAmount: 0,
+        netPayable: 0,
+        netDiscountPercent: 10,
+        discountAmount: 0,
+        netPrice: 0,
+        finalPrice: 0,
+        driverCharge: 0,
+        withDriver: false,
+        mode
+      };
+    }
     const ratePerDay = parseFloat(veh.price_per_day || veh.price || 1500);
-    const driverChargePerDay = withDriver ? 600 : 0;
-    const totalDailyRate = ratePerDay + driverChargePerDay;
-    const subtotal = totalDailyRate * daysCount;
-    const taxAmount = Math.round(subtotal * 0.18);
-    const originalSellingPrice = subtotal + taxAmount;
-
-    // Commission rules (Default 10% commission or partner rate)
+    const vehSubtotal = ratePerDay * days;
+    const taxAmount = Math.round(vehSubtotal * 0.18);
+    const originalSellingPrice = vehSubtotal + taxAmount + driverCharge;
     const commPercent = parseFloat(partner?.default_commission_rate || 10.00);
     const netDiscountPercent = parseFloat(partner?.default_net_discount_rate || 10.00);
-
     if (mode === 'COMMISSION') {
       const commAmount = Math.round(originalSellingPrice * (commPercent / 100));
+      const netPayable = Math.max(0, originalSellingPrice - commAmount);
       return {
         sellingPrice: originalSellingPrice,
+        original_reference_price: originalSellingPrice,
+        base_vehicle_cost: vehSubtotal + taxAmount,
         commissionPercent: commPercent,
+        commission_percent: commPercent,
         commissionAmount: commAmount,
-        netPayable: originalSellingPrice - commAmount,
+        commission_amount: commAmount,
+        netPayable: netPayable,
+        net_price: netPayable,
         finalPrice: originalSellingPrice,
+        driverCharge: driverCharge,
+        withDriver: driverRequired && driverTotalCharge > 0,
         mode: 'COMMISSION'
       };
     } else {
-      // NON_COMMISSION (Wholesale Net)
       const discountAmount = Math.round(originalSellingPrice * (netDiscountPercent / 100));
-      const netPrice = originalSellingPrice - discountAmount;
+      const netPrice = Math.max(0, originalSellingPrice - discountAmount);
       return {
         sellingPrice: originalSellingPrice,
+        original_reference_price: originalSellingPrice,
+        base_vehicle_cost: vehSubtotal + taxAmount,
         netDiscountPercent: netDiscountPercent,
+        net_discount_percent: netDiscountPercent,
         discountAmount: discountAmount,
+        discount_amount: discountAmount,
         netPrice: netPrice,
+        net_price: netPrice,
+        netPayable: netPrice,
         finalPrice: netPrice,
+        driverCharge: driverCharge,
+        withDriver: driverRequired && driverTotalCharge > 0,
         mode: 'NON_COMMISSION'
       };
     }
   };
 
-  const handleSelectToBook = (veh) => {
+  // Phase 5: Calculate pricing immediately when vehicle is selected
+  const handleSelectToBook = async (veh) => {
     setSelectedVehicle(veh);
     setIsBookingModalOpen(true);
     setBookingError('');
+    setPricingError('');
+    // Calculate live pricing with selected driver options
+    const initialPricing = calculateVehiclePricingEstimate(veh, driverTotalCharge, daysCount);
+    setBackendPricing(initialPricing);
+    setPricingLoading(false);
   };
+
+  // Keep modal pricing live whenever driver services, duration, or vehicle changes
+  useEffect(() => {
+    if (isBookingModalOpen && selectedVehicle) {
+      setBackendPricing(calculateVehiclePricingEstimate(selectedVehicle, driverTotalCharge, daysCount));
+    }
+  }, [driverTotalCharge, driverRequired, driverPickupEnabled, driverDropEnabled, driverFullDayEnabled, driverFullDayDaysCount, daysCount, isBookingModalOpen]);
 
   const handleConfirmBooking = async (e) => {
     e.preventDefault();
@@ -156,17 +258,98 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
       return;
     }
 
+    // Validate driver service inputs matching main website logic
+    if (driverRequired) {
+      if (!driverServiceType) {
+        setBookingError('Please select a Driver Service option: Pickup (₹400), Drop (₹400), or Full-Day Driver (₹800/day).');
+        return;
+      }
+
+      if (driverServiceType === 'PICKUP') {
+        if (!driverPickupDate) {
+          setBookingError('Please select a valid Pickup Date for the Driver Pickup service.');
+          return;
+        }
+        if (driverPickupLoc === 'Custom Address' && !driverPickupCustomLoc.trim()) {
+          setBookingError('Please enter the Custom Address for the Driver Pickup service.');
+          return;
+        }
+      }
+
+      if (driverServiceType === 'DROP') {
+        if (!driverDropDate) {
+          setBookingError('Please select a valid Drop Date for the Driver Drop service.');
+          return;
+        }
+        if (driverDropLoc === 'Custom Address' && !driverDropCustomLoc.trim()) {
+          setBookingError('Please enter the Custom Address for the Driver Drop service.');
+          return;
+        }
+      }
+
+      if (driverServiceType === 'FULL') {
+        if (!driverFullDayStart || !driverFullDayEnd) {
+          setBookingError('Please select both Start and End Dates for the Full-Day Driver service.');
+          return;
+        }
+        if (driverFullDayStart > driverFullDayEnd) {
+          setBookingError('Driver Start Date cannot be after End Date.');
+          return;
+        }
+        if (driverFullDayStartLoc === 'Custom Address' && !driverFullDayCustomStartLoc.trim()) {
+          setBookingError('Please enter the Custom Start Location for the Driver service.');
+          return;
+        }
+        if (driverFullDayEndLoc === 'Custom Address' && !driverFullDayCustomEndLoc.trim()) {
+          setBookingError('Please enter the Custom End Location for the Driver service.');
+          return;
+        }
+      }
+    }
+
     setBookingLoading(true);
     setBookingError('');
 
-    const pricing = calculateVehiclePricing(selectedVehicle);
+    const finalPickupLocResolved = driverPickupLoc === 'Custom Address' ? driverPickupCustomLoc : driverPickupLoc;
+    const finalDropLocResolved = driverDropLoc === 'Custom Address' ? driverDropCustomLoc : driverDropLoc;
+    const finalFullDayStartLocResolved = driverFullDayStartLoc === 'Custom Address' ? driverFullDayCustomStartLoc : driverFullDayStartLoc;
+    const finalFullDayEndLocResolved = driverFullDayEndLoc === 'Custom Address' ? driverFullDayCustomEndLoc : driverFullDayEndLoc;
 
+    const driverDetailsPayload = {
+      enabled: Boolean(driverRequired && (driverPickupEnabled || driverDropEnabled || driverFullDayEnabled)),
+      pickup: {
+        enabled: driverPickupEnabled,
+        date: driverPickupDate || pickupDate,
+        time: driverPickupTime || pickupTime,
+        location: finalPickupLocResolved
+      },
+      drop: {
+        enabled: driverDropEnabled,
+        date: driverDropDate || dropDate,
+        time: driverDropTime || dropTime,
+        location: finalDropLocResolved
+      },
+      fullDay: {
+        enabled: driverFullDayEnabled,
+        startDate: driverFullDayStart || pickupDate,
+        endDate: driverFullDayEnd || dropDate,
+        daysCount: driverFullDayDaysCount,
+        startLocation: finalFullDayStartLocResolved,
+        endLocation: finalFullDayEndLocResolved
+      },
+      dutyStartTime: "09:00",
+      dutyEndTime: "19:00",
+      dutyDescription: "8–10 Hours Local Daily Duty",
+      totalCharge: driverTotalCharge
+    };
+
+    const hasDriver = Boolean(driverRequired && driverTotalCharge > 0);
     const bookingPayload = {
-      b2b_partner_id: partner?.id,
+      b2b_partner_id: partner?.id || partner?.username || '',
       b2b_mode: mode,
-      service_type: 'vehicle',
+      service_type: selectedVehicle.fleet_type === 'bike' ? 'bike' : 'car',
       item_id: selectedVehicle.id,
-      item_name: `${selectedVehicle.name} (${withDriver ? 'With Driver' : 'Self Drive'})`,
+      item_name: `${selectedVehicle.name} (${hasDriver ? 'With Verified Driver' : 'Self Drive'})`,
       days: daysCount,
       qty: 1,
       pickup_date: `${pickupDate} ${pickupTime}`,
@@ -177,9 +360,35 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
       guest_phone: guestDetails.phone,
       guest_email: guestDetails.email,
       payment_method: guestDetails.payment_method,
+      driver_required: hasDriver ? 1 : 0,
+      driver_service_type: hasDriver ? driverServiceType : null,
+      with_driver: hasDriver,
+      driver_charge: driverTotalCharge,
+      driver_days: totalDriverServiceDays,
+      driver_earning: driverTotalCharge,
+      driver_payment_status: 'Pending',
+      driver_pickup_enabled: driverPickupEnabled ? 1 : 0,
+      driver_drop_enabled: driverDropEnabled ? 1 : 0,
+      driver_fullday_enabled: driverFullDayEnabled ? 1 : 0,
+      driver_pickup_date: driverPickupDate || pickupDate,
+      driver_pickup_time: driverPickupTime,
+      driver_pickup_loc: finalPickupLocResolved,
+      driver_drop_date: driverDropDate || dropDate,
+      driver_drop_time: driverDropTime,
+      driver_drop_loc: finalDropLocResolved,
+      driver_fullday_start: driverFullDayStart || pickupDate,
+      driver_fullday_end: driverFullDayEnd || dropDate,
+      driver_fullday_start_loc: finalFullDayStartLocResolved,
+      driver_fullday_end_loc: finalFullDayEndLocResolved,
+      driver_details: driverDetailsPayload,
+      pricing_snapshot: backendPricing || undefined,
       extra_details: {
-        total_amount: pricing.sellingPrice,
-        with_driver: withDriver,
+        with_driver: hasDriver,
+        driver_required: hasDriver ? 1 : 0,
+        driver_service_type: hasDriver ? driverServiceType : null,
+        driver_charge: driverTotalCharge,
+        driver_days: totalDriverServiceDays,
+        driver_details: driverDetailsPayload,
         id_type: guestDetails.id_type,
         id_number: guestDetails.id_number,
         flight_number: guestDetails.flight_number,
@@ -351,17 +560,20 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
               <div className="btn-group btn-group-sm" role="group">
                 <button
                   type="button"
-                  onClick={() => setWithDriver(false)}
-                  className={`btn ${!withDriver ? 'btn-dark' : 'btn-outline-secondary'} text-xs`}
+                  onClick={() => setDriverRequired(false)}
+                  className={`btn ${!driverRequired ? 'btn-dark' : 'btn-outline-secondary'} text-xs`}
                 >
                   Pure Self Drive (No Driver)
                 </button>
                 <button
                   type="button"
-                  onClick={() => setWithDriver(true)}
-                  className={`btn ${withDriver ? 'btn-warning text-dark' : 'btn-outline-secondary'} text-xs`}
+                  onClick={() => {
+                    setDriverRequired(true);
+                    if (!driverServiceType) setDriverServiceType('PICKUP');
+                  }}
+                  className={`btn ${driverRequired ? 'btn-warning text-dark fw-bold' : 'btn-outline-secondary'} text-xs`}
                 >
-                  With Chauffeur (+₹600/day)
+                  Need Verified Driver in Goa
                 </button>
               </div>
             </div>
@@ -420,7 +632,7 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
       ) : (
         <div className="row g-3">
           {filteredVehicles.map(veh => {
-            const pricing = calculateVehiclePricing(veh);
+            const pricing = calculateVehiclePricingEstimate(veh);
             const isBike = veh.fleet_type === 'bike';
             const isLuxury = veh.fleet_type === 'luxury';
             return (
@@ -501,30 +713,30 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
                         <div className="p-2.5 rounded-3 bg-warning bg-opacity-10 border border-warning border-opacity-25 mb-2.5">
                           <div className="d-flex align-items-center justify-content-between mb-1">
                             <span className="text-xxs text-muted">Customer Selling Price:</span>
-                            <span className="text-xs fw-bold text-dark">₹{pricing.sellingPrice.toLocaleString()}</span>
+                            <span className="text-xs fw-bold text-dark">₹{(pricing.sellingPrice || 0).toLocaleString()}</span>
                           </div>
                           <div className="d-flex align-items-center justify-content-between mb-1 text-success">
-                            <span className="text-xxs fw-semibold">Agent Commission ({pricing.commissionPercent}%):</span>
-                            <span className="text-xs fw-bold">+₹{pricing.commissionAmount.toLocaleString()}</span>
+                            <span className="text-xxs fw-semibold">Agent Commission ({pricing.commissionPercent || 0}%):</span>
+                            <span className="text-xs fw-bold">+₹{(pricing.commissionAmount || 0).toLocaleString()}</span>
                           </div>
                           <div className="d-flex align-items-center justify-content-between pt-1 border-top border-warning border-opacity-25">
                             <span className="text-xxs fw-bold text-dark">Net Payout to WOW Goa:</span>
-                            <span className="text-sm fw-black text-dark">₹{pricing.netPayable.toLocaleString()}</span>
+                            <span className="text-sm fw-black text-dark">₹{(pricing.netPayable || 0).toLocaleString()}</span>
                           </div>
                         </div>
                       ) : (
                         <div className="p-2.5 rounded-3 bg-primary bg-opacity-10 border border-primary border-opacity-25 mb-2.5">
                           <div className="d-flex align-items-center justify-content-between mb-1">
                             <span className="text-xxs text-muted">Retail D2C Price:</span>
-                            <span className="text-xs text-muted text-decoration-line-through">₹{pricing.sellingPrice.toLocaleString()}</span>
+                            <span className="text-xs text-muted text-decoration-line-through">₹{(pricing.sellingPrice || 0).toLocaleString()}</span>
                           </div>
                           <div className="d-flex align-items-center justify-content-between mb-1 text-primary">
-                            <span className="text-xxs fw-semibold">B2B Net Discount ({pricing.netDiscountPercent}%):</span>
-                            <span className="text-xs fw-bold">-₹{pricing.discountAmount.toLocaleString()}</span>
+                            <span className="text-xxs fw-semibold">B2B Net Discount ({pricing.netDiscountPercent || 0}%):</span>
+                            <span className="text-xs fw-bold">-₹{(pricing.discountAmount || 0).toLocaleString()}</span>
                           </div>
                           <div className="d-flex align-items-center justify-content-between pt-1 border-top border-primary border-opacity-25">
                             <span className="text-xxs fw-bold text-dark">B2B Net Rate Payable:</span>
-                            <span className="text-sm fw-black text-primary">₹{pricing.netPrice.toLocaleString()}</span>
+                            <span className="text-sm fw-black text-primary">₹{(pricing.netPrice || 0).toLocaleString()}</span>
                           </div>
                         </div>
                       )}
@@ -622,7 +834,7 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
                 <form onSubmit={handleConfirmBooking}>
                   {/* Interactive Calendar & Schedule Selector */}
                   <div className="p-3 bg-white rounded-3 border mb-3">
-                    <div className="d-flex align-items-center justify-content-between mb-2">
+                    <div className="d-flex align-items-center justify-content-between mb-2.5">
                       <div className="d-flex align-items-center gap-1.5">
                         <Calendar size={15} className="text-warning" />
                         <span className="text-xxs fw-bold text-uppercase text-dark">
@@ -632,34 +844,6 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
                       <span className="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 text-3xs rounded-pill">
                         Live Pricing & Inventory Synced
                       </span>
-                    </div>
-
-                    {/* Quick Date Presets (After 1 Month, After 2 Months, Tomorrow, Next Weekend) */}
-                    <div className="d-flex align-items-center gap-1.5 flex-wrap mb-2.5">
-                      <span className="text-3xs text-muted fw-semibold">Quick Jump:</span>
-                      {[
-                        { label: 'Tomorrow', startOffset: 1, duration: 3 },
-                        { label: 'Next Weekend', startOffset: 5, duration: 3 },
-                        { label: 'After 1 Month', startOffset: 30, duration: 3 },
-                        { label: 'After 2 Months', startOffset: 60, duration: 3 },
-                        { label: 'After 3 Months', startOffset: 90, duration: 4 },
-                      ].map(preset => (
-                        <button
-                          key={preset.label}
-                          type="button"
-                          onClick={() => {
-                            const s = new Date();
-                            s.setDate(s.getDate() + preset.startOffset);
-                            const e = new Date(s);
-                            e.setDate(e.getDate() + preset.duration);
-                            setPickupDate(s.toISOString().split('T')[0]);
-                            setDropDate(e.toISOString().split('T')[0]);
-                          }}
-                          className="btn btn-xs py-0.5 px-2 rounded-pill border text-3xs btn-light text-dark bg-light hover-bg-warning-subtle"
-                        >
-                          📅 {preset.label}
-                        </button>
-                      ))}
                     </div>
 
                     {/* Date and Time Inputs */}
@@ -736,6 +920,312 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
                     </div>
                   </div>
 
+                  {/* Optional Private Driver Service Section (Exact main website structure) */}
+                  {selectedVehicle?.fleet_type !== 'bike' && (
+                    <div className="mb-3 p-3 rounded-3" style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
+                      <div className="form-check d-flex align-items-center gap-2 mb-1">
+                        <input
+                          type="checkbox"
+                          className="form-check-input mt-0"
+                          id="b2b_driver_req"
+                          checked={driverRequired}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setDriverRequired(checked);
+                            if (checked && !driverServiceType) {
+                              setDriverServiceType('PICKUP');
+                            }
+                          }}
+                          style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                        />
+                        <label className="form-check-label fw-bold text-dark mb-0 small d-flex align-items-center gap-1.5 flex-wrap font-heading" htmlFor="b2b_driver_req" style={{ cursor: 'pointer' }}>
+                          <span>Need a Verified Private Driver in Goa?</span>
+                        </label>
+                      </div>
+                      
+                      <div className="text-muted small ps-4 mb-2" style={{ fontSize: '0.74rem' }}>
+                        Customized driver service in Goa. You are charged ONLY for the selected services & dates (not whole stay).
+                      </div>
+
+                      {driverRequired && (
+                        <div className="mt-3 pt-3 border-top border-warning border-opacity-40 d-flex flex-column gap-2.5 ps-1 pe-1 animate-fade-in">
+                          
+                          {/* ─── Choice 1: 🚗 Pickup Service — ₹400 ─── */}
+                          <div className={`p-2.5 rounded-3 bg-white border ${driverServiceType === 'PICKUP' ? 'border-warning shadow-sm ring-1 ring-warning' : 'border-light'} shadow-xs`}>
+                            <div className="d-flex align-items-center justify-content-between mb-0">
+                              <div className="form-check d-flex align-items-center gap-2 mb-0">
+                                <input
+                                  type="radio"
+                                  name="b2b_driver_service_type_selection"
+                                  className="form-check-input mt-0"
+                                  id="b2b_driver_pickup"
+                                  checked={driverServiceType === 'PICKUP'}
+                                  onChange={() => setDriverServiceType('PICKUP')}
+                                  style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                />
+                                <label className="form-check-label fw-bold text-dark mb-0 small" htmlFor="b2b_driver_pickup" style={{ cursor: 'pointer' }}>
+                                  🚗 Pickup Service
+                                </label>
+                              </div>
+                              <span className="badge bg-warning text-dark fw-bold px-2 py-1" style={{ fontSize: '0.72rem' }}>
+                                ₹400
+                              </span>
+                            </div>
+
+                            {driverPickupEnabled && (
+                              <div className="row g-2 mt-2 pt-2 border-top border-light animate-fade-in">
+                                <div className="col-sm-4">
+                                  <label className="form-label text-muted text-xxs fw-bold mb-1">Pickup Date</label>
+                                  <input
+                                    type="date"
+                                    className="form-control form-control-sm text-xs"
+                                    min={getTodayDateStr()}
+                                    value={driverPickupDate || pickupDate || getTodayDateStr()}
+                                    onChange={(e) => setDriverPickupDate(e.target.value)}
+                                    required={driverPickupEnabled}
+                                  />
+                                </div>
+                                <div className="col-sm-4">
+                                  <label className="form-label text-muted text-xxs fw-bold mb-1">Pickup Time</label>
+                                  <select
+                                    className="form-select form-select-sm text-xs"
+                                    value={driverPickupTime}
+                                    onChange={(e) => setDriverPickupTime(e.target.value)}
+                                  >
+                                    {['06:00 AM', '07:00 AM', '08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '01:00 PM', '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM', '06:00 PM', '07:00 PM', '08:00 PM', '09:00 PM', '10:00 PM', '11:00 PM'].map(t => (
+                                      <option key={t} value={t}>{t}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div className="col-sm-4">
+                                  <label className="form-label text-muted text-xxs fw-bold mb-1">Pickup Location</label>
+                                  <select
+                                    className="form-select form-select-sm text-xs"
+                                    value={driverPickupLoc}
+                                    onChange={(e) => setDriverPickupLoc(e.target.value)}
+                                  >
+                                    <option value="Goa Airport (Dabolim)">✈️ Goa Airport (Dabolim)</option>
+                                    <option value="Goa Airport (Mopa)">✈️ Goa Airport (Mopa / GOX)</option>
+                                    <option value="Madgaon Railway Station">🚆 Madgaon Railway Station</option>
+                                    <option value="Thivim Railway Station">🚆 Thivim Railway Station</option>
+                                    <option value="Hotel">🏨 Hotel</option>
+                                    <option value="Custom Address">📍 Custom Address</option>
+                                  </select>
+                                </div>
+                                {driverPickupLoc === 'Custom Address' && (
+                                  <div className="col-12 mt-1">
+                                    <input
+                                      type="text"
+                                      className="form-control form-control-sm text-xs"
+                                      placeholder="Enter full pickup address or landmark..."
+                                      value={driverPickupCustomLoc}
+                                      onChange={(e) => setDriverPickupCustomLoc(e.target.value)}
+                                      required
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* ─── Choice 2: 🏁 Drop Service — ₹400 ─── */}
+                          <div className={`p-2.5 rounded-3 bg-white border ${driverServiceType === 'DROP' ? 'border-warning shadow-sm ring-1 ring-warning' : 'border-light'} shadow-xs`}>
+                            <div className="d-flex align-items-center justify-content-between mb-0">
+                              <div className="form-check d-flex align-items-center gap-2 mb-0">
+                                <input
+                                  type="radio"
+                                  name="b2b_driver_service_type_selection"
+                                  className="form-check-input mt-0"
+                                  id="b2b_driver_drop"
+                                  checked={driverServiceType === 'DROP'}
+                                  onChange={() => setDriverServiceType('DROP')}
+                                  style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                />
+                                <label className="form-check-label fw-bold text-dark mb-0 small" htmlFor="b2b_driver_drop" style={{ cursor: 'pointer' }}>
+                                  🏁 Drop Service
+                                </label>
+                              </div>
+                              <span className="badge bg-warning text-dark fw-bold px-2 py-1" style={{ fontSize: '0.72rem' }}>
+                                ₹400
+                              </span>
+                            </div>
+
+                            {driverDropEnabled && (
+                              <div className="row g-2 mt-2 pt-2 border-top border-light animate-fade-in">
+                                <div className="col-sm-4">
+                                  <label className="form-label text-muted text-xxs fw-bold mb-1">Drop Date</label>
+                                  <input
+                                    type="date"
+                                    className="form-control form-control-sm text-xs"
+                                    min={getTodayDateStr()}
+                                    value={driverDropDate || dropDate || getTodayDateStr()}
+                                    onChange={(e) => setDriverDropDate(e.target.value)}
+                                    required={driverDropEnabled}
+                                  />
+                                </div>
+                                <div className="col-sm-4">
+                                  <label className="form-label text-muted text-xxs fw-bold mb-1">Drop Time</label>
+                                  <select
+                                    className="form-select form-select-sm text-xs"
+                                    value={driverDropTime}
+                                    onChange={(e) => setDriverDropTime(e.target.value)}
+                                  >
+                                    {['06:00 AM', '07:00 AM', '08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '01:00 PM', '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM', '06:00 PM', '07:00 PM', '08:00 PM', '09:00 PM', '10:00 PM', '11:00 PM'].map(t => (
+                                      <option key={t} value={t}>{t}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div className="col-sm-4">
+                                  <label className="form-label text-muted text-xxs fw-bold mb-1">Drop Location</label>
+                                  <select
+                                    className="form-select form-select-sm text-xs"
+                                    value={driverDropLoc}
+                                    onChange={(e) => setDriverDropLoc(e.target.value)}
+                                  >
+                                    <option value="Goa Airport (Dabolim)">✈️ Goa Airport (Dabolim)</option>
+                                    <option value="Goa Airport (Mopa)">✈️ Goa Airport (Mopa / GOX)</option>
+                                    <option value="Madgaon Railway Station">🚆 Madgaon Railway Station</option>
+                                    <option value="Thivim Railway Station">🚆 Thivim Railway Station</option>
+                                    <option value="Hotel">🏨 Hotel</option>
+                                    <option value="North Goa">🏖️ North Goa</option>
+                                    <option value="South Goa">🏖️ South Goa</option>
+                                    <option value="Custom Address">📍 Custom Address</option>
+                                  </select>
+                                </div>
+                                {driverDropLoc === 'Custom Address' && (
+                                  <div className="col-12 mt-1">
+                                    <input
+                                      type="text"
+                                      className="form-control form-control-sm text-xs"
+                                      placeholder="Enter full drop-off address or landmark..."
+                                      value={driverDropCustomLoc}
+                                      onChange={(e) => setDriverDropCustomLoc(e.target.value)}
+                                      required
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* ─── Choice 3: 👨‍✈️ Full-Day Driver — ₹800/day ─── */}
+                          <div className={`p-2.5 rounded-3 bg-white border ${driverServiceType === 'FULL' ? 'border-warning shadow-sm ring-1 ring-warning' : 'border-light'} shadow-xs`}>
+                            <div className="d-flex align-items-center justify-content-between mb-0">
+                              <div className="form-check d-flex align-items-center gap-2 mb-0">
+                                <input
+                                  type="radio"
+                                  name="b2b_driver_service_type_selection"
+                                  className="form-check-input mt-0"
+                                  id="b2b_driver_fullday"
+                                  checked={driverServiceType === 'FULL'}
+                                  onChange={() => setDriverServiceType('FULL')}
+                                  style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                />
+                                <label className="form-check-label fw-bold text-dark mb-0 small" htmlFor="b2b_driver_fullday" style={{ cursor: 'pointer' }}>
+                                  👨‍✈️ Full-Day Driver
+                                </label>
+                              </div>
+                              <span className="badge bg-warning text-dark fw-bold px-2 py-1" style={{ fontSize: '0.72rem' }}>
+                                ₹800 / day
+                              </span>
+                            </div>
+
+                            <div className="text-muted text-xxs mt-1 ps-4" style={{ fontSize: '0.7rem' }}>
+                              ⏰ 09:00 AM – 07:00 PM (8–10 Hours Local Daily Duty)
+                            </div>
+
+                            {driverFullDayEnabled && (
+                              <div className="row g-2 mt-2 pt-2 border-top border-light animate-fade-in">
+                                <div className="col-sm-6">
+                                  <label className="form-label text-muted text-xxs fw-bold mb-1">Driver Start Date</label>
+                                  <input
+                                    type="date"
+                                    className="form-control form-control-sm text-xs"
+                                    min={getTodayDateStr()}
+                                    value={driverFullDayStart || pickupDate || getTodayDateStr()}
+                                    onChange={(e) => {
+                                      const newStart = e.target.value;
+                                      setDriverFullDayStart(newStart);
+                                      if (driverFullDayEnd && driverFullDayEnd < newStart) {
+                                        setDriverFullDayEnd(newStart);
+                                      }
+                                    }}
+                                    required={driverFullDayEnabled}
+                                  />
+                                </div>
+
+                                <div className="col-sm-6">
+                                  <label className="form-label text-muted text-xxs fw-bold mb-1">Driver End Date</label>
+                                  <input
+                                    type="date"
+                                    className="form-control form-control-sm text-xs"
+                                    min={driverFullDayStart || getTodayDateStr()}
+                                    value={driverFullDayEnd || dropDate || getTodayDateStr()}
+                                    onChange={(e) => setDriverFullDayEnd(e.target.value)}
+                                    required={driverFullDayEnabled}
+                                  />
+                                </div>
+
+                                <div className="col-sm-6">
+                                  <label className="form-label text-muted text-xxs fw-bold mb-1">Pickup / Start Location</label>
+                                  <select
+                                    className="form-select form-select-sm text-xs"
+                                    value={driverFullDayStartLoc}
+                                    onChange={(e) => setDriverFullDayStartLoc(e.target.value)}
+                                  >
+                                    <option value="Hotel">🏨 Hotel</option>
+                                    <option value="Goa Airport (Dabolim)">✈️ Goa Airport (Dabolim)</option>
+                                    <option value="Goa Airport (Mopa)">✈️ Goa Airport (Mopa / GOX)</option>
+                                    <option value="North Goa (Calangute / Baga / Anjuna)">🏖️ North Goa (Calangute / Baga / Anjuna)</option>
+                                    <option value="South Goa (Margao / Colva)">🏖️ South Goa (Margao / Colva)</option>
+                                    <option value="Custom Address">📍 Custom Address</option>
+                                  </select>
+                                  {driverFullDayStartLoc === 'Custom Address' && (
+                                    <input
+                                      type="text"
+                                      className="form-control form-control-sm text-xs mt-1"
+                                      placeholder="Enter start location..."
+                                      value={driverFullDayCustomStartLoc}
+                                      onChange={(e) => setDriverFullDayCustomStartLoc(e.target.value)}
+                                      required
+                                    />
+                                  )}
+                                </div>
+
+                                <div className="col-sm-6">
+                                  <label className="form-label text-muted text-xxs fw-bold mb-1">Drop / End Location</label>
+                                  <select
+                                    className="form-select form-select-sm text-xs"
+                                    value={driverFullDayEndLoc}
+                                    onChange={(e) => setDriverFullDayEndLoc(e.target.value)}
+                                  >
+                                    <option value="Hotel">🏨 Hotel</option>
+                                    <option value="Goa Airport (Dabolim)">✈️ Goa Airport (Dabolim)</option>
+                                    <option value="Goa Airport (Mopa)">✈️ Goa Airport (Mopa / GOX)</option>
+                                    <option value="North Goa (Calangute / Baga / Anjuna)">🏖️ North Goa (Calangute / Baga / Anjuna)</option>
+                                    <option value="South Goa (Margao / Colva)">🏖️ South Goa (Margao / Colva)</option>
+                                    <option value="Custom Address">📍 Custom Address</option>
+                                  </select>
+                                  {driverFullDayEndLoc === 'Custom Address' && (
+                                    <input
+                                      type="text"
+                                      className="form-control form-control-sm text-xs mt-1"
+                                      placeholder="Enter end location..."
+                                      value={driverFullDayCustomEndLoc}
+                                      onChange={(e) => setDriverFullDayCustomEndLoc(e.target.value)}
+                                      required
+                                    />
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {bookingError && (
                     <div className="alert alert-danger py-2 px-3 rounded-3 text-xs mb-3 d-flex align-items-center gap-2">
                       <AlertCircle size={15} className="flex-shrink-0" />
@@ -807,36 +1297,96 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
                     <h6 className="fw-bold text-dark text-xxs text-uppercase mb-2 font-heading">
                       Financial Snapshot ({mode})
                     </h6>
-                    {(() => {
-                      const pr = calculateVehiclePricing(selectedVehicle);
+                    {pricingLoading ? (
+                      <div className="text-center text-muted text-xs py-2">
+                        <div className="spinner-border spinner-border-sm me-2" role="status" />
+                        Fetching live pricing from server...
+                      </div>
+                    ) : pricingError ? (
+                      <div className="alert alert-warning text-xxs p-2 mb-0">{pricingError}</div>
+                    ) : (() => {
+                      // Phase 5: Display backend-authoritative pricing (falls back to estimate if unavailable)
+                      const pr = backendPricing || calculateVehiclePricingEstimate(selectedVehicle, driverTotalCharge, daysCount);
+                      const isAuth = !!backendPricing;
+                      const baseVehRate = pr.base_vehicle_cost || (pr.sellingPrice - (pr.driverCharge || 0));
                       return mode === 'COMMISSION' ? (
                         <div className="text-xs">
+                          {isAuth && <div className="badge bg-success text-white text-xxs mb-1">✓ Live Calculation Synced</div>}
                           <div className="d-flex justify-content-between py-1 text-muted">
-                            <span>Selling Rate ({daysCount} Days + Tax):</span>
-                            <span>₹{pr.sellingPrice.toLocaleString()}</span>
+                            <span>Base Rate ({daysCount} Days + Tax):</span>
+                            <span>₹{baseVehRate.toLocaleString()}</span>
                           </div>
+                          {driverRequired && driverPickupEnabled && (
+                            <div className="d-flex justify-content-between py-1 text-dark fw-semibold">
+                              <span className="d-flex align-items-center gap-1">
+                                <UserCheck size={12} className="text-warning" /> Driver Pickup Service:
+                              </span>
+                              <span>+₹400</span>
+                            </div>
+                          )}
+                          {driverRequired && driverDropEnabled && (
+                            <div className="d-flex justify-content-between py-1 text-dark fw-semibold">
+                              <span className="d-flex align-items-center gap-1">
+                                <UserCheck size={12} className="text-warning" /> Driver Drop Service:
+                              </span>
+                              <span>+₹400</span>
+                            </div>
+                          )}
+                          {driverRequired && driverFullDayEnabled && (
+                            <div className="d-flex justify-content-between py-1 text-dark fw-semibold">
+                              <span className="d-flex align-items-center gap-1">
+                                <UserCheck size={12} className="text-warning" /> Full-Day Driver ({driverFullDayDaysCount} Days × ₹800):
+                              </span>
+                              <span>+₹{(800 * driverFullDayDaysCount).toLocaleString()}</span>
+                            </div>
+                          )}
                           <div className="d-flex justify-content-between py-1 text-success fw-semibold">
-                            <span>Your Commission ({pr.commissionPercent}%):</span>
-                            <span>+₹{pr.commissionAmount.toLocaleString()}</span>
+                            <span>Your Commission ({pr.commission_percent ?? pr.commissionPercent ?? 0}%):</span>
+                            <span>+₹{(pr.commission_amount ?? pr.commissionAmount ?? 0).toLocaleString()}</span>
                           </div>
                           <div className="d-flex justify-content-between py-1.5 border-top fw-bold text-dark fs-6 mt-1">
                             <span>Payable to WOW Goa:</span>
-                            <span>₹{pr.netPayable.toLocaleString()}</span>
+                            <span>₹{(pr.net_price ?? pr.netPayable ?? pr.final_payable_amount ?? 0).toLocaleString()}</span>
                           </div>
                         </div>
                       ) : (
                         <div className="text-xs">
+                          {isAuth && <div className="badge bg-success text-white text-xxs mb-1">✓ Live Calculation Synced</div>}
                           <div className="d-flex justify-content-between py-1 text-muted">
                             <span>D2C Retail Price:</span>
-                            <span className="text-decoration-line-through">₹{pr.sellingPrice.toLocaleString()}</span>
+                            <span className="text-decoration-line-through">₹{(pr.original_reference_price || pr.sellingPrice || 0).toLocaleString()}</span>
                           </div>
+                          {driverRequired && driverPickupEnabled && (
+                            <div className="d-flex justify-content-between py-1 text-dark fw-semibold">
+                              <span className="d-flex align-items-center gap-1">
+                                <UserCheck size={12} className="text-warning" /> Driver Pickup Service:
+                              </span>
+                              <span>+₹400</span>
+                            </div>
+                          )}
+                          {driverRequired && driverDropEnabled && (
+                            <div className="d-flex justify-content-between py-1 text-dark fw-semibold">
+                              <span className="d-flex align-items-center gap-1">
+                                <UserCheck size={12} className="text-warning" /> Driver Drop Service:
+                              </span>
+                              <span>+₹400</span>
+                            </div>
+                          )}
+                          {driverRequired && driverFullDayEnabled && (
+                            <div className="d-flex justify-content-between py-1 text-dark fw-semibold">
+                              <span className="d-flex align-items-center gap-1">
+                                <UserCheck size={12} className="text-warning" /> Full-Day Driver ({driverFullDayDaysCount} Days × ₹800):
+                              </span>
+                              <span>+₹{(800 * driverFullDayDaysCount).toLocaleString()}</span>
+                            </div>
+                          )}
                           <div className="d-flex justify-content-between py-1 text-primary fw-semibold">
-                            <span>B2B Net Discount ({pr.netDiscountPercent}%):</span>
-                            <span>-₹{pr.discountAmount.toLocaleString()}</span>
+                            <span>B2B Net Discount ({pr.net_discount_percent ?? pr.netDiscountPercent ?? 0}%):</span>
+                            <span>-₹{(pr.discount_amount ?? pr.discountAmount ?? 0).toLocaleString()}</span>
                           </div>
                           <div className="d-flex justify-content-between py-1.5 border-top fw-bold text-primary fs-6 mt-1">
                             <span>Total Wholesale Net Price:</span>
-                            <span>₹{pr.netPrice.toLocaleString()}</span>
+                            <span>₹{(pr.net_price ?? pr.netPrice ?? pr.final_payable_amount ?? 0).toLocaleString()}</span>
                           </div>
                         </div>
                       );

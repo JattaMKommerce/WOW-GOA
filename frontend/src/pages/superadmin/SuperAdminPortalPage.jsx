@@ -88,6 +88,13 @@ const PAGE_TITLES = {
 
 function SidebarGroup({ group, activeTab, onSelect, defaultOpen }) {
   const [open, setOpen] = useState(defaultOpen || group.items.some(i => i.id === activeTab));
+
+  useEffect(() => {
+    if (group.items.some(i => i.id === activeTab)) {
+      setOpen(true);
+    }
+  }, [activeTab, group.items]);
+
   return (
     <div className="mb-1">
       <button
@@ -137,7 +144,47 @@ export default function SuperAdminPortalPage({
   onDeleteUser,
   onLogout
 }) {
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const getInitialTab = () => {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const queryTab = urlParams.get('tab');
+      if (queryTab && PAGE_TITLES[queryTab]) return queryTab;
+
+      const hash = window.location.hash.replace('#', '');
+      if (hash && PAGE_TITLES[hash]) return hash;
+
+      const pathPart = window.location.pathname.replace(/^\/(superadmin|super-admin)\/?/, '');
+      if (pathPart && PAGE_TITLES[pathPart]) return pathPart;
+      if (pathPart === 'admins' || pathPart === 'admin-management') return 'admin_management';
+      if (pathPart === 'users' || pathPart === 'user-management') return 'user_management';
+
+      const saved = localStorage.getItem('superAdminActiveTab');
+      if (saved && PAGE_TITLES[saved]) return saved;
+    } catch (e) {}
+    return 'dashboard';
+  };
+
+  const [activeTab, setActiveTab] = useState(getInitialTab);
+
+  const handleTabChange = (tabId) => {
+    setActiveTab(tabId);
+    try {
+      localStorage.setItem('superAdminActiveTab', tabId);
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', tabId);
+      window.history.replaceState(null, '', url.pathname + url.search);
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const tab = getInitialTab();
+      setActiveTab(tab);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [showNotificationDropdown, setShowNotificationDropdown] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -148,7 +195,18 @@ export default function SuperAdminPortalPage({
   const [customEnquiries, setCustomEnquiries] = useState(defaultCustomEnquiries);
 
   useEffect(() => {
-    if (usersList?.length) setLiveUsers(usersList);
+    if (usersList?.length) {
+      setLiveUsers(prev => {
+        if (!prev || !prev.length) return usersList;
+        const incomingUsernames = new Set(usersList.map(u => (u.username || '').toLowerCase().trim()));
+        const incomingIds = new Set(usersList.map(u => String(u.id)));
+        const missingFromIncoming = prev.filter(u => 
+          !incomingUsernames.has((u.username || '').toLowerCase().trim()) && 
+          !incomingIds.has(String(u.id))
+        );
+        return missingFromIncoming.length ? [...missingFromIncoming, ...usersList] : usersList;
+      });
+    }
   }, [usersList]);
 
   useEffect(() => {
@@ -173,48 +231,111 @@ export default function SuperAdminPortalPage({
       if (enquiriesData && enquiriesData.length) setCustomEnquiries(enquiriesData);
       if (bookingsData && bookingsData.length) setLiveBookings(bookingsData);
       if (vendorsData && vendorsData.length) setLiveVendors(vendorsData);
-      if (freshUsers && freshUsers.length) setLiveUsers(freshUsers);
+      if (freshUsers && freshUsers.length) {
+        setLiveUsers(prev => {
+          if (!prev || !prev.length) return freshUsers;
+          const freshUsernames = new Set(freshUsers.map(u => (u.username || '').toLowerCase().trim()));
+          const freshIds = new Set(freshUsers.map(u => String(u.id)));
+          const missing = prev.filter(u => 
+            !freshUsernames.has((u.username || '').toLowerCase().trim()) && 
+            !freshIds.has(String(u.id))
+          );
+          return missing.length ? [...missing, ...freshUsers] : freshUsers;
+        });
+      }
     } catch (e) {
       console.warn('Portal real-time refresh:', e);
     }
   };
 
   const handlePortalAddUser = async (newUser) => {
+    // 1. Instant optimistic update to local state so administrator shows immediately
+    const optimisticUser = {
+      id: newUser.id || `u-${Date.now()}`,
+      username: newUser.username,
+      name: newUser.name || newUser.username,
+      email: newUser.email,
+      phone: newUser.phone || '',
+      city: newUser.city || '',
+      role: (newUser.role || 'admin').toLowerCase().trim(),
+      billing_price: Number(newUser.billing_price) || 0,
+      status: newUser.status || 'active',
+      plain_password: newUser.password || newUser.plain_password || 'admin@2026',
+      password: newUser.password || newUser.plain_password || 'admin@2026',
+      created_at: new Date().toISOString().slice(0, 19).replace('T', ' ')
+    };
+
+    // Cache locally immediately so reload also preserves it
     try {
-      if (onAddUser) await onAddUser(newUser);
-      else await api.registerUser(newUser);
+      const localUsers = JSON.parse(localStorage.getItem('local_users') || '[]');
+      const filtered = localUsers.filter(u => (u.username || '').toLowerCase() !== optimisticUser.username.toLowerCase());
+      filtered.unshift(optimisticUser);
+      localStorage.setItem('local_users', JSON.stringify(filtered));
+
+      const passMap = JSON.parse(localStorage.getItem('user_passwords') || '{}');
+      passMap[optimisticUser.id] = optimisticUser.plain_password;
+      passMap[optimisticUser.username] = optimisticUser.plain_password;
+      passMap[optimisticUser.email] = optimisticUser.plain_password;
+      localStorage.setItem('user_passwords', JSON.stringify(passMap));
+    } catch (e) {}
+
+    setLiveUsers(prev => [optimisticUser, ...prev.filter(u => (u.username || '').toLowerCase() !== (newUser.username || '').toLowerCase() && (u.email || '').toLowerCase() !== (newUser.email || '').toLowerCase())]);
+
+    try {
+      let created = null;
+      if (onAddUser) created = await onAddUser(newUser);
+      else created = await api.registerUser(newUser);
+      const userObj = created?.user || (created && created.username ? created : optimisticUser);
+      setLiveUsers(prev => [userObj, ...prev.filter(u => (u.username || '').toLowerCase() !== (userObj.username || '').toLowerCase() && (u.email || '').toLowerCase() !== (userObj.email || '').toLowerCase())]);
+      
       const fresh = await api.fetchUsers();
-      setLiveUsers(fresh);
+      if (fresh && fresh.length) {
+        const hasUser = fresh.some(u => 
+          (u.username && u.username.toLowerCase() === userObj.username?.toLowerCase()) || 
+          (u.email && u.email.toLowerCase() === userObj.email?.toLowerCase()) ||
+          String(u.id) === String(userObj.id)
+        );
+        setLiveUsers(hasUser ? fresh : [userObj, ...fresh]);
+      }
     } catch (e) {
       console.warn('Add user:', e);
       const fresh = await api.fetchUsers();
-      setLiveUsers(fresh);
+      if (fresh && fresh.length) {
+        const hasUser = fresh.some(u => 
+          (u.username && u.username.toLowerCase() === optimisticUser.username?.toLowerCase()) || 
+          (u.email && u.email.toLowerCase() === optimisticUser.email?.toLowerCase()) ||
+          String(u.id) === String(optimisticUser.id)
+        );
+        setLiveUsers(hasUser ? fresh : [optimisticUser, ...fresh]);
+      }
     }
   };
 
   const handlePortalUpdateUser = async (user) => {
+    setLiveUsers(prev => prev.map(u => String(u.id) === String(user.id) ? { ...u, ...user } : u));
     try {
       if (onUpdateUser) await onUpdateUser(user);
       else await api.updateUser(user);
       const fresh = await api.fetchUsers();
-      setLiveUsers(fresh);
+      if (fresh && fresh.length) setLiveUsers(fresh);
     } catch (e) {
       console.warn('Update user:', e);
       const fresh = await api.fetchUsers();
-      setLiveUsers(fresh);
+      if (fresh && fresh.length) setLiveUsers(fresh);
     }
   };
 
   const handlePortalDeleteUser = async (userId) => {
+    setLiveUsers(prev => prev.filter(u => String(u.id) !== String(userId)));
     try {
       if (onDeleteUser) await onDeleteUser(userId);
       else await api.deleteUser(userId);
       const fresh = await api.fetchUsers();
-      setLiveUsers(fresh);
+      if (fresh) setLiveUsers(fresh);
     } catch (e) {
       console.warn('Delete user:', e);
       const fresh = await api.fetchUsers();
-      setLiveUsers(fresh);
+      if (fresh) setLiveUsers(fresh);
     }
   };
 
@@ -390,7 +511,7 @@ export default function SuperAdminPortalPage({
         localStorage.setItem('read_notifs', JSON.stringify(updated));
       } catch (err) {}
     }
-    setActiveTab(n.tab);
+    handleTabChange(n.tab);
     setShowNotificationDropdown(false);
   };
 
@@ -439,7 +560,7 @@ export default function SuperAdminPortalPage({
         {/* Nav */}
         <div className="flex-grow-1 py-2">
           {SIDEBAR_GROUPS.map((group, idx) => (
-            <SidebarGroup key={group.label} group={group} activeTab={activeTab} onSelect={setActiveTab} defaultOpen={idx < 2} />
+            <SidebarGroup key={group.label} group={group} activeTab={activeTab} onSelect={handleTabChange} defaultOpen={idx < 2} />
           ))}
         </div>
 
@@ -600,7 +721,7 @@ export default function SuperAdminPortalPage({
                       className="btn btn-sm w-100 text-warning fw-bold py-1 border-0"
                       style={{ fontSize: '0.75rem', background: 'rgba(255,159,28,0.08)' }}
                       onClick={() => {
-                        setActiveTab('notifications');
+                        handleTabChange('notifications');
                         setShowNotificationDropdown(false);
                       }}
                     >
@@ -654,7 +775,7 @@ export default function SuperAdminPortalPage({
         <div className="flex-grow-1 overflow-auto" style={{ background: '#f0f2f5' }}>
           <SuperAdminDashboard
             activeTab={activeTab}
-            onNavigate={setActiveTab}
+            onNavigate={handleTabChange}
             usersList={Array.isArray(liveUsers) ? liveUsers : []}
             vendors={Array.isArray(liveVendors) ? liveVendors : []}
             cars={cars || []}

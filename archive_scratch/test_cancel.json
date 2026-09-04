@@ -1,0 +1,5 @@
+{
+  "action": "b2b_cancel_booking",
+  "booking_id": "TG-B2B-882217",
+  "reason": "Guest rescheduled dates"
+}
