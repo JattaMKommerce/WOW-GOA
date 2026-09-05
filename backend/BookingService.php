@@ -134,6 +134,12 @@ class BookingService {
                     }
                     if ($vRow && !empty($vRow['vendor_id'])) {
                         $authoritativeVendorId = $vRow['vendor_id'];
+                    } elseif (str_starts_with($itemId, 'lux-def-') || str_starts_with($itemId, 'car-def-') || str_starts_with($itemId, 'car-') || str_starts_with($itemId, 'car_')) {
+                        // Curated platform self-drive car showcase: primary vehicle fleet vendor 'vendor-1'
+                        $authoritativeVendorId = 'vendor-1';
+                    } elseif (str_starts_with($itemId, 'bike-def-') || str_starts_with($itemId, 'bike-') || str_starts_with($itemId, 'bike_')) {
+                        // Curated platform self-drive bike showcase: primary bike fleet vendor 'vendor-2'
+                        $authoritativeVendorId = 'vendor-2';
                     }
                 } elseif ($serviceType === 'hotel') {
                     $stmtH = $pdo->prepare("SELECT vendor_id FROM hotels WHERE id = ?");
@@ -141,7 +147,12 @@ class BookingService {
                     $hRow = $stmtH->fetch(PDO::FETCH_ASSOC);
                     if ($hRow && !empty($hRow['vendor_id'])) {
                         $authoritativeVendorId = $hRow['vendor_id'];
+                    } elseif (str_starts_with($itemId, 'hotel_') || str_starts_with($itemId, 'hotel-')) {
+                        // Curated platform hotel partner
+                        $authoritativeVendorId = 'vendor-3';
                     }
+                } elseif ($serviceType === 'flight') {
+                    $authoritativeVendorId = 'vendor-4';
                 }
             }
 
@@ -415,8 +426,15 @@ class BookingService {
 
                     if (!empty($authoritativeVendorId)) {
                         // Determine correct vendor role based on service type
-                        $vendorRole = ($serviceType === 'hotel') ? 'hotel_vendor' : 'vendor';
-                        $notifType = ($serviceType === 'hotel') ? 'hotel_booking' : 'vehicle_booking';
+                        $vendorRole = 'vendor';
+                        $notifType = 'vehicle_booking';
+                        if ($serviceType === 'hotel') {
+                            $vendorRole = 'hotel_vendor';
+                            $notifType = 'hotel_booking';
+                        } elseif ($serviceType === 'flight') {
+                            $vendorRole = 'flight_vendor';
+                            $notifType = 'flight_booking';
+                        }
                         
                         createAuthoritativeNotification(
                             $pdo,
@@ -428,6 +446,46 @@ class BookingService {
                             'booking',
                             $bookingId
                         );
+
+                        // If authoritative vendor is seeded car or bike fleet entity, also dispatch to primary vehicle vendor console user u-4
+                        if ($authoritativeVendorId === 'vendor-1' || $authoritativeVendorId === 'vendor-2') {
+                            createAuthoritativeNotification(
+                                $pdo,
+                                'u-4',
+                                'vendor',
+                                $notifType,
+                                'New Booking Received #' . $bookingId,
+                                "New reservation received for {$itemName}" . ($allocatedPhysicalUnitId ? " (Unit: {$allocatedPhysicalUnitId})" : "") . ".",
+                                'booking',
+                                $bookingId
+                            );
+                        }
+                        // If authoritative vendor is seeded hotel entity, also dispatch to primary hotel console user u-5
+                        if ($authoritativeVendorId === 'vendor-3') {
+                            createAuthoritativeNotification(
+                                $pdo,
+                                'u-5',
+                                'hotel_vendor',
+                                $notifType,
+                                'New Booking Received #' . $bookingId,
+                                "New reservation received for {$itemName}.",
+                                'booking',
+                                $bookingId
+                            );
+                        }
+                        // If authoritative vendor is seeded flight entity, also dispatch to primary flight console user u-6
+                        if ($authoritativeVendorId === 'vendor-4') {
+                            createAuthoritativeNotification(
+                                $pdo,
+                                'u-6',
+                                'flight_vendor',
+                                $notifType,
+                                'New Flight Booking Received #' . $bookingId,
+                                "New reservation received for {$itemName}.",
+                                'booking',
+                                $bookingId
+                            );
+                        }
                     }
 
                     if ($isB2B && !empty($actor['id'])) {

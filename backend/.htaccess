@@ -8,3 +8,12 @@
     Deny from all
   </IfModule>
 </FilesMatch>
+
+# Forward Authorization header on Apache / FastCGI
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{HTTP:Authorization} .
+  RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+</IfModule>
+SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
+
