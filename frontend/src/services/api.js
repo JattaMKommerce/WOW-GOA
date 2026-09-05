@@ -42,10 +42,35 @@ export async function apiFetch(url, options = {}) {
     ...options.headers,
     'X-Tenant-ID': tenantId
   };
-  if (token && !headers['Authorization']) {
-    headers['Authorization'] = `Bearer ${token}`;
+  if (token) {
+    if (!headers['Authorization']) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    if (!headers['X-Auth-Token']) {
+      headers['X-Auth-Token'] = token;
+    }
   }
-  return fetch(url, { ...options, headers });
+
+  // Ensure fresh real-time responses: cache-busting timestamp and auth_token query param
+  let targetUrl = url;
+  const method = (options.method || 'GET').toUpperCase();
+  if (method === 'GET') {
+    const separator = targetUrl.includes('?') ? '&' : '?';
+    const params = [];
+    if (token && !targetUrl.includes('auth_token=')) {
+      params.push(`auth_token=${encodeURIComponent(token)}`);
+    }
+    params.push(`_t=${Date.now()}`);
+    targetUrl += separator + params.join('&');
+  }
+
+  const fetchOptions = {
+    ...options,
+    headers,
+    cache: options.cache || 'no-store'
+  };
+
+  return fetch(targetUrl, fetchOptions);
 }
 
 export async function makeApiCall(endpoint, options = {}) {
@@ -246,19 +271,22 @@ export async function fetchUsers() {
 
 export async function fetchBookings() {
   let list = [];
+  let fetchSucceeded = false;
   try {
     const res = await apiFetch(`${API_BASE}?resource=bookings`);
     if (res.ok) {
       const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data)) {
         list = data;
+        fetchSucceeded = true;
       }
     }
   } catch (err) {
-    console.warn('[API] Bookings fetch fallback used:', err.message);
+    console.warn('[API] Bookings fetch error:', err.message);
   }
 
-  if (!list.length) {
+  // Only fall back to mock data if the API request completely failed and no list was fetched
+  if (!fetchSucceeded && !list.length) {
     list = [...bookingsData];
   }
 

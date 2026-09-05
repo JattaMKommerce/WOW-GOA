@@ -8,6 +8,9 @@ header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With, X-Tenant-ID, X-Auth-Token, X-B2B-Partner-ID, X-User-Role, X-User-ID, X-User-Identifier");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 header("Content-Type: application/json; charset=UTF-8");
+header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+header("Pragma: no-cache");
+header("Expires: 0");
 
 // Handle preflight OPTIONS requests
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -1378,12 +1381,30 @@ function verifyAuthToken($token) {
  */
 function authenticateRequest($pdo, $required = false) {
     $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '');
+    if (!$authHeader && function_exists('apache_request_headers')) {
+        $reqH = apache_request_headers();
+        $authHeader = $reqH['Authorization'] ?? ($reqH['authorization'] ?? '');
+    }
+    if (!$authHeader && function_exists('getallheaders')) {
+        $allH = getallheaders();
+        $authHeader = $allH['Authorization'] ?? ($allH['authorization'] ?? '');
+    }
+
     $token = '';
     if (preg_match('/Bearer\s+(.*)$/i', $authHeader, $matches)) {
         $token = trim($matches[1]);
     }
     if (!$token) {
-        $token = $_SERVER['HTTP_X_AUTH_TOKEN'] ?? ($_SERVER['HTTP_X_B2B_PARTNER_ID'] ?? ($_GET['auth_token'] ?? ($_POST['auth_token'] ?? '')));
+        $xToken = $_SERVER['HTTP_X_AUTH_TOKEN'] ?? '';
+        if (!$xToken && function_exists('apache_request_headers')) {
+            $reqH = apache_request_headers();
+            $xToken = $reqH['X-Auth-Token'] ?? ($reqH['x-auth-token'] ?? '');
+        }
+        if (!$xToken && function_exists('getallheaders')) {
+            $allH = getallheaders();
+            $xToken = $allH['X-Auth-Token'] ?? ($allH['x-auth-token'] ?? '');
+        }
+        $token = $xToken ?: ($_SERVER['HTTP_X_B2B_PARTNER_ID'] ?? ($_GET['auth_token'] ?? ($_POST['auth_token'] ?? '')));
     }
 
     $verifiedUser = null;
@@ -2954,15 +2975,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 $sqlCnt = "SELECT COUNT(*) as unread FROM notifications WHERE (role = 'admin' OR user_id = 'admin' OR user_id = ? OR type LIKE 'b2b_%') AND is_read = 0";
                 $paramsCnt = [$targetId];
             } elseif ($role === 'vendor') {
-                $sqlNotif = "SELECT * FROM notifications WHERE user_id = ? OR (role = 'vendor' AND (user_id = ? OR user_id IS NULL)) ORDER BY created_at DESC LIMIT 100";
-                $paramsNotif = [$actorId, $actorId];
-                $sqlCnt = "SELECT COUNT(*) as unread FROM notifications WHERE (user_id = ? OR (role = 'vendor' AND (user_id = ? OR user_id IS NULL))) AND is_read = 0";
-                $paramsCnt = [$actorId, $actorId];
+                if ($actorId === 'u-4') {
+                    $sqlNotif = "SELECT * FROM notifications WHERE user_id IN ('u-4', 'vendor-1', 'vendor-2') OR (role = 'vendor' AND (user_id IN ('u-4', 'vendor-1', 'vendor-2') OR user_id IS NULL)) ORDER BY created_at DESC LIMIT 100";
+                    $paramsNotif = [];
+                    $sqlCnt = "SELECT COUNT(*) as unread FROM notifications WHERE (user_id IN ('u-4', 'vendor-1', 'vendor-2') OR (role = 'vendor' AND (user_id IN ('u-4', 'vendor-1', 'vendor-2') OR user_id IS NULL))) AND is_read = 0";
+                    $paramsCnt = [];
+                } else {
+                    $sqlNotif = "SELECT * FROM notifications WHERE user_id = ? OR (role = 'vendor' AND user_id = ?) ORDER BY created_at DESC LIMIT 100";
+                    $paramsNotif = [$actorId, $actorId];
+                    $sqlCnt = "SELECT COUNT(*) as unread FROM notifications WHERE (user_id = ? OR (role = 'vendor' AND user_id = ?)) AND is_read = 0";
+                    $paramsCnt = [$actorId, $actorId];
+                }
             } elseif ($role === 'hotel_vendor') {
-                $sqlNotif = "SELECT * FROM notifications WHERE user_id = ? OR (role = 'hotel_vendor' AND (user_id = ? OR user_id IS NULL)) ORDER BY created_at DESC LIMIT 100";
-                $paramsNotif = [$actorId, $actorId];
-                $sqlCnt = "SELECT COUNT(*) as unread FROM notifications WHERE (user_id = ? OR (role = 'hotel_vendor' AND (user_id = ? OR user_id IS NULL))) AND is_read = 0";
-                $paramsCnt = [$actorId, $actorId];
+                if ($actorId === 'u-5' || $actorId === 'vendor-3' || $actorId === 'hotel_vendor') {
+                    $sqlNotif = "SELECT * FROM notifications WHERE user_id IN ('u-5', 'vendor-3', 'hotel_vendor') OR (role = 'hotel_vendor' AND (user_id IN ('u-5', 'vendor-3', 'hotel_vendor') OR user_id IS NULL)) ORDER BY created_at DESC LIMIT 100";
+                    $paramsNotif = [];
+                    $sqlCnt = "SELECT COUNT(*) as unread FROM notifications WHERE (user_id IN ('u-5', 'vendor-3', 'hotel_vendor') OR (role = 'hotel_vendor' AND (user_id IN ('u-5', 'vendor-3', 'hotel_vendor') OR user_id IS NULL))) AND is_read = 0";
+                    $paramsCnt = [];
+                } else {
+                    $sqlNotif = "SELECT * FROM notifications WHERE user_id = ? OR (role = 'hotel_vendor' AND user_id = ?) ORDER BY created_at DESC LIMIT 100";
+                    $paramsNotif = [$actorId, $actorId];
+                    $sqlCnt = "SELECT COUNT(*) as unread FROM notifications WHERE (user_id = ? OR (role = 'hotel_vendor' AND user_id = ?)) AND is_read = 0";
+                    $paramsCnt = [$actorId, $actorId];
+                }
             } elseif ($role === 'driver') {
                 $sqlNotif = "SELECT * FROM notifications WHERE user_id = ? OR (role = 'driver' AND user_id = ?) ORDER BY created_at DESC LIMIT 100";
                 $paramsNotif = [$actorId, $actorId];
@@ -3021,15 +3056,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 $sqlCnt = "SELECT COUNT(*) as unread FROM notifications WHERE (role = 'admin' OR user_id = 'admin' OR user_id = ? OR type LIKE 'b2b_%') AND is_read = 0";
                 $paramsCnt = [$actorId];
             } elseif ($role === 'vendor') {
-                $sqlNotif = "SELECT * FROM notifications WHERE user_id = ? OR (role = 'vendor' AND (user_id = ? OR user_id IS NULL)) ORDER BY created_at DESC LIMIT 15";
-                $paramsNotif = [$actorId, $actorId];
-                $sqlCnt = "SELECT COUNT(*) as unread FROM notifications WHERE (user_id = ? OR (role = 'vendor' AND (user_id = ? OR user_id IS NULL))) AND is_read = 0";
-                $paramsCnt = [$actorId, $actorId];
+                if ($actorId === 'u-4') {
+                    $sqlNotif = "SELECT * FROM notifications WHERE user_id IN ('u-4', 'vendor-1', 'vendor-2') OR (role = 'vendor' AND (user_id IN ('u-4', 'vendor-1', 'vendor-2') OR user_id IS NULL)) ORDER BY created_at DESC LIMIT 15";
+                    $paramsNotif = [];
+                    $sqlCnt = "SELECT COUNT(*) as unread FROM notifications WHERE (user_id IN ('u-4', 'vendor-1', 'vendor-2') OR (role = 'vendor' AND (user_id IN ('u-4', 'vendor-1', 'vendor-2') OR user_id IS NULL))) AND is_read = 0";
+                    $paramsCnt = [];
+                } else {
+                    $sqlNotif = "SELECT * FROM notifications WHERE user_id = ? OR (role = 'vendor' AND user_id = ?) ORDER BY created_at DESC LIMIT 15";
+                    $paramsNotif = [$actorId, $actorId];
+                    $sqlCnt = "SELECT COUNT(*) as unread FROM notifications WHERE (user_id = ? OR (role = 'vendor' AND user_id = ?)) AND is_read = 0";
+                    $paramsCnt = [$actorId, $actorId];
+                }
             } elseif ($role === 'hotel_vendor') {
-                $sqlNotif = "SELECT * FROM notifications WHERE user_id = ? OR (role = 'hotel_vendor' AND (user_id = ? OR user_id IS NULL)) ORDER BY created_at DESC LIMIT 15";
-                $paramsNotif = [$actorId, $actorId];
-                $sqlCnt = "SELECT COUNT(*) as unread FROM notifications WHERE (user_id = ? OR (role = 'hotel_vendor' AND (user_id = ? OR user_id IS NULL))) AND is_read = 0";
-                $paramsCnt = [$actorId, $actorId];
+                if ($actorId === 'u-5' || $actorId === 'vendor-3' || $actorId === 'hotel_vendor') {
+                    $sqlNotif = "SELECT * FROM notifications WHERE user_id IN ('u-5', 'vendor-3', 'hotel_vendor') OR (role = 'hotel_vendor' AND (user_id IN ('u-5', 'vendor-3', 'hotel_vendor') OR user_id IS NULL)) ORDER BY created_at DESC LIMIT 15";
+                    $paramsNotif = [];
+                    $sqlCnt = "SELECT COUNT(*) as unread FROM notifications WHERE (user_id IN ('u-5', 'vendor-3', 'hotel_vendor') OR (role = 'hotel_vendor' AND (user_id IN ('u-5', 'vendor-3', 'hotel_vendor') OR user_id IS NULL))) AND is_read = 0";
+                    $paramsCnt = [];
+                } else {
+                    $sqlNotif = "SELECT * FROM notifications WHERE user_id = ? OR (role = 'hotel_vendor' AND user_id = ?) ORDER BY created_at DESC LIMIT 15";
+                    $paramsNotif = [$actorId, $actorId];
+                    $sqlCnt = "SELECT COUNT(*) as unread FROM notifications WHERE (user_id = ? OR (role = 'hotel_vendor' AND user_id = ?)) AND is_read = 0";
+                    $paramsCnt = [$actorId, $actorId];
+                }
             } elseif ($role === 'driver') {
                 $sqlNotif = "SELECT * FROM notifications WHERE user_id = ? OR (role = 'driver' AND user_id = ?) ORDER BY created_at DESC LIMIT 15";
                 $paramsNotif = [$actorId, $actorId];
@@ -3244,15 +3293,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                     }
                 } elseif ($role === 'vendor') {
                     // Vehicle Fleet Vendor strictly views vehicle bookings belonging to their fleet
-                    $stmt = $pdo->prepare("SELECT b.*, d.name as assigned_driver_name, d.phone as assigned_driver_phone, d.vehicle_details as assigned_driver_vehicle, d.status as assigned_driver_status 
+                    // For primary vehicle vendor console 'u-4', authorized fleet IDs include 'u-4', 'vendor-1' (cars), and 'vendor-2' (bikes).
+                    // For any third-party vendor, authorized IDs are strictly [$actorId].
+                    $isPrimaryVendor = ($actorId === 'u-4');
+                    $authVendorIds = $isPrimaryVendor ? ['u-4', 'vendor-1', 'vendor-2'] : [$actorId];
+                    $placeholders = implode(',', array_fill(0, count($authVendorIds), '?'));
+
+                    // For primary vendor 'u-4', safely include historical self-drive / showcase vehicle bookings where vendor_id is NULL
+                    // matching strictly by vehicle item/service identity (never matching hotels or packages).
+                    $nullVehicleClause = $isPrimaryVendor
+                        ? " OR (b.vendor_id IS NULL AND (b.type IN ('vehicle', 'car', 'bike') OR b.item_id LIKE 'car-%' OR b.item_id LIKE 'bike-%' OR b.item_id LIKE 'lux-%') AND (b.type IS NULL OR b.type NOT IN ('hotel', 'package', 'flight', 'activity', 'sightseeing')))"
+                        : "";
+
+                    $sql = "SELECT b.*, d.name as assigned_driver_name, d.phone as assigned_driver_phone, d.vehicle_details as assigned_driver_vehicle, d.status as assigned_driver_status 
                         FROM bookings b 
                         LEFT JOIN drivers d ON (b.assigned_driver_id = d.id OR b.assigned_driver_id = d.email) 
-                        WHERE (b.vendor_id = ? 
-                           OR b.item_id IN (SELECT id FROM cars WHERE vendor_id = ?) 
-                           OR b.item_id IN (SELECT id FROM bikes WHERE vendor_id = ?)
-                           OR b.physical_unit_id IN (SELECT id FROM vehicle_units WHERE vendor_id = ?))
-                        ORDER BY b.created_at DESC");
-                    $stmt->execute([$actorId, $actorId, $actorId, $actorId]);
+                        WHERE (b.vendor_id IN ($placeholders) 
+                           OR b.item_id IN (SELECT id FROM cars WHERE vendor_id IN ($placeholders)) 
+                           OR b.item_id IN (SELECT id FROM bikes WHERE vendor_id IN ($placeholders))
+                           OR b.physical_unit_id IN (SELECT id FROM vehicle_units WHERE vendor_id IN ($placeholders))
+                           $nullVehicleClause)
+                        ORDER BY b.created_at DESC";
+
+                    $queryParams = array_merge($authVendorIds, $authVendorIds, $authVendorIds, $authVendorIds);
+                    $stmt = $pdo->prepare($sql);
+                    $stmt->execute($queryParams);
                     $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     // Strip B2B commercial commission figures for vehicle vendor
                     foreach ($data as &$bRow) {
@@ -3260,13 +3325,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                     }
                 } elseif ($role === 'hotel_vendor') {
                     // Hotel Vendor strictly views hotel bookings belonging to their property
-                    $stmt = $pdo->prepare("SELECT b.*, d.name as assigned_driver_name, d.phone as assigned_driver_phone, d.vehicle_details as assigned_driver_vehicle, d.status as assigned_driver_status 
+                    $isPrimaryHotelVendor = ($actorId === 'u-5' || $actorId === 'vendor-3' || $actorId === 'hotel_vendor');
+                    $authHotelVendorIds = $isPrimaryHotelVendor ? ['u-5', 'vendor-3', 'hotel_vendor'] : [$actorId];
+                    $placeholdersH = implode(',', array_fill(0, count($authHotelVendorIds), '?'));
+
+                    // For primary hotel vendor, safely include historical hotel bookings where vendor_id is NULL
+                    $nullHotelClause = $isPrimaryHotelVendor
+                        ? " OR (b.vendor_id IS NULL AND (b.type = 'hotel' OR b.item_id LIKE 'hotel-%'))"
+                        : "";
+
+                    $sqlH = "SELECT b.*, d.name as assigned_driver_name, d.phone as assigned_driver_phone, d.vehicle_details as assigned_driver_vehicle, d.status as assigned_driver_status 
                         FROM bookings b 
                         LEFT JOIN drivers d ON (b.assigned_driver_id = d.id OR b.assigned_driver_id = d.email) 
-                        WHERE (b.vendor_id = ? 
-                           OR b.item_id IN (SELECT id FROM hotels WHERE vendor_id = ?))
-                        ORDER BY b.created_at DESC");
-                    $stmt->execute([$actorId, $actorId]);
+                        WHERE (b.vendor_id IN ($placeholdersH) 
+                           OR b.item_id IN (SELECT id FROM hotels WHERE vendor_id IN ($placeholdersH))
+                           $nullHotelClause)
+                        ORDER BY b.created_at DESC";
+
+                    $queryParamsH = array_merge($authHotelVendorIds, $authHotelVendorIds);
+                    $stmt = $pdo->prepare($sqlH);
+                    $stmt->execute($queryParamsH);
                     $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     // Strip B2B commercial commission figures for hotel vendor
                     foreach ($data as &$bRow) {

@@ -119,7 +119,10 @@ export default function VendorNotificationBell({
         registerSeenNotifications(finalItems);
         isInitialLoadRef.current = false;
       } else {
-        handleIncomingNotifications(finalItems, { isInitialLoad: false });
+        const newlyReceived = handleIncomingNotifications(finalItems, { isInitialLoad: false });
+        if (Array.isArray(newlyReceived) && newlyReceived.length > 0) {
+          window.dispatchEvent(new CustomEvent('tripgalileo-booking-sync'));
+        }
       }
     } catch (e) {
       console.error('Failed to load notifications:', e);
