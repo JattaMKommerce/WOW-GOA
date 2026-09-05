@@ -20,17 +20,39 @@ function StatusBadge({ status }) {
 
 function WorkflowBadge({ status }) {
   const idx = WORKFLOW_STEPS.indexOf(status);
+  const isCompleted = status === 'Completed';
   return (
     <div className="d-flex align-items-center gap-1">
-      {WORKFLOW_STEPS.map((step, i) => (
-        <React.Fragment key={step}>
-          <div className="rounded-circle d-flex align-items-center justify-content-center" title={step} style={{ width: '18px', height: '18px', background: i < idx ? '#16a34a' : i === idx ? '#FF6333' : '#e2e8f0', flexShrink: 0 }}>
-            {i < idx && <Check size={10} style={{ color: '#fff' }} />}
-            {i === idx && <div className="rounded-circle" style={{ width: '6px', height: '6px', background: '#fff' }} />}
-          </div>
-          {i < WORKFLOW_STEPS.length - 1 && <div style={{ width: '8px', height: '2px', background: i < idx ? '#16a34a' : '#e2e8f0' }} />}
-        </React.Fragment>
-      ))}
+      {WORKFLOW_STEPS.map((step, i) => {
+        const isDone = isCompleted || i < idx;
+        const isCurrent = !isCompleted && i === idx;
+        return (
+          <React.Fragment key={step}>
+            <div 
+              className="rounded-circle d-flex align-items-center justify-content-center" 
+              title={step} 
+              style={{ 
+                width: '18px', 
+                height: '18px', 
+                background: isDone ? '#16a34a' : isCurrent ? '#FF6333' : '#e2e8f0', 
+                flexShrink: 0 
+              }}
+            >
+              {isDone && <Check size={10} style={{ color: '#fff' }} />}
+              {isCurrent && <div className="rounded-circle" style={{ width: '6px', height: '6px', background: '#fff' }} />}
+            </div>
+            {i < WORKFLOW_STEPS.length - 1 && (
+              <div 
+                style={{ 
+                  width: '8px', 
+                  height: '2px', 
+                  background: isDone ? '#16a34a' : '#e2e8f0' 
+                }} 
+              />
+            )}
+          </React.Fragment>
+        );
+      })}
     </div>
   );
 }
@@ -403,7 +425,12 @@ export default function VehicleBookingManagement({ bookings = [], cars = [], bik
                       <Edit size={12} />
                     </button>
                     {b.status !== 'Completed' && b.status !== 'Cancelled' && (
-                      <button className="btn btn-sm px-2 py-1 rounded-2" title="Advance Workflow" style={{ background: '#dcfce7', color: '#16a34a', fontSize: '0.68rem' }} onClick={() => advanceStatus(b)}>
+                      <button 
+                        className="btn btn-sm px-2 py-1 rounded-2" 
+                        title="Next Step" 
+                        style={{ background: '#dcfce7', color: '#16a34a', fontSize: '0.68rem' }} 
+                        onClick={() => advanceStatus(b)}
+                      >
                         <ArrowRight size={12} />
                       </button>
                     )}
@@ -607,14 +634,43 @@ export default function VehicleBookingManagement({ bookings = [], cars = [], bik
                 <div className="d-flex flex-column gap-2">
                   {WORKFLOW_STEPS.map((step, i) => {
                     const currentIdx = WORKFLOW_STEPS.indexOf(selected.status);
-                    const isDone = i < currentIdx;
-                    const isCurrent = i === currentIdx;
+                    const isCompleted = selected.status === 'Completed';
+                    const isDone = isCompleted || i < currentIdx;
+                    const isCurrent = !isCompleted && i === currentIdx;
                     return (
-                      <div key={step} className="d-flex align-items-center gap-3 py-2 px-3 rounded-2" style={{ background: isDone ? '#dcfce7' : isCurrent ? '#FFF5F2' : '#f8fafc', border: isCurrent ? '1px solid #FF633350' : '1px solid transparent' }}>
-                        <div className="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0" style={{ width: '24px', height: '24px', background: isDone ? '#16a34a' : isCurrent ? '#FF6333' : '#e2e8f0' }}>
-                          {isDone ? <Check size={12} style={{ color: '#fff' }} /> : <span style={{ fontSize: '0.65rem', color: isCurrent ? '#fff' : '#94a3b8', fontWeight: 700 }}>{i + 1}</span>}
+                      <div 
+                        key={step} 
+                        className="d-flex align-items-center gap-3 py-2 px-3 rounded-2" 
+                        style={{ 
+                          background: isDone ? '#dcfce7' : isCurrent ? '#FFF5F2' : '#f8fafc', 
+                          border: isDone ? '1px solid rgba(22,163,74,0.2)' : isCurrent ? '1px solid #FF633350' : '1px solid transparent' 
+                        }}
+                      >
+                        <div 
+                          className="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0" 
+                          style={{ 
+                            width: '24px', 
+                            height: '24px', 
+                            background: isDone ? '#16a34a' : isCurrent ? '#FF6333' : '#e2e8f0' 
+                          }}
+                        >
+                          {isDone ? (
+                            <Check size={12} style={{ color: '#fff' }} />
+                          ) : (
+                            <span style={{ fontSize: '0.65rem', color: isCurrent ? '#fff' : '#94a3b8', fontWeight: 700 }}>
+                              {i + 1}
+                            </span>
+                          )}
                         </div>
-                        <span className="fw-bold" style={{ fontSize: '0.82rem', color: isDone ? '#16a34a' : isCurrent ? '#FF6333' : '#94a3b8' }}>{step}</span>
+                        <span 
+                          className="fw-bold" 
+                          style={{ 
+                            fontSize: '0.82rem', 
+                            color: isDone ? '#16a34a' : isCurrent ? '#FF6333' : '#94a3b8' 
+                          }}
+                        >
+                          {step}
+                        </span>
                       </div>
                     );
                   })}
@@ -655,11 +711,58 @@ export default function VehicleBookingManagement({ bookings = [], cars = [], bik
             </button>
             {selected.status !== 'Completed' && selected.status !== 'Cancelled' && (
               <>
-                <button onClick={() => advanceStatus(selected)} className="btn flex-grow-1 py-2 rounded-3 fw-bold text-white d-flex align-items-center justify-content-center gap-1" style={{ background: 'linear-gradient(90deg,#FF6333,#FF8A00)', fontSize: '0.82rem' }}>
-                  <ArrowRight size={13} /> Advance
+                <button 
+                  onClick={() => advanceStatus(selected)} 
+                  className="btn flex-grow-1 py-2 rounded-3 fw-bold text-white d-flex align-items-center justify-content-center gap-1" 
+                  style={{ 
+                    background: selected.status === 'Return' 
+                      ? 'linear-gradient(90deg,#059669,#10b981)' 
+                      : 'linear-gradient(90deg,#FF6333,#FF8A00)', 
+                    fontSize: '0.82rem' 
+                  }}
+                >
+                  {selected.status === 'Return' ? (
+                    <>
+                      <CheckCircle size={13} /> Complete
+                    </>
+                  ) : (
+                    <>
+                      <ArrowRight size={13} /> Next
+                    </>
+                  )}
                 </button>
                 <button onClick={() => cancelBooking(selected.id)} className="btn py-2 px-3 rounded-3 fw-bold" style={{ background: '#fee2e2', color: '#dc2626', fontSize: '0.82rem' }}>
                   Cancel
+                </button>
+              </>
+            )}
+            {selected.status === 'Completed' && (
+              <>
+                <button 
+                  onClick={() => setSelected(null)} 
+                  className="btn flex-grow-1 py-2 rounded-3 fw-bold text-white d-flex align-items-center justify-content-center gap-1 shadow-sm" 
+                  style={{ background: '#059669', fontSize: '0.82rem', cursor: 'pointer' }}
+                  title="Booking is Completed. Click to Close"
+                >
+                  <CheckCircle size={13} /> Completed (Close)
+                </button>
+                <button 
+                  onClick={async () => {
+                    try {
+                      await updateBookingStatus(selected.id, 'Return');
+                      const updated = localBookings.map(b => b.id === selected.id ? { ...b, status: 'Return' } : b);
+                      setLocalBookings(updated);
+                      if (setBookingsList) setBookingsList(updated);
+                      setSelected(prev => ({ ...prev, status: 'Return' }));
+                    } catch (e) {
+                      alert('Failed to update: ' + e.message);
+                    }
+                  }} 
+                  className="btn py-2 px-3 rounded-3 fw-bold text-muted border" 
+                  style={{ background: '#fff', fontSize: '0.78rem' }}
+                  title="Reopen booking back to Return step"
+                >
+                  Reopen
                 </button>
               </>
             )}

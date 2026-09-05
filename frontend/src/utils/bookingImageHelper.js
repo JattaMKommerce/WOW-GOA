@@ -1,6 +1,14 @@
-/**
- * Resolves all accurate images for any booking record, looking up matched vehicle/package/hotel data.
- */
+export const normalizeUrl = (u) => {
+  if (typeof u !== 'string') return u;
+  let s = u.trim();
+  if (s.startsWith('http://localhost:8000/uploads/')) {
+    return s.replace('http://localhost:8000/uploads/', '/backend/uploads/');
+  }
+  if (s.startsWith('http://localhost/tripgalileo/backend/uploads/')) {
+    return s.replace('http://localhost/tripgalileo/backend/uploads/', '/backend/uploads/');
+  }
+  return s;
+};
 
 export function getBookingDisplayImages(booking, allCars = [], allBikes = [], allPackages = [], allHotels = [], allFlights = []) {
   if (!booking) {
@@ -12,7 +20,7 @@ export function getBookingDisplayImages(booking, allCars = [], allBikes = [], al
   const addImage = (img) => {
     if (!img) return;
     if (typeof img === 'string' && img.trim().length > 0) {
-      const clean = img.trim();
+      const clean = normalizeUrl(img);
       if (!images.includes(clean)) images.push(clean);
     } else if (Array.isArray(img)) {
       img.forEach(addImage);
@@ -175,7 +183,7 @@ export function resolveItemImages(item, type = '') {
   const add = (img) => {
     if (!img) return;
     if (typeof img === 'string' && img.trim().length > 5 && !img.includes('undefined') && !img.includes('null')) {
-      const trimmed = img.trim();
+      const trimmed = normalizeUrl(img.trim());
       if (!list.includes(trimmed)) list.push(trimmed);
     } else if (Array.isArray(img)) {
       img.forEach(add);

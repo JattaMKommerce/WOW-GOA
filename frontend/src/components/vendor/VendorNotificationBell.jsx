@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Bell, X } from 'lucide-react';
 import * as api from '../../services/api';
+import NotificationSoundToggle from '../common/NotificationSoundToggle';
+import { handleIncomingNotifications, registerSeenNotifications } from '../../utils/notificationSound';
 
 export default function VendorNotificationBell({
   currentUser,
@@ -12,13 +14,18 @@ export default function VendorNotificationBell({
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const dropdownRef = useRef(null);
+  const isInitialLoadRef = useRef(true);
 
   // Fetch real-time notifications strictly scoped to this portal type
   const refreshNotifications = async () => {
     try {
       if (!currentUser?.id) return;
-      const res = await api.pmsListNotifications(currentUser.id, vendorType);
+      const [res, authRes] = await Promise.all([
+        api.pmsListNotifications(currentUser.id, vendorType).catch(() => ({ notifications: [] })),
+        api.fetchNotifications({ role: vendorType === 'hotel' ? 'hotel_vendor' : 'vendor', userId: currentUser.id }).catch(() => ({ notifications: [] }))
+      ]);
       let notifs = (res && Array.isArray(res.notifications)) ? res.notifications : [];
+      let authNotifs = (authRes && Array.isArray(authRes.notifications)) ? authRes.notifications : [];
       
       // Filter bookings strictly by portal type
       const isForCurrentPortal = (b) => {
@@ -55,7 +62,8 @@ export default function VendorNotificationBell({
       });
 
       // Filter incoming backend notifications strictly
-      const filteredNotifs = notifs.filter(n => {
+      const allIncomingNotifs = [...authNotifs, ...notifs];
+      const filteredNotifs = allIncomingNotifs.filter(n => {
         const t = (n.type || '').toLowerCase();
         const title = (n.title || '').toLowerCase();
         const msg = (n.message || '').toLowerCase();
@@ -80,7 +88,7 @@ export default function VendorNotificationBell({
       const mergedMap = new Map();
       recentBookings.forEach(rb => mergedMap.set(rb.id, rb));
       filteredNotifs.forEach(n => {
-        mergedMap.set(n.id, {
+        mergedMap.set(String(n.id), {
           ...n,
           type: vendorType
         });
@@ -105,6 +113,14 @@ export default function VendorNotificationBell({
       setNotifications(finalItems);
       const unread = finalItems.filter(x => !x.is_read).length;
       setUnreadCount(unread);
+
+      // Trigger notification sound only for genuinely new unread notifications
+      if (isInitialLoadRef.current) {
+        registerSeenNotifications(finalItems);
+        isInitialLoadRef.current = false;
+      } else {
+        handleIncomingNotifications(finalItems, { isInitialLoad: false });
+      }
     } catch (e) {
       console.error('Failed to load notifications:', e);
     }
@@ -112,15 +128,37 @@ export default function VendorNotificationBell({
 
   useEffect(() => {
     refreshNotifications();
-    const timer = setInterval(refreshNotifications, 10000);
+    const timer = setInterval(refreshNotifications, 5000);
     window.addEventListener('pms-notification-updated', refreshNotifications);
     window.addEventListener('new-booking-created', refreshNotifications);
+    window.addEventListener('booking-status-updated', refreshNotifications);
+    window.addEventListener('booking-updated', refreshNotifications);
+    window.addEventListener('tripgalileo-notification-sync', refreshNotifications);
+    window.addEventListener('tripgalileo-booking-sync', refreshNotifications);
+
+    let bcBookings;
+    let bcNotifs;
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        bcBookings = new BroadcastChannel('tripgalileo_bookings_sync');
+        bcBookings.onmessage = refreshNotifications;
+        bcNotifs = new BroadcastChannel('tripgalileo_notifications_sync');
+        bcNotifs.onmessage = refreshNotifications;
+      }
+    } catch (e) {}
+
     return () => {
       clearInterval(timer);
       window.removeEventListener('pms-notification-updated', refreshNotifications);
       window.removeEventListener('new-booking-created', refreshNotifications);
+      window.removeEventListener('booking-status-updated', refreshNotifications);
+      window.removeEventListener('booking-updated', refreshNotifications);
+      window.removeEventListener('tripgalileo-notification-sync', refreshNotifications);
+      window.removeEventListener('tripgalileo-booking-sync', refreshNotifications);
+      if (bcBookings) bcBookings.close();
+      if (bcNotifs) bcNotifs.close();
     };
-  }, [currentUser?.id, bookings?.length]);
+  }, [currentUser?.id, bookings?.length, vendorType]);
 
   // Click outside listener
   useEffect(() => {
@@ -261,12 +299,12 @@ export default function VendorNotificationBell({
       {/* Pop-up Dropdown matching user mockup */}
       {isOpen && (
         <div
-          className="position-absolute shadow-lg"
+          className="position-absolute shadow-lg animate-fade-in-up"
           style={{
             right: 0,
             top: '46px',
-            width: '365px',
-            maxWidth: '92vw',
+            width: '385px',
+            maxWidth: '94vw',
             zIndex: 1080,
             backgroundColor: '#0D1B2E',
             borderRadius: '14px',
@@ -277,43 +315,45 @@ export default function VendorNotificationBell({
         >
           {/* Header */}
           <div
-            className="px-3 py-3 border-bottom d-flex align-items-center justify-content-between"
+            className="px-3 py-2.5 border-bottom d-flex align-items-center justify-content-between"
             style={{ borderColor: 'rgba(255,255,255,0.08)', background: '#091422' }}
           >
-            <div className="d-flex align-items-center gap-2">
-              <span style={{ fontSize: '1.2rem', color: '#FFB800' }}>🔔</span>
-              <div>
-                <div className="fw-bold text-white lh-1" style={{ fontSize: '0.9rem' }}>Live</div>
-                <div className="fw-bold text-white lh-1" style={{ fontSize: '0.9rem' }}>Notifications</div>
-              </div>
+            {/* Left: Title + Badge */}
+            <div className="d-flex align-items-center gap-2 flex-shrink-0">
+              <Bell size={16} className="text-warning flex-shrink-0" />
+              <span className="fw-bold text-white small text-nowrap">Live Notifications</span>
               {unreadCount > 0 && (
                 <span
-                  className="badge rounded-pill bg-danger ms-1 px-2 py-1"
-                  style={{ fontSize: '0.65rem', fontWeight: 700 }}
+                  className="badge rounded-pill bg-danger text-nowrap"
+                  style={{ fontSize: '0.62rem', padding: '0.25em 0.5em', fontWeight: 700 }}
                 >
                   {unreadCount} new
                 </span>
               )}
             </div>
 
-            <div className="d-flex align-items-center gap-2">
-              <button
-                type="button"
-                onClick={handleMarkAllRead}
-                className="btn btn-link p-0 text-white-50 text-decoration-underline border-0"
-                style={{ fontSize: '0.72rem', background: 'transparent' }}
-              >
-                Mark read
-              </button>
+            {/* Right: Sound Control + Mark Read + Clear All */}
+            <div className="d-flex align-items-center gap-2 flex-shrink-0">
+              <NotificationSoundToggle variant="dark" />
+              {unreadCount > 0 && (
+                <button
+                  type="button"
+                  onClick={handleMarkAllRead}
+                  className="btn btn-link p-0 text-white-50 text-decoration-underline border-0 text-nowrap"
+                  style={{ fontSize: '0.70rem', background: 'transparent' }}
+                >
+                  Mark read
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleClearAll}
-                className="btn btn-sm px-2.5 py-1 rounded-3 fw-semibold"
+                className="btn btn-sm px-2 py-0.5 rounded text-nowrap fw-semibold"
                 style={{
-                  fontSize: '0.72rem',
+                  fontSize: '0.68rem',
                   color: '#FF6B6B',
-                  border: '1px solid rgba(229,57,53,0.5)',
-                  background: 'rgba(229,57,53,0.12)'
+                  border: '1px solid rgba(229,57,53,0.4)',
+                  background: 'rgba(229,57,53,0.1)'
                 }}
               >
                 Clear all

@@ -22,6 +22,8 @@ import * as api from '../../services/api';
 import { getTodayDateStr } from '../../utils/dateUtils';
 import { getBookingDisplayImage, getBookingDisplayImages } from '../../utils/bookingImageHelper';
 import ImageCarousel from '../../components/common/ImageCarousel';
+import NotificationSoundToggle from '../../components/common/NotificationSoundToggle';
+import { handleIncomingNotifications, registerSeenNotifications } from '../../utils/notificationSound';
 
 const SIDEBAR_GROUPS = [
   {
@@ -125,37 +127,96 @@ export default function CustomerPortalPage({
 
   // Live authoritative bookings loaded directly from database for the customer
   const [liveCustomerBookings, setLiveCustomerBookings] = useState([]);
+  const [customerNotifs, setCustomerNotifs] = useState([]);
+  const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
+  const [readNotifIds, setReadNotifIds] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('customer_read_notifs') || '[]');
+    } catch (e) {
+      return [];
+    }
+  });
 
-  // Fetch live customer bookings from database
-  const refreshCustomerBookings = React.useCallback(async (overridePhone = null) => {
+  const isInitialLoadRef = React.useRef(true);
+
+  // Fetch live customer bookings and authoritative notifications from database
+  const refreshCustomerData = React.useCallback(async (overridePhone = null) => {
     const targetPhone = overridePhone || customerUser?.phone || loginPhone;
     if (!targetPhone) return;
     try {
-      const fresh = await api.fetchCustomerBookings(targetPhone);
-      if (Array.isArray(fresh) && fresh.length > 0) {
-        setLiveCustomerBookings(fresh);
+      const [freshBookings, freshNotifs] = await Promise.all([
+        api.fetchCustomerBookings(targetPhone).catch(() => []),
+        api.fetchNotifications({ role: 'customer', phone: targetPhone, userId: customerUser?.id }).catch(() => ({ notifications: [] }))
+      ]);
+
+      if (Array.isArray(freshBookings) && freshBookings.length > 0) {
+        setLiveCustomerBookings(freshBookings);
+      }
+      if (freshNotifs && Array.isArray(freshNotifs.notifications)) {
+        setCustomerNotifs(freshNotifs.notifications);
+        if (isInitialLoadRef.current) {
+          registerSeenNotifications(freshNotifs.notifications);
+          isInitialLoadRef.current = false;
+        } else {
+          handleIncomingNotifications(freshNotifs.notifications, { isInitialLoad: false });
+        }
       }
     } catch (err) {
-      console.warn('[CustomerPortal] Error loading fresh bookings:', err);
+      console.warn('[CustomerPortal] Error loading fresh customer data:', err);
     }
   }, [customerUser, loginPhone]);
 
-  // Periodic polling (every 6s) and immediate load on user/tab change
+  const refreshCustomerBookings = refreshCustomerData;
+
+  // Periodic polling (every 5s) and immediate cross-channel sync
   useEffect(() => {
     if (customerUser) {
-      refreshCustomerBookings();
+      refreshCustomerData();
       const interval = setInterval(() => {
-        refreshCustomerBookings();
-      }, 6000);
-      return () => clearInterval(interval);
+        refreshCustomerData();
+      }, 5000);
+
+      const handleSync = () => {
+        refreshCustomerData();
+      };
+
+      window.addEventListener('new-booking-created', handleSync);
+      window.addEventListener('booking-status-updated', handleSync);
+      window.addEventListener('booking-updated', handleSync);
+      window.addEventListener('tripgalileo-notification-sync', handleSync);
+      window.addEventListener('tripgalileo-booking-sync', handleSync);
+      window.addEventListener('authoritative-notification-received', handleSync);
+
+      let bcBookings;
+      let bcNotifs;
+      try {
+        if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+          bcBookings = new BroadcastChannel('tripgalileo_bookings_sync');
+          bcBookings.onmessage = handleSync;
+          bcNotifs = new BroadcastChannel('tripgalileo_notifications_sync');
+          bcNotifs.onmessage = handleSync;
+        }
+      } catch (e) {}
+
+      return () => {
+        clearInterval(interval);
+        window.removeEventListener('new-booking-created', handleSync);
+        window.removeEventListener('booking-status-updated', handleSync);
+        window.removeEventListener('booking-updated', handleSync);
+        window.removeEventListener('tripgalileo-notification-sync', handleSync);
+        window.removeEventListener('tripgalileo-booking-sync', handleSync);
+        window.removeEventListener('authoritative-notification-received', handleSync);
+        if (bcBookings) bcBookings.close();
+        if (bcNotifs) bcNotifs.close();
+      };
     }
-  }, [customerUser, refreshCustomerBookings]);
+  }, [customerUser, refreshCustomerData]);
 
   useEffect(() => {
-    if (customerUser && (activeTab === 'driver-trips' || activeTab === 'bookings' || activeTab === 'selfdrive' || activeTab === 'overview')) {
-      refreshCustomerBookings();
+    if (customerUser && (activeTab === 'driver-trips' || activeTab === 'bookings' || activeTab === 'selfdrive' || activeTab === 'overview' || activeTab === 'notifications')) {
+      refreshCustomerData();
     }
-  }, [activeTab, customerUser, refreshCustomerBookings]);
+  }, [activeTab, customerUser, refreshCustomerData]);
 
   // ─── STRICT CUSTOMER DATA ISOLATION ─────────────────────────────────────────
   // A customer MUST ONLY see their own bookings matching their verified identity
@@ -550,6 +611,43 @@ export default function CustomerPortalPage({
     { id: 'payments', label: 'Payments', icon: <CreditCard size={15} /> },
   ];
 
+  const customerNotificationItems = React.useMemo(() => {
+    const itemsMap = new Map();
+
+    // 1. Authoritative backend notifications
+    (customerNotifs || []).forEach(n => {
+      itemsMap.set(String(n.id), {
+        id: String(n.id),
+        title: n.title || 'Notification',
+        message: n.message || '',
+        time: n.created_at ? String(n.created_at).slice(0, 16) : 'Recent',
+        type: n.type || 'info',
+        is_read: n.is_read || (readNotifIds.includes(String(n.id)) ? 1 : 0),
+        bookingId: n.reference_id
+      });
+    });
+
+    // 2. Booking-derived updates
+    (customerBookings || []).slice(0, 8).forEach((b, idx) => {
+      const bKey = `b-${b.id || idx}`;
+      if (!itemsMap.has(bKey)) {
+        itemsMap.set(bKey, {
+          id: bKey,
+          title: `Booking #${b.id || b.booking_id} ${b.status || 'Confirmed'}`,
+          message: `${b.item_name || b.package_name || 'Trip Reservation'} • ₹${parseFloat(b.total_amount || b.amount_paid || 0).toLocaleString('en-IN')}`,
+          time: b.created_at ? String(b.created_at).slice(0, 16) : 'Recent',
+          type: 'booking',
+          is_read: readNotifIds.includes(bKey) ? 1 : 0,
+          booking: b
+        });
+      }
+    });
+
+    return Array.from(itemsMap.values());
+  }, [customerNotifs, customerBookings, readNotifIds]);
+
+  const customerUnreadCount = customerNotificationItems.filter(n => !n.is_read).length;
+
   return (
     <div className="min-vh-100 bg-light d-flex flex-column" style={{ fontFamily: 'Inter, system-ui, -apple-system, sans-serif' }}>
       
@@ -637,21 +735,126 @@ export default function CustomerPortalPage({
 
               {customerUser && (
                 <>
-                  {/* Notification Bell Icon */}
-                  <button 
-                    type="button" 
-                    onClick={() => handleNavClick('notifications')} 
-                    className={`btn btn-sm rounded-circle p-2 position-relative text-dark border transition-all ${
-                      activeTab === 'notifications' ? 'btn-warning border-warning' : 'btn-light'
-                    }`}
-                    title="View Notifications"
-                    style={{ width: '38px', height: '38px' }}
-                  >
-                    <Bell size={16} />
-                    <span className="position-absolute top-0 start-100 translate-middle p-1 bg-danger border border-light rounded-circle">
-                      <span className="visually-hidden">New alerts</span>
-                    </span>
-                  </button>
+                  {/* Notification Bell Icon & Popover Dropdown */}
+                  <div className="position-relative">
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        setNotifDropdownOpen(!notifDropdownOpen);
+                        setProfileDropdownOpen(false);
+                      }} 
+                      className={`btn btn-sm rounded-circle p-2 position-relative text-dark border transition-all ${
+                        notifDropdownOpen ? 'btn-warning border-warning' : 'btn-light'
+                      }`}
+                      title="View Notifications"
+                      style={{ width: '38px', height: '38px' }}
+                    >
+                      <Bell size={16} />
+                      {customerUnreadCount > 0 && (
+                        <span 
+                          className="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger border border-2 border-white"
+                          style={{ fontSize: '0.62rem', padding: '0.22em 0.42em' }}
+                        >
+                          {customerUnreadCount > 9 ? '9+' : customerUnreadCount}
+                        </span>
+                      )}
+                    </button>
+
+                    {notifDropdownOpen && (
+                      <div 
+                        className="card border-0 shadow-lg rounded-4 position-absolute end-0 mt-2 animate-fade-in-up bg-white overflow-hidden"
+                        style={{ width: '350px', maxWidth: '94vw', zIndex: 1060, border: '1px solid #eef2f6' }}
+                        onClick={e => e.stopPropagation()}
+                      >
+                        <div className="d-flex align-items-center justify-content-between px-3 py-2.5 bg-light border-bottom">
+                          {/* Left: Title + Badge */}
+                          <div className="d-flex align-items-center gap-2 flex-shrink-0">
+                            <Bell size={14} className="text-warning flex-shrink-0" />
+                            <span className="fw-bold text-dark small text-nowrap">Notifications</span>
+                            {customerUnreadCount > 0 && (
+                              <span className="badge bg-danger rounded-pill text-nowrap" style={{ fontSize: '0.62rem', padding: '0.22em 0.45em' }}>
+                                {customerUnreadCount} new
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Right: Sound Control + Mark All Read */}
+                          <div className="d-flex align-items-center gap-2 flex-shrink-0">
+                            <NotificationSoundToggle variant="light" />
+                            {customerUnreadCount > 0 && (
+                              <button
+                                type="button"
+                                className="btn btn-sm p-0 text-muted border-0 text-decoration-underline text-nowrap"
+                                style={{ fontSize: '0.70rem' }}
+                                onClick={async () => {
+                                  const allIds = customerNotificationItems.map(n => n.id);
+                                  setReadNotifIds(allIds);
+                                  localStorage.setItem('customer_read_notifs', JSON.stringify(allIds));
+                                  await api.markNotificationRead(null, { role: 'customer', phone: customerUser?.phone, all: true });
+                                }}
+                              >
+                                Mark all read
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <div style={{ maxHeight: '280px', overflowY: 'auto' }}>
+                          {customerNotificationItems.length === 0 ? (
+                            <div className="p-4 text-center text-muted small">
+                              No notifications yet
+                            </div>
+                          ) : (
+                            customerNotificationItems.slice(0, 6).map(n => {
+                              const unread = !n.is_read;
+                              return (
+                                <div
+                                  key={n.id}
+                                  className={`px-3 py-2.5 border-bottom cursor-pointer transition-all ${unread ? 'bg-light bg-opacity-75' : 'bg-white'}`}
+                                  onClick={() => {
+                                    if (!readNotifIds.includes(n.id)) {
+                                      const updated = [...readNotifIds, n.id];
+                                      setReadNotifIds(updated);
+                                      localStorage.setItem('customer_read_notifs', JSON.stringify(updated));
+                                    }
+                                    if (!String(n.id).startsWith('b-')) {
+                                      api.markNotificationRead(n.id, { role: 'customer', phone: customerUser?.phone });
+                                    }
+                                    setNotifDropdownOpen(false);
+                                    if (n.booking) {
+                                      handleOpenBookingDetails(n.booking);
+                                    } else {
+                                      handleNavClick('notifications');
+                                    }
+                                  }}
+                                >
+                                  <div className="d-flex align-items-center justify-content-between mb-1">
+                                    <strong className="text-dark text-truncate" style={{ fontSize: '0.78rem' }}>{n.title}</strong>
+                                    <span className="text-muted text-xxs flex-shrink-0 ms-1">{n.time}</span>
+                                  </div>
+                                  <p className="text-muted mb-0 text-truncate" style={{ fontSize: '0.72rem' }}>{n.message}</p>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+
+                        <div className="p-2 text-center bg-light border-top">
+                          <button
+                            type="button"
+                            className="btn btn-sm w-100 text-warning fw-bold p-1 border-0"
+                            style={{ fontSize: '0.75rem' }}
+                            onClick={() => {
+                              setNotifDropdownOpen(false);
+                              handleNavClick('notifications');
+                            }}
+                          >
+                            View All Notifications →
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
 
                   {/* Customer Avatar & Dropdown Menu */}
                   <div className="position-relative customer-profile-dropdown-container">

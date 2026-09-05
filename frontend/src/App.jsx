@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 import { useSiteConfig } from './context/SiteConfigContext';
+import { unlockAudio } from './utils/notificationSound';
 
 // Import Components
 import Navbar from './components/Navbar';
@@ -151,7 +152,7 @@ export default function App() {
       }
 
       try {
-        const [hotelsData, destinationsData, packagesData, vendorsData, usersData, carsData, bikesData, bookingsData, flightsData, markupsData] = await Promise.all([
+        const results = await Promise.allSettled([
           api.fetchHotels(),
           api.fetchDestinations(),
           api.fetchPackages(),
@@ -164,16 +165,17 @@ export default function App() {
           api.fetchMarkups()
         ]);
         
-        if (Array.isArray(hotelsData)) setHotels(hotelsData);
-        if (Array.isArray(destinationsData)) setDestinations(destinationsData);
-        if (Array.isArray(packagesData)) setPackages(packagesData);
-        if (Array.isArray(vendorsData)) setVendors(vendorsData);
-        if (Array.isArray(usersData)) setUsersList(usersData);
-        if (Array.isArray(carsData)) setCars(carsData);
-        if (Array.isArray(bikesData)) setBikes(bikesData);
-        if (Array.isArray(bookingsData)) setBookingsList(bookingsData);
-        if (flightsData) setFlights(flightsData);
-        if (markupsData) setMarkups(markupsData);
+        const [hRes, dRes, pRes, vRes, uRes, cRes, bRes, bkRes, fRes, mRes] = results;
+        if (hRes.status === 'fulfilled' && Array.isArray(hRes.value) && hRes.value.length > 0) setHotels(hRes.value);
+        if (dRes.status === 'fulfilled' && Array.isArray(dRes.value) && dRes.value.length > 0) setDestinations(dRes.value);
+        if (pRes.status === 'fulfilled' && Array.isArray(pRes.value) && pRes.value.length > 0) setPackages(pRes.value);
+        if (vRes.status === 'fulfilled' && Array.isArray(vRes.value) && vRes.value.length > 0) setVendors(vRes.value);
+        if (uRes.status === 'fulfilled' && Array.isArray(uRes.value) && uRes.value.length > 0) setUsersList(uRes.value);
+        if (cRes.status === 'fulfilled' && Array.isArray(cRes.value) && cRes.value.length > 0) setCars(cRes.value);
+        if (bRes.status === 'fulfilled' && Array.isArray(bRes.value) && bRes.value.length > 0) setBikes(bRes.value);
+        if (bkRes.status === 'fulfilled' && Array.isArray(bkRes.value) && bkRes.value.length > 0) setBookingsList(bkRes.value);
+        if (fRes.status === 'fulfilled' && fRes.value) setFlights(fRes.value);
+        if (mRes.status === 'fulfilled' && mRes.value) setMarkups(mRes.value);
       } catch (err) {
         console.warn("Using fallback inventory data:", err);
       } finally {
@@ -187,6 +189,18 @@ export default function App() {
       if (e.detail) {
         setBookingsList(prev => [e.detail, ...prev.filter(b => String(b.id) !== String(e.detail.id))]);
       }
+      refreshBookingsFast();
+    };
+
+    const handleBookingStatusUpdated = (e) => {
+      if (e?.detail?.id && e?.detail?.status) {
+        setBookingsList(prev => prev.map(b => String(b.id) === String(e.detail.id) ? { 
+          ...b, 
+          status: e.detail.status, 
+          ...(e.detail.paymentStatus ? { payment_status: e.detail.paymentStatus } : {}) 
+        } : b));
+      }
+      refreshBookingsFast();
     };
 
     const handlePackagesSync = () => {
@@ -201,12 +215,27 @@ export default function App() {
       }).catch(console.error);
     };
 
+    const refreshBookingsFast = () => {
+      api.fetchBookings().then(fresh => {
+        if (Array.isArray(fresh) && fresh.length > 0) setBookingsList(fresh);
+      }).catch(() => {});
+    };
+
+    // 6-second real-time periodic background polling for authoritative bookings
+    const bookingsInterval = setInterval(refreshBookingsFast, 6000);
+
     window.addEventListener('new-booking-created', handleNewBooking);
+    window.addEventListener('booking-status-updated', handleBookingStatusUpdated);
+    window.addEventListener('booking-updated', refreshBookingsFast);
+    window.addEventListener('booking-deleted', refreshBookingsFast);
+    window.addEventListener('tripgalileo-booking-sync', refreshBookingsFast);
     window.addEventListener('tripPackagesUpdated', handlePackagesSync);
     window.addEventListener('hotelsUpdated', handleHotelsSync);
 
     let bc;
     let bcHotels;
+    let bcBookings;
+    let bcNotifs;
     try {
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
         bc = new BroadcastChannel('tripgalileo_packages_sync');
@@ -226,15 +255,32 @@ export default function App() {
             }).catch(console.error);
           }
         };
+
+        bcBookings = new BroadcastChannel('tripgalileo_bookings_sync');
+        bcBookings.onmessage = (event) => {
+          refreshBookingsFast();
+        };
+
+        bcNotifs = new BroadcastChannel('tripgalileo_notifications_sync');
+        bcNotifs.onmessage = (event) => {
+          window.dispatchEvent(new CustomEvent('authoritative-notification-received', { detail: event.data }));
+        };
       }
     } catch (e) {}
 
     return () => {
+      clearInterval(bookingsInterval);
       window.removeEventListener('new-booking-created', handleNewBooking);
+      window.removeEventListener('booking-status-updated', handleBookingStatusUpdated);
+      window.removeEventListener('booking-updated', refreshBookingsFast);
+      window.removeEventListener('booking-deleted', refreshBookingsFast);
+      window.removeEventListener('tripgalileo-booking-sync', refreshBookingsFast);
       window.removeEventListener('tripPackagesUpdated', handlePackagesSync);
       window.removeEventListener('hotelsUpdated', handleHotelsSync);
       if (bc) bc.close();
       if (bcHotels) bcHotels.close();
+      if (bcBookings) bcBookings.close();
+      if (bcNotifs) bcNotifs.close();
     };
   }, []);
 
