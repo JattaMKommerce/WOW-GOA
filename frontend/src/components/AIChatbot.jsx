@@ -106,11 +106,12 @@ export default function AIChatbot() {
     setMessages([{ role: 'assistant', content: `Hi ${leadName}! I'm Sophia, your AI travel expert for Goa. How can I help you customize a package, book a car, or find a luxury hotel today?` }]);
   };
 
-  const handleSendMessage = async (e) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading) return;
+  const handleSendMessage = async (e, directText = null) => {
+    if (e && e.preventDefault) e.preventDefault();
+    const textToSend = typeof directText === 'string' ? directText : input;
+    if (!textToSend.trim() || isLoading) return;
     
-    const userMsg = { role: 'user', content: input.trim() };
+    const userMsg = { role: 'user', content: textToSend.trim() };
     const newMessages = [...messages, userMsg];
     setMessages(newMessages);
     setInput('');
@@ -203,9 +204,24 @@ export default function AIChatbot() {
             <div className="d-flex flex-column gap-3">
               {messages.map((msg, idx) => (
                 <div key={idx} className={`d-flex flex-column ${msg.role === 'user' ? 'align-items-end' : 'align-items-start'}`}>
-                  <div className={`p-3 rounded-4 shadow-sm ${msg.role === 'user' ? 'text-white' : 'bg-white text-dark border'}`} style={{ maxWidth: '85%', background: msg.role === 'user' ? '#0B192C' : 'white', borderBottomRightRadius: msg.role === 'user' ? '4px' : '16px', borderBottomLeftRadius: msg.role === 'assistant' ? '4px' : '16px', fontSize: '14px', lineHeight: '1.5' }}>
-                    {msg.content}
-                  </div>
+                  <div 
+                    className={`p-3 rounded-4 shadow-sm ${msg.role === 'user' ? 'text-white' : 'bg-white text-dark border'}`} 
+                    style={{ 
+                      maxWidth: '85%', 
+                      background: msg.role === 'user' ? '#0B192C' : 'white', 
+                      borderBottomRightRadius: msg.role === 'user' ? '4px' : '16px', 
+                      borderBottomLeftRadius: msg.role === 'assistant' ? '4px' : '16px', 
+                      fontSize: '14px', 
+                      lineHeight: '1.6',
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word'
+                    }}
+                    dangerouslySetInnerHTML={{
+                      __html: typeof msg.content === 'string' 
+                        ? msg.content.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+                        : msg.content
+                    }}
+                  />
                 </div>
               ))}
               {isLoading && (
@@ -224,7 +240,7 @@ export default function AIChatbot() {
           <div className="p-3 bg-white border-top">
             <div className="d-flex gap-2 overflow-auto pb-2 mb-2 custom-scrollbar">
               {['Self Drive Packages', 'Best beaches in North Goa', 'Rent a Thar'].map(suggestion => (
-                <button key={suggestion} onClick={() => {setInput(suggestion); document.getElementById('ai-submit').click();}} className="btn btn-sm rounded-pill fw-bold text-nowrap" style={{ fontSize: '12px', border: '1px solid #FF6B35', color: '#FF6B35', background: 'transparent' }}>
+                <button key={suggestion} type="button" onClick={() => handleSendMessage(null, suggestion)} className="btn btn-sm rounded-pill fw-bold text-nowrap" style={{ fontSize: '12px', border: '1px solid #FF6B35', color: '#FF6B35', background: 'transparent' }}>
                   {suggestion}
                 </button>
               ))}

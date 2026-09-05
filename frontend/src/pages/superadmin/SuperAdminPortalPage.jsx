@@ -14,6 +14,8 @@ import {
   vendorsData as defaultVendors,
   usersData as defaultUsers
 } from '../../data/mockData';
+import NotificationSoundToggle from '../../components/common/NotificationSoundToggle';
+import { handleIncomingNotifications, registerSeenNotifications } from '../../utils/notificationSound';
 
 const SIDEBAR_GROUPS = [
   {
@@ -217,6 +219,8 @@ export default function SuperAdminPortalPage({
     if (vendors?.length) setLiveVendors(vendors);
   }, [vendors]);
 
+  const isInitialLoadRef = React.useRef(true);
+
   // Fetch real leads, custom enquiries, bookings, vendors, and users in real-time
   const loadAllPortalData = async () => {
     try {
@@ -229,7 +233,19 @@ export default function SuperAdminPortalPage({
       ]);
       if (leadsData && leadsData.length) setAiLeads(leadsData);
       if (enquiriesData && enquiriesData.length) setCustomEnquiries(enquiriesData);
-      if (bookingsData && bookingsData.length) setLiveBookings(bookingsData);
+      if (bookingsData && bookingsData.length) {
+        setLiveBookings(bookingsData);
+        const rawNotifs = bookingsData.map(b => ({
+          id: `b-${b.id}`,
+          is_read: b.status === 'Completed' ? 1 : 0
+        }));
+        if (isInitialLoadRef.current) {
+          registerSeenNotifications(rawNotifs);
+        } else {
+          handleIncomingNotifications(rawNotifs, { isInitialLoad: false });
+        }
+      }
+      isInitialLoadRef.current = false;
       if (vendorsData && vendorsData.length) setLiveVendors(vendorsData);
       if (freshUsers && freshUsers.length) {
         setLiveUsers(prev => {
@@ -341,18 +357,49 @@ export default function SuperAdminPortalPage({
 
   useEffect(() => {
     loadAllPortalData();
-    const interval = setInterval(loadAllPortalData, 8000); // 8s real-time periodic polling
+    const interval = setInterval(loadAllPortalData, 6000); // 6s real-time periodic polling
     
     const handleNewBooking = (e) => {
       if (e.detail) {
         setLiveBookings(prev => [e.detail, ...prev.filter(b => String(b.id) !== String(e.detail.id))]);
       }
+      loadAllPortalData();
     };
+
+    const handleSync = () => {
+      loadAllPortalData();
+    };
+
     window.addEventListener('new-booking-created', handleNewBooking);
+    window.addEventListener('booking-status-updated', handleSync);
+    window.addEventListener('booking-updated', handleSync);
+    window.addEventListener('booking-deleted', handleSync);
+    window.addEventListener('tripgalileo-notification-sync', handleSync);
+    window.addEventListener('tripgalileo-booking-sync', handleSync);
+    window.addEventListener('authoritative-notification-received', handleSync);
+
+    let bcBookings;
+    let bcNotifs;
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        bcBookings = new BroadcastChannel('tripgalileo_bookings_sync');
+        bcBookings.onmessage = handleSync;
+        bcNotifs = new BroadcastChannel('tripgalileo_notifications_sync');
+        bcNotifs.onmessage = handleSync;
+      }
+    } catch (e) {}
 
     return () => {
       clearInterval(interval);
       window.removeEventListener('new-booking-created', handleNewBooking);
+      window.removeEventListener('booking-status-updated', handleSync);
+      window.removeEventListener('booking-updated', handleSync);
+      window.removeEventListener('booking-deleted', handleSync);
+      window.removeEventListener('tripgalileo-notification-sync', handleSync);
+      window.removeEventListener('tripgalileo-booking-sync', handleSync);
+      window.removeEventListener('authoritative-notification-received', handleSync);
+      if (bcBookings) bcBookings.close();
+      if (bcNotifs) bcNotifs.close();
     };
   }, []);
 
@@ -628,32 +675,36 @@ export default function SuperAdminPortalPage({
                   style={{
                     right: 0,
                     top: '46px',
-                    width: '340px',
-                    maxWidth: '90vw',
+                    width: '380px',
+                    maxWidth: '94vw',
                     background: '#10243A',
-                    borderRadius: '12px',
-                    border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: '14px',
+                    border: '1px solid rgba(255,255,255,0.12)',
                     zIndex: 1060,
                     overflow: 'hidden'
                   }}
                   onClick={e => e.stopPropagation()}
                 >
                   <div className="d-flex align-items-center justify-content-between px-3 py-2.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', background: '#0D1B2E' }}>
-                    <div className="d-flex align-items-center gap-2">
-                      <Bell size={15} className="text-warning" />
-                      <span className="fw-bold text-white small">Notifications</span>
+                    {/* Left: Title + Badge */}
+                    <div className="d-flex align-items-center gap-2 flex-shrink-0">
+                      <Bell size={15} className="text-warning flex-shrink-0" />
+                      <span className="fw-bold text-white small text-nowrap">Notifications</span>
                       {unreadCount > 0 && (
-                        <span className="badge bg-danger rounded-pill" style={{ fontSize: '0.62rem' }}>
+                        <span className="badge bg-danger rounded-pill text-nowrap" style={{ fontSize: '0.62rem', padding: '0.25em 0.5em', fontWeight: 700 }}>
                           {unreadCount} new
                         </span>
                       )}
                     </div>
-                    <div className="d-flex align-items-center gap-2">
+
+                    {/* Right: Sound Control + Actions */}
+                    <div className="d-flex align-items-center gap-2 flex-shrink-0">
+                      <NotificationSoundToggle variant="dark" />
                       {unreadCount > 0 && (
                         <button
                           type="button"
-                          className="btn btn-sm p-0 text-white-50 border-0"
-                          style={{ fontSize: '0.68rem', textDecoration: 'underline' }}
+                          className="btn btn-sm p-0 text-white-50 border-0 text-nowrap"
+                          style={{ fontSize: '0.70rem', textDecoration: 'underline' }}
                           onClick={handleMarkAllRead}
                         >
                           Mark read
@@ -662,8 +713,8 @@ export default function SuperAdminPortalPage({
                       {activeNotifications.length > 0 && (
                         <button
                           type="button"
-                          className="btn btn-sm px-1.5 py-0.5 text-danger border border-danger border-opacity-25 rounded"
-                          style={{ fontSize: '0.65rem', background: 'rgba(220,38,38,0.1)' }}
+                          className="btn btn-sm px-2 py-0.5 text-danger border border-danger border-opacity-40 rounded text-nowrap fw-semibold"
+                          style={{ fontSize: '0.68rem', background: 'rgba(220,38,38,0.1)' }}
                           onClick={handleClearAll}
                         >
                           Clear all

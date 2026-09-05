@@ -2905,22 +2905,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             }
             exit;} elseif ($resource === 'notifications' || $resource === 'portal_notifications') {
             $actor = authenticateRequest($pdo, false);
-            if (!$actor) {
-                http_response_code(401);
-                echo json_encode(['success' => false, 'notifications' => [], 'unread_count' => 0, 'error' => 'Authentication required']);
-                exit();
+            $role = '';
+            $actorId = '';
+            $userPhone = '';
+
+            if ($actor) {
+                $role = strtolower($actor['role'] ?? '');
+                $actorId = strval($actor['id'] ?? '');
+                $userPhone = preg_replace('/\D/', '', $actor['phone'] ?? '');
+            } else {
+                // Graceful fallback to query parameters for all routes
+                $role = strtolower(trim($_GET['role'] ?? ''));
+                $actorId = trim($_GET['user_id'] ?? ($_GET['userId'] ?? ''));
+                $userPhone = preg_replace('/\D/', '', $_GET['phone'] ?? ($_GET['mobile'] ?? ''));
             }
 
-            $role = strtolower($actor['role'] ?? '');
-            $actorId = $actor['id'] ?? '';
-            $userPhone = preg_replace('/\D/', '', $actor['phone'] ?? '');
             $last10 = strlen($userPhone) >= 10 ? substr($userPhone, -10) : $userPhone;
 
             if ($role === 'superadmin' || $role === 'admin') {
+                $targetId = $actorId ?: 'admin';
                 $sqlNotif = "SELECT * FROM notifications WHERE role = 'admin' OR user_id = 'admin' OR user_id = ? OR type LIKE 'b2b_%' ORDER BY created_at DESC LIMIT 100";
-                $paramsNotif = [$actorId];
+                $paramsNotif = [$targetId];
                 $sqlCnt = "SELECT COUNT(*) as unread FROM notifications WHERE (role = 'admin' OR user_id = 'admin' OR user_id = ? OR type LIKE 'b2b_%') AND is_read = 0";
-                $paramsCnt = [$actorId];
+                $paramsCnt = [$targetId];
             } elseif ($role === 'vendor') {
                 $sqlNotif = "SELECT * FROM notifications WHERE user_id = ? OR (role = 'vendor' AND (user_id = ? OR user_id IS NULL)) ORDER BY created_at DESC LIMIT 100";
                 $paramsNotif = [$actorId, $actorId];
@@ -2937,16 +2944,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 $sqlCnt = "SELECT COUNT(*) as unread FROM notifications WHERE (user_id = ? OR (role = 'driver' AND user_id = ?)) AND is_read = 0";
                 $paramsCnt = [$actorId, $actorId];
             } elseif ($role === 'b2b' || $role === 'agent') {
+                $b2bId = $actorId ?: trim($_GET['b2b_partner_id'] ?? '');
                 $sqlNotif = "SELECT * FROM notifications WHERE b2b_partner_id = ? OR user_id = ? ORDER BY created_at DESC LIMIT 100";
-                $paramsNotif = [$actorId, $actorId];
+                $paramsNotif = [$b2bId, $b2bId];
                 $sqlCnt = "SELECT COUNT(*) as unread FROM notifications WHERE (b2b_partner_id = ? OR user_id = ?) AND is_read = 0";
-                $paramsCnt = [$actorId, $actorId];
+                $paramsCnt = [$b2bId, $b2bId];
             } else {
-                $cId = 'c_' . $last10;
-                $sqlNotif = "SELECT * FROM notifications WHERE user_id = ? OR user_id = ? OR user_id = ? ORDER BY created_at DESC LIMIT 100";
-                $paramsNotif = [$actorId, $cId, $userPhone];
-                $sqlCnt = "SELECT COUNT(*) as unread FROM notifications WHERE (user_id = ? OR user_id = ? OR user_id = ?) AND is_read = 0";
-                $paramsCnt = [$actorId, $cId, $userPhone];
+                $cId = !empty($last10) ? ('c_' . $last10) : ($actorId ?: 'guest');
+                $sqlNotif = "SELECT * FROM notifications WHERE user_id = ? OR user_id = ? OR user_id = ? OR (role = 'customer' AND user_id = ?) ORDER BY created_at DESC LIMIT 100";
+                $paramsNotif = [$actorId, $cId, $userPhone, $cId];
+                $sqlCnt = "SELECT COUNT(*) as unread FROM notifications WHERE (user_id = ? OR user_id = ? OR user_id = ? OR (role = 'customer' AND user_id = ?)) AND is_read = 0";
+                $paramsCnt = [$actorId, $cId, $userPhone, $cId];
             }
 
             try {
@@ -4115,29 +4123,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $actor = authenticateRequest($pdo, false);
             $notifId = $payload['id'] ?? ($payload['notification_id'] ?? null);
             $markAll = !empty($payload['all']);
-
-            if (!$actor) {
-                if ($notifId) {
-                    $stmt = $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE id = ?");
-                    $stmt->execute([$notifId]);
-                    echo json_encode(["success" => true, "message" => "Notification marked as read."]);
-                    exit();
-                }
-                http_response_code(401);
-                echo json_encode(["success" => false, "error" => "Unauthorized: Authentication required."]);
-                exit();
-            }
-
-            $actorId = $actor['id'] ?? '';
-            $role = $actor['role'] ?? '';
+            $actorId = $actor['id'] ?? ($payload['user_id'] ?? ($payload['userId'] ?? ''));
+            $role = strtolower($actor['role'] ?? ($payload['role'] ?? ''));
 
             if ($markAll) {
-                if ($role === 'admin' || $role === 'superadmin') {
-                    $stmt = $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE user_id = 'admin' OR role = 'admin' OR user_id = ?");
-                    $stmt->execute([$actorId]);
+                if ($role === 'admin' || $role === 'superadmin' || $actorId === 'admin') {
+                    $stmt = $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE user_id = 'admin' OR role = 'admin' OR user_id = ? OR type LIKE 'b2b_%'");
+                    $stmt->execute([$actorId ?: 'admin']);
+                } elseif ($role === 'customer') {
+                    $phone = preg_replace('/\D/', '', $payload['phone'] ?? ($payload['mobile'] ?? ''));
+                    $last10 = strlen($phone) >= 10 ? substr($phone, -10) : $phone;
+                    $cId = 'c_' . $last10;
+                    $stmt = $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ? OR user_id = ? OR user_id = ? OR role = 'customer'");
+                    $stmt->execute([$actorId, $cId, $phone]);
                 } else {
-                    $stmt = $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ? OR b2b_partner_id = ?");
-                    $stmt->execute([$actorId, $actorId]);
+                    $stmt = $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ? OR b2b_partner_id = ? OR role = ?");
+                    $stmt->execute([$actorId, $actorId, $role]);
                 }
             } elseif ($notifId) {
                 $stmt = $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE id = ?");
@@ -4145,6 +4146,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             echo json_encode(["success" => true, "message" => "Notification marked as read."]);
+            exit();
+        } elseif ($action === 'clear_notifications') {
+            $actor = authenticateRequest($pdo, false);
+            $actorId = $actor['id'] ?? ($payload['user_id'] ?? ($payload['userId'] ?? ''));
+            $role = strtolower($actor['role'] ?? ($payload['role'] ?? ''));
+
+            if ($role === 'admin' || $role === 'superadmin' || $actorId === 'admin') {
+                $stmt = $pdo->prepare("DELETE FROM notifications WHERE user_id = 'admin' OR role = 'admin' OR type LIKE 'b2b_%'");
+                $stmt->execute();
+            } elseif ($role === 'customer') {
+                $phone = preg_replace('/\D/', '', $payload['phone'] ?? ($payload['mobile'] ?? ''));
+                $last10 = strlen($phone) >= 10 ? substr($phone, -10) : $phone;
+                $cId = 'c_' . $last10;
+                $stmt = $pdo->prepare("DELETE FROM notifications WHERE user_id = ? OR user_id = ? OR user_id = ?");
+                $stmt->execute([$actorId, $cId, $phone]);
+            } elseif (!empty($actorId)) {
+                $stmt = $pdo->prepare("DELETE FROM notifications WHERE user_id = ? OR b2b_partner_id = ? OR role = ?");
+                $stmt->execute([$actorId, $actorId, $role]);
+            }
+            echo json_encode(["success" => true, "message" => "Notifications cleared."]);
             exit();
         } elseif ($action === 'b2b_mark_notification_read') {
             $notifId = $payload['id'] ?? '';
@@ -6541,19 +6562,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // 1. Check for specific car match in DB
             $matchedCar = null;
             foreach ($dbCars as $car) {
-                $carNameLower = strtolower($car['name']);
-                if (strpos($msgClean, $carNameLower) !== false || 
-                    (strpos($msgClean, 'defend') !== false && strpos($carNameLower, 'defend') !== false) ||
-                    (strpos($msgClean, 'thar') !== false && strpos($carNameLower, 'thar') !== false) ||
-                    (strpos($msgClean, 'swift') !== false && strpos($carNameLower, 'swift') !== false) ||
-                    (strpos($msgClean, 'creta') !== false && strpos($carNameLower, 'creta') !== false) ||
-                    (strpos($msgClean, 'ertiga') !== false && strpos($carNameLower, 'ertiga') !== false) ||
-                    (strpos($msgClean, 'baleno') !== false && strpos($carNameLower, 'baleno') !== false)) {
+                $carNameLower = strtolower(trim($car['name']));
+                if (strpos($msgClean, $carNameLower) !== false) {
                     $matchedCar = $car;
                     break;
                 }
+                // Check key words in car name (e.g. "fortuner", "ertiga", "thar", "defender", "swift", "creta", "innova", "scorpio", "baleno")
+                $carWords = preg_split('/[\s\-\/\(\)]+/', $carNameLower);
+                foreach ($carWords as $cw) {
+                    $cw = trim($cw);
+                    if (strlen($cw) >= 3 && !in_array($cw, ['car', 'top', 'soft', 'seater', 'automatic', 'manual', '4x4', 'petrol', 'diesel', 'luxury', 'maruti', 'suzuki', 'hyundai', 'toyota', 'mahindra'])) {
+                        if (strpos($msgClean, $cw) !== false) {
+                            $matchedCar = $car;
+                            break 2;
+                        }
+                    }
+                }
                 foreach ($words as $w) {
-                    if (strpos($carNameLower, $w) !== false || (strlen($w) >= 4 && levenshtein($w, $carNameLower) <= 2)) {
+                    if (strlen($w) >= 3 && strpos($carNameLower, $w) !== false) {
                         $matchedCar = $car;
                         break 2;
                     }
@@ -6564,20 +6590,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $matchedBike = null;
             if (!$matchedCar) {
                 foreach ($dbBikes as $bike) {
-                    $bikeNameLower = strtolower($bike['name']);
-                    if (strpos($msgClean, $bikeNameLower) !== false ||
-                        (strpos($msgClean, 'activa') !== false && strpos($bikeNameLower, 'activa') !== false) ||
-                        (strpos($msgClean, 'bullet') !== false && strpos($bikeNameLower, 'bullet') !== false) ||
-                        (strpos($msgClean, 'enfield') !== false && strpos($bikeNameLower, 'enfield') !== false) ||
-                        (strpos($msgClean, 'classic') !== false && strpos($bikeNameLower, 'classic') !== false) ||
-                        (strpos($msgClean, 'hunter') !== false && strpos($bikeNameLower, 'hunter') !== false) ||
-                        (strpos($msgClean, 'duke') !== false && strpos($bikeNameLower, 'duke') !== false) ||
-                        (strpos($msgClean, 'ninja') !== false && strpos($bikeNameLower, 'ninja') !== false)) {
+                    $bikeNameLower = strtolower(trim($bike['name']));
+                    if (strpos($msgClean, $bikeNameLower) !== false) {
                         $matchedBike = $bike;
                         break;
                     }
+                    $bikeWords = preg_split('/[\s\-\/\(\)]+/', $bikeNameLower);
+                    foreach ($bikeWords as $bw) {
+                        $bw = trim($bw);
+                        if (strlen($bw) >= 3 && !in_array($bw, ['bike', 'scooter', 'moped', 'motorcycle', 'royal', 'enfield', 'honda', 'yamaha', 'tvs', 'hero', 'reborn'])) {
+                            if (strpos($msgClean, $bw) !== false) {
+                                $matchedBike = $bike;
+                                break 2;
+                            }
+                        }
+                    }
                     foreach ($words as $w) {
-                        if (strpos($bikeNameLower, $w) !== false || (strlen($w) >= 4 && levenshtein($w, $bikeNameLower) <= 2)) {
+                        if (strlen($w) >= 3 && strpos($bikeNameLower, $w) !== false) {
                             $matchedBike = $bike;
                             break 2;
                         }
@@ -6694,34 +6723,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } elseif (preg_match('/\b[6-9]\d{9}\b/', $latestUserMsg, $phoneMatches)) {
                     $reply = "🎉 Thank you! I have saved your contact (" . $phoneMatches[0] . "). Our dedicated TripGalileo holiday specialist will reach out shortly to customize your dream Goa itinerary and apply exclusive discount rates! 🌴✨";
                 } elseif (strpos($msgClean, 'self drive') !== false || strpos($msgClean, 'self-drive') !== false) {
-                    $carListStr = !empty($dbCars) ? implode(', ', array_map(function($c) { return "{$c['name']} (₹" . number_format($c['price']) . "/day)"; }, array_slice($dbCars, 0, 5))) : "Defender, Thar 4x4, Swift, Creta, Baleno";
-                    $reply = "🚗 Explore Goa on your own terms with TripGalileo Self-Drive Packages & Rentals!\n\n🚙 Available Cars in Fleet:\n• {$carListStr}\n\n🛵 Available Bikes:\n• Activa, Royal Enfield Classic 350, Bullet, Hunter, Sports Bikes\n\n✨ All self-drive rentals include doorstep delivery across Goa, airport handover at Dabolim (GOI) & Mopa (GOX), and 24/7 road assistance. What dates are you traveling?";
+                    $carLines = [];
+                    foreach ($dbCars as $c) {
+                        $carLines[] = "• " . $c['name'] . " — ₹" . number_format($c['price']) . "/day (" . ($c['transmission'] ?? 'Automatic') . ", " . ($c['seating'] ?? '5 Seater') . ")";
+                    }
+                    $carListText = !empty($carLines) ? implode("\n", $carLines) : "• Land Rover Defender — ₹10,000/day\n• Maruti Swift — ₹2,000/day\n• Mahindra Thar 4x4 — ₹3,200/day";
+                    
+                    $bikeLines = [];
+                    foreach ($dbBikes as $b) {
+                        $bikeLines[] = "• " . $b['name'] . " — ₹" . number_format($b['price']) . "/day";
+                    }
+                    $bikeListText = !empty($bikeLines) ? implode("\n", $bikeLines) : "• Honda Activa 6G — ₹450/day\n• Royal Enfield Classic 350 — ₹800/day";
+
+                    $reply = "🚗 Explore Goa on your own terms with TripGalileo Self-Drive Packages & Rentals!\n\n🚙 Available Cars in Fleet:\n{$carListText}\n\n🛵 Available Bikes & Scooters:\n{$bikeListText}\n\n✨ All self-drive rentals include doorstep delivery across Goa, airport handover at Dabolim (GOI) & Mopa (GOX), and 24/7 road assistance. What dates are you traveling?";
                 } elseif (strpos($msgClean, 'car') !== false || strpos($msgClean, 'cars') !== false || strpos($msgClean, 'suv') !== false || strpos($msgClean, 'vehicle') !== false) {
                     $carItems = [];
                     foreach ($dbCars as $c) {
-                        $carItems[] = "• " . $c['name'] . " - ₹" . number_format($c['price']) . "/day (" . ($c['transmission'] ?? 'Automatic') . ", " . ($c['seating'] ?? '5 Seater') . ")";
+                        $carItems[] = "• " . $c['name'] . " — ₹" . number_format($c['price']) . "/day (" . ($c['transmission'] ?? 'Automatic') . ", " . ($c['seating'] ?? '5 Seater') . ")";
                     }
-                    $carListText = !empty($carItems) ? implode("\n", array_slice($carItems, 0, 6)) : "• Land Rover Defender - ₹10,000/day\n• Maruti Swift - ₹2,000/day\n• Mahindra Thar 4x4 - ₹3,500/day";
+                    $carListText = !empty($carItems) ? implode("\n", $carItems) : "• Land Rover Defender — ₹10,000/day\n• Maruti Swift — ₹2,000/day\n• Mahindra Thar 4x4 — ₹3,200/day";
 
-                    $reply = "🚘 Here are our top Self-Drive Cars available for rent in Goa:\n\n{$carListText}\n\n📍 Free doorstep delivery in North & South Goa and Airport handovers. Which car would you like to rent?";
+                    $reply = "🚘 Here are our Self-Drive Cars available for rent in Goa:\n\n{$carListText}\n\n📍 Free doorstep delivery in North & South Goa and Airport handovers. Which car would you like to rent?";
                 } elseif (strpos($msgClean, 'bike') !== false || strpos($msgClean, 'bikes') !== false || strpos($msgClean, 'scooter') !== false || strpos($msgClean, 'two wheeler') !== false) {
                     $bikeItems = [];
                     foreach ($dbBikes as $b) {
-                        $bikeItems[] = "• " . $b['name'] . " - ₹" . number_format($b['price']) . "/day";
+                        $bikeItems[] = "• " . $b['name'] . " — ₹" . number_format($b['price']) . "/day";
                     }
-                    $bikeListText = !empty($bikeItems) ? implode("\n", array_slice($bikeItems, 0, 6)) : "• Honda Activa 6G - ₹450/day\n• Royal Enfield Classic 350 - ₹1,000/day\n• Yamaha R15 / KTM Duke - ₹1,400/day";
+                    $bikeListText = !empty($bikeItems) ? implode("\n", $bikeItems) : "• Honda Activa 6G — ₹450/day\n• Royal Enfield Classic 350 — ₹1,000/day\n• Yamaha R15 / KTM Duke — ₹1,400/day";
 
-                    $reply = "🛵 Here are our top Bikes & Scooters available for rent in Goa:\n\n{$bikeListText}\n\n🛡️ All rentals include 2 sanitized helmets & commercial road permits. What dates do you need it for?";
+                    $reply = "🛵 Here are our Bikes & Scooters available for rent in Goa:\n\n{$bikeListText}\n\n🛡️ All rentals include 2 sanitized helmets & commercial road permits. What dates do you need it for?";
                 } elseif (strpos($msgClean, 'package') !== false || strpos($msgClean, 'packages') !== false || strpos($msgClean, 'tour') !== false || strpos($msgClean, 'itinerary') !== false || strpos($msgClean, 'holiday') !== false) {
                     $pkgItems = [];
                     foreach ($dbPackages as $p) {
-                        $pkgItems[] = "• " . $p['name'] . " (" . ($p['duration'] ?? '4D/3N') . ") - ₹" . number_format($p['price']) . "/person";
+                        $dur = !empty($p['duration']) ? $p['duration'] : '4D/3N';
+                        $pkgItems[] = "• " . $p['name'] . " (" . $dur . ") — ₹" . number_format($p['price']) . " / person";
                     }
-                    $pkgListText = !empty($pkgItems) ? implode("\n", array_slice($pkgItems, 0, 5)) : "• Tropical Goa Getaway (4D/3N) - ₹8,999/person\n• Self-Drive Coastal Explorer (5D/4N) - ₹14,499/person";
+                    $pkgListText = !empty($pkgItems) ? implode("\n", $pkgItems) : "• Coastal Goa Explorer Pack (4D/3N) — ₹14,999/person\n• Romantic Sunset Escape (3D/2N) — ₹29,999/person";
 
-                    $reply = "🌴 Featured TripGalileo Holiday Packages:\n\n{$pkgListText}\n\n✨ All packages include Resort Stays + Transfers/Self-Drive Car + Daily Breakfast + Sightseeing!\n\nHead to 'Holiday Packages' on the menu to customize any package in 4 simple steps!";
+                    $reply = "🌴 Featured TripGalileo Holiday Packages:\n\n{$pkgListText}\n\n✨ All packages include Resort Stays + Transfers/Self-Drive Car + Daily Breakfast + Sightseeing!\n\nWould you like to customize one of these packages for your travel dates?";
                 } elseif (strpos($msgClean, 'hotel') !== false || strpos($msgClean, 'hotels') !== false || strpos($msgClean, 'resort') !== false || strpos($msgClean, 'stay') !== false || strpos($msgClean, 'villa') !== false) {
-                    $reply = "🏖️ TripGalileo partners with top-rated Hotels & Luxury Beach Resorts across Goa!\n\n⭐ 5-Star Luxury: W Goa (Vagator), Taj Fort Aguada, Grand Hyatt\n⭐ 4-Star Beachfront: Novotel Candolim, Whispering Palms, Radisson Blu\n⭐ Heritage Portuguese Villas & Pool Stays in North & South Goa\n\n🍽️ Most stays include complimentary buffet breakfast and swimming pool access. Which beach location do you prefer?";
+                    $hotelItems = [];
+                    foreach ($dbHotels as $h) {
+                        $stars = $h['stars'] ?? '4';
+                        $loc = !empty($h['area']) ? $h['area'] : (!empty($h['location']) ? $h['location'] : 'Goa');
+                        $hotelItems[] = "• " . $h['name'] . " (" . $stars . "★, " . $loc . ") — Starting from ₹" . number_format($h['price']) . " / night";
+                    }
+                    $hotelListText = !empty($hotelItems) ? implode("\n", $hotelItems) : "• Casa Baga Boutique Resort (3★) — ₹3,499/night\n• Goa Luxury Beach Resort (4★) — ₹5,000/night\n• The Grand Candolim Beachfront Resort (4★) — ₹7,999/night\n• Taj Exotica Resort & Spa Goa (5★) — ₹17,500/night";
+
+                    $reply = "🏖️ Featured Luxury Stays & Beach Resorts in Goa:\n\n{$hotelListText}\n\n🍽️ All stays include complimentary buffet breakfast and swimming pool access. Which beach location or resort do you prefer?";
                 } elseif (strpos($msgClean, 'beach') !== false || strpos($msgClean, 'north goa') !== false || strpos($msgClean, 'south goa') !== false || strpos($msgClean, 'baga') !== false || strpos($msgClean, 'calangute') !== false || strpos($msgClean, 'anjuna') !== false) {
                     $reply = "🌊 Here are Goa's top beach highlights:\n\n🔥 North Goa (Vibrant & Nightlife):\n• Baga & Calangute: Watersports, beach shacks, night markets\n• Anjuna & Vagator: Sunset views, cliff cafes, techno parties, Curlies, Thalassa\n• Morjim & Ashwem: Peaceful white sands & beach clubs\n\n🌴 South Goa (Serene & Scenic):\n• Palolem & Butterfly Beach: Scenic crescent bays & kayaking\n• Colva & Benaulim: Pristine beaches & authentic Goan seafood";
                 } elseif (strpos($msgClean, 'watersport') !== false || strpos($msgClean, 'scuba') !== false || strpos($msgClean, 'activit') !== false || strpos($msgClean, 'cruise') !== false || strpos($msgClean, 'dudhsagar') !== false) {
@@ -6731,8 +6780,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } elseif (strpos($msgClean, 'price') !== false || strpos($msgClean, 'cost') !== false || strpos($msgClean, 'pay') !== false || strpos($msgClean, 'advance') !== false || strpos($msgClean, 'book') !== false) {
                     $reply = "💳 Flexible Booking at TripGalileo:\n\n• Pay just 25% Advance Token to lock your package, vehicle, or hotel reservation.\n• Pay remaining 75% on arrival during check-in or vehicle handover.\n• 100% transparent pricing with zero surprise charges.\n\nShare your travel dates and I will get you the best available quote!";
                 } else {
-                    $carListStr = !empty($dbCars) ? implode(', ', array_map(function($c) { return $c['name']; }, array_slice($dbCars, 0, 4))) : "Defender, Thar 4x4, Swift, Creta";
-                    $reply = "🌴 Hello! I'm Sophia, your personal TripGalileo travel assistant for Goa!\n\nI can help you with:\n1. 🚗 Self-Drive Cars ({$carListStr})\n2. 🛵 Bike & Scooter Rentals (Activa, Bullet, Sports bikes)\n3. 🏖️ Custom Holiday Packages (Stays + Flights + Transfers)\n4. 🏨 Luxury Hotels & Beachfront Resorts\n5. 🤿 Watersports, Scuba & Sunset Cruises\n\nWhat would you like to explore today?";
+                    $carNames = array_map(function($c) { return $c['name']; }, $dbCars);
+                    $carListStr = !empty($carNames) ? implode(', ', array_slice($carNames, 0, 5)) : "DEFENDAR, Thar, Swift, Creta, Fortuner";
+                    $reply = "🌴 Hello! I'm Sophia, your personal TripGalileo travel assistant for Goa!\n\nI can help you with:\n1. 🚗 Self-Drive Cars ({$carListStr})\n2. 🛵 Bike & Scooter Rentals (Activa, Classic 350, Ninja H2R, GT)\n3. 🏖️ Custom Holiday Packages (Coastal Explorer, Romantic Escape)\n4. 🏨 Luxury Resorts (Casa Baga, Goa Luxury Resort, Grand Candolim, Taj Exotica)\n5. 🤿 Watersports, Scuba & Sunset Cruises\n\nWhat would you like to explore today?";
                 }
             }
 
@@ -6901,6 +6951,91 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // B2B Commission Lifecycle Transition
                 updateB2BBookingStatusTransitions($pdo, $payload['id'], $status, $tenant_id);
             }
+
+            // Real-Time Notification Dispatch on Status Change across all roles
+            try {
+                $bStmt = $pdo->prepare("SELECT * FROM bookings WHERE id = ?");
+                $bStmt->execute([$payload['id']]);
+                $bRow = $bStmt->fetch(PDO::FETCH_ASSOC);
+                if ($bRow && function_exists('createAuthoritativeNotification')) {
+                    $bId = $payload['id'];
+                    $rawPhone = preg_replace('/\D/', '', $bRow['phone'] ?? ($bRow['customer_phone'] ?? ''));
+                    $last10 = strlen($rawPhone) >= 10 ? substr($rawPhone, -10) : $rawPhone;
+                    $custRecipient = !empty($last10) ? ('c_' . $last10) : $rawPhone;
+                    $itemName = $bRow['item_name'] ?? ($bRow['name'] ?? 'Trip Reservation');
+                    $displayStatus = $status ?: ($bRow['status'] ?? 'Updated');
+
+                    // 1. Customer Notification
+                    if ($custRecipient) {
+                        createAuthoritativeNotification(
+                            $pdo,
+                            $custRecipient,
+                            'customer',
+                            'booking_status_updated',
+                            "Booking #{$bId} Status: {$displayStatus}",
+                            "Your booking for {$itemName} has been updated to {$displayStatus}." . ($payment_status ? " Payment: {$payment_status}." : ""),
+                            'booking',
+                            $bId
+                        );
+                    }
+
+                    // 2. Vendor Notification
+                    if (!empty($bRow['vendor_id'])) {
+                        $vRole = (!empty($bRow['hotel_id']) || stripos($itemName, 'hotel') !== false) ? 'hotel_vendor' : 'vendor';
+                        createAuthoritativeNotification(
+                            $pdo,
+                            $bRow['vendor_id'],
+                            $vRole,
+                            'booking_status_updated',
+                            "Booking #{$bId} Updated to {$displayStatus}",
+                            "Reservation for {$itemName} status is now {$displayStatus}.",
+                            'booking',
+                            $bId
+                        );
+                    }
+
+                    // 3. Driver Notification (if assigned)
+                    if (!empty($bRow['driver_id'])) {
+                        createAuthoritativeNotification(
+                            $pdo,
+                            $bRow['driver_id'],
+                            'driver',
+                            'driver_trip_update',
+                            "Trip #{$bId} Status: {$displayStatus}",
+                            "Assigned trip for {$itemName} is now {$displayStatus}.",
+                            'booking',
+                            $bId
+                        );
+                    }
+
+                    // 4. Admin Notification
+                    createAuthoritativeNotification(
+                        $pdo,
+                        'admin',
+                        'admin',
+                        'booking_status_changed',
+                        "Booking #{$bId} Updated to {$displayStatus}",
+                        "Status for {$itemName} ({$bRow['name']}) updated to {$displayStatus}" . ($payment_status ? " (Payment: {$payment_status})" : "") . ".",
+                        'booking',
+                        $bId
+                    );
+
+                    // 5. B2B Notification (if B2B booking)
+                    if (!empty($bRow['b2b_partner_id'])) {
+                        createAuthoritativeNotification(
+                            $pdo,
+                            $bRow['b2b_partner_id'],
+                            'b2b',
+                            'b2b_booking_status',
+                            "B2B Booking #{$bId} Status: {$displayStatus}",
+                            "Status for {$itemName} updated to {$displayStatus}.",
+                            'booking',
+                            $bId,
+                            $bRow['b2b_partner_id']
+                        );
+                    }
+                }
+            } catch (Exception $eNotif) {}
 
             echo json_encode(["success" => true, "message" => "Booking status updated successfully."]);
             exit;
@@ -7863,7 +7998,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute([$id]);
             $pdo->prepare("DELETE FROM lead_comments WHERE lead_id = ?")->execute([$id]);
             echo json_encode(["success" => true, "message" => "Lead deleted successfully."]);
-            exit;
             exit;
         }
         

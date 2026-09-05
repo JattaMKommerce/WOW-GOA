@@ -1,191 +1,315 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Bell, CheckCircle2, AlertCircle, Info, Check, Trash2, X, ExternalLink, Clock, ShieldCheck, Tag
-} from 'lucide-react';
+﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Bell, CheckCircle2, AlertCircle, Info, X, Clock, ShieldCheck, CheckCheck, Trash2 } from 'lucide-react';
 import * as api from '../../services/api';
+import NotificationSoundToggle from '../common/NotificationSoundToggle';
+import { handleIncomingNotifications, registerSeenNotifications } from '../../utils/notificationSound';
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const formatTimeAgo = (dateStr) => {
+  if (!dateStr) return 'Just now';
+  const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000);
+  if (diff < 60)    return 'Just now';
+  if (diff < 3600)  return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+};
+
+const getTypeIcon = (type) => {
+  switch (type) {
+    case 'booking_confirmed':
+    case 'b2b_booking_created':
+      return <CheckCircle2 size={15} className="flex-shrink-0" style={{ color: '#34D399' }} />;
+    case 'mode_approved':
+    case 'registration_approved':
+      return <ShieldCheck size={15} className="flex-shrink-0" style={{ color: '#FCD34D' }} />;
+    case 'mode_rejected':
+    case 'registration_rejected':
+      return <AlertCircle size={15} className="flex-shrink-0" style={{ color: '#F87171' }} />;
+    default:
+      return <Info size={15} className="flex-shrink-0" style={{ color: '#60A5FA' }} />;
+  }
+};
+
+// ─── Main Component ────────────────────────────────────────────────────────────
 
 export default function B2BNotificationBell({ partner, onNotificationClick }) {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
-  const [activeFilter, setActiveFilter] = useState('all'); // 'all' | 'unread'
-  const [toasts, setToasts] = useState([]); // List of active floating toasts
+  const [activeFilter, setActiveFilter] = useState('all');
+  const [toasts, setToasts] = useState([]);
+  const [isMarkingAll, setIsMarkingAll] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
 
   const partnerId = partner?.id || partner?.username || '';
-  const prevNotifsRef = useRef([]);
   const isFirstLoad = useRef(true);
   const dropdownRef = useRef(null);
 
-  // Helper to format time ago
-  const formatTimeAgo = (dateStr) => {
-    if (!dateStr) return 'Just now';
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffSec = Math.floor((now - date) / 1000);
-    if (diffSec < 60) return 'Just now';
-    if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
-    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
-    return `${Math.floor(diffSec / 86400)}d ago`;
-  };
+  // ── Data Fetching ─────────────────────────────────────────────────────────
 
-  // Helper to get notification icon
-  const getIcon = (type) => {
-    switch (type) {
-      case 'booking_confirmed':
-      case 'b2b_booking_created':
-        return <CheckCircle2 size={16} className="text-success flex-shrink-0 mt-0.5" />;
-      case 'mode_approved':
-      case 'registration_approved':
-        return <ShieldCheck size={16} className="text-warning flex-shrink-0 mt-0.5" />;
-      case 'mode_rejected':
-      case 'registration_rejected':
-        return <AlertCircle size={16} className="text-danger flex-shrink-0 mt-0.5" />;
-      default:
-        return <Info size={16} className="text-info flex-shrink-0 mt-0.5" />;
-    }
-  };
-
-  // Poll notifications
-  const loadNotifications = async () => {
+  const loadNotifications = useCallback(async () => {
     if (!partnerId) return;
     try {
       const res = await api.fetchB2BNotifications(partnerId);
-      if (res && res.success) {
+      if (res?.success) {
         const fetched = Array.isArray(res.notifications) ? res.notifications : [];
         setNotifications(fetched);
-        setUnreadCount(res.unread_count || 0);
+        const unread = fetched.filter(n => !n.is_read).length;
+        setUnreadCount(unread);
 
-        // Detect new unread notification for toast alert
-        if (!isFirstLoad.current && fetched.length > 0) {
-          const prevIds = new Set(prevNotifsRef.current.map(n => n.id));
-          const newItems = fetched.filter(n => !prevIds.has(n.id) && !n.is_read);
-          if (newItems.length > 0) {
-            newItems.forEach(item => {
-              triggerToast(item);
-            });
-          }
+        if (isFirstLoad.current) {
+          registerSeenNotifications(fetched);
+          isFirstLoad.current = false;
+        } else {
+          const fresh = handleIncomingNotifications(fetched, { isInitialLoad: false });
+          fresh.forEach(item => triggerToast(item));
         }
-        prevNotifsRef.current = fetched;
-        isFirstLoad.current = false;
       }
     } catch (err) {
-      console.warn('[B2B Notifications] fetch error:', err);
+      console.warn('[B2B Bell] fetch error:', err);
     }
-  };
-
-  const triggerToast = (item) => {
-    const toastId = 'toast_' + Date.now() + '_' + Math.random();
-    const newToast = { ...item, toastId };
-    setToasts(prev => [newToast, ...prev.slice(0, 3)]); // Keep max 4 toasts
-
-    // Auto dismiss after 6 seconds
-    setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.toastId !== toastId));
-    }, 6000);
-  };
-
-  const removeToast = (toastId) => {
-    setToasts(prev => prev.filter(t => t.toastId !== toastId));
-  };
+  }, [partnerId]);
 
   useEffect(() => {
     loadNotifications();
-    const interval = setInterval(loadNotifications, 3500);
-    return () => clearInterval(interval);
-  }, [partnerId]);
+    const interval = setInterval(loadNotifications, 5000);
+    const sync = () => loadNotifications();
+    const events = [
+      'tripgalileo-notification-sync',
+      'tripgalileo-booking-sync',
+      'new-booking-created',
+      'booking-status-updated',
+    ];
+    events.forEach(e => window.addEventListener(e, sync));
 
-  // Close dropdown on click outside
+    let bc;
+    try {
+      if ('BroadcastChannel' in window) {
+        bc = new BroadcastChannel('tripgalileo_notifications_sync');
+        bc.onmessage = sync;
+      }
+    } catch (_) {}
+
+    return () => {
+      clearInterval(interval);
+      events.forEach(e => window.removeEventListener(e, sync));
+      bc?.close();
+    };
+  }, [loadNotifications]);
+
   useEffect(() => {
-    const handleClickOutside = (e) => {
+    if (!isOpen) return;
+    const handler = (e) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
         setIsOpen(false);
       }
     };
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
   }, [isOpen]);
 
-  const handleMarkRead = async (notifId, e) => {
+  // ── Toasts ──────────────────────────────────────────────────────────────────
+
+  const triggerToast = (item) => {
+    const toastId = `toast_${Date.now()}_${Math.random()}`;
+    setToasts(prev => [{ ...item, toastId }, ...prev.slice(0, 3)]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.toastId !== toastId)), 6000);
+  };
+
+  const removeToast = (toastId) => setToasts(prev => prev.filter(t => t.toastId !== toastId));
+
+  // ── Actions ──────────────────────────────────────────────────────────────────
+
+  const handleMarkSingleRead = async (notifId, e) => {
     e?.stopPropagation();
-    await api.markB2BNotificationRead(notifId, partnerId, false);
     setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, is_read: 1 } : n));
     setUnreadCount(prev => Math.max(0, prev - 1));
+    try {
+      await api.markB2BNotificationRead(notifId, partnerId, false);
+    } catch (_) {
+      loadNotifications();
+    }
   };
 
   const handleMarkAllRead = async () => {
-    await api.markB2BNotificationRead('', partnerId, true);
+    if (unreadCount === 0 || isMarkingAll) return;
+    setIsMarkingAll(true);
     setNotifications(prev => prev.map(n => ({ ...n, is_read: 1 })));
     setUnreadCount(0);
+    try {
+      await api.markB2BNotificationRead('', partnerId, true);
+    } catch (_) {
+      loadNotifications();
+    } finally {
+      setIsMarkingAll(false);
+    }
+  };
+
+  const handleDismiss = (notifId, e) => {
+    e.stopPropagation();
+    setNotifications(prev => {
+      const updated = prev.filter(n => n.id !== notifId);
+      setUnreadCount(updated.filter(n => !n.is_read).length);
+      return updated;
+    });
   };
 
   const handleClearAll = async () => {
-    await api.clearB2BNotifications(partnerId);
+    if (isClearing) return;
+    setIsClearing(true);
     setNotifications([]);
     setUnreadCount(0);
+    try {
+      await api.clearB2BNotifications(partnerId);
+    } catch (_) {
+      loadNotifications();
+    } finally {
+      setIsClearing(false);
+    }
   };
 
-  const filteredNotifications = activeFilter === 'unread'
+  // ── Derived ───────────────────────────────────────────────────────────────────
+
+  const filtered = activeFilter === 'unread'
     ? notifications.filter(n => !n.is_read)
     : notifications;
 
+  // ─── Render ──────────────────────────────────────────────────────────────────
+
+  const S = {
+    toast: {
+      background: '#0D1B2E', border: '1px solid rgba(252,211,77,0.35)',
+      borderRadius: '12px', boxShadow: '0 12px 32px rgba(0,0,0,0.5)',
+      marginBottom: '10px', overflow: 'hidden',
+    },
+    accentBar: { height: '3px', background: 'linear-gradient(90deg,#FCD34D,#F59E0B)' },
+    bellBtn: (open, hasUnread) => ({
+      width: '38px', height: '38px', borderRadius: '50%',
+      border: 'none', cursor: 'pointer', position: 'relative',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: open ? 'rgba(252,211,77,0.18)' : 'rgba(255,255,255,0.08)',
+      color: hasUnread ? '#FCD34D' : 'rgba(255,255,255,0.75)',
+      transition: 'all 0.2s',
+    }),
+    badge: {
+      position: 'absolute', top: '2px', right: '2px',
+      background: '#EF4444', color: '#fff',
+      borderRadius: '99px', fontSize: '0.58rem', fontWeight: 800,
+      padding: '1px 4px', lineHeight: 1.4,
+      border: '1.5px solid #0D1B2E', minWidth: '16px', textAlign: 'center',
+    },
+    panel: {
+      position: 'absolute', top: '46px', right: 0,
+      width: '420px', maxWidth: '94vw',
+      background: '#111C2E', borderRadius: '16px',
+      border: '1px solid rgba(255,255,255,0.10)',
+      boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
+      zIndex: 1080, overflow: 'hidden',
+      display: 'flex', flexDirection: 'column',
+    },
+    panelHeader: {
+      background: '#0B1526',
+      borderBottom: '1px solid rgba(255,255,255,0.07)',
+      padding: '12px 16px 0',
+    },
+    filterBtn: (active) => ({
+      border: 'none', borderRadius: '20px', cursor: 'pointer',
+      padding: '3px 10px', fontSize: '0.68rem', fontWeight: 600,
+      background: active ? '#FCD34D' : 'rgba(255,255,255,0.08)',
+      color: active ? '#1a1100' : 'rgba(255,255,255,0.5)',
+      transition: 'all 0.15s',
+    }),
+    markReadBtn: (disabled) => ({
+      display: 'flex', alignItems: 'center', gap: '4px',
+      border: 'none', background: 'none', cursor: disabled ? 'not-allowed' : 'pointer',
+      color: disabled ? 'rgba(255,255,255,0.3)' : '#60A5FA',
+      fontSize: '0.68rem', fontWeight: 600, padding: '2px 0', whiteSpace: 'nowrap',
+    }),
+    clearBtn: (disabled) => ({
+      display: 'flex', alignItems: 'center', gap: '4px',
+      border: '1px solid rgba(239,68,68,0.35)',
+      background: 'rgba(239,68,68,0.10)',
+      borderRadius: '6px', cursor: disabled ? 'not-allowed' : 'pointer',
+      color: disabled ? 'rgba(239,68,68,0.4)' : '#F87171',
+      fontSize: '0.68rem', fontWeight: 600, padding: '3px 8px', whiteSpace: 'nowrap',
+    }),
+    list: {
+      maxHeight: '400px', overflowY: 'auto',
+      scrollbarWidth: 'thin',
+      scrollbarColor: 'rgba(255,255,255,0.12) transparent',
+    },
+    emptyWrap: { padding: '44px 24px', textAlign: 'center' },
+    emptyIcon: {
+      width: '52px', height: '52px', borderRadius: '50%',
+      background: 'rgba(255,255,255,0.05)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      margin: '0 auto 12px',
+    },
+    cardRow: (isUnread) => ({
+      display: 'flex', alignItems: 'flex-start', gap: '10px',
+      padding: '12px 16px', cursor: 'pointer',
+      background: isUnread ? 'rgba(252,211,77,0.04)' : 'transparent',
+      borderLeft: isUnread ? '3px solid #FCD34D' : '3px solid transparent',
+      transition: 'background 0.15s', position: 'relative',
+    }),
+    cardTitle: (isUnread) => ({
+      color: '#fff', fontWeight: isUnread ? 700 : 500,
+      fontSize: '0.78rem', lineHeight: 1.3, flex: 1, minWidth: 0,
+    }),
+    dismissBtn: {
+      background: 'none', border: 'none', cursor: 'pointer',
+      color: 'rgba(255,255,255,0.25)', padding: '1px 2px',
+      borderRadius: '4px', flexShrink: 0, lineHeight: 1, transition: 'color 0.15s',
+    },
+    cardMsg: {
+      color: 'rgba(255,255,255,0.5)', fontSize: '0.71rem',
+      margin: '0 0 6px', lineHeight: 1.45,
+    },
+    cardTime: {
+      color: 'rgba(255,255,255,0.3)', fontSize: '0.63rem',
+      display: 'flex', alignItems: 'center', gap: '3px',
+    },
+    cardMarkBtn: {
+      background: 'none', border: 'none', cursor: 'pointer',
+      color: '#60A5FA', fontSize: '0.64rem', fontWeight: 600,
+      padding: 0, display: 'flex', alignItems: 'center', gap: '3px',
+    },
+    footer: {
+      background: '#0B1526', borderTop: '1px solid rgba(255,255,255,0.07)',
+      padding: '10px 16px', textAlign: 'center', flexShrink: 0,
+    },
+    footerBtn: {
+      background: 'none', border: 'none', cursor: 'pointer',
+      color: '#FCD34D', fontSize: '0.74rem', fontWeight: 600,
+      display: 'inline-flex', alignItems: 'center', gap: '6px',
+      padding: '4px 0', transition: 'opacity 0.15s',
+    },
+  };
+
   return (
     <>
-      {/* Real-time Floating Toasts in Top-Right */}
-      <div 
-        className="position-fixed"
-        style={{
-          top: '20px',
-          right: '20px',
-          zIndex: 9999,
-          maxWidth: '360px',
-          width: '100%',
-          pointerEvents: 'none'
-        }}
-      >
+      {/* ── Floating Toasts ── */}
+      <div style={{ position: 'fixed', top: '20px', right: '20px', zIndex: 9999, width: '340px', maxWidth: '90vw', pointerEvents: 'none' }}>
         {toasts.map(toast => (
-          <div
-            key={toast.toastId}
-            className="card border-0 shadow-lg mb-2.5 overflow-hidden animate-fade-in-down"
-            style={{
-              background: '#0D1B2E',
-              color: '#ffffff',
-              borderRadius: '12px',
-              border: '1px solid rgba(255, 193, 7, 0.3)',
-              pointerEvents: 'auto',
-              boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.3)'
-            }}
-          >
-            <div className="p-3 d-flex align-items-start gap-2.5">
-              <div className="p-2 rounded-circle bg-warning bg-opacity-20 text-warning">
-                <Bell size={18} />
+          <div key={toast.toastId} style={{ ...S.toast, pointerEvents: 'auto' }}>
+            <div style={S.accentBar} />
+            <div style={{ padding: '12px 14px', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+              <div style={{ width: '32px', height: '32px', borderRadius: '50%', flexShrink: 0, background: 'rgba(252,211,77,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Bell size={15} style={{ color: '#FCD34D' }} />
               </div>
-              <div className="flex-grow-1 min-w-0">
-                <div className="d-flex align-items-center justify-content-between mb-1">
-                  <span className="fw-bold text-white text-xs text-truncate pe-2">{toast.title}</span>
-                  <button
-                    onClick={() => removeToast(toast.toastId)}
-                    className="btn btn-link text-white-50 p-0 border-0"
-                    style={{ textDecoration: 'none' }}
-                  >
-                    <X size={14} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '3px' }}>
+                  <span style={{ color: '#fff', fontWeight: 700, fontSize: '0.78rem', lineHeight: 1.3 }}>{toast.title}</span>
+                  <button onClick={() => removeToast(toast.toastId)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', padding: '0 0 0 8px', lineHeight: 1 }}>
+                    <X size={13} />
                   </button>
                 </div>
-                <p className="text-white-50 text-xs mb-1.5 leading-snug" style={{ fontSize: '0.75rem' }}>
-                  {toast.message}
-                </p>
-                <div className="d-flex align-items-center justify-content-between">
-                  <span className="text-white-50 text-xxs" style={{ fontSize: '0.65rem' }}>Just now</span>
-                  <button
-                    onClick={() => {
-                      removeToast(toast.toastId);
-                      setIsOpen(true);
-                      if (onNotificationClick) onNotificationClick(toast);
-                    }}
-                    className="btn btn-warning btn-xs py-0.5 px-2 rounded-pill fw-bold text-dark"
-                    style={{ fontSize: '0.65rem' }}
-                  >
+                <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: '0.72rem', margin: '0 0 6px', lineHeight: 1.4 }}>{toast.message}</p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: '0.64rem' }}>Just now</span>
+                  <button onClick={() => { removeToast(toast.toastId); setIsOpen(true); onNotificationClick?.(toast); }}
+                    style={{ background: '#FCD34D', color: '#1a1a1a', border: 'none', borderRadius: '20px', padding: '2px 10px', fontSize: '0.65rem', fontWeight: 700, cursor: 'pointer' }}>
                     View
                   </button>
                 </div>
@@ -195,180 +319,128 @@ export default function B2BNotificationBell({ partner, onNotificationClick }) {
         ))}
       </div>
 
-      {/* Bell Button and Dropdown Container */}
-      <div className="position-relative" ref={dropdownRef}>
-        <button
-          type="button"
-          className="btn p-0 d-flex align-items-center justify-content-center rounded-circle border-0 position-relative transition-all"
-          style={{
-            background: isOpen ? 'rgba(255,193,7,0.2)' : 'rgba(255,255,255,0.08)',
-            width: '38px',
-            height: '38px',
-            color: unreadCount > 0 ? '#FFC107' : 'rgba(255,255,255,0.75)'
-          }}
-          onClick={() => setIsOpen(!isOpen)}
-          title="B2B Notifications"
-          aria-label="View notifications"
-        >
+      {/* ── Bell + Dropdown ── */}
+      <div style={{ position: 'relative' }} ref={dropdownRef}>
+
+        {/* Bell Button */}
+        <button type="button" onClick={() => setIsOpen(o => !o)} title="B2B Notifications" aria-label="View B2B notifications"
+          style={S.bellBtn(isOpen, unreadCount > 0)}>
           <Bell size={18} />
-          {unreadCount > 0 && (
-            <span
-              className="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger border border-2 border-dark"
-              style={{ fontSize: '0.62rem', padding: '0.25em 0.5em' }}
-            >
-              {unreadCount > 99 ? '99+' : unreadCount}
-            </span>
-          )}
+          {unreadCount > 0 && <span style={S.badge}>{unreadCount > 99 ? '99+' : unreadCount}</span>}
         </button>
 
         {/* Dropdown Panel */}
         {isOpen && (
-          <div
-            className="position-absolute shadow-2xl animate-fade-in-up"
-            style={{
-              right: 0,
-              top: '48px',
-              width: '380px',
-              maxWidth: '92vw',
-              background: '#10243A',
-              borderRadius: '14px',
-              border: '1px solid rgba(255,255,255,0.12)',
-              zIndex: 1060,
-              overflow: 'hidden'
-            }}
-            onClick={e => e.stopPropagation()}
-          >
+          <div onClick={e => e.stopPropagation()} style={S.panel}>
+
             {/* Header */}
-            <div className="p-3 border-bottom" style={{ background: '#0D1B2E', borderColor: 'rgba(255,255,255,0.08)' }}>
-              <div className="d-flex align-items-center justify-content-between mb-2">
-                <div className="d-flex align-items-center gap-2">
-                  <Bell size={16} className="text-warning" />
-                  <span className="fw-bold text-white small">Live Notifications</span>
+            <div style={S.panelHeader}>
+              {/* Row 1: Title + badge + sound */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                  <Bell size={15} style={{ color: '#FCD34D', flexShrink: 0 }} />
+                  <span style={{ color: '#fff', fontWeight: 700, fontSize: '0.85rem', whiteSpace: 'nowrap' }}>Live Notifications</span>
                   {unreadCount > 0 && (
-                    <span className="badge bg-danger rounded-pill px-2 py-0.5" style={{ fontSize: '0.62rem' }}>
+                    <span style={{ background: '#EF4444', color: '#fff', borderRadius: '99px', fontSize: '0.60rem', fontWeight: 800, padding: '1px 6px', whiteSpace: 'nowrap' }}>
                       {unreadCount} new
                     </span>
                   )}
                 </div>
-                <div className="d-flex align-items-center gap-2">
+                <NotificationSoundToggle variant="dark" />
+              </div>
+
+              {/* Row 2: Filter tabs + Actions */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '10px' }}>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <button type="button" onClick={() => setActiveFilter('all')} style={S.filterBtn(activeFilter === 'all')}>
+                    All ({notifications.length})
+                  </button>
+                  <button type="button" onClick={() => setActiveFilter('unread')} style={S.filterBtn(activeFilter === 'unread')}>
+                    Unread ({unreadCount})
+                  </button>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   {unreadCount > 0 && (
-                    <button
-                      type="button"
-                      className="btn btn-sm p-0 text-white-50 border-0"
-                      style={{ fontSize: '0.7rem', textDecoration: 'underline' }}
-                      onClick={handleMarkAllRead}
-                    >
-                      Mark all read
+                    <button type="button" onClick={handleMarkAllRead} disabled={isMarkingAll} title="Mark all as read" style={S.markReadBtn(isMarkingAll)}>
+                      <CheckCheck size={12} /> Mark read
                     </button>
                   )}
                   {notifications.length > 0 && (
-                    <button
-                      type="button"
-                      className="btn btn-sm px-1.5 py-0.5 text-danger border border-danger border-opacity-25 rounded"
-                      style={{ fontSize: '0.65rem', background: 'rgba(220,38,38,0.1)' }}
-                      onClick={handleClearAll}
-                    >
-                      Clear all
+                    <button type="button" onClick={handleClearAll} disabled={isClearing} title="Clear all notifications" style={S.clearBtn(isClearing)}>
+                      <Trash2 size={11} /> Clear all
                     </button>
                   )}
                 </div>
               </div>
-
-              {/* Filter Tabs */}
-              <div className="d-flex gap-1">
-                <button
-                  type="button"
-                  onClick={() => setActiveFilter('all')}
-                  className={`btn btn-xs py-1 px-2.5 rounded-pill border-0 text-xxs fw-semibold ${
-                    activeFilter === 'all' ? 'bg-warning text-dark' : 'bg-dark bg-opacity-50 text-white-50'
-                  }`}
-                  style={{ fontSize: '0.7rem' }}
-                >
-                  All ({notifications.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveFilter('unread')}
-                  className={`btn btn-xs py-1 px-2.5 rounded-pill border-0 text-xxs fw-semibold ${
-                    activeFilter === 'unread' ? 'bg-warning text-dark' : 'bg-dark bg-opacity-50 text-white-50'
-                  }`}
-                  style={{ fontSize: '0.7rem' }}
-                >
-                  Unread ({unreadCount})
-                </button>
-              </div>
             </div>
 
-            {/* Notifications List */}
-            <div style={{ maxHeight: '360px', overflowY: 'auto' }}>
-              {filteredNotifications.length === 0 ? (
-                <div className="py-5 px-4 text-center text-white-50 small">
-                  <Bell size={28} className="text-white-50 opacity-25 mb-2 d-block mx-auto" />
-                  <p className="mb-0 fw-medium">No notifications {activeFilter === 'unread' ? 'marked unread' : 'yet'}.</p>
-                  <span className="text-xxs opacity-75">You will receive live updates on bookings & approvals here.</span>
+            {/* Notification List */}
+            <div style={S.list}>
+              {filtered.length === 0 ? (
+                <div style={S.emptyWrap}>
+                  <div style={S.emptyIcon}><Bell size={22} style={{ color: 'rgba(255,255,255,0.2)' }} /></div>
+                  <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.82rem', fontWeight: 600, margin: '0 0 4px' }}>
+                    {activeFilter === 'unread' ? 'All caught up!' : 'No notifications yet'}
+                  </p>
+                  <p style={{ color: 'rgba(255,255,255,0.28)', fontSize: '0.70rem', margin: 0 }}>
+                    {activeFilter === 'unread' ? 'No unread notifications right now.' : 'Live booking & approval updates will appear here.'}
+                  </p>
                 </div>
               ) : (
-                filteredNotifications.map((item) => (
-                  <div
-                    key={item.id}
-                    className={`p-3 border-bottom transition-all ${
-                      !item.is_read ? 'bg-white bg-opacity-5' : ''
-                    }`}
-                    style={{
-                      borderColor: 'rgba(255,255,255,0.06)',
-                      cursor: 'pointer'
-                    }}
-                    onClick={() => {
-                      if (!item.is_read) handleMarkRead(item.id);
-                      if (onNotificationClick) onNotificationClick(item);
-                    }}
-                  >
-                    <div className="d-flex align-items-start gap-2.5">
-                      {getIcon(item.type)}
-                      <div className="flex-grow-1 min-w-0">
-                        <div className="d-flex align-items-start justify-content-between gap-1 mb-1">
-                          <h6 className={`mb-0 text-xs text-white ${!item.is_read ? 'fw-bold' : 'fw-semibold'}`}>
+                filtered.map((item, idx) => {
+                  const isUnread = !item.is_read;
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => { if (isUnread) handleMarkSingleRead(item.id); onNotificationClick?.(item); }}
+                      style={{ ...S.cardRow(isUnread), borderBottom: idx < filtered.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}
+                      onMouseEnter={e => e.currentTarget.style.background = isUnread ? 'rgba(252,211,77,0.08)' : 'rgba(255,255,255,0.04)'}
+                      onMouseLeave={e => e.currentTarget.style.background = isUnread ? 'rgba(252,211,77,0.04)' : 'transparent'}
+                    >
+                      {/* Icon */}
+                      <div style={{ marginTop: '2px', flexShrink: 0 }}>{getTypeIcon(item.type)}</div>
+
+                      {/* Content */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', marginBottom: '3px' }}>
+                          <span style={S.cardTitle(isUnread)}>
                             {item.title}
-                          </h6>
-                          {!item.is_read && (
-                            <span 
-                              className="rounded-circle bg-warning flex-shrink-0"
-                              style={{ width: '7px', height: '7px', marginTop: '4px' }}
-                              title="Unread"
-                            />
-                          )}
-                        </div>
-                        <p className="text-white-50 text-xs mb-1.5 leading-snug" style={{ fontSize: '0.74rem' }}>
-                          {item.message}
-                        </p>
-                        <div className="d-flex align-items-center justify-content-between">
-                          <span className="text-white-50 text-xxs d-flex align-items-center gap-1" style={{ fontSize: '0.66rem' }}>
-                            <Clock size={11} /> {formatTimeAgo(item.created_at)}
+                            {isUnread && <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: '#FCD34D', marginLeft: '6px', verticalAlign: 'middle' }} />}
                           </span>
-                          {!item.is_read && (
-                            <button
-                              type="button"
-                              className="btn btn-link text-warning p-0 border-0 text-xxs text-decoration-none"
-                              style={{ fontSize: '0.68rem' }}
-                              onClick={(e) => handleMarkRead(item.id, e)}
-                            >
-                              Mark read
+                          <button type="button" onClick={e => handleDismiss(item.id, e)} title="Dismiss"
+                            style={S.dismissBtn}
+                            onMouseEnter={e => e.currentTarget.style.color = '#F87171'}
+                            onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,0.25)'}>
+                            <X size={12} />
+                          </button>
+                        </div>
+                        <p style={S.cardMsg}>{item.message}</p>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span style={S.cardTime}><Clock size={10} />{formatTimeAgo(item.created_at)}</span>
+                          {isUnread && (
+                            <button type="button" onClick={e => handleMarkSingleRead(item.id, e)} style={S.cardMarkBtn}>
+                              <CheckCheck size={11} /> Mark read
                             </button>
                           )}
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 
-            {/* Footer */}
-            <div className="p-2.5 text-center border-top" style={{ background: '#0D1B2E', borderColor: 'rgba(255,255,255,0.08)' }}>
-              <span className="text-white-50 text-xxs" style={{ fontSize: '0.68rem' }}>
-                WOW GOA B2B Real-Time Notification Stream
-              </span>
+            {/* Sticky Footer */}
+            <div style={S.footer}>
+              <button type="button"
+                onClick={() => { setIsOpen(false); onNotificationClick?.({ type: 'view_all' }); }}
+                style={S.footerBtn}
+                onMouseEnter={e => e.currentTarget.style.opacity = '0.75'}
+                onMouseLeave={e => e.currentTarget.style.opacity = '1'}>
+                View All Notifications →
+              </button>
             </div>
+
           </div>
         )}
       </div>

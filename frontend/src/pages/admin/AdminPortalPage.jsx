@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Compass, LogOut, Box, Building, MessageSquare, CreditCard, Calendar,
   Plane, Hotel, Shield, LayoutDashboard, Globe, Users, Tag, BarChart2,
   ChevronDown, ChevronRight, Menu, Bell, Layers, FileText, Star, PlusCircle, Settings, X, UserPlus,
-  Briefcase, Gift, Clock, AlertCircle, Wallet
+  Briefcase, Gift, Clock, AlertCircle, Wallet, CheckCircle2
 } from 'lucide-react';
+import * as api from '../../services/api';
 import AdminDashboard from './AdminDashboard';
 import AdminDashboardOverview from './AdminDashboardOverview';
 import AdminB2BPortal from './b2b/AdminB2BPortal';
@@ -22,6 +23,8 @@ import AdminEnquiryCRM from './AdminEnquiryCRM';
 import LeadManagement from '../../components/shared/LeadManagement';
 import AdminSubscriptionPanel from '../../components/admin/AdminSubscriptionPanel';
 import AdminDriverManagement from './AdminDriverManagement';
+import NotificationSoundToggle from '../../components/common/NotificationSoundToggle';
+import { handleIncomingNotifications, registerSeenNotifications } from '../../utils/notificationSound';
 
 const SIDEBAR_GROUPS = [
   {
@@ -257,19 +260,63 @@ export default function AdminPortalPage({
     return { tab: 'bookings', type: 'Holiday Package Booking', color: '#f97316' };
   };
 
-  const adminNotificationsList = (bookings || []).map(b => {
-    const cat = getAdminBookingCategory(b);
-    const isActionable = b.status === 'Draft' || b.status === 'Pending' || b.status === 'Payment Verification Pending' || b.status === 'New' || b.status === 'CONFIRMED' || b.status === 'Confirmed';
-    return {
-      id: `b-${b.id}`,
-      title: `${cat.type} #${b.id}`,
-      message: `${b.name || b.customer_name || 'Customer'} — ${b.item_name || 'Item'} (${b.status || 'Enquiry'} • ₹${parseFloat(b.total_paid || b.total_amount || b.amount_paid || 0).toLocaleString('en-IN')})`,
-      time: b.created_at ? String(b.created_at).slice(0, 16) : 'Recent',
-      color: cat.color,
-      tab: cat.tab,
-      isActionable
+  const [backendNotifs, setBackendNotifs] = useState([]);
+  const [adminToasts, setAdminToasts] = useState([]);
+  const prevNotifIdsRef = useRef(new Set());
+  const isInitialLoadRef = useRef(true);
+
+  const fetchAdminNotifications = async () => {
+    try {
+      const res = await api.fetchNotifications({ role: 'admin', userId: currentUser?.id || 'admin' });
+      if (res && res.success && Array.isArray(res.notifications)) {
+        setBackendNotifs(res.notifications);
+
+        // Detect new unread notifications, trigger sound once and show live toasts
+        if (isInitialLoadRef.current) {
+          registerSeenNotifications(res.notifications);
+        } else if (res.notifications.length > 0) {
+          const fresh = handleIncomingNotifications(res.notifications, { isInitialLoad: false });
+          if (fresh.length > 0) {
+            fresh.forEach(item => {
+              const toastId = `toast_${Date.now()}_${Math.random()}`;
+              setAdminToasts(prev => [{ ...item, toastId }, ...prev.slice(0, 3)]);
+              setTimeout(() => {
+                setAdminToasts(prev => prev.filter(t => t.toastId !== toastId));
+              }, 6000);
+            });
+          }
+        }
+        prevNotifIdsRef.current = new Set(res.notifications.map(n => String(n.id)));
+        isInitialLoadRef.current = false;
+      }
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    fetchAdminNotifications();
+    const interval = setInterval(fetchAdminNotifications, 5000);
+
+    const handleSync = () => {
+      fetchAdminNotifications();
     };
-  });
+
+    window.addEventListener('new-booking-created', handleSync);
+    window.addEventListener('booking-status-updated', handleSync);
+    window.addEventListener('booking-updated', handleSync);
+    window.addEventListener('booking-deleted', handleSync);
+    window.addEventListener('tripgalileo-notification-sync', handleSync);
+    window.addEventListener('authoritative-notification-received', handleSync);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('new-booking-created', handleSync);
+      window.removeEventListener('booking-status-updated', handleSync);
+      window.removeEventListener('booking-updated', handleSync);
+      window.removeEventListener('booking-deleted', handleSync);
+      window.removeEventListener('tripgalileo-notification-sync', handleSync);
+      window.removeEventListener('authoritative-notification-received', handleSync);
+    };
+  }, [currentUser?.id]);
 
   const [clearedNotifIds, setClearedNotifIds] = useState(() => {
     try {
@@ -279,25 +326,69 @@ export default function AdminPortalPage({
     }
   });
 
-  const activeAdminNotifications = adminNotificationsList.filter(n => !clearedNotifIds.includes(n.id));
-  const adminUnreadCount = activeAdminNotifications.filter(n => n.isActionable && !readNotifIds.includes(n.id)).length;
+  const mergedAdminNotifications = React.useMemo(() => {
+    const notifMap = new Map();
 
-  const handleAdminMarkAllRead = (e) => {
+    // 1. Authoritative Backend Notifications from database
+    (backendNotifs || []).forEach(n => {
+      const isB2B = n.type?.includes('b2b') || n.b2b_partner_id;
+      notifMap.set(String(n.id), {
+        id: String(n.id),
+        title: n.title || 'System Notification',
+        message: n.message || '',
+        time: n.created_at ? String(n.created_at).slice(0, 16) : 'Recent',
+        color: isB2B ? '#3b82f6' : '#FF6333',
+        tab: isB2B ? 'b2b_commission_bookings' : 'bookings',
+        isActionable: !n.is_read,
+        is_read: n.is_read
+      });
+    });
+
+    // 2. Real-time bookings from props / sync
+    (bookings || []).forEach(b => {
+      const cat = getAdminBookingCategory(b);
+      const isActionable = b.status === 'Draft' || b.status === 'Pending' || b.status === 'Payment Verification Pending' || b.status === 'New' || b.status === 'CONFIRMED' || b.status === 'Confirmed';
+      const bKey = `b-${b.id}`;
+      if (!notifMap.has(bKey)) {
+        notifMap.set(bKey, {
+          id: bKey,
+          title: `${cat.type} #${b.id}`,
+          message: `${b.name || b.customer_name || 'Customer'} — ${b.item_name || 'Item'} (${b.status || 'Enquiry'} • ₹${parseFloat(b.total_paid || b.total_amount || b.amount_paid || 0).toLocaleString('en-IN')})`,
+          time: b.created_at ? String(b.created_at).slice(0, 16) : 'Recent',
+          color: cat.color,
+          tab: cat.tab,
+          isActionable,
+          is_read: readNotifIds.includes(bKey) ? 1 : 0
+        });
+      }
+    });
+
+    return Array.from(notifMap.values());
+  }, [backendNotifs, bookings, readNotifIds]);
+
+  const activeAdminNotifications = mergedAdminNotifications.filter(n => !clearedNotifIds.includes(n.id));
+  const adminUnreadCount = activeAdminNotifications.filter(n => n.isActionable && !readNotifIds.includes(n.id) && !n.is_read).length;
+
+  const handleAdminMarkAllRead = async (e) => {
     if (e) e.stopPropagation();
     const allIds = activeAdminNotifications.map(n => n.id);
     setReadNotifIds(allIds);
     try {
       localStorage.setItem('admin_read_notifs', JSON.stringify(allIds));
     } catch (err) {}
+    await api.markNotificationRead(null, { role: 'admin', userId: currentUser?.id || 'admin', all: true });
+    fetchAdminNotifications();
   };
 
-  const handleAdminClearAll = (e) => {
+  const handleAdminClearAll = async (e) => {
     if (e) e.stopPropagation();
-    const allIds = [...clearedNotifIds, ...adminNotificationsList.map(n => n.id)];
+    const allIds = [...clearedNotifIds, ...mergedAdminNotifications.map(n => n.id)];
     setClearedNotifIds(allIds);
     try {
       localStorage.setItem('admin_cleared_notifs', JSON.stringify(allIds));
     } catch (err) {}
+    await api.clearNotifications({ role: 'admin', userId: currentUser?.id || 'admin' });
+    fetchAdminNotifications();
   };
 
   const handleAdminDismissNotification = (e, id) => {
@@ -309,13 +400,16 @@ export default function AdminPortalPage({
     } catch (err) {}
   };
 
-  const handleAdminNotificationClick = (n) => {
+  const handleAdminNotificationClick = async (n) => {
     if (!readNotifIds.includes(n.id)) {
       const updated = [...readNotifIds, n.id];
       setReadNotifIds(updated);
       try {
         localStorage.setItem('admin_read_notifs', JSON.stringify(updated));
       } catch (err) {}
+    }
+    if (!String(n.id).startsWith('b-')) {
+      await api.markNotificationRead(n.id, { role: 'admin', userId: currentUser?.id || 'admin' });
     }
     setAdminActiveTab(n.tab);
     setShowNotificationDropdown(false);
@@ -571,32 +665,36 @@ export default function AdminPortalPage({
                   style={{
                     right: 0,
                     top: '46px',
-                    width: '340px',
-                    maxWidth: '90vw',
+                    width: '380px',
+                    maxWidth: '94vw',
                     background: '#10243A',
-                    borderRadius: '12px',
-                    border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: '14px',
+                    border: '1px solid rgba(255,255,255,0.12)',
                     zIndex: 1060,
                     overflow: 'hidden'
                   }}
                   onClick={e => e.stopPropagation()}
                 >
                   <div className="d-flex align-items-center justify-content-between px-3 py-2.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', background: '#0D1B2E' }}>
-                    <div className="d-flex align-items-center gap-2">
-                      <Bell size={15} className="text-warning" />
-                      <span className="fw-bold text-white small">Live Notifications</span>
+                    {/* Left: Title + Badge */}
+                    <div className="d-flex align-items-center gap-2 flex-shrink-0">
+                      <Bell size={15} className="text-warning flex-shrink-0" />
+                      <span className="fw-bold text-white small text-nowrap">Live Notifications</span>
                       {adminUnreadCount > 0 && (
-                        <span className="badge bg-danger rounded-pill" style={{ fontSize: '0.62rem' }}>
+                        <span className="badge bg-danger rounded-pill text-nowrap" style={{ fontSize: '0.62rem', padding: '0.25em 0.5em', fontWeight: 700 }}>
                           {adminUnreadCount} new
                         </span>
                       )}
                     </div>
-                    <div className="d-flex align-items-center gap-2">
+
+                    {/* Right: Sound Control + Actions */}
+                    <div className="d-flex align-items-center gap-2 flex-shrink-0">
+                      <NotificationSoundToggle variant="dark" />
                       {adminUnreadCount > 0 && (
                         <button
                           type="button"
-                          className="btn btn-sm p-0 text-white-50 border-0"
-                          style={{ fontSize: '0.68rem', textDecoration: 'underline' }}
+                          className="btn btn-sm p-0 text-white-50 text-decoration-underline border-0 text-nowrap"
+                          style={{ fontSize: '0.70rem' }}
                           onClick={handleAdminMarkAllRead}
                         >
                           Mark read
@@ -605,8 +703,8 @@ export default function AdminPortalPage({
                       {activeAdminNotifications.length > 0 && (
                         <button
                           type="button"
-                          className="btn btn-sm px-1.5 py-0.5 text-danger border border-danger border-opacity-25 rounded"
-                          style={{ fontSize: '0.65rem', background: 'rgba(220,38,38,0.1)' }}
+                          className="btn btn-sm px-2 py-0.5 text-danger border border-danger border-opacity-40 rounded text-nowrap fw-semibold"
+                          style={{ fontSize: '0.68rem', background: 'rgba(220,38,38,0.1)' }}
                           onClick={handleAdminClearAll}
                         >
                           Clear all
@@ -708,6 +806,52 @@ export default function AdminPortalPage({
           {renderContent()}
         </div>
       </div>
+
+      {/* Real-Time Floating Notification Toasts */}
+      {adminToasts.length > 0 && (
+        <div 
+          className="position-fixed bottom-0 end-0 p-3" 
+          style={{ zIndex: 9999, maxWidth: '380px', width: '100%', pointerEvents: 'none' }}
+        >
+          {adminToasts.map((toast) => (
+            <div
+              key={toast.toastId}
+              className="card border-0 shadow-lg mb-2 text-white animate-fade-in-up cursor-pointer"
+              style={{
+                background: '#10243A',
+                borderLeft: '4px solid #FF6333',
+                borderRadius: '10px',
+                pointerEvents: 'auto',
+                boxShadow: '0 10px 30px rgba(0,0,0,0.5)'
+              }}
+              onClick={() => {
+                setAdminActiveTab('bookings');
+                setAdminToasts(prev => prev.filter(t => t.toastId !== toast.toastId));
+              }}
+            >
+              <div className="card-body p-3">
+                <div className="d-flex align-items-center justify-content-between mb-1">
+                  <div className="d-flex align-items-center gap-2">
+                    <Bell size={15} className="text-warning" />
+                    <strong style={{ fontSize: '0.82rem' }}>{toast.title || 'Live Notification'}</strong>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-sm p-0 text-white-50 border-0"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setAdminToasts(prev => prev.filter(t => t.toastId !== toast.toastId));
+                    }}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+                <p className="mb-0 text-white-50" style={{ fontSize: '0.74rem' }}>{toast.message}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

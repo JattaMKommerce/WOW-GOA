@@ -22,7 +22,12 @@ export function getAuthToken() {
     const custStr = localStorage.getItem('customerUser');
     if (custStr) {
       const cust = JSON.parse(custStr);
-      return cust.token || cust.id || cust.phone || '';
+      if (cust.token || cust.id || cust.phone) return cust.token || cust.id || cust.phone;
+    }
+    const currStr = localStorage.getItem('currentUser');
+    if (currStr) {
+      const user = JSON.parse(currStr);
+      return user.token || user.id || user.username || '';
     }
     return '';
   } catch (e) {
@@ -833,6 +838,103 @@ export async function clearB2BNotifications(partnerId) {
   } catch (err) {
     return { success: false };
   }
+}
+
+// ==========================================
+// Unified Real-Time Portal Notifications & Cross-Tab Sync
+// ==========================================
+export function broadcastBookingSync(detail = {}) {
+  try {
+    window.dispatchEvent(new CustomEvent('tripgalileo-booking-sync', { detail }));
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      const bc = new BroadcastChannel('tripgalileo_bookings_sync');
+      bc.postMessage({ type: 'BOOKINGS_SYNC', detail, timestamp: Date.now() });
+      bc.close();
+    }
+  } catch (e) {}
+}
+
+export function broadcastNotificationUpdate(detail = {}) {
+  try {
+    window.dispatchEvent(new CustomEvent('tripgalileo-notification-sync', { detail }));
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      const bc = new BroadcastChannel('tripgalileo_notifications_sync');
+      bc.postMessage({ type: 'NOTIFICATIONS_SYNC', detail, timestamp: Date.now() });
+      bc.close();
+    }
+  } catch (e) {}
+}
+
+export async function fetchNotifications({ role = '', userId = '', phone = '' } = {}) {
+  try {
+    const params = new URLSearchParams({ resource: 'notifications' });
+    if (role) params.set('role', role);
+    if (userId) params.set('user_id', userId);
+    if (phone) params.set('phone', phone);
+
+    const res = await apiFetch(`${API_BASE}?${params.toString()}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.success) {
+        return {
+          success: true,
+          notifications: Array.isArray(data.notifications) ? data.notifications : [],
+          unread_count: Number(data.unread_count) || 0
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('[API] fetchNotifications error:', err);
+  }
+  return { success: false, notifications: [], unread_count: 0 };
+}
+
+export async function markNotificationRead(id, { role = '', userId = '', phone = '', all = false } = {}) {
+  try {
+    const res = await apiFetch(`${API_BASE}?action=mark_notification_read`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'mark_notification_read',
+        id,
+        role,
+        user_id: userId,
+        phone,
+        all: all ? 1 : 0
+      })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      broadcastNotificationUpdate({ action: 'marked_read', id, all });
+      return data;
+    }
+  } catch (err) {
+    console.warn('[API] markNotificationRead error:', err);
+  }
+  return { success: false };
+}
+
+export async function clearNotifications({ role = '', userId = '', phone = '' } = {}) {
+  try {
+    const res = await apiFetch(`${API_BASE}?action=clear_notifications`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'clear_notifications',
+        role,
+        user_id: userId,
+        phone
+      })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      broadcastNotificationUpdate({ action: 'cleared', role, userId });
+      return data;
+    }
+  } catch (err) {
+    console.warn('[API] clearNotifications error:', err);
+  }
+  return { success: false };
 }
 
 export async function fetchB2BWallet(partnerId) {
@@ -1797,6 +1899,8 @@ export async function createBooking(bookingData) {
     saved.unshift(newBookingRecord);
     localStorage.setItem('local_bookings', JSON.stringify(saved));
     window.dispatchEvent(new CustomEvent('new-booking-created', { detail: newBookingRecord }));
+    broadcastBookingSync({ action: 'created', booking: newBookingRecord });
+    broadcastNotificationUpdate({ action: 'booking_created', bookingId: assignedId });
   } catch (e) {
     console.warn('Error saving local booking:', e);
   }
@@ -2221,6 +2325,7 @@ export async function updateBookingStatus(id, status, paymentStatus = null) {
     }
   } catch (e) {}
 
+  let result = { success: true, message: 'Status updated successfully' };
   try {
     const payload = { action: 'update_booking_status', id, status };
     if (paymentStatus) payload.payment_status = paymentStatus;
@@ -2231,12 +2336,20 @@ export async function updateBookingStatus(id, status, paymentStatus = null) {
     });
     if (res.ok) {
       const data = await res.json();
-      if (data && data.success) return data;
+      if (data && data.success) result = data;
     }
   } catch (err) {
     console.warn('[API] update_booking_status backend error, using local fallback:', err.message);
   }
-  return { success: true, message: 'Status updated successfully' };
+
+  // Fire real-time events across windows and components
+  try {
+    window.dispatchEvent(new CustomEvent('booking-status-updated', { detail: { id, status, paymentStatus } }));
+    broadcastBookingSync({ action: 'status_updated', id, status, paymentStatus });
+    broadcastNotificationUpdate({ action: 'status_updated', id, status });
+  } catch (e) {}
+
+  return result;
 }
 
 export async function deleteBooking(id) {
@@ -2247,6 +2360,13 @@ export async function deleteBooking(id) {
   });
   const data = await res.json();
   if (!res.ok || !data.success) throw new Error(data.error || data.message || 'Failed to delete booking');
+
+  try {
+    window.dispatchEvent(new CustomEvent('booking-deleted', { detail: { id } }));
+    broadcastBookingSync({ action: 'deleted', id });
+    broadcastNotificationUpdate({ action: 'booking_deleted', id });
+  } catch (e) {}
+
   return data;
 }
 
@@ -2258,6 +2378,13 @@ export async function updateBooking(bookingData) {
   });
   const data = await res.json();
   if (!data.success) throw new Error(data.message || data.error || 'Failed to update booking');
+
+  try {
+    window.dispatchEvent(new CustomEvent('booking-updated', { detail: bookingData }));
+    broadcastBookingSync({ action: 'updated', booking: bookingData });
+    broadcastNotificationUpdate({ action: 'booking_updated', id: bookingData?.id });
+  } catch (e) {}
+
   return data;
 }
 

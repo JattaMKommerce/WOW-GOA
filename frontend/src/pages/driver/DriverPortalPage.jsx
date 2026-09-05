@@ -2,9 +2,11 @@ import React, { useState, useEffect } from 'react';
 import {
   Car, Shield, CheckCircle2, Clock, MapPin, Phone, Mail, FileText,
   AlertCircle, RefreshCw, Calendar, User, LogOut, Check, X, Navigation,
-  Award, Eye, ExternalLink, ShieldCheck, ChevronRight, AlertTriangle
+  Award, Eye, ExternalLink, ShieldCheck, ChevronRight, AlertTriangle, Bell
 } from 'lucide-react';
 import * as api from '../../services/api';
+import NotificationSoundToggle from '../../components/common/NotificationSoundToggle';
+import { handleIncomingNotifications, registerSeenNotifications } from '../../utils/notificationSound';
 
 function DriverJobStatusBadge({ status }) {
   const s = (status || 'assigned').toLowerCase();
@@ -38,14 +40,29 @@ export default function DriverPortalPage({ currentUser, onLogout, onNavigateHome
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [previewDoc, setPreviewDoc] = useState(null);
+  const [driverNotifs, setDriverNotifs] = useState([]);
+  const [driverNotifOpen, setDriverNotifOpen] = useState(false);
+  const [readNotifIds, setReadNotifIds] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('driver_read_notifs') || '[]');
+    } catch (e) {
+      return [];
+    }
+  });
 
   const driverId = driverProfile.id || driverUser.id || 'drv-1';
+
+  const isInitialLoadRef = React.useRef(true);
 
   const loadDriverData = async (isBackground = false) => {
     if (!isBackground) setLoading(true);
     try {
       // 1. Fetch details (returns driver profile, assignments, available unassigned jobs, and monthly attendance salary)
-      const details = await api.fetchDriverDetails(driverId);
+      const [details, notifsRes] = await Promise.all([
+        api.fetchDriverDetails(driverId).catch(() => null),
+        api.fetchNotifications({ role: 'driver', userId: driverId }).catch(() => ({ notifications: [] }))
+      ]);
+
       if (details) {
         if (details.driver) setDriverProfile(details.driver);
         if (details.assignments) setJobs(details.assignments);
@@ -60,6 +77,16 @@ export default function DriverPortalPage({ currentUser, onLogout, onNavigateHome
         setJobs(jobList || []);
         setAvailableJobs(availList || []);
       }
+
+      if (notifsRes && Array.isArray(notifsRes.notifications)) {
+        setDriverNotifs(notifsRes.notifications);
+        if (isInitialLoadRef.current) {
+          registerSeenNotifications(notifsRes.notifications);
+          isInitialLoadRef.current = false;
+        } else {
+          handleIncomingNotifications(notifsRes.notifications, { isInitialLoad: false });
+        }
+      }
     } catch (e) {
       if (!isBackground) console.error('Error fetching driver jobs:', e);
     } finally {
@@ -69,11 +96,42 @@ export default function DriverPortalPage({ currentUser, onLogout, onNavigateHome
 
   useEffect(() => {
     loadDriverData();
-    // 8-second real-time periodic background polling
+    // 5-second real-time periodic background polling
     const interval = setInterval(() => {
       loadDriverData(true);
-    }, 8000);
-    return () => clearInterval(interval);
+    }, 5000);
+
+    const handleSync = () => {
+      loadDriverData(true);
+    };
+
+    window.addEventListener('new-booking-created', handleSync);
+    window.addEventListener('booking-status-updated', handleSync);
+    window.addEventListener('tripgalileo-notification-sync', handleSync);
+    window.addEventListener('tripgalileo-booking-sync', handleSync);
+    window.addEventListener('authoritative-notification-received', handleSync);
+
+    let bcBookings;
+    let bcNotifs;
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        bcBookings = new BroadcastChannel('tripgalileo_bookings_sync');
+        bcBookings.onmessage = handleSync;
+        bcNotifs = new BroadcastChannel('tripgalileo_notifications_sync');
+        bcNotifs.onmessage = handleSync;
+      }
+    } catch (e) {}
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('new-booking-created', handleSync);
+      window.removeEventListener('booking-status-updated', handleSync);
+      window.removeEventListener('tripgalileo-notification-sync', handleSync);
+      window.removeEventListener('tripgalileo-booking-sync', handleSync);
+      window.removeEventListener('authoritative-notification-received', handleSync);
+      if (bcBookings) bcBookings.close();
+      if (bcNotifs) bcNotifs.close();
+    };
   }, [driverId]);
 
   const handleAcceptAvailableJob = async (bookingId) => {
@@ -182,6 +240,99 @@ export default function DriverPortalPage({ currentUser, onLogout, onNavigateHome
               <RefreshCw size={12} className={loading ? 'spin-animation' : ''} />
               <span>Refresh</span>
             </button>
+
+            {/* Real-Time Driver Notification Bell */}
+            <div className="position-relative">
+              <button
+                type="button"
+                className="btn btn-outline-light btn-sm rounded-circle p-2 position-relative text-white border-0"
+                style={{ background: driverNotifOpen ? 'rgba(255,99,51,0.2)' : 'rgba(255,255,255,0.08)', width: '36px', height: '36px' }}
+                onClick={() => setDriverNotifOpen(!driverNotifOpen)}
+                title="Trip Alerts"
+              >
+                <Bell size={16} />
+                {driverNotifs.filter(n => !n.is_read && !readNotifIds.includes(String(n.id))).length > 0 && (
+                  <span
+                    className="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger border border-2 border-dark"
+                    style={{ fontSize: '0.6rem', padding: '0.22em 0.42em' }}
+                  >
+                    {driverNotifs.filter(n => !n.is_read && !readNotifIds.includes(String(n.id))).length}
+                  </span>
+                )}
+              </button>
+
+              {driverNotifOpen && (
+                <div
+                  className="card border-0 shadow-lg rounded-3 position-absolute end-0 mt-2 animate-fade-in-up text-white overflow-hidden"
+                  style={{ width: '350px', maxWidth: '94vw', background: '#10243A', zIndex: 1060, border: '1px solid rgba(255,255,255,0.1)' }}
+                  onClick={e => e.stopPropagation()}
+                >
+                  <div className="d-flex align-items-center justify-content-between px-3 py-2.5 bg-dark border-bottom border-secondary border-opacity-25">
+                    {/* Left: Title */}
+                    <div className="d-flex align-items-center gap-2 flex-shrink-0">
+                      <Bell size={14} className="text-warning flex-shrink-0" />
+                      <span className="fw-bold small text-nowrap">Driver Trip Alerts</span>
+                    </div>
+
+                    {/* Right: Sound Control + Mark All Read */}
+                    <div className="d-flex align-items-center gap-2 flex-shrink-0">
+                      <NotificationSoundToggle variant="dark" />
+                      {driverNotifs.length > 0 && (
+                        <button
+                          type="button"
+                          className="btn btn-sm p-0 text-white-50 border-0 text-nowrap"
+                          style={{ fontSize: '0.70rem', textDecoration: 'underline' }}
+                          onClick={async () => {
+                            const allIds = driverNotifs.map(n => String(n.id));
+                            setReadNotifIds(allIds);
+                            localStorage.setItem('driver_read_notifs', JSON.stringify(allIds));
+                            await api.markNotificationRead(null, { role: 'driver', userId: driverId, all: true });
+                          }}
+                        >
+                          Mark read
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={{ maxHeight: '280px', overflowY: 'auto' }}>
+                    {driverNotifs.length === 0 ? (
+                      <div className="p-4 text-center text-white-50 small">
+                        No trip notifications
+                      </div>
+                    ) : (
+                      driverNotifs.slice(0, 7).map(n => {
+                        const isUnread = !n.is_read && !readNotifIds.includes(String(n.id));
+                        return (
+                          <div
+                            key={n.id}
+                            className="px-3 py-2.5 border-bottom border-secondary border-opacity-10 cursor-pointer transition-all"
+                            style={{ background: isUnread ? 'rgba(255,99,51,0.12)' : 'transparent' }}
+                            onClick={() => {
+                              if (!readNotifIds.includes(String(n.id))) {
+                                const updated = [...readNotifIds, String(n.id)];
+                                setReadNotifIds(updated);
+                                localStorage.setItem('driver_read_notifs', JSON.stringify(updated));
+                              }
+                              api.markNotificationRead(n.id, { role: 'driver', userId: driverId });
+                              setDriverNotifOpen(false);
+                              if (assignedJobs.length > 0) setActiveTab('assigned');
+                              else setActiveTab('available');
+                            }}
+                          >
+                            <div className="d-flex align-items-center justify-content-between mb-1">
+                              <span className="fw-bold text-white text-truncate small">{n.title}</span>
+                              <span className="text-white-50" style={{ fontSize: '0.62rem' }}>{n.created_at ? String(n.created_at).slice(0, 16) : 'Recent'}</span>
+                            </div>
+                            <div className="text-white-50 text-truncate" style={{ fontSize: '0.72rem' }}>{n.message}</div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
 
             <div className="d-flex align-items-center gap-2.5 ps-2 border-start border-secondary border-opacity-50">
               {driverProfile.profile_photo ? (

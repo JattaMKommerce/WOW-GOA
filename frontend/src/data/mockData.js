@@ -35,6 +35,28 @@ export const hotelsData = [
     description: 'A charming boutique tropical getaway nestled moments away from vibrant Baga Beach, featuring serene palm courtyards, an outdoor pool, and modern air-conditioned guest rooms.'
   },
   {
+    id: 'test_hotel_5000',
+    name: 'Goa Luxury Beach Resort',
+    area: 'Calangute Goa',
+    location: 'Calangute Goa',
+    price: 5000,
+    stars: 4,
+    amenities: ['Free WiFi', 'Swimming Pool', 'Breakfast Included', 'Air Conditioning', 'Beach Access'],
+    rating: 4.60,
+    badge: 'Premium',
+    image: 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=1200&q=80',
+    image_url: 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=1200&q=80',
+    imageUrl: 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=1200&q=80',
+    images: [
+      'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=1200&q=80'
+    ],
+    description: 'An outstanding 4-star luxury beachfront resort in Calangute with breathtaking sea views, private sundecks, and world-class Goan hospitality.'
+  },
+  {
     id: 'hotel-4star',
     name: 'The Grand Candolim Beachfront Resort',
     area: 'Candolim (North Goa)',
@@ -243,27 +265,83 @@ export const packagesData = [
       { day: 2, title: 'Day 2: Coastal Drive, Couples Spa & Candlelight Dinner', description: 'Chapora Fort drive, relaxing spa treatment, and private candlelight dining.', inclusions: ['Breakfast', 'Couples Spa', 'Candlelight Dinner'] },
       { day: 3, title: 'Day 3: Poolside Leisure & Departure', description: 'Gourmet breakfast and luxury transfer to airport.', inclusions: ['Breakfast', 'Airport Drop Transfer'] }
     ]
+  },
+  {
+    id: 'pkg-1788152139516',
+    name: 'Tropical Bali Getaway: Temples, Waterfalls & Coastal Sunsets',
+    duration: '3 Nights / 4 Days',
+    car_included: 'Land Rover Defender',
+    hotel_included: 'The Grand Candolim Beachfront Resort',
+    price: 2000,
+    description: 'Explore Goa on your own terms with this premium package deal.',
+    tag: 'New Package',
+    image: '/backend/uploads/img_6a9509477e62f.png',
+    imageUrl: '/backend/uploads/img_6a9509477e62f.png',
+    image_url: '/backend/uploads/img_6a9509477e62f.png',
+    images: [
+      '/backend/uploads/img_6a9509477e62f.png',
+      '/backend/uploads/img_6a95094785d73.jpg'
+    ],
+    package_type: 'Trip Package',
+    flights_included: 'Air India Premium',
+    food_included: 'Breakfast & Dinner Included',
+    pickup_drop_included: 'Airport Transfers Included',
+    places_included: '',
+    price_with_flight: 5000,
+    destination: 'North Goa',
+    is_flight_customizable: 0,
+    base_flight_price: 0,
+    is_cab_customizable: 0,
+    company_cab_price: 0
   }
 ];
 
 export const carsData = [
   {
-    id: 'car-vendor-1784200993554',
-    vendor_id: 'vendor-1784200910786',
-    name: 'Ashwini (Automatic)',
-    category: 'Car',
-    price: 2222,
-    seating: '5 Seater',
+    id: 'car-6a945db651fa0',
+    vendor_id: 'u-4',
+    name: 'DEFENDAR',
+    category: 'Hatchback',
+    price: 10000,
+    seating: '4 Seater',
     fuel: 'Petrol',
     transmission: 'Automatic',
     rating: 4.80,
     badge: 'Popular',
-    image: 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=800&q=80',
-    location: 'Goa',
+    image: '/backend/uploads/img_6a945db47abf7.webp',
+    imageUrl: '/backend/uploads/img_6a945db47abf7.webp',
+    image_url: '/backend/uploads/img_6a945db47abf7.webp',
+    images: [
+      '/backend/uploads/img_6a945db47abf7.webp',
+      '/backend/uploads/img_6a945db488323.webp',
+      '/backend/uploads/img_6a945db48e39c.png'
+    ],
+    location: 'Goa Delivery',
+    is_available: 1
+  },
+  {
+    id: 'car-6a945e0c3ffbc',
+    vendor_id: 'u-4',
+    name: 'swift',
+    category: 'Hatchback',
+    price: 2000,
+    seating: '5 Seater',
+    fuel: 'Petrol',
+    transmission: 'Manual',
+    rating: 4.80,
+    badge: 'Popular',
+    image: '/backend/uploads/img_6a945dd821766.jpeg',
+    imageUrl: '/backend/uploads/img_6a945dd821766.jpeg',
+    image_url: '/backend/uploads/img_6a945dd821766.jpeg',
+    images: [
+      '/backend/uploads/img_6a945dd821766.jpeg'
+    ],
+    location: 'Goa Delivery',
     is_available: 1
   },
   {
     id: 'car-1',
+    vendor_id: 'vendor-1',
     name: 'Mahindra Thar 4x4 Soft Top',
     category: 'SUV / 4x4',
     price: 3200,
@@ -278,6 +356,7 @@ export const carsData = [
   },
   {
     id: 'car-2',
+    vendor_id: 'vendor-1',
     name: 'Maruti Suzuki Swift VXi',
     category: 'Hatchback',
     price: 1400,
@@ -292,6 +371,7 @@ export const carsData = [
   },
   {
     id: 'car-3',
+    vendor_id: 'vendor-1',
     name: 'Hyundai Creta SX Automatic',
     category: 'SUV',
     price: 2600,
@@ -306,6 +386,7 @@ export const carsData = [
   },
   {
     id: 'car-4',
+    vendor_id: 'vendor-1',
     name: 'Maruti Suzuki Ertiga (7 Seater)',
     category: 'MUV / 7-Seater',
     price: 2800,
@@ -320,6 +401,7 @@ export const carsData = [
   },
   {
     id: 'car-5',
+    vendor_id: 'vendor-1',
     name: 'Toyota Fortuner 4x4 AT',
     category: 'Luxury SUV',
     price: 5500,
@@ -336,7 +418,49 @@ export const carsData = [
 
 export const bikesData = [
   {
+    id: 'bike-6a945e35e27c1',
+    vendor_id: 'u-4',
+    name: 'GT',
+    category: 'Scooter / Moped',
+    price: 1000,
+    engine: '150cc',
+    fuel: 'Petrol',
+    mileage: '40 km/l',
+    rating: 4.80,
+    badge: 'Popular',
+    image: '/backend/uploads/img_6a945e3494ce0.webp',
+    imageUrl: '/backend/uploads/img_6a945e3494ce0.webp',
+    image_url: '/backend/uploads/img_6a945e3494ce0.webp',
+    images: [
+      '/backend/uploads/img_6a945e3494ce0.webp'
+    ],
+    location: 'Goa Delivery',
+    is_available: 1
+  },
+  {
+    id: 'bike-6a945e65c98f9',
+    vendor_id: 'u-4',
+    name: 'kavasaki ninja H2R',
+    category: 'Sports Bike',
+    price: 4000,
+    engine: '150cc',
+    fuel: 'Petrol',
+    mileage: '40 km/l',
+    rating: 4.80,
+    badge: 'Popular',
+    image: '/backend/uploads/img_6a945e6473744.jpg',
+    imageUrl: '/backend/uploads/img_6a945e6473744.jpg',
+    image_url: '/backend/uploads/img_6a945e6473744.jpg',
+    images: [
+      '/backend/uploads/img_6a945e6473744.jpg',
+      '/backend/uploads/img_6a945e64683ad.webp'
+    ],
+    location: 'Goa Delivery',
+    is_available: 1
+  },
+  {
     id: 'bike-1',
+    vendor_id: 'vendor-2',
     name: 'Royal Enfield Classic 350 (Reborn)',
     category: 'Cruiser',
     price: 800,
@@ -351,6 +475,7 @@ export const bikesData = [
   },
   {
     id: 'bike-2',
+    vendor_id: 'vendor-2',
     name: 'Honda Activa 6G',
     category: 'Scooter',
     price: 450,
@@ -365,6 +490,7 @@ export const bikesData = [
   },
   {
     id: 'bike-3',
+    vendor_id: 'vendor-2',
     name: 'Yamaha FZ-S V3',
     category: 'Sports',
     price: 700,
@@ -379,6 +505,7 @@ export const bikesData = [
   },
   {
     id: 'bike-4',
+    vendor_id: 'vendor-2',
     name: 'Royal Enfield Himalayan 450',
     category: 'Adventure',
     price: 1100,
