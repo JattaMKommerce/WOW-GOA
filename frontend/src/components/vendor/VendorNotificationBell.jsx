@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Bell, X } from 'lucide-react';
 import * as api from '../../services/api';
 import NotificationSoundToggle from '../common/NotificationSoundToggle';
-import { handleIncomingNotifications, registerSeenNotifications } from '../../utils/notificationSound';
+import { handleIncomingNotifications, registerSeenNotifications, getRelativeTimeString, parseNotificationTitleAndStatus } from '../../utils/notificationSound';
 
 export default function VendorNotificationBell({
   currentUser,
@@ -303,8 +303,8 @@ export default function VendorNotificationBell({
           style={{
             right: 0,
             top: '46px',
-            width: '385px',
-            maxWidth: '94vw',
+            width: '410px',
+            maxWidth: 'calc(100vw - 20px)',
             zIndex: 1080,
             backgroundColor: '#0D1B2E',
             borderRadius: '14px',
@@ -315,19 +315,19 @@ export default function VendorNotificationBell({
         >
           {/* Header */}
           <div
-            className="px-3 py-2.5 border-bottom d-flex align-items-center justify-content-between"
+            className="px-3 py-2.5 border-bottom d-flex align-items-center justify-content-between gap-2"
             style={{ borderColor: 'rgba(255,255,255,0.08)', background: '#091422' }}
           >
             {/* Left: Title + Badge */}
             <div className="d-flex align-items-center gap-2 flex-shrink-0">
-              <Bell size={16} className="text-warning flex-shrink-0" />
+              <Bell size={15} className="text-warning flex-shrink-0" />
               <span className="fw-bold text-white small text-nowrap">Live Notifications</span>
               {unreadCount > 0 && (
                 <span
                   className="badge rounded-pill bg-danger text-nowrap"
-                  style={{ fontSize: '0.62rem', padding: '0.25em 0.5em', fontWeight: 700 }}
+                  style={{ fontSize: '0.62rem', padding: '0.22em 0.5em', fontWeight: 700 }}
                 >
-                  {unreadCount} new
+                  {unreadCount}
                 </span>
               )}
             </div>
@@ -340,7 +340,7 @@ export default function VendorNotificationBell({
                   type="button"
                   onClick={handleMarkAllRead}
                   className="btn btn-link p-0 text-white-50 text-decoration-underline border-0 text-nowrap"
-                  style={{ fontSize: '0.70rem', background: 'transparent' }}
+                  style={{ fontSize: '0.68rem', background: 'transparent' }}
                 >
                   Mark read
                 </button>
@@ -350,7 +350,7 @@ export default function VendorNotificationBell({
                 onClick={handleClearAll}
                 className="btn btn-sm px-2 py-0.5 rounded text-nowrap fw-semibold"
                 style={{
-                  fontSize: '0.68rem',
+                  fontSize: '0.66rem',
                   color: '#FF6B6B',
                   border: '1px solid rgba(229,57,53,0.4)',
                   background: 'rgba(229,57,53,0.1)'
@@ -361,8 +361,8 @@ export default function VendorNotificationBell({
             </div>
           </div>
 
-          {/* List Items */}
-          <div style={{ maxHeight: '320px', overflowY: 'auto' }}>
+          {/* List Items with scrollbar clearance */}
+          <div style={{ maxHeight: '340px', overflowY: 'auto', paddingRight: '4px' }}>
             {notifications.length === 0 ? (
               <div className="text-center py-4 px-3">
                 <Bell size={26} className="text-white-50 opacity-25 mb-2 mx-auto" />
@@ -374,6 +374,7 @@ export default function VendorNotificationBell({
                 const isUnread = !n.is_read;
                 const isHotel = n.type === 'hotel';
                 const dotColor = isHotel ? '#00B8D9' : '#FF6333';
+                const { cleanTitle, status, badgeStyle } = parseNotificationTitleAndStatus(n.title, n.message);
 
                 return (
                   <div
@@ -382,13 +383,13 @@ export default function VendorNotificationBell({
                     className="px-3 py-2.5 border-bottom d-flex align-items-start gap-2.5 position-relative"
                     style={{
                       borderColor: 'rgba(255,255,255,0.06)',
-                      background: isUnread ? 'rgba(255,255,255,0.03)' : 'transparent',
+                      background: isUnread ? 'rgba(255,255,255,0.04)' : 'transparent',
                       cursor: 'pointer',
                       transition: 'background 0.15s ease'
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.07)')}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
                     onMouseLeave={(e) =>
-                      (e.currentTarget.style.background = isUnread ? 'rgba(255,255,255,0.03)' : 'transparent')
+                      (e.currentTarget.style.background = isUnread ? 'rgba(255,255,255,0.04)' : 'transparent')
                     }
                   >
                     {/* Cyan / Orange Status Dot */}
@@ -399,51 +400,69 @@ export default function VendorNotificationBell({
                         height: '8px',
                         backgroundColor: dotColor,
                         marginTop: '6px',
-                        boxShadow: `0 0 6px ${dotColor}`
+                        boxShadow: isUnread ? `0 0 6px ${dotColor}` : 'none',
+                        opacity: isUnread ? 1 : 0.4
                       }}
                     ></span>
 
                     {/* Notification Text Details */}
-                    <div className="flex-grow-1 overflow-hidden">
-                      <div className="d-flex align-items-center justify-content-between mb-0.5">
-                        <div className="fw-bold text-white text-truncate" style={{ fontSize: '0.82rem' }}>
-                          {n.title}
-                        </div>
-                        <div className="d-flex align-items-center gap-1.5 flex-shrink-0 ms-1">
-                          {isUnread && (
+                    <div className="flex-grow-1 overflow-hidden pe-1">
+                      <div className="d-flex align-items-start justify-content-between gap-1 mb-1">
+                        <div className="d-flex flex-wrap align-items-center gap-1.5 flex-grow-1">
+                          <span
+                            className="fw-bold text-white"
+                            style={{
+                              fontSize: '0.82rem',
+                              display: '-webkit-box',
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: 'vertical',
+                              overflow: 'hidden',
+                              lineHeight: 1.3
+                            }}
+                          >
+                            {cleanTitle}
+                          </span>
+                          {status && (
                             <span
-                              className="badge rounded-pill bg-danger px-1.5 py-0.5"
-                              style={{ fontSize: '0.58rem', fontWeight: 800, letterSpacing: '0.5px' }}
+                              className="badge px-1.5 py-0.5 rounded-1 fw-semibold"
+                              style={{
+                                fontSize: '0.60rem',
+                                background: badgeStyle?.bg || 'rgba(255,255,255,0.1)',
+                                color: badgeStyle?.text || '#fff',
+                                border: `1px solid ${badgeStyle?.border || 'rgba(255,255,255,0.2)'}`
+                              }}
                             >
-                              NEW
+                              {status}
                             </span>
                           )}
-                          <button
-                            type="button"
-                            onClick={(e) => handleRemoveSingle(n.id, e)}
-                            className="btn btn-sm p-0 text-white-50 border-0 d-flex align-items-center justify-content-center"
-                            style={{ width: '18px', height: '18px', background: 'transparent', opacity: 0.6 }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.opacity = '1';
-                              e.currentTarget.style.color = '#FF5252';
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.opacity = '0.6';
-                              e.currentTarget.style.color = 'rgba(255,255,255,0.5)';
-                            }}
-                            title="Dismiss"
-                          >
-                            <X size={12} />
-                          </button>
                         </div>
+
+                        {/* Dismiss button */}
+                        <button
+                          type="button"
+                          onClick={(e) => handleRemoveSingle(n.id, e)}
+                          className="btn btn-sm p-0 text-white-50 border-0 d-flex align-items-center justify-content-center flex-shrink-0 ms-1"
+                          style={{ width: '18px', height: '18px', background: 'transparent', opacity: 0.6 }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.opacity = '1';
+                            e.currentTarget.style.color = '#FF5252';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.opacity = '0.6';
+                            e.currentTarget.style.color = 'rgba(255,255,255,0.5)';
+                          }}
+                          title="Dismiss"
+                        >
+                          <X size={12} />
+                        </button>
                       </div>
 
-                      <div className="text-white-50 text-truncate" style={{ fontSize: '0.74rem', lineHeight: 1.3 }}>
+                      <div className="text-white-50" style={{ fontSize: '0.74rem', lineHeight: 1.35, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                         {n.message}
                       </div>
 
                       <div className="text-white-50 opacity-50 mt-1" style={{ fontSize: '0.66rem' }}>
-                        {formatTime(n.created_at)}
+                        {getRelativeTimeString(n.created_at)}
                       </div>
                     </div>
                   </div>

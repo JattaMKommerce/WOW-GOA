@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import * as api from '../../services/api';
 import NotificationSoundToggle from '../../components/common/NotificationSoundToggle';
-import { handleIncomingNotifications, registerSeenNotifications } from '../../utils/notificationSound';
+import { handleIncomingNotifications, registerSeenNotifications, getRelativeTimeString, parseNotificationTitleAndStatus } from '../../utils/notificationSound';
 
 function DriverJobStatusBadge({ status }) {
   const s = (status || 'assigned').toLowerCase();
@@ -263,25 +263,37 @@ export default function DriverPortalPage({ currentUser, onLogout, onNavigateHome
 
               {driverNotifOpen && (
                 <div
-                  className="card border-0 shadow-lg rounded-3 position-absolute end-0 mt-2 animate-fade-in-up text-white overflow-hidden"
-                  style={{ width: '350px', maxWidth: '94vw', background: '#10243A', zIndex: 1060, border: '1px solid rgba(255,255,255,0.1)' }}
+                  className="card border-0 shadow-lg rounded-3 position-absolute end-0 mt-2 text-white overflow-hidden"
+                  style={{
+                    width: '400px',
+                    maxWidth: 'calc(100vw - 20px)',
+                    background: '#10243A',
+                    zIndex: 1060,
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    boxShadow: '0 12px 36px rgba(0,0,0,0.5)'
+                  }}
                   onClick={e => e.stopPropagation()}
                 >
-                  <div className="d-flex align-items-center justify-content-between px-3 py-2.5 bg-dark border-bottom border-secondary border-opacity-25">
-                    {/* Left: Title */}
+                  <div className="d-flex align-items-center justify-content-between px-3 py-2.5 flex-wrap gap-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', background: '#0D1B2E' }}>
+                    {/* Left: Title & Badge */}
                     <div className="d-flex align-items-center gap-2 flex-shrink-0">
                       <Bell size={14} className="text-warning flex-shrink-0" />
-                      <span className="fw-bold small text-nowrap">Driver Trip Alerts</span>
+                      <span className="fw-bold small text-nowrap">Trip Alerts</span>
+                      {driverNotifs.filter(n => !n.is_read && !readNotifIds.includes(String(n.id))).length > 0 && (
+                        <span className="badge bg-danger rounded-pill text-nowrap" style={{ fontSize: '0.62rem', padding: '0.22em 0.45em' }}>
+                          {driverNotifs.filter(n => !n.is_read && !readNotifIds.includes(String(n.id))).length}
+                        </span>
+                      )}
                     </div>
 
                     {/* Right: Sound Control + Mark All Read */}
-                    <div className="d-flex align-items-center gap-2 flex-shrink-0">
+                    <div className="d-flex align-items-center gap-2 flex-shrink-0 ms-auto">
                       <NotificationSoundToggle variant="dark" />
                       {driverNotifs.length > 0 && (
                         <button
                           type="button"
-                          className="btn btn-sm p-0 text-white-50 border-0 text-nowrap"
-                          style={{ fontSize: '0.70rem', textDecoration: 'underline' }}
+                          className="btn btn-sm p-0 text-white-50 border-0 text-nowrap text-decoration-underline"
+                          style={{ fontSize: '0.70rem' }}
                           onClick={async () => {
                             const allIds = driverNotifs.map(n => String(n.id));
                             setReadNotifIds(allIds);
@@ -295,7 +307,7 @@ export default function DriverPortalPage({ currentUser, onLogout, onNavigateHome
                     </div>
                   </div>
 
-                  <div style={{ maxHeight: '280px', overflowY: 'auto' }}>
+                  <div style={{ maxHeight: '300px', overflowY: 'auto', paddingRight: '4px' }}>
                     {driverNotifs.length === 0 ? (
                       <div className="p-4 text-center text-white-50 small">
                         No trip notifications
@@ -303,11 +315,14 @@ export default function DriverPortalPage({ currentUser, onLogout, onNavigateHome
                     ) : (
                       driverNotifs.slice(0, 7).map(n => {
                         const isUnread = !n.is_read && !readNotifIds.includes(String(n.id));
+                        const { cleanTitle, status, badgeStyle } = parseNotificationTitleAndStatus(n.title, n.message);
                         return (
                           <div
                             key={n.id}
-                            className="px-3 py-2.5 border-bottom border-secondary border-opacity-10 cursor-pointer transition-all"
-                            style={{ background: isUnread ? 'rgba(255,99,51,0.12)' : 'transparent' }}
+                            className="px-3 py-2.5 border-bottom border-secondary border-opacity-10 cursor-pointer d-flex align-items-start justify-content-between gap-2"
+                            style={{ background: isUnread ? 'rgba(255,99,51,0.08)' : 'transparent', transition: 'background 0.15s' }}
+                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                            onMouseLeave={e => e.currentTarget.style.background = isUnread ? 'rgba(255,99,51,0.08)' : 'transparent'}
                             onClick={() => {
                               if (!readNotifIds.includes(String(n.id))) {
                                 const updated = [...readNotifIds, String(n.id)];
@@ -320,11 +335,45 @@ export default function DriverPortalPage({ currentUser, onLogout, onNavigateHome
                               else setActiveTab('available');
                             }}
                           >
-                            <div className="d-flex align-items-center justify-content-between mb-1">
-                              <span className="fw-bold text-white text-truncate small">{n.title}</span>
-                              <span className="text-white-50" style={{ fontSize: '0.62rem' }}>{n.created_at ? String(n.created_at).slice(0, 16) : 'Recent'}</span>
+                            <div className="d-flex align-items-start gap-2 flex-grow-1 overflow-hidden pe-1">
+                              <div className="rounded-circle mt-1 flex-shrink-0" style={{ width: '8px', height: '8px', background: isUnread ? '#FF6333' : 'rgba(255,255,255,0.3)' }}></div>
+                              <div className="flex-grow-1 overflow-hidden">
+                                <div className="d-flex flex-wrap align-items-center gap-1.5 mb-0.5">
+                                  <span
+                                    className="fw-bold text-white"
+                                    style={{
+                                      fontSize: '0.80rem',
+                                      display: '-webkit-box',
+                                      WebkitLineClamp: 2,
+                                      WebkitBoxOrient: 'vertical',
+                                      overflow: 'hidden',
+                                      lineHeight: 1.3
+                                    }}
+                                  >
+                                    {cleanTitle}
+                                  </span>
+                                  {status && (
+                                    <span
+                                      className="badge px-1.5 py-0.5 rounded-1 fw-semibold"
+                                      style={{
+                                        fontSize: '0.60rem',
+                                        background: badgeStyle?.bg || 'rgba(255,255,255,0.1)',
+                                        color: badgeStyle?.text || '#fff',
+                                        border: `1px solid ${badgeStyle?.border || 'rgba(255,255,255,0.2)'}`
+                                      }}
+                                    >
+                                      {status}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-white-50" style={{ fontSize: '0.72rem', lineHeight: 1.35, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                  {n.message}
+                                </div>
+                                <div className="text-white-50 opacity-50 mt-1" style={{ fontSize: '0.65rem' }}>
+                                  {getRelativeTimeString(n.created_at || n.time)}
+                                </div>
+                              </div>
                             </div>
-                            <div className="text-white-50 text-truncate" style={{ fontSize: '0.72rem' }}>{n.message}</div>
                           </div>
                         );
                       })

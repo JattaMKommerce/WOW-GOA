@@ -591,7 +591,7 @@ export default function HotelBookingModal({
             </div>
             <div className="col-md-6">
                 <label className="form-label small fw-bold">
-                  Mobile Number <span className="text-danger">* (Required for Tracking)</span>
+                  Mobile Number <span className="text-danger">*</span>
                 </label>
                 <div className="input-group">
                   <span className="input-group-text bg-light fw-bold text-xs">+91</span>

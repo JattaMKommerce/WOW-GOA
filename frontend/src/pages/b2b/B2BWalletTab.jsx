@@ -68,10 +68,22 @@ export default function B2BWalletTab({ partnerUser, onWalletUpdated }) {
       };
       const res = await rechargeB2BWallet(payload);
       if (res && res.success) {
+        if (res.wallet_balance !== undefined) {
+          setWalletData(prev => ({
+            ...(prev || {}),
+            wallet_balance: parseFloat(res.wallet_balance)
+          }));
+          if (onWalletUpdatedRef.current) {
+            onWalletUpdatedRef.current(parseFloat(res.wallet_balance));
+          }
+        }
         await loadWallet(true);
+      } else {
+        alert(res?.error || 'Failed to add test funds. Please check server.');
       }
     } catch (err) {
       console.warn('Quick recharge error:', err);
+      alert('Error adding test funds: ' + (err.message || 'Server error'));
     } finally {
       setRefreshing(false);
     }

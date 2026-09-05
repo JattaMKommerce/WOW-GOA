@@ -90,12 +90,21 @@ export default function HotelsPage({
 
   // Non-destructive, flexible filtering logic
   const filteredHotels = useMemo(() => {
-    const activePrices = appliedFilters?.priceRanges || [];
+    const activeStars = appliedFilters?.hotelStars || selectedStars || [];
+    const activePropertyTypes = appliedFilters?.hotelPropertyType || [];
+    const activePriceRanges = appliedFilters?.hotelPriceRanges || appliedFilters?.priceRanges || [];
+    const activeAreas = appliedFilters?.hotelAreas || [];
+    const activeAmenities = appliedFilters?.hotelAmenities || [];
 
     return displayHotels.filter(hotel => {
       const hotelName = (hotel.name || '').toLowerCase();
       const hotelArea = (hotel.area || '').toLowerCase();
       const hotelLoc = (hotel.location || '').toLowerCase();
+      const hotelDesc = (hotel.description || '').toLowerCase();
+      const hotelType = (hotel.type || hotel.property_type || '').toLowerCase();
+      const hotelAmenitiesList = Array.isArray(hotel.amenities)
+        ? hotel.amenities.map(a => String(a).toLowerCase())
+        : String(hotel.amenities || '').toLowerCase().split(',').map(s => s.trim());
 
       // Search query filter
       const q = (searchQuery || '').toLowerCase().trim();
@@ -103,25 +112,73 @@ export default function HotelsPage({
                           q === 'goa' || 
                           q === 'all goa' || 
                           q === 'all' || 
-                          q === 'india' ||
+                          q === 'india' || 
                           hotelName.includes(q) || 
                           hotelArea.includes(q) || 
                           hotelLoc.includes(q);
         
       // Star rating filter
       const hotelStarsStr = String(hotel.stars || hotel.star_rating || 3);
-      const starsMatch = selectedStars.length === 0 || selectedStars.includes(hotelStarsStr);
+      let starsMatch = true;
+      if (activeStars.length > 0) {
+        starsMatch = activeStars.some(st => {
+          if (st === 'boutique') {
+            return hotelDesc.includes('boutique') || hotelDesc.includes('heritage') || hotelName.includes('boutique') || hotelType.includes('boutique');
+          }
+          return hotelStarsStr === String(st);
+        });
+      }
+
+      // Property type filter
+      let propTypeMatch = true;
+      if (activePropertyTypes.length > 0) {
+        propTypeMatch = activePropertyTypes.some(pt => {
+          const s = pt.toLowerCase();
+          if (s.includes('resort')) return hotelType.includes('resort') || hotelName.includes('resort') || hotelDesc.includes('resort');
+          if (s.includes('villa')) return hotelType.includes('villa') || hotelName.includes('villa') || hotelDesc.includes('villa');
+          if (s.includes('boutique')) return hotelType.includes('boutique') || hotelName.includes('boutique') || hotelDesc.includes('boutique');
+          if (s.includes('budget')) return hotel.price < 4000 || hotelType.includes('budget') || hotelName.includes('inn') || hotelName.includes('stay');
+          if (s.includes('apartment')) return hotelType.includes('apartment') || hotelName.includes('apartment') || hotelDesc.includes('apartment') || hotelDesc.includes('suite');
+          return hotelType.includes(s) || hotelName.includes(s);
+        });
+      }
       
       // Price filter from sidebar or appliedFilters
       let priceMatch = true;
       if (hotelPriceRange === 'under-10000') priceMatch = hotel.price < 10000;
       else if (hotelPriceRange === '10000-20000') priceMatch = hotel.price >= 10000 && hotel.price <= 20000;
       else if (hotelPriceRange === 'over-20000') priceMatch = hotel.price > 20000;
-      else if (activePrices.length > 0) {
-        priceMatch = activePrices.some(rangeId => {
-          if (rangeId === '< 15000') return hotel.price < 15000;
-          if (rangeId === '15000-25000') return hotel.price >= 15000 && hotel.price <= 25000;
-          if (rangeId === '> 25000') return hotel.price > 25000;
+      else if (activePriceRanges.length > 0) {
+        priceMatch = activePriceRanges.some(rangeId => {
+          if (rangeId === '< 3000' || rangeId === '< 15000') return hotel.price < 3000 || (rangeId === '< 15000' && hotel.price < 15000);
+          if (rangeId === '3000-6000') return hotel.price >= 3000 && hotel.price <= 6000;
+          if (rangeId === '6000-10000') return hotel.price >= 6000 && hotel.price <= 10000;
+          if (rangeId === '> 10000' || rangeId === '> 25000') return hotel.price > 10000;
+          return true;
+        });
+      }
+
+      // Goa Area filter
+      let areaMatch = true;
+      if (activeAreas.length > 0) {
+        areaMatch = activeAreas.some(area => {
+          const a = area.toLowerCase();
+          return hotelArea.includes(a) || hotelLoc.includes(a) || hotelName.includes(a);
+        });
+      }
+
+      // Amenities filter
+      let amenitiesMatch = true;
+      if (activeAmenities.length > 0) {
+        amenitiesMatch = activeAmenities.every(amenity => {
+          const am = amenity.toLowerCase();
+          if (am.includes('pool')) return hotelAmenitiesList.some(x => x.includes('pool')) || hotelDesc.includes('pool');
+          if (am.includes('beach') || am.includes('sea view')) return hotelAmenitiesList.some(x => x.includes('beach') || x.includes('sea')) || hotelDesc.includes('beach') || hotelDesc.includes('sea view');
+          if (am.includes('breakfast')) return hotelAmenitiesList.some(x => x.includes('breakfast') || x.includes('meal') || x.includes('dining')) || hotelDesc.includes('breakfast');
+          if (am.includes('spa')) return hotelAmenitiesList.some(x => x.includes('spa')) || hotelDesc.includes('spa') || hotelDesc.includes('wellness');
+          if (am.includes('wi-fi') || am.includes('wifi')) return hotelAmenitiesList.some(x => x.includes('wifi') || x.includes('wi-fi') || x.includes('internet')) || true; // standard hotel amenity
+          if (am.includes('bar') || am.includes('lounge')) return hotelAmenitiesList.some(x => x.includes('bar') || x.includes('lounge')) || hotelDesc.includes('bar');
+          if (am.includes('pet')) return hotelAmenitiesList.some(x => x.includes('pet')) || hotelDesc.includes('pet');
           return true;
         });
       }
@@ -148,9 +205,9 @@ export default function HotelsPage({
         capacityMatch = parseInt(hotel.max_guests, 10) >= parseInt(hotelAdults, 10);
       }
 
-      return searchMatch && starsMatch && priceMatch && locMatch && capacityMatch;
+      return searchMatch && starsMatch && propTypeMatch && priceMatch && areaMatch && amenitiesMatch && locMatch && capacityMatch;
     });
-  }, [displayHotels, searchQuery, selectedStars, hotelPriceRange, appliedFilters?.priceRanges, pickupLoc, hotelAdults]);
+  }, [displayHotels, searchQuery, selectedStars, hotelPriceRange, appliedFilters, pickupLoc, hotelAdults]);
 
   const hotelsToRender = filteredHotels;
 

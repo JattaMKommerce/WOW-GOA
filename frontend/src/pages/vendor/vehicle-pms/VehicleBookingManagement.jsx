@@ -715,21 +715,12 @@ export default function VehicleBookingManagement({ bookings = [], cars = [], bik
                   onClick={() => advanceStatus(selected)} 
                   className="btn flex-grow-1 py-2 rounded-3 fw-bold text-white d-flex align-items-center justify-content-center gap-1" 
                   style={{ 
-                    background: selected.status === 'Return' 
-                      ? 'linear-gradient(90deg,#059669,#10b981)' 
-                      : 'linear-gradient(90deg,#FF6333,#FF8A00)', 
+                    background: 'linear-gradient(90deg,#FF6333,#FF8A00)', 
                     fontSize: '0.82rem' 
                   }}
+                  title={selected.status === 'Return' ? 'Advance to Completed' : 'Advance to next workflow step'}
                 >
-                  {selected.status === 'Return' ? (
-                    <>
-                      <CheckCircle size={13} /> Complete
-                    </>
-                  ) : (
-                    <>
-                      <ArrowRight size={13} /> Next
-                    </>
-                  )}
+                  <ArrowRight size={13} /> Next
                 </button>
                 <button onClick={() => cancelBooking(selected.id)} className="btn py-2 px-3 rounded-3 fw-bold" style={{ background: '#fee2e2', color: '#dc2626', fontSize: '0.82rem' }}>
                   Cancel

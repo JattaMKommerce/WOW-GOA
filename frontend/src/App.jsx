@@ -1170,6 +1170,8 @@ export default function App() {
                 onViewVehicle={(veh) => handleOpenDetails(veh, 'vehicle')}
                 setActiveTab={handleTabChange}
                 searchQuery={dropLoc || searchQuery}
+                appliedFilters={appliedFilters}
+                setAppliedFilters={setAppliedFilters}
               />
 
               {/* Self Drive Tour Itineraries & Bundles */}
@@ -1337,6 +1339,8 @@ export default function App() {
               flightClass={flightClass}
               onSelectFlight={handleOpenBooking}
               markups={markups}
+              appliedFilters={appliedFilters}
+              setAppliedFilters={setAppliedFilters}
             />
           )}
 

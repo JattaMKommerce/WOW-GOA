@@ -67,7 +67,11 @@ export function getAudioContext() {
   if (!audioCtx) {
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     if (AudioContextClass) {
-      audioCtx = new AudioContextClass();
+      try {
+        audioCtx = new AudioContextClass();
+      } catch (e) {
+        console.warn('[Audio] AudioContext init error:', e);
+      }
     }
   }
   return audioCtx;
@@ -75,29 +79,58 @@ export function getAudioContext() {
 
 /**
  * Unlock AudioContext and HTML5 audio on first user interaction
+ * Plays a silent 1-sample buffer to satisfy Chrome/Safari autoplay policy
  */
 export function unlockAudio() {
-  const ctx = getAudioContext();
-  if (ctx && ctx.state === 'suspended') {
-    ctx.resume().then(() => {
-      isAudioUnlocked = true;
-    }).catch(() => {});
-  } else if (ctx && ctx.state === 'running') {
-    isAudioUnlocked = true;
-  }
+  try {
+    const ctx = getAudioContext();
+    if (ctx) {
+      if (ctx.state === 'suspended') {
+        ctx.resume().then(() => {
+          isAudioUnlocked = true;
+        }).catch(() => {});
+      } else if (ctx.state === 'running') {
+        isAudioUnlocked = true;
+      }
+
+      // 1-frame silent buffer playback to unlock audio engine in Webkit/Blink
+      try {
+        const buffer = ctx.createBuffer(1, 1, 22050);
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(ctx.destination);
+        source.start(0);
+      } catch (bufErr) {}
+    }
+  } catch (e) {}
+
+  // Prime cached HTML5 audio element
+  try {
+    if (cachedAudio && typeof cachedAudio.play === 'function') {
+      const p = cachedAudio.play();
+      if (p !== undefined) {
+        p.then(() => {
+          cachedAudio.pause();
+          cachedAudio.currentTime = 0;
+        }).catch(() => {});
+      }
+    }
+  } catch (e) {}
 }
 
-// Automatically register interaction listeners to unlock audio seamlessly
+// Automatically register interaction listeners to unlock audio seamlessly on HTTPS
 if (typeof window !== 'undefined') {
-  const unlockEvents = ['click', 'touchstart', 'keydown', 'mousedown'];
+  const unlockEvents = ['pointerdown', 'touchstart', 'click', 'keydown', 'mousedown'];
   const handleFirstInteraction = () => {
     unlockAudio();
     unlockEvents.forEach(evt => {
       window.removeEventListener(evt, handleFirstInteraction, true);
+      document.removeEventListener(evt, handleFirstInteraction, true);
     });
   };
   unlockEvents.forEach(evt => {
     window.addEventListener(evt, handleFirstInteraction, { once: true, passive: true, capture: true });
+    document.addEventListener(evt, handleFirstInteraction, { once: true, passive: true, capture: true });
   });
 }
 
@@ -374,4 +407,90 @@ export function handleIncomingNotifications(items = [], { isInitialLoad = false 
   }
 
   return newItems;
+}
+
+/**
+ * Format timestamp into concise relative time string:
+ * Just now, 2m ago, 15m ago, 1h ago, Yesterday, or short date
+ */
+export function getRelativeTimeString(ts) {
+  if (!ts) return 'Just now';
+  if (ts === 'Recent' || ts === 'Just now') return 'Just now';
+  try {
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return String(ts);
+    const now = Date.now();
+    const diffSec = Math.floor((now - d.getTime()) / 1000);
+
+    if (diffSec < 45) return 'Just now';
+    if (diffSec < 3600) {
+      const mins = Math.max(1, Math.floor(diffSec / 60));
+      return `${mins}m ago`;
+    }
+    if (diffSec < 86400) {
+      const hours = Math.floor(diffSec / 3600);
+      return `${hours}h ago`;
+    }
+    const days = Math.floor(diffSec / 86400);
+    if (days === 1) return 'Yesterday';
+    if (days < 7) return `${days}d ago`;
+    return d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
+  } catch {
+    return String(ts);
+  }
+}
+
+/**
+ * Parse notification title and extract clean title + separate status badge
+ * e.g. "Booking #123 - Updated to Completed" -> title: "Booking #123", status: "Completed"
+ */
+export function parseNotificationTitleAndStatus(titleStr = '', msgStr = '') {
+  let cleanTitle = titleStr ? String(titleStr).trim() : 'Notification';
+  let statusBadge = null;
+
+  const STATUS_LIST = ['Completed', 'Assigned', 'Pickup', 'Return', 'In Progress', 'Confirmed', 'Pending', 'Cancelled', 'Active', 'Rejected'];
+
+  // 1. Check title for status pattern
+  for (const status of STATUS_LIST) {
+    const regex = new RegExp(`\\s*[-–—|•]?\\s*(?:Updated to|Status:?|Status is)?\\s*${status}\\b`, 'i');
+    if (regex.test(cleanTitle)) {
+      statusBadge = status;
+      cleanTitle = cleanTitle.replace(regex, '').trim();
+      break;
+    }
+  }
+
+  // 2. If not found in title, check message
+  if (!statusBadge && msgStr) {
+    for (const status of STATUS_LIST) {
+      const msgRegex = new RegExp(`\\b(?:Status:?\\s*|is\\s+)?(${status})\\b`, 'i');
+      if (msgRegex.test(String(msgStr))) {
+        statusBadge = status;
+        break;
+      }
+    }
+  }
+
+  // Clean trailing punctuation
+  cleanTitle = cleanTitle.replace(/[-–—|•:\s]+$/, '').trim();
+
+  // Status visual badge colors
+  const statusStyles = {
+    Completed: { bg: 'rgba(34, 197, 94, 0.18)', text: '#4ade80', border: 'rgba(34, 197, 94, 0.35)' },
+    Assigned: { bg: 'rgba(56, 189, 248, 0.18)', text: '#38bdf8', border: 'rgba(56, 189, 248, 0.35)' },
+    Pickup: { bg: 'rgba(234, 179, 8, 0.18)', text: '#facc15', border: 'rgba(234, 179, 8, 0.35)' },
+    Return: { bg: 'rgba(168, 85, 247, 0.18)', text: '#c084fc', border: 'rgba(168, 85, 247, 0.35)' },
+    'In Progress': { bg: 'rgba(249, 115, 22, 0.18)', text: '#fb923c', border: 'rgba(249, 115, 22, 0.35)' },
+    Confirmed: { bg: 'rgba(34, 197, 94, 0.18)', text: '#4ade80', border: 'rgba(34, 197, 94, 0.35)' },
+    Cancelled: { bg: 'rgba(239, 68, 68, 0.18)', text: '#f87171', border: 'rgba(239, 68, 68, 0.35)' },
+    Pending: { bg: 'rgba(234, 179, 8, 0.18)', text: '#facc15', border: 'rgba(234, 179, 8, 0.35)' },
+    Active: { bg: 'rgba(16, 185, 129, 0.18)', text: '#34d399', border: 'rgba(16, 185, 129, 0.35)' },
+    Rejected: { bg: 'rgba(239, 68, 68, 0.18)', text: '#f87171', border: 'rgba(239, 68, 68, 0.35)' }
+  };
+
+  return {
+    cleanTitle: cleanTitle || 'Notification',
+    status: statusBadge,
+    badgeStyle: statusBadge ? (statusStyles[statusBadge] || { bg: 'rgba(255, 255, 255, 0.12)', text: '#e2e8f0', border: 'rgba(255, 255, 255, 0.25)' }) : null
+  };
 }

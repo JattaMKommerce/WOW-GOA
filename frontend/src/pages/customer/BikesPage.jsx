@@ -8,7 +8,9 @@ export default function BikesPage({
   onViewDetails,
   bikes = [],
   searchQuery,
-  markups = []
+  markups = [],
+  appliedFilters = {},
+  setAppliedFilters
 }) {
   const getMarkupPrice = (basePrice, vendorId, entityType, itemId = 'all') => {
     if (!markups) return basePrice;
@@ -44,9 +46,16 @@ export default function BikesPage({
   }, [bikes, markups]);
 
   const filteredBikes = useMemo(() => {
+    const bikeSubs = appliedFilters?.bikeSubFilters || [];
+    const appBudget = appliedFilters?.vehicleBudget || [];
+
     const results = displayBikes.filter(bike => {
       const bCat = (bike.category || '').toLowerCase();
+      const bName = (bike.name || '').toLowerCase();
+      const bFuel = (bike.fuel || '').toLowerCase();
+      const price = parseFloat(bike.price || 0);
       const selCat = (bikeFilterType || 'All').toLowerCase();
+
       const typeMatch = selCat === 'all' 
         || bCat === selCat 
         || bCat.includes(selCat) 
@@ -55,20 +64,37 @@ export default function BikesPage({
         || (selCat.includes('sports') && bCat.includes('sports'))
         || (selCat.includes('cruiser') && bCat.includes('cruiser'));
 
+      const subMatch = bikeSubs.length === 0 || bikeSubs.some(sub => {
+        const s = sub.toLowerCase();
+        if (s.includes('scooter')) return bCat.includes('scooter') || bName.includes('activa') || bName.includes('jupiter') || bName.includes('access');
+        if (s.includes('cruiser') || s.includes('enfield')) return bCat.includes('cruiser') || bName.includes('classic') || bName.includes('bullet') || bName.includes('hunter') || bName.includes('meteor') || bName.includes('himalayan');
+        if (s.includes('sports')) return bCat.includes('sports') || bCat.includes('superbike') || bName.includes('r15') || bName.includes('ktm') || bName.includes('duke') || bName.includes('pulsar') || bName.includes('ninja');
+        if (s.includes('electric') || s.includes('ev')) return bFuel.includes('electric') || bFuel.includes('ev') || bName.includes('ev') || bName.includes('ather') || bName.includes('ola');
+        return bCat.includes(s) || bName.includes(s);
+      });
+
+      const budgetMatch = appBudget.length === 0 || appBudget.some(b => {
+        if (b === '< 1500') return price < 1500;
+        if (b === '1500-3000') return price >= 1500 && price <= 3000;
+        if (b === '3000-6000') return price >= 3000 && price <= 6000;
+        if (b === '> 6000') return price > 6000;
+        return true;
+      });
+
       const q = (searchQuery || '').toLowerCase().trim();
       const searchMatch = !q || 
                           q === 'goa' || 
                           q === 'all goa' || 
                           q === 'all' || 
                           q === 'india' ||
-                          (bike.name && bike.name.toLowerCase().includes(q)) || 
-                          (bike.category && bike.category.toLowerCase().includes(q)) ||
+                          bName.includes(q) || 
+                          bCat.includes(q) || 
                           (bike.location && bike.location.toLowerCase().includes(q));
-      return typeMatch && searchMatch;
+      return typeMatch && subMatch && budgetMatch && searchMatch;
     });
 
     return results;
-  }, [displayBikes, bikeFilterType, searchQuery, bikes]);
+  }, [displayBikes, bikeFilterType, searchQuery, appliedFilters]);
 
   const bikesToRender = filteredBikes;
 

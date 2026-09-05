@@ -1,8 +1,8 @@
-﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Bell, CheckCircle2, AlertCircle, Info, X, Clock, ShieldCheck, CheckCheck, Trash2 } from 'lucide-react';
 import * as api from '../../services/api';
 import NotificationSoundToggle from '../common/NotificationSoundToggle';
-import { handleIncomingNotifications, registerSeenNotifications } from '../../utils/notificationSound';
+import { handleIncomingNotifications, registerSeenNotifications, getRelativeTimeString, parseNotificationTitleAndStatus } from '../../utils/notificationSound';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -236,6 +236,7 @@ export default function B2BNotificationBell({ partner, onNotificationClick }) {
     }),
     list: {
       maxHeight: '400px', overflowY: 'auto',
+      paddingRight: '6px',
       scrollbarWidth: 'thin',
       scrollbarColor: 'rgba(255,255,255,0.12) transparent',
     },
@@ -248,14 +249,15 @@ export default function B2BNotificationBell({ partner, onNotificationClick }) {
     },
     cardRow: (isUnread) => ({
       display: 'flex', alignItems: 'flex-start', gap: '10px',
-      padding: '12px 16px', cursor: 'pointer',
+      padding: '12px 14px', cursor: 'pointer',
       background: isUnread ? 'rgba(252,211,77,0.04)' : 'transparent',
       borderLeft: isUnread ? '3px solid #FCD34D' : '3px solid transparent',
       transition: 'background 0.15s', position: 'relative',
     }),
     cardTitle: (isUnread) => ({
       color: '#fff', fontWeight: isUnread ? 700 : 500,
-      fontSize: '0.78rem', lineHeight: 1.3, flex: 1, minWidth: 0,
+      fontSize: '0.80rem', lineHeight: 1.35, flex: 1, minWidth: 0,
+      display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
     }),
     dismissBtn: {
       background: 'none', border: 'none', cursor: 'pointer',
@@ -389,6 +391,8 @@ export default function B2BNotificationBell({ partner, onNotificationClick }) {
               ) : (
                 filtered.map((item, idx) => {
                   const isUnread = !item.is_read;
+                  const { cleanTitle, status, badgeStyle } = parseNotificationTitleAndStatus(item.title, item.message);
+
                   return (
                     <div
                       key={item.id}
@@ -401,12 +405,28 @@ export default function B2BNotificationBell({ partner, onNotificationClick }) {
                       <div style={{ marginTop: '2px', flexShrink: 0 }}>{getTypeIcon(item.type)}</div>
 
                       {/* Content */}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', marginBottom: '3px' }}>
-                          <span style={S.cardTitle(isUnread)}>
-                            {item.title}
-                            {isUnread && <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: '#FCD34D', marginLeft: '6px', verticalAlign: 'middle' }} />}
-                          </span>
+                      <div style={{ flex: 1, minWidth: 0, paddingRight: '4px' }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '6px', marginBottom: '3px' }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px', flex: 1, minWidth: 0 }}>
+                            <span style={S.cardTitle(isUnread)}>
+                              {cleanTitle}
+                              {isUnread && <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: '#FCD34D', marginLeft: '6px', verticalAlign: 'middle' }} />}
+                            </span>
+                            {status && (
+                              <span style={{
+                                fontSize: '0.60rem',
+                                fontWeight: 700,
+                                padding: '1px 5px',
+                                borderRadius: '4px',
+                                background: badgeStyle?.bg || 'rgba(255,255,255,0.1)',
+                                color: badgeStyle?.text || '#fff',
+                                border: `1px solid ${badgeStyle?.border || 'rgba(255,255,255,0.2)'}`,
+                                whiteSpace: 'nowrap'
+                              }}>
+                                {status}
+                              </span>
+                            )}
+                          </div>
                           <button type="button" onClick={e => handleDismiss(item.id, e)} title="Dismiss"
                             style={S.dismissBtn}
                             onMouseEnter={e => e.currentTarget.style.color = '#F87171'}
@@ -416,7 +436,7 @@ export default function B2BNotificationBell({ partner, onNotificationClick }) {
                         </div>
                         <p style={S.cardMsg}>{item.message}</p>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <span style={S.cardTime}><Clock size={10} />{formatTimeAgo(item.created_at)}</span>
+                          <span style={S.cardTime}><Clock size={10} />{getRelativeTimeString(item.created_at)}</span>
                           {isUnread && (
                             <button type="button" onClick={e => handleMarkSingleRead(item.id, e)} style={S.cardMarkBtn}>
                               <CheckCheck size={11} /> Mark read

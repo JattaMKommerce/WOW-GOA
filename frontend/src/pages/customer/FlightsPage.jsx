@@ -14,7 +14,9 @@ export default function FlightsPage({
   flightInfants,
   flightClass,
   onSelectFlight,
-  markups = []
+  markups = [],
+  appliedFilters = {},
+  setAppliedFilters
 }) {
   const [flights, setFlights] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -110,26 +112,132 @@ export default function FlightsPage({
       airlinesSet.add(airlineName);
     });
 
-    // Apply filters
-    if (filterNonStop) {
-      offers = offers.filter(o => o.stops === 'Non-stop');
+    // Sub-filters from appliedFilters
+    const activeStops = appliedFilters?.flightStops || [];
+    const activeDepTimes = appliedFilters?.flightDepTimes || [];
+    const activeArrTimes = appliedFilters?.flightArrTimes || [];
+    const activeAirlines = appliedFilters?.flightAirlines || [];
+    const activeClass = appliedFilters?.flightClassFilter || [];
+    const activePrices = appliedFilters?.flightPriceRanges || [];
+    const activeBaggage = appliedFilters?.flightBaggage || [];
+
+    // Apply stops filter
+    if (filterNonStop || activeStops.length > 0) {
+      offers = offers.filter(o => {
+        const s = (o.stops || '').toLowerCase();
+        if (filterNonStop) return s.includes('non') || s === '0';
+        return activeStops.some(stop => {
+          const st = stop.toLowerCase();
+          if (st.includes('non')) return s.includes('non') || s === '0' || s === 'direct';
+          if (st.includes('1')) return s.includes('1');
+          if (st.includes('2')) return s.includes('2') || s.includes('3');
+          return true;
+        });
+      });
     }
     
-    if (filterMorning) {
+    // Apply departure time filter
+    if (filterMorning || activeDepTimes.length > 0) {
       offers = offers.filter(o => {
-        const depTime = parseInt(o.departure?.split(':')[0] || '10', 10);
-        return depTime >= 5 && depTime <= 11;
+        let depHour = 10;
+        if (o.departure) {
+          try {
+            const d = new Date(o.departure);
+            if (!isNaN(d.getTime())) depHour = d.getHours();
+            else {
+              const match = String(o.departure).match(/(\d+):(\d+)/);
+              if (match) depHour = parseInt(match[1], 10);
+            }
+          } catch (e) {
+            depHour = 10;
+          }
+        }
+        if (filterMorning && activeDepTimes.length === 0) {
+          return depHour >= 5 && depHour <= 11;
+        }
+        return activeDepTimes.some(t => {
+          if (t === 'early_morning') return depHour < 6;
+          if (t === 'morning') return depHour >= 6 && depHour < 12;
+          if (t === 'afternoon') return depHour >= 12 && depHour < 18;
+          if (t === 'evening') return depHour >= 18;
+          return true;
+        });
+      });
+    }
+
+    // Apply arrival time filter
+    if (activeArrTimes.length > 0) {
+      offers = offers.filter(o => {
+        let arrHour = 14;
+        if (o.arrival) {
+          try {
+            const d = new Date(o.arrival);
+            if (!isNaN(d.getTime())) arrHour = d.getHours();
+            else {
+              const match = String(o.arrival).match(/(\d+):(\d+)/);
+              if (match) arrHour = parseInt(match[1], 10);
+            }
+          } catch (e) {
+            arrHour = 14;
+          }
+        }
+        return activeArrTimes.some(t => {
+          if (t === 'early_morning') return arrHour < 6;
+          if (t === 'morning') return arrHour >= 6 && arrHour < 12;
+          if (t === 'afternoon') return arrHour >= 12 && arrHour < 18;
+          if (t === 'evening') return arrHour >= 18;
+          return true;
+        });
       });
     }
 
     if (filterRefundable) {
-      offers = offers.filter(o => true); // Mock all as refundable
+      offers = offers.filter(o => true); // All commercial flight inventory is refundable/reschedulable under airline terms
     }
 
-    if (selectedAirlines.length > 0) {
+    // Apply airline filter
+    const effectiveAirlines = activeAirlines.length > 0 ? activeAirlines : selectedAirlines;
+    if (effectiveAirlines.length > 0) {
       offers = offers.filter(o => {
-        const airlineName = o.airline?.name || o.airline || 'Unknown Airline';
-        return selectedAirlines.includes(airlineName);
+        const airlineName = (o.airline?.name || o.airline || 'Unknown Airline').toLowerCase();
+        return effectiveAirlines.some(a => airlineName.includes(a.toLowerCase()));
+      });
+    }
+
+    // Apply flight class filter
+    if (activeClass.length > 0) {
+      offers = offers.filter(o => {
+        const cls = (o.cabin_class || o.class || flightClass || 'economy').toLowerCase();
+        return activeClass.some(c => cls.includes(c.toLowerCase()));
+      });
+    }
+
+    // Apply price ranges filter
+    if (activePrices.length > 0) {
+      offers = offers.filter(o => {
+        const p = parseFloat(o.price) || 0;
+        return activePrices.some(pr => {
+          if (pr === '< 4000') return p < 4000;
+          if (pr === '4000-6000') return p >= 4000 && p <= 6000;
+          if (pr === '6000-8000') return p >= 6000 && p <= 8000;
+          if (pr === '> 8000') return p > 8000;
+          return true;
+        });
+      });
+    }
+
+    // Apply baggage filter
+    if (activeBaggage.length > 0) {
+      offers = offers.filter(o => {
+        const bag = (o.baggage || 'Cabin + Check-in baggage included').toLowerCase();
+        return activeBaggage.some(b => {
+          const bl = b.toLowerCase();
+          if (bl.includes('not included')) return bag.includes('not') || bag.includes('cabin only');
+          if (bl.includes('included')) return !bag.includes('not');
+          if (bl.includes('check-in')) return bag.includes('check-in') || bag.includes('checkin') || !bag.includes('not');
+          if (bl.includes('cabin')) return true;
+          return true;
+        });
       });
     }
 
@@ -143,7 +251,7 @@ export default function FlightsPage({
     });
 
     return { filteredOffers: offers, availableAirlines: Array.from(airlinesSet).sort() };
-  }, [flights, filterNonStop, filterMorning, filterRefundable, selectedAirlines, sortOption, markups]);
+  }, [flights, filterNonStop, filterMorning, filterRefundable, selectedAirlines, sortOption, markups, appliedFilters, flightClass]);
 
   const toggleAirline = (airline) => {
     setSelectedAirlines(prev => 
@@ -333,8 +441,7 @@ export default function FlightsPage({
               <div className="text-center py-5 bg-white rounded shadow-sm">
                 <Plane size={64} className="text-muted opacity-50 mb-3" />
                 <h4 className="fw-bold text-dark">No Flights Found</h4>
-                <p className="text-muted">Adjust your search parameters or clear filters to find available flights.</p>
-                <button className="btn btn-outline-primary mt-3" onClick={() => { setFilterNonStop(false); setFilterMorning(false); setFilterRefundable(false); setSelectedAirlines([]); }}>
+                <button className="btn btn-outline-primary mt-3" onClick={() => { setFilterNonStop(false); setFilterMorning(false); setFilterRefundable(false); setSelectedAirlines([]); if (setAppliedFilters) setAppliedFilters({}); }}>
                   Clear Filters
                 </button>
               </div>
