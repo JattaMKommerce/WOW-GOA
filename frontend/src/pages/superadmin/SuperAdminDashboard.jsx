@@ -770,7 +770,7 @@ function LeadManagementTab({ aiLeads = [], customEnquiries = [], onRefresh, user
       name: l.name,
       phone: l.phone,
       email: '—',
-      details: 'Inquired via Maya AI Chatbot',
+      details: 'Inquired via Sophia AI Chatbot',
       created_at: l.created_at,
       status: l.status || 'Captured',
       assigned_to: l.assigned_to || null,
@@ -977,7 +977,7 @@ function LeadManagementTab({ aiLeads = [], customEnquiries = [], onRefresh, user
                       style={{ maxWidth: '85%' }}
                     >
                       <div className="fw-bold mb-0.5" style={{ fontSize: '0.65rem', textTransform: 'uppercase', color: msg.role === 'user' ? '#64748b' : '#FF6333' }}>
-                        {msg.role === 'user' ? 'Customer' : 'Maya AI Assistant'}
+                        {msg.role === 'user' ? 'Customer' : 'Sophia AI Assistant'}
                       </div>
                       <div>{msg.content}</div>
                     </div>
@@ -2135,8 +2135,8 @@ function NotificationsTab({ bookings = [], vendors = [], usersList = [], aiLeads
     })),
     ...aiLeads.map(l => ({
       type: 'lead',
-      title: `Maya AI Lead: ${l.name}`,
-      msg: `Customer ${l.name} (${l.phone || 'No phone'}) chatted with Maya AI`,
+      title: `Sophia AI Lead: ${l.name}`,
+      msg: `Customer ${l.name} (${l.phone || 'No phone'}) chatted with Sophia AI`,
       time: l.created_at?.slice(0, 16) || 'Recently',
       color: '#059669',
       tab: 'lead_management'

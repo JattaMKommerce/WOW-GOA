@@ -26,6 +26,75 @@ export default function AdminB2BPortal({ activeSubTab = 'b2b_dashboard', onNavig
   const [adjustReason, setAdjustReason] = useState('');
   const [feedbackMsg, setFeedbackMsg] = useState('');
   const [feedbackError, setFeedbackError] = useState('');
+  const [selectedBookingDetails, setSelectedBookingDetails] = useState(null);
+  const [selectedPartnerDetails, setSelectedPartnerDetails] = useState(null);
+
+  const getPartnerStatusStyle = (status) => {
+    const s = String(status || 'active').toLowerCase();
+    if (s === 'active' || s === 'approved') {
+      return { background: '#dcfce7', color: '#166534', border: '1px solid #86efac' };
+    }
+    if (s === 'pending') {
+      return { background: '#fef9c3', color: '#854d0e', border: '1px solid #fde047' };
+    }
+    if (s === 'rejected' || s === 'suspended' || s === 'inactive' || s === 'blocked') {
+      return { background: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5' };
+    }
+    return { background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1' };
+  };
+
+  const handleQuickPartnerStatusChange = async (partnerId, newStatus) => {
+    setActionLoading(true);
+    setFeedbackMsg('');
+    setFeedbackError('');
+    try {
+      await api.toggleUserStatus(partnerId, newStatus);
+      setPartners(prev => prev.map(p => p.id === partnerId ? { ...p, status: newStatus } : p));
+      if (selectedPartnerDetails && selectedPartnerDetails.id === partnerId) {
+        setSelectedPartnerDetails(prev => ({ ...prev, status: newStatus }));
+      }
+      setFeedbackMsg(`Partner account status successfully updated to ${newStatus}`);
+    } catch (err) {
+      setFeedbackError(`Failed to update partner status: ${err.message}`);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const getStatusBadgeStyle = (status) => {
+    const s = String(status || 'Confirmed').toUpperCase();
+    if (s === 'CONFIRMED') {
+      return { background: '#dcfce7', color: '#166534', border: '1px solid #86efac' };
+    }
+    if (s === 'PENDING' || s === 'DRAFT' || s.includes('VERIFICATION')) {
+      return { background: '#fef9c3', color: '#854d0e', border: '1px solid #fde047' };
+    }
+    if (s === 'COMPLETED') {
+      return { background: '#dbeafe', color: '#1e40af', border: '1px solid #93c5fd' };
+    }
+    if (s === 'CANCELLED') {
+      return { background: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5' };
+    }
+    return { background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1' };
+  };
+
+  const handleQuickBookingStatusChange = async (bookingId, newStatus, currentPaymentStatus = null) => {
+    setActionLoading(true);
+    setFeedbackMsg('');
+    setFeedbackError('');
+    try {
+      await api.updateBookingStatus(bookingId, newStatus, currentPaymentStatus);
+      setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: newStatus } : b));
+      if (selectedBookingDetails && selectedBookingDetails.id === bookingId) {
+        setSelectedBookingDetails(prev => ({ ...prev, status: newStatus }));
+      }
+      setFeedbackMsg(`Booking #${bookingId} status successfully updated to ${newStatus}`);
+    } catch (err) {
+      setFeedbackError(`Failed to update booking status: ${err.message}`);
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -119,8 +188,8 @@ export default function AdminB2BPortal({ activeSubTab = 'b2b_dashboard', onNavig
   const pendingApplications = partners.filter(p => p.status?.toLowerCase() === 'pending');
   const commissionPartners = partners.filter(p => p.allow_commission == 1 || p.allow_commission === '1');
   const nonCommissionPartners = partners.filter(p => p.allow_non_commission == 1 || p.allow_non_commission === '1');
-  const commissionBookings = bookings.filter(b => b.b2b_mode === 'COMMISSION');
-  const nonCommissionBookings = bookings.filter(b => b.b2b_mode === 'NON_COMMISSION');
+  const commissionBookings = bookings.filter(b => (b.b2b_mode || '').toUpperCase() === 'COMMISSION');
+  const nonCommissionBookings = bookings.filter(b => (b.b2b_mode || '').toUpperCase() !== 'COMMISSION');
 
   const filteredPartnersList = () => {
     let list = partners;
@@ -201,7 +270,7 @@ export default function AdminB2BPortal({ activeSubTab = 'b2b_dashboard', onNavig
         </div>
 
         {/* Sub-tab buttons */}
-        <div className="d-flex gap-1.5 flex-wrap mt-3 pt-3 border-top" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+        <div className="d-flex gap-2 flex-wrap mt-3 pt-3 border-top" style={{ borderColor: 'rgba(255,255,255,0.12)' }}>
           {[
             { id: 'b2b_dashboard', label: 'B2B Dashboard', count: null },
             { id: 'b2b_applications', label: 'Partner Applications', count: pendingApplications.length, badgeBg: 'bg-warning text-dark' },
@@ -210,29 +279,45 @@ export default function AdminB2BPortal({ activeSubTab = 'b2b_dashboard', onNavig
             { id: 'b2b_commission_partners', label: 'Commission Partners', count: commissionPartners.length },
             { id: 'b2b_non_commission_partners', label: 'Non-Commission Partners', count: nonCommissionPartners.length },
             { id: 'b2b_mode_requests', label: 'Mode Change Requests', count: modeRequests.length, badgeBg: 'bg-danger text-white' },
-            { id: 'b2b_commission_bookings', label: 'Commission Bookings', count: commissionBookings.length },
-            { id: 'b2b_non_commission_bookings', label: 'Non-Commission Bookings', count: nonCommissionBookings.length },
+            { id: 'b2b_commission_bookings', label: 'Commission Bookings', count: commissionBookings.length, badgeBg: 'bg-primary text-white' },
+            { id: 'b2b_non_commission_bookings', label: 'Non-Commission Bookings', count: nonCommissionBookings.length, badgeBg: 'bg-info text-dark' },
             { id: 'b2b_settings', label: 'B2B Settings & Rules', count: null }
-          ].map(tab => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => onNavigateSubTab ? onNavigateSubTab(tab.id) : null}
-              className={`btn btn-xs py-1.5 px-3 rounded-pill fw-semibold text-xxs d-flex align-items-center gap-1.5 transition-all ${
-                activeSubTab === tab.id
-                  ? 'btn-warning text-dark shadow-sm fw-bold'
-                  : 'btn-dark text-white-50 border-0'
-              }`}
-              style={{ background: activeSubTab === tab.id ? '#FFC107' : 'rgba(255,255,255,0.06)' }}
-            >
-              <span>{tab.label}</span>
-              {tab.count !== null && (
-                <span className={`badge rounded-pill ${tab.badgeBg || 'bg-light text-dark'} text-3xs px-1.5 py-0.5`}>
-                  {tab.count}
-                </span>
-              )}
-            </button>
-          ))}
+          ].map(tab => {
+            const isActive = activeSubTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => onNavigateSubTab ? onNavigateSubTab(tab.id) : null}
+                className="btn btn-sm py-1.5 px-3 rounded-pill fw-semibold d-inline-flex align-items-center gap-2 transition-all shadow-none"
+                style={{
+                  fontSize: '0.78rem',
+                  lineHeight: '1.2',
+                  border: isActive ? '1px solid #FFC107' : '1px solid rgba(255,255,255,0.14)',
+                  background: isActive ? '#FFC107' : 'rgba(255,255,255,0.08)',
+                  color: isActive ? '#0f172a' : '#e2e8f0',
+                  fontWeight: isActive ? 700 : 500,
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <span>{tab.label}</span>
+                {tab.count !== null && (
+                  <span
+                    className="rounded-pill px-2 py-0.5"
+                    style={{
+                      fontSize: '0.68rem',
+                      fontWeight: 700,
+                      lineHeight: '1',
+                      background: isActive ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.22)',
+                      color: isActive ? '#0f172a' : '#ffffff'
+                    }}
+                  >
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -436,8 +521,17 @@ export default function AdminB2BPortal({ activeSubTab = 'b2b_dashboard', onNavig
                       return (
                         <tr key={p.id}>
                           <td className="ps-3 py-3">
-                            <strong className="text-dark d-block">{p.company_name || p.name}</strong>
-                            <span className="text-xxs font-monospace text-muted">#{p.id}</span>
+                            <button
+                              type="button"
+                              className="btn btn-link p-0 text-decoration-none text-start text-dark fw-bold d-inline-flex align-items-center gap-1 shadow-none"
+                              onClick={() => setSelectedPartnerDetails(p)}
+                              title="Click to view partner profile"
+                              style={{ fontSize: '0.82rem' }}
+                            >
+                              <span>{p.company_name || p.name}</span>
+                              <ArrowUpRight size={12} className="text-primary" />
+                            </button>
+                            <span className="text-xxs font-monospace text-muted d-block">#{p.id}</span>
                           </td>
 
                           <td>
@@ -474,45 +568,57 @@ export default function AdminB2BPortal({ activeSubTab = 'b2b_dashboard', onNavig
                           </td>
 
                           <td>
-                            {p.status === 'active' ? (
-                              <span className="badge bg-success bg-opacity-15 text-success border border-success text-xxs px-2.5 py-1 rounded-pill">
-                                Active
-                              </span>
-                            ) : p.status === 'pending' ? (
-                              <span className="badge bg-warning bg-opacity-20 text-dark border border-warning text-xxs px-2.5 py-1 rounded-pill">
-                                ⏳ Pending
-                              </span>
-                            ) : (
-                              <span className="badge bg-danger bg-opacity-15 text-danger border border-danger text-xxs px-2.5 py-1 rounded-pill">
-                                Rejected
-                              </span>
-                            )}
+                            <select
+                              className="form-select form-select-sm py-1 px-2.5 fw-bold rounded-pill shadow-none"
+                              style={{
+                                width: 'auto',
+                                minWidth: '105px',
+                                fontSize: '0.72rem',
+                                cursor: 'pointer',
+                                ...getPartnerStatusStyle(p.status)
+                              }}
+                              value={p.status || 'active'}
+                              onChange={(e) => handleQuickPartnerStatusChange(p.id, e.target.value)}
+                              disabled={actionLoading}
+                              title="Click to change partner account status"
+                            >
+                              <option value="active">Active</option>
+                              <option value="pending">Pending</option>
+                              <option value="suspended">Suspended</option>
+                              <option value="rejected">Rejected</option>
+                            </select>
                           </td>
 
                           <td className="pe-3 text-end">
-                            {p.status === 'pending' ? (
-                              <div className="d-flex justify-content-end gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => handleApprovePartner(p.id)}
-                                  disabled={actionLoading}
-                                  className="btn btn-success btn-xs rounded-pill px-2.5 py-1 text-xxs fw-semibold d-inline-flex align-items-center gap-1"
-                                >
-                                  <Check size={12} /> Approve
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setRejectModalTarget({ ...p, isModeRequest: false })}
-                                  className="btn btn-outline-danger btn-xs rounded-pill px-2.5 py-1 text-xxs"
-                                >
-                                  Reject
-                                </button>
-                              </div>
-                            ) : (
-                              <span className="text-xxs text-muted">
-                                {p.approved_at ? `Approved ${new Date(p.approved_at).toLocaleDateString()}` : '—'}
-                              </span>
-                            )}
+                            <div className="d-flex justify-content-end align-items-center gap-1">
+                              {p.status === 'pending' && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleApprovePartner(p.id)}
+                                    disabled={actionLoading}
+                                    className="btn btn-success btn-xs rounded-pill px-2.5 py-1 text-xxs fw-semibold d-inline-flex align-items-center gap-1 shadow-sm"
+                                  >
+                                    <Check size={12} /> Approve
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setRejectModalTarget({ ...p, isModeRequest: false })}
+                                    className="btn btn-outline-danger btn-xs rounded-pill px-2.5 py-1 text-xxs shadow-sm"
+                                  >
+                                    Reject
+                                  </button>
+                                </>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setSelectedPartnerDetails(p)}
+                                className="btn btn-xs btn-outline-dark rounded-pill px-2.5 py-1 text-xxs fw-bold d-inline-flex align-items-center gap-1 shadow-sm"
+                                title="View Partner Profile"
+                              >
+                                <Eye size={12} /> View
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -562,8 +668,17 @@ export default function AdminB2BPortal({ activeSubTab = 'b2b_dashboard', onNavig
                     modeRequests.map(r => (
                       <tr key={r.id}>
                         <td className="ps-3 py-3">
-                          <strong className="text-dark d-block">{r.company_name}</strong>
-                          <span className="text-xxs text-muted">{r.city} • ID: #{r.id}</span>
+                          <button
+                            type="button"
+                            className="btn btn-link p-0 text-decoration-none text-start text-dark fw-bold d-inline-flex align-items-center gap-1 shadow-none"
+                            onClick={() => setSelectedPartnerDetails(r)}
+                            title="Click to view partner profile"
+                            style={{ fontSize: '0.82rem' }}
+                          >
+                            <span>{r.company_name}</span>
+                            <ArrowUpRight size={12} className="text-primary" />
+                          </button>
+                          <span className="text-xxs text-muted d-block">{r.city} • ID: #{r.id}</span>
                         </td>
 
                         <td>
@@ -582,8 +697,11 @@ export default function AdminB2BPortal({ activeSubTab = 'b2b_dashboard', onNavig
                         </td>
 
                         <td>
-                          <span className="badge bg-warning bg-opacity-20 text-dark border border-warning text-xxs px-2.5 py-1 rounded-pill">
-                            ⏳ PENDING
+                          <span 
+                            className="rounded-pill px-2.5 py-1 text-xxs fw-bold d-inline-block"
+                            style={{ background: '#fef9c3', color: '#854d0e', border: '1px solid #fde047' }}
+                          >
+                            ⏳ PENDING REVIEW
                           </span>
                         </td>
 
@@ -636,19 +754,31 @@ export default function AdminB2BPortal({ activeSubTab = 'b2b_dashboard', onNavig
                     <th>Retail Amount</th>
                     <th>Agent Commission</th>
                     <th>Status</th>
+                    <th className="pe-3 py-3 text-end">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {commissionBookings.length === 0 ? (
                     <tr>
-                      <td colSpan="7" className="text-center py-5 text-muted">
+                      <td colSpan="8" className="text-center py-5 text-muted">
                         No commission bookings found.
                       </td>
                     </tr>
                   ) : (
                     commissionBookings.map(b => (
                       <tr key={b.id}>
-                        <td className="ps-3 py-3 font-monospace fw-bold text-dark">#{b.id}</td>
+                        <td className="ps-3 py-3">
+                          <button
+                            type="button"
+                            className="btn btn-link p-0 text-decoration-none font-monospace fw-bold text-dark d-inline-flex align-items-center gap-1 shadow-none"
+                            onClick={() => setSelectedBookingDetails(b)}
+                            title="Click to view booking details"
+                            style={{ fontSize: '0.78rem' }}
+                          >
+                            <span>#{b.id}</span>
+                            <ArrowUpRight size={12} className="text-primary" />
+                          </button>
+                        </td>
                         <td>
                           <strong>{b.b2b_partner_name || b.b2b_partner_id}</strong>
                         </td>
@@ -659,9 +789,36 @@ export default function AdminB2BPortal({ activeSubTab = 'b2b_dashboard', onNavig
                           +₹{parseFloat(b.b2b_commission_amount || 0).toLocaleString()}
                         </td>
                         <td>
-                          <span className="badge bg-success bg-opacity-15 text-success border border-success text-xxs px-2 py-0.5 rounded-pill">
-                            {b.status || 'Confirmed'}
-                          </span>
+                          <select
+                            className="form-select form-select-sm py-1 px-2.5 fw-bold rounded-pill shadow-none"
+                            style={{
+                              width: 'auto',
+                              minWidth: '115px',
+                              fontSize: '0.72rem',
+                              cursor: 'pointer',
+                              ...getStatusBadgeStyle(b.status)
+                            }}
+                            value={b.status || 'Confirmed'}
+                            onChange={(e) => handleQuickBookingStatusChange(b.id, e.target.value, b.payment_status)}
+                            disabled={actionLoading}
+                            title="Click to change booking status"
+                          >
+                            <option value="Confirmed">Confirmed</option>
+                            <option value="Pending">Pending</option>
+                            <option value="Completed">Completed</option>
+                            <option value="Cancelled">Cancelled</option>
+                          </select>
+                        </td>
+                        <td className="pe-3 py-2 text-end">
+                          <button
+                            type="button"
+                            className="btn btn-xs btn-outline-dark rounded-pill px-2.5 py-1 d-inline-flex align-items-center gap-1 fw-bold shadow-sm"
+                            style={{ fontSize: '0.72rem' }}
+                            onClick={() => setSelectedBookingDetails(b)}
+                            title="View Full Booking Details"
+                          >
+                            <Eye size={12} /> View
+                          </button>
                         </td>
                       </tr>
                     ))
@@ -696,19 +853,31 @@ export default function AdminB2BPortal({ activeSubTab = 'b2b_dashboard', onNavig
                     <th>B2B Net Discount</th>
                     <th>Net Rate Paid</th>
                     <th>Status</th>
+                    <th className="pe-3 py-3 text-end">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {nonCommissionBookings.length === 0 ? (
                     <tr>
-                      <td colSpan="8" className="text-center py-5 text-muted">
+                      <td colSpan="9" className="text-center py-5 text-muted">
                         No net wholesale bookings found.
                       </td>
                     </tr>
                   ) : (
                     nonCommissionBookings.map(b => (
                       <tr key={b.id}>
-                        <td className="ps-3 py-3 font-monospace fw-bold text-dark">#{b.id}</td>
+                        <td className="ps-3 py-3">
+                          <button
+                            type="button"
+                            className="btn btn-link p-0 text-decoration-none font-monospace fw-bold text-dark d-inline-flex align-items-center gap-1 shadow-none"
+                            onClick={() => setSelectedBookingDetails(b)}
+                            title="Click to view booking details"
+                            style={{ fontSize: '0.78rem' }}
+                          >
+                            <span>#{b.id}</span>
+                            <ArrowUpRight size={12} className="text-primary" />
+                          </button>
+                        </td>
                         <td>
                           <strong>{b.b2b_partner_name || b.b2b_partner_id}</strong>
                         </td>
@@ -722,9 +891,36 @@ export default function AdminB2BPortal({ activeSubTab = 'b2b_dashboard', onNavig
                           ₹{parseFloat(b.b2b_net_price || b.total_amount || 0).toLocaleString()}
                         </td>
                         <td>
-                          <span className="badge bg-success bg-opacity-15 text-success border border-success text-xxs px-2 py-0.5 rounded-pill">
-                            {b.status || 'Confirmed'}
-                          </span>
+                          <select
+                            className="form-select form-select-sm py-1 px-2.5 fw-bold rounded-pill shadow-none"
+                            style={{
+                              width: 'auto',
+                              minWidth: '115px',
+                              fontSize: '0.72rem',
+                              cursor: 'pointer',
+                              ...getStatusBadgeStyle(b.status)
+                            }}
+                            value={b.status || 'Confirmed'}
+                            onChange={(e) => handleQuickBookingStatusChange(b.id, e.target.value, b.payment_status)}
+                            disabled={actionLoading}
+                            title="Click to change booking status"
+                          >
+                            <option value="Confirmed">Confirmed</option>
+                            <option value="Pending">Pending</option>
+                            <option value="Completed">Completed</option>
+                            <option value="Cancelled">Cancelled</option>
+                          </select>
+                        </td>
+                        <td className="pe-3 py-2 text-end">
+                          <button
+                            type="button"
+                            className="btn btn-xs btn-outline-dark rounded-pill px-2.5 py-1 d-inline-flex align-items-center gap-1 fw-bold shadow-sm"
+                            style={{ fontSize: '0.72rem' }}
+                            onClick={() => setSelectedBookingDetails(b)}
+                            title="View Full Booking Details"
+                          >
+                            <Eye size={12} /> View
+                          </button>
                         </td>
                       </tr>
                     ))
@@ -763,7 +959,7 @@ export default function AdminB2BPortal({ activeSubTab = 'b2b_dashboard', onNavig
                       <td className="text-success fw-bold">{r.commission_percent}%</td>
                       <td className="text-primary fw-bold">{r.net_discount_percent}%</td>
                       <td>
-                        <span className="badge bg-success bg-opacity-15 text-success text-xxs">Active</span>
+                        <span className="rounded-pill px-2.5 py-1 text-3xs fw-bold d-inline-block" style={{ background: '#dcfce7', color: '#166534', border: '1px solid #86efac' }}>Active</span>
                       </td>
                       <td className="text-muted text-xxs">{r.notes || 'Global default rule'}</td>
                     </tr>
@@ -849,7 +1045,16 @@ export default function AdminB2BPortal({ activeSubTab = 'b2b_dashboard', onNavig
                     return (
                       <tr key={p.id}>
                         <td>
-                          <div className="fw-bold text-dark">{p.company_name || p.name}</div>
+                          <button
+                            type="button"
+                            className="btn btn-link p-0 text-decoration-none text-start text-dark fw-bold d-inline-flex align-items-center gap-1 shadow-none"
+                            onClick={() => setSelectedPartnerDetails(p)}
+                            title="Click to view partner profile"
+                            style={{ fontSize: '0.82rem' }}
+                          >
+                            <span>{p.company_name || p.name}</span>
+                            <ArrowUpRight size={12} className="text-primary" />
+                          </button>
                           <span className="text-muted text-xxs d-block">{p.email} • {p.phone}</span>
                           <span className="badge bg-light text-muted font-monospace text-3xs">ID: {p.id}</span>
                         </td>
@@ -867,22 +1072,47 @@ export default function AdminB2BPortal({ activeSubTab = 'b2b_dashboard', onNavig
                           </strong>
                         </td>
                         <td>
-                          <span className={`badge ${p.status === 'active' ? 'bg-success' : 'bg-warning text-dark'} text-xxs rounded-pill px-2 py-0.5`}>
-                            {p.status || 'Pending'}
-                          </span>
-                        </td>
-                        <td className="text-end">
-                          <button
-                            onClick={() => {
-                              setWalletModalTarget(p);
-                              setAdjustAmount('');
-                              setAdjustReason('');
-                              setAdjustType('CREDIT');
+                          <select
+                            className="form-select form-select-sm py-1 px-2.5 fw-bold rounded-pill shadow-none"
+                            style={{
+                              width: 'auto',
+                              minWidth: '105px',
+                              fontSize: '0.72rem',
+                              cursor: 'pointer',
+                              ...getPartnerStatusStyle(p.status)
                             }}
-                            className="btn btn-xs btn-outline-dark rounded-pill px-3 py-1 fw-bold text-xxs d-inline-flex align-items-center gap-1"
+                            value={p.status || 'active'}
+                            onChange={(e) => handleQuickPartnerStatusChange(p.id, e.target.value)}
+                            disabled={actionLoading}
+                            title="Click to change account status"
                           >
-                            <Plus size={12} /> Adjust Balance
-                          </button>
+                            <option value="active">Active</option>
+                            <option value="pending">Pending</option>
+                            <option value="suspended">Suspended</option>
+                            <option value="rejected">Rejected</option>
+                          </select>
+                        </td>
+                        <td className="text-end pe-3">
+                          <div className="d-flex justify-content-end align-items-center gap-1.5">
+                            <button
+                              onClick={() => {
+                                setWalletModalTarget(p);
+                                setAdjustAmount('');
+                                setAdjustReason('');
+                                setAdjustType('CREDIT');
+                              }}
+                              className="btn btn-xs btn-outline-dark rounded-pill px-2.5 py-1 fw-bold text-xxs d-inline-flex align-items-center gap-1 shadow-sm"
+                            >
+                              <Plus size={12} /> Adjust Balance
+                            </button>
+                            <button
+                              onClick={() => setSelectedPartnerDetails(p)}
+                              className="btn btn-xs btn-light border rounded-pill px-2.5 py-1 fw-bold text-xxs d-inline-flex align-items-center gap-1 shadow-sm"
+                              title="View Partner Profile"
+                            >
+                              <Eye size={12} /> View
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -952,7 +1182,14 @@ export default function AdminB2BPortal({ activeSubTab = 'b2b_dashboard', onNavig
                             )}
                           </td>
                           <td>
-                            <span className={`badge ${isCredit ? 'bg-success bg-opacity-10 text-success' : 'bg-danger bg-opacity-10 text-danger'} text-xxs fw-bold px-2 py-0.5 rounded-pill`}>
+                            <span 
+                              className="rounded-pill px-2.5 py-0.5 text-xxs fw-bold d-inline-block font-monospace"
+                              style={{
+                                background: isCredit ? '#dcfce7' : '#fee2e2',
+                                color: isCredit ? '#166534' : '#991b1b',
+                                border: isCredit ? '1px solid #86efac' : '1px solid #fca5a5'
+                              }}
+                            >
                               {isCredit ? '+' : '-'} {tx.transaction_type?.replace('_', ' ') || tx.flow_type}
                             </span>
                           </td>
@@ -975,7 +1212,14 @@ export default function AdminB2BPortal({ activeSubTab = 'b2b_dashboard', onNavig
                             <strong className="text-dark">₹{parseFloat(tx.balance_after || 0).toLocaleString('en-IN')}</strong>
                           </td>
                           <td className="text-center">
-                            <span className="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 text-3xs px-2 py-0.5 rounded-pill">
+                            <span 
+                              className="rounded-pill px-2.5 py-1 text-3xs fw-bold font-monospace d-inline-block"
+                              style={{
+                                background: (tx.status || 'COMPLETED').toUpperCase() === 'COMPLETED' ? '#dcfce7' : '#fef9c3',
+                                color: (tx.status || 'COMPLETED').toUpperCase() === 'COMPLETED' ? '#166534' : '#854d0e',
+                                border: (tx.status || 'COMPLETED').toUpperCase() === 'COMPLETED' ? '1px solid #86efac' : '1px solid #fde047'
+                              }}
+                            >
                               {tx.status || 'COMPLETED'}
                             </span>
                           </td>
@@ -1163,6 +1407,426 @@ export default function AdminB2BPortal({ activeSubTab = 'b2b_dashboard', onNavig
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* B2B Booking Details Modal */}
+      {selectedBookingDetails && (
+        <div 
+          className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center p-3"
+          style={{ background: 'rgba(13, 27, 46, 0.75)', zIndex: 1060, backdropFilter: 'blur(4px)' }}
+          onClick={() => setSelectedBookingDetails(null)}
+        >
+          <div 
+            className="card border-0 shadow-2xl rounded-4 bg-white overflow-hidden" 
+            style={{ maxWidth: '640px', width: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="d-flex align-items-center justify-content-between p-3.5 border-bottom bg-light">
+              <div className="d-flex align-items-center gap-2">
+                <span className="p-2 rounded-3 bg-primary bg-opacity-10 text-primary">
+                  <FileText size={18} />
+                </span>
+                <div>
+                  <div className="d-flex align-items-center gap-2">
+                    <h6 className="fw-bold text-dark font-heading mb-0">Booking #{selectedBookingDetails.id}</h6>
+                    <span 
+                      className="rounded-pill px-2 py-0.5 fw-bold"
+                      style={{
+                        fontSize: '0.68rem',
+                        ...getStatusBadgeStyle(selectedBookingDetails.status)
+                      }}
+                    >
+                      {selectedBookingDetails.status || 'Confirmed'}
+                    </span>
+                  </div>
+                  <span className="text-muted text-xxs">
+                    Partner Agency: <strong>{selectedBookingDetails.b2b_partner_name || selectedBookingDetails.b2b_partner_id}</strong> • Channel: B2B
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-close"
+                onClick={() => setSelectedBookingDetails(null)}
+              />
+            </div>
+
+            {/* Modal Scrollable Content */}
+            <div className="p-4 overflow-auto" style={{ maxHeight: 'calc(90vh - 130px)' }}>
+              {/* Quick Status Bar with Changer */}
+              <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 p-2.5 rounded-3 mb-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                <span className="text-xxs fw-bold text-muted text-uppercase">Change Booking Status:</span>
+                <div className="d-flex align-items-center gap-1.5">
+                  {['Confirmed', 'Pending', 'Completed', 'Cancelled'].map(st => (
+                    <button
+                      key={st}
+                      type="button"
+                      disabled={actionLoading}
+                      onClick={() => handleQuickBookingStatusChange(selectedBookingDetails.id, st, selectedBookingDetails.payment_status)}
+                      className="btn btn-xs rounded-pill px-2.5 py-1 fw-bold"
+                      style={{
+                        fontSize: '0.70rem',
+                        transition: 'all 0.15s ease',
+                        ...(selectedBookingDetails.status === st 
+                          ? getStatusBadgeStyle(st)
+                          : { background: '#ffffff', color: '#64748b', border: '1px solid #e2e8f0' })
+                      }}
+                    >
+                      {st}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Service & Guest Details Card */}
+              <div className="card border-0 shadow-none rounded-3 p-3 mb-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                <h6 className="fw-bold text-dark font-heading mb-2 text-xs text-uppercase">
+                  Reserved Service & Guest Info
+                </h6>
+                <div className="row g-2 text-xs">
+                  <div className="col-12 col-sm-6">
+                    <span className="text-muted text-xxs d-block">Service Reserved:</span>
+                    <strong className="text-dark fs-6">{selectedBookingDetails.item_name}</strong>
+                    {selectedBookingDetails.item_id && (
+                      <span className="text-muted text-3xs font-monospace d-block">ID: {selectedBookingDetails.item_id}</span>
+                    )}
+                  </div>
+                  <div className="col-12 col-sm-6">
+                    <span className="text-muted text-xxs d-block">Guest / Traveler Name:</span>
+                    <strong className="text-dark">{selectedBookingDetails.name}</strong>
+                    <div className="text-muted text-xxs">{selectedBookingDetails.phone} {selectedBookingDetails.email ? `• ${selectedBookingDetails.email}` : ''}</div>
+                  </div>
+                  <div className="col-12 col-sm-6 mt-2 pt-2 border-top">
+                    <span className="text-muted text-xxs d-block">Service Schedule:</span>
+                    <span className="text-dark fw-semibold">
+                      {selectedBookingDetails.pickup_date} {selectedBookingDetails.pickup_time ? `(${selectedBookingDetails.pickup_time})` : ''} 
+                      {selectedBookingDetails.drop_date ? ` → ${selectedBookingDetails.drop_date}` : ''}
+                    </span>
+                    {selectedBookingDetails.duration && (
+                      <span className="badge bg-light text-secondary text-3xs border d-inline-block ms-1">
+                        {selectedBookingDetails.duration}
+                      </span>
+                    )}
+                  </div>
+                  <div className="col-12 col-sm-6 mt-2 pt-2 border-top">
+                    <span className="text-muted text-xxs d-block">Pickup Location:</span>
+                    <span className="text-dark fw-semibold">{selectedBookingDetails.pickup_loc || 'Goa'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* B2B Commercials & Financials Card */}
+              <div className="card border-0 shadow-none rounded-3 p-3 mb-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                <h6 className="fw-bold text-dark font-heading mb-2 text-xs text-uppercase">
+                  B2B Commercials & Financials
+                </h6>
+                <div className="row g-2 text-xs">
+                  <div className="col-6 col-sm-3">
+                    <span className="text-muted text-xxs d-block">Operating Mode:</span>
+                    <span className={`badge ${selectedBookingDetails.b2b_mode === 'COMMISSION' ? 'bg-primary text-white' : 'bg-info text-dark'} text-xxs rounded-pill px-2 py-0.5 fw-bold`}>
+                      {selectedBookingDetails.b2b_mode === 'COMMISSION' ? 'Commission' : 'Net Wholesale'}
+                    </span>
+                  </div>
+                  <div className="col-6 col-sm-3">
+                    <span className="text-muted text-xxs d-block">Retail / D2C Price:</span>
+                    <strong className="text-dark">₹{parseFloat(selectedBookingDetails.total_amount || 0).toLocaleString()}</strong>
+                  </div>
+                  {selectedBookingDetails.b2b_mode === 'COMMISSION' ? (
+                    <>
+                      <div className="col-6 col-sm-3">
+                        <span className="text-muted text-xxs d-block">Commission Amount:</span>
+                        <strong className="text-success">+₹{parseFloat(selectedBookingDetails.b2b_commission_amount || 0).toLocaleString()}</strong>
+                      </div>
+                      <div className="col-6 col-sm-3">
+                        <span className="text-muted text-xxs d-block">Commission Status:</span>
+                        <span 
+                          className="rounded-pill px-2 py-0.5 text-3xs fw-bold font-monospace d-inline-block"
+                          style={{ background: '#dcfce7', color: '#166534', border: '1px solid #86efac' }}
+                        >
+                          {selectedBookingDetails.b2b_commission_status || 'Approved'}
+                        </span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="col-6 col-sm-3">
+                        <span className="text-muted text-xxs d-block">Net Wholesale Rate:</span>
+                        <strong className="text-primary">₹{parseFloat(selectedBookingDetails.b2b_net_price || selectedBookingDetails.total_amount || 0).toLocaleString()}</strong>
+                      </div>
+                      <div className="col-6 col-sm-3">
+                        <span className="text-muted text-xxs d-block">B2B Discount:</span>
+                        <span className="badge bg-primary text-white text-3xs rounded-pill">
+                          {selectedBookingDetails.b2b_net_discount_percentage || 10}% OFF
+                        </span>
+                      </div>
+                    </>
+                  )}
+                  <div className="col-12 mt-2 pt-2 border-top d-flex justify-content-between align-items-center">
+                    <div>
+                      <span className="text-muted text-xxs">Payment Method: </span>
+                      <strong className="text-dark">{selectedBookingDetails.payment_method || 'Prepaid Agent Wallet'}</strong>
+                    </div>
+                    <div>
+                      <span className="text-muted text-xxs">Payment Status: </span>
+                      <span 
+                        className="rounded-pill px-2 py-0.5 text-3xs fw-bold ms-1 d-inline-block"
+                        style={{ background: '#dcfce7', color: '#166534', border: '1px solid #86efac' }}
+                      >
+                        {selectedBookingDetails.payment_status || 'Paid'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Driver Details if applicable */}
+              {(selectedBookingDetails.driver_required == 1 || selectedBookingDetails.assigned_driver_id || selectedBookingDetails.driver_service_type) && (
+                <div className="card border-0 shadow-none rounded-3 p-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                  <h6 className="fw-bold text-dark font-heading mb-2 text-xs text-uppercase">
+                    Assigned Driver Transport
+                  </h6>
+                  <div className="row g-2 text-xs">
+                    <div className="col-12 col-sm-6">
+                      <span className="text-muted text-xxs d-block">Assigned Chauffeur:</span>
+                      <strong className="text-dark">{selectedBookingDetails.assigned_driver_name || 'Driver Assigned'}</strong>
+                      {selectedBookingDetails.assigned_driver_phone && (
+                        <div className="text-muted text-xxs">{selectedBookingDetails.assigned_driver_phone}</div>
+                      )}
+                    </div>
+                    <div className="col-12 col-sm-6">
+                      <span className="text-muted text-xxs d-block">Service Type & Status:</span>
+                      <span className="text-dark fw-semibold">{selectedBookingDetails.driver_service_type || 'FULL'}</span>
+                      <span 
+                        className="rounded-pill px-2 py-0.5 text-3xs fw-bold ms-1 d-inline-block"
+                        style={{ background: '#dcfce7', color: '#166534', border: '1px solid #86efac' }}
+                      >
+                        {selectedBookingDetails.driver_job_status || 'Completed'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="d-flex justify-content-end p-3 border-top bg-light">
+              <button
+                type="button"
+                className="btn btn-dark btn-sm rounded-pill px-4 text-xs fw-bold"
+                onClick={() => setSelectedBookingDetails(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* B2B Partner Details Modal */}
+      {selectedPartnerDetails && (
+        <div 
+          className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center p-3"
+          style={{ background: 'rgba(13, 27, 46, 0.75)', zIndex: 1060, backdropFilter: 'blur(4px)' }}
+          onClick={() => setSelectedPartnerDetails(null)}
+        >
+          <div 
+            className="card border-0 shadow-2xl rounded-4 bg-white overflow-hidden" 
+            style={{ maxWidth: '680px', width: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="d-flex align-items-center justify-content-between p-3.5 border-bottom bg-light">
+              <div className="d-flex align-items-center gap-2.5">
+                <span className="p-2 rounded-3 bg-warning bg-opacity-20 text-dark">
+                  <Building2 size={20} className="text-warning" />
+                </span>
+                <div>
+                  <div className="d-flex align-items-center gap-2">
+                    <h6 className="fw-bold text-dark font-heading mb-0">{selectedPartnerDetails.company_name || selectedPartnerDetails.name}</h6>
+                    <span 
+                      className="rounded-pill px-2.5 py-0.5 fw-bold text-uppercase"
+                      style={{
+                        fontSize: '0.68rem',
+                        ...getPartnerStatusStyle(selectedPartnerDetails.status)
+                      }}
+                    >
+                      {selectedPartnerDetails.status || 'active'}
+                    </span>
+                  </div>
+                  <span className="text-muted text-xxs font-monospace">
+                    Partner ID: {selectedPartnerDetails.id} • Username: @{selectedPartnerDetails.username}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-close"
+                onClick={() => setSelectedPartnerDetails(null)}
+              />
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-4 overflow-auto" style={{ maxHeight: 'calc(90vh - 130px)' }}>
+              {/* Quick Partner Status Changer */}
+              <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 p-2.5 rounded-3 mb-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                <span className="text-xxs fw-bold text-muted text-uppercase">Update Partner Status:</span>
+                <div className="d-flex align-items-center gap-1.5 flex-wrap">
+                  {['active', 'pending', 'suspended', 'rejected'].map(st => (
+                    <button
+                      key={st}
+                      type="button"
+                      disabled={actionLoading}
+                      onClick={() => handleQuickPartnerStatusChange(selectedPartnerDetails.id, st)}
+                      className="btn btn-xs rounded-pill px-3 py-1 fw-bold text-capitalize shadow-none"
+                      style={{
+                        fontSize: '0.72rem',
+                        transition: 'all 0.15s ease',
+                        ...(selectedPartnerDetails.status === st
+                          ? getPartnerStatusStyle(st)
+                          : { background: '#ffffff', color: '#64748b', border: '1px solid #e2e8f0' })
+                      }}
+                    >
+                      {st}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Agency Profile Info Card */}
+              <div className="card border-0 shadow-none rounded-3 p-3 mb-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                <h6 className="fw-bold text-dark font-heading mb-2.5 text-xs text-uppercase">
+                  Agency Profile & Contact Information
+                </h6>
+                <div className="row g-2 text-xs">
+                  <div className="col-12 col-sm-6">
+                    <span className="text-muted text-xxs d-block">Primary Contact:</span>
+                    <strong className="text-dark">{selectedPartnerDetails.contact_name || selectedPartnerDetails.name || '—'}</strong>
+                    <div className="text-muted text-xxs">{selectedPartnerDetails.phone} • {selectedPartnerDetails.email}</div>
+                  </div>
+                  <div className="col-12 col-sm-6">
+                    <span className="text-muted text-xxs d-block">Business Classification:</span>
+                    <strong className="text-dark">{selectedPartnerDetails.business_type || 'Travel Agency'}</strong>
+                    {selectedPartnerDetails.gst_number && (
+                      <span className="text-muted text-3xs d-block">GST: {selectedPartnerDetails.gst_number}</span>
+                    )}
+                  </div>
+                  <div className="col-12 col-sm-6 mt-2 pt-2 border-top">
+                    <span className="text-muted text-xxs d-block">Operating Address:</span>
+                    <span className="text-dark">{selectedPartnerDetails.address || '—'}</span>
+                    <div className="text-muted text-xxs">{selectedPartnerDetails.city || 'Goa'}, {selectedPartnerDetails.state || 'India'} - {selectedPartnerDetails.pincode || '—'}</div>
+                  </div>
+                  <div className="col-12 col-sm-6 mt-2 pt-2 border-top">
+                    <span className="text-muted text-xxs d-block">Website / Portal:</span>
+                    <span className="text-dark">{selectedPartnerDetails.website ? <a href={selectedPartnerDetails.website} target="_blank" rel="noreferrer" className="text-primary">{selectedPartnerDetails.website}</a> : 'None specified'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Financials & Commercial Limits Card */}
+              <div className="card border-0 shadow-none rounded-3 p-3 mb-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                <div className="d-flex align-items-center justify-content-between mb-2">
+                  <h6 className="fw-bold text-dark font-heading mb-0 text-xs text-uppercase">
+                    Financial Limits & B2B Commercials
+                  </h6>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWalletModalTarget(selectedPartnerDetails);
+                      setSelectedPartnerDetails(null);
+                    }}
+                    className="btn btn-xs btn-outline-dark rounded-pill px-2.5 py-0.5 text-xxs fw-bold d-inline-flex align-items-center gap-1"
+                  >
+                    <Plus size={11} /> Adjust Wallet
+                  </button>
+                </div>
+                <div className="row g-2 text-xs">
+                  <div className="col-6 col-sm-3">
+                    <span className="text-muted text-xxs d-block">Prepaid Balance:</span>
+                    <strong className="text-dark fs-6 font-heading">
+                      ₹{parseFloat(selectedPartnerDetails.wallet_balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </strong>
+                  </div>
+                  <div className="col-6 col-sm-3">
+                    <span className="text-muted text-xxs d-block">Credit Limit:</span>
+                    <strong className="text-dark fs-6 font-heading">
+                      ₹{parseFloat(selectedPartnerDetails.credit_limit || 0).toLocaleString('en-IN')}
+                    </strong>
+                  </div>
+                  <div className="col-6 col-sm-3">
+                    <span className="text-muted text-xxs d-block">Commission Rate:</span>
+                    <strong className="text-success fs-6 font-heading">
+                      {selectedPartnerDetails.default_commission_rate || 10}%
+                    </strong>
+                  </div>
+                  <div className="col-6 col-sm-3">
+                    <span className="text-muted text-xxs d-block">Wholesale Net Discount:</span>
+                    <strong className="text-primary fs-6 font-heading">
+                      {selectedPartnerDetails.default_net_discount_rate || 10}%
+                    </strong>
+                  </div>
+                  <div className="col-12 mt-2 pt-2 border-top d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div className="d-flex align-items-center gap-2">
+                      <span className="text-muted text-xxs">Authorized Modes:</span>
+                      {Boolean(selectedPartnerDetails.allow_commission) && (
+                        <span className="badge bg-warning text-dark text-3xs px-2 py-0.5 rounded-pill">✓ Commission</span>
+                      )}
+                      {Boolean(selectedPartnerDetails.allow_non_commission) && (
+                        <span className="badge bg-primary text-white text-3xs px-2 py-0.5 rounded-pill">✓ Net Wholesale</span>
+                      )}
+                      {!selectedPartnerDetails.allow_commission && !selectedPartnerDetails.allow_non_commission && (
+                        <span className="badge bg-light text-muted border text-3xs">None</span>
+                      )}
+                    </div>
+                    {selectedPartnerDetails.mode_request_status === 'PENDING' && (
+                      <span className="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25 text-3xs px-2 py-0.5 rounded-pill">
+                        ⚡ Requested Mode: {selectedPartnerDetails.requested_mode}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Registration & Approval Audit Card */}
+              <div className="card border-0 shadow-none rounded-3 p-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                <h6 className="fw-bold text-dark font-heading mb-2 text-xs text-uppercase">
+                  Verification & Audit Record
+                </h6>
+                <div className="row g-2 text-xs">
+                  <div className="col-6">
+                    <span className="text-muted text-xxs d-block">Registration Date:</span>
+                    <span className="text-dark fw-semibold">
+                      {selectedPartnerDetails.created_at ? new Date(selectedPartnerDetails.created_at).toLocaleString('en-IN') : 'System Initialized'}
+                    </span>
+                  </div>
+                  <div className="col-6">
+                    <span className="text-muted text-xxs d-block">Approval Date:</span>
+                    <span className="text-dark fw-semibold">
+                      {selectedPartnerDetails.approved_at ? new Date(selectedPartnerDetails.approved_at).toLocaleString('en-IN') : 'Pending / Not Approved'}
+                    </span>
+                  </div>
+                  {selectedPartnerDetails.rejection_reason && (
+                    <div className="col-12 mt-2 pt-2 border-top text-danger">
+                      <span className="fw-bold d-block text-xxs">Rejection Note:</span>
+                      <span>{selectedPartnerDetails.rejection_reason}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="d-flex justify-content-end p-3 border-top bg-light">
+              <button
+                type="button"
+                className="btn btn-dark btn-sm rounded-pill px-4 text-xs fw-bold"
+                onClick={() => setSelectedPartnerDetails(null)}
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

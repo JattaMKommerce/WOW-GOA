@@ -576,9 +576,12 @@ export async function fetchB2BBookings(partnerId, filters = {}) {
     status: filters.status || 'all',
     search: filters.search || ''
   }).toString();
-  const res = await apiFetch(`${API_BASE}?${query}`, {
-    headers: { 'Authorization': `Bearer ${partnerId || ''}` }
-  });
+  const headers = {};
+  if (partnerId && partnerId !== 'all') {
+    headers['Authorization'] = `Bearer ${partnerId}`;
+    headers['X-B2B-Partner-ID'] = partnerId;
+  }
+  const res = await apiFetch(`${API_BASE}?${query}`, { headers });
   if (!res.ok) return [];
   const data = await res.json();
   return Array.isArray(data) ? data : [];
@@ -1111,6 +1114,26 @@ export async function loginUser(username, password) {
       experience_years: 'Standard Experience',
       vehicle_details: 'Commercial Fleet'
     };
+  }
+  if ((cleanU === 'b2b' || cleanU === 'b2b@goatest.com' || cleanU === 'b2b_partner_goa' || cleanU === 'partner_a' || cleanU === 'partner_a@agency.com') && (cleanP === 'admin@2026' || cleanP === 'b2b@2026' || cleanP === 'Partner@Goa26')) {
+    const b2bUser = {
+      id: 'b2b_partner_a',
+      username: 'partner_a',
+      name: 'Raj Sharma (ABC Travels Goa)',
+      email: 'partner_a@agency.com',
+      company_name: 'ABC Travels Goa',
+      role: 'b2b',
+      status: 'active',
+      allow_commission: 1,
+      allow_non_commission: 1,
+      default_commission_rate: 10,
+      default_net_discount_rate: 10
+    };
+    try {
+      localStorage.setItem('b2b_partner_user', JSON.stringify(b2bUser));
+      localStorage.setItem('b2b_partner_token', b2bUser.id);
+    } catch (e) {}
+    return b2bUser;
   }
   if ((cleanU === 'customer' || cleanU === 'customer@tripgalileo.com' || cleanU === 'user') && (cleanP === 'customer@2026' || cleanP === 'customer' || cleanP === 'admin@2026')) {
     return { id: 'u-cust-1', username: 'customer', name: 'Demo Customer', email: 'customer@tripgalileo.com', role: 'customer' };

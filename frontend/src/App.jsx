@@ -252,9 +252,9 @@ export default function App() {
       else if (cleanPath === 'flights') setActiveTab('flights');
       else if (cleanPath === 'craft' || cleanPath === 'craftmytrip') setActiveTab('craftmytrip');
       else if (cleanPath === 'custom-trip') setActiveTab('custom-trip');
-      else if (cleanPath === 'customer' || cleanPath.startsWith('customer')) setActiveTab('customer');
+      else if (cleanPath === 'customer' || cleanPath.startsWith('customer') || cleanPath === 'my-bookings') setActiveTab('customer');
       else if (cleanPath === 'admin' || cleanPath === 'portal' || cleanPath === 'superadmin' || cleanPath === 'vendor' || cleanPath === 'hotel-vendor' || cleanPath === 'hotel-pms' || cleanPath === 'flight-vendor' || cleanPath === 'sub-admin' || cleanPath === 'subadmin') setActiveTab('portal');
-      else if (cleanPath === 'dashboard' || cleanPath === 'my-bookings') setActiveTab('dashboard');
+      else if (cleanPath === 'dashboard') setActiveTab('dashboard');
       else if (cleanPath === 'b2b' || cleanPath.startsWith('b2b')) setActiveTab('b2b');
     };
 
@@ -269,7 +269,7 @@ export default function App() {
     if (normalizedTab === 'trip packages') normalizedTab = 'packages';
     if (normalizedTab === 'self-drive') normalizedTab = 'selfdrive';
     if (normalizedTab === 'craft' || normalizedTab === 'craft-my-trip') normalizedTab = 'craftmytrip';
-    if (normalizedTab === 'my-trips' || normalizedTab === 'track-booking') normalizedTab = 'customer';
+    if (normalizedTab === 'my-trips' || normalizedTab === 'track-booking' || normalizedTab === 'my-bookings') normalizedTab = 'customer';
 
     if (activeTab === 'customize' && normalizedTab !== 'customize') {
       setSelectedBookingItem(null);
@@ -359,6 +359,13 @@ export default function App() {
       if (user.role === 'driver') {
         setActiveTab('driver');
         window.history.pushState(null, '', '/driver');
+      } else if (user.role === 'b2b' || user.role === 'agent') {
+        try {
+          localStorage.setItem('b2b_partner_user', JSON.stringify(user));
+          localStorage.setItem('b2b_partner_token', user.id || 'b2b_partner_a');
+        } catch (e) {}
+        setActiveTab('b2b');
+        window.history.pushState(null, '', '/b2b');
       } else if (user.role === 'customer' || user.role === 'user') {
         setActiveTab('dashboard');
       } else {
@@ -369,8 +376,26 @@ export default function App() {
 
     // If called with (username, password)
     try {
-      const res = await api.loginUser(usernameOrUser, password);
-      const user = (res && res.user) ? res.user : res;
+      let user = null;
+      // Check if it's a B2B partner credential
+      try {
+        const b2bRes = await api.b2bLogin(usernameOrUser, password);
+        if (b2bRes && b2bRes.success && b2bRes.user) {
+          user = b2bRes.user;
+          try {
+            localStorage.setItem('b2b_partner_user', JSON.stringify(user));
+            localStorage.setItem('b2b_partner_token', b2bRes.token || user.id);
+          } catch (e) {}
+        }
+      } catch (b2bErr) {
+        // Fall back to standard login
+      }
+
+      if (!user) {
+        const res = await api.loginUser(usernameOrUser, password);
+        user = (res && res.user) ? res.user : res;
+      }
+
       if (user && (user.id || user.username || user.role)) {
         setCurrentUser(user);
         try {
@@ -380,6 +405,13 @@ export default function App() {
         if (user.role === 'driver') {
           setActiveTab('driver');
           window.history.pushState(null, '', '/driver');
+        } else if (user.role === 'b2b' || user.role === 'agent') {
+          try {
+            localStorage.setItem('b2b_partner_user', JSON.stringify(user));
+            localStorage.setItem('b2b_partner_token', user.id || 'b2b_partner_a');
+          } catch (e) {}
+          setActiveTab('b2b');
+          window.history.pushState(null, '', '/b2b');
         } else if (user.role === 'customer' || user.role === 'user') {
           setActiveTab('dashboard');
         } else {

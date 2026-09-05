@@ -3,10 +3,49 @@ import {
   Hotel, Car, Compass, Plane, Wand2, Search, Filter, Gift, Tag, Check, Star, 
   Users, Calendar, Sparkles, MapPin, ArrowRight, ShieldCheck, Clock, 
   Eye, CheckCircle2, AlertCircle, X, Shield, PlaneTakeoff, PlaneLanding,
-  CreditCard, Fuel, Gauge, Award, FileText, Wallet
+  CreditCard, Fuel, Gauge, Award, FileText, Wallet,
+  ChevronDown, ChevronUp, Utensils
 } from 'lucide-react';
 import * as api from '../../services/api';
 import B2BSelfDriveFlow from './B2BSelfDriveFlow';
+import ImageCarousel from '../../components/common/ImageCarousel';
+import { resolveItemImages } from '../../utils/bookingImageHelper';
+
+// Helper to parse day-wise itinerary in any format (JSON string, array, or object)
+const parseItinerary = (raw) => {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) return parsed;
+        if (typeof parsed === 'object' && parsed !== null) return Object.values(parsed);
+      } catch {
+        return [];
+      }
+    }
+  }
+  return [];
+};
+
+// Helper to parse inclusions/exclusions list cleanly
+const parseBulletList = (val) => {
+  if (!val) return [];
+  if (Array.isArray(val)) return val.filter(Boolean);
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) return parsed.filter(Boolean);
+      } catch {}
+    }
+    return trimmed.split(/\r?\n|,/).map(s => s.trim().replace(/^[-*•✓✕]\s*/, '')).filter(Boolean);
+  }
+  return [];
+};
 
 export default function B2BInventoryTab({
   mode = 'COMMISSION', // 'COMMISSION' or 'NON_COMMISSION' (passed strictly from database-approved portal state)
@@ -21,6 +60,14 @@ export default function B2BInventoryTab({
 
   // Selected item for rich details modal
   const [detailItem, setDetailItem] = useState(null);
+  const [expandedItineraryDay, setExpandedItineraryDay] = useState(0);
+
+  // Reset expanded itinerary day when opening details modal
+  useEffect(() => {
+    if (detailItem) {
+      setExpandedItineraryDay(0);
+    }
+  }, [detailItem]);
 
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
   const tomorrowStr = useMemo(() => new Date(Date.now() + 86400000).toISOString().split('T')[0], []);
@@ -520,11 +567,12 @@ export default function B2BInventoryTab({
             </div>
 
             <div className="p-4 overflow-y-auto flex-grow-1">
-              <div className="position-relative rounded-3 overflow-hidden mb-3" style={{ height: '220px' }}>
-                <img 
-                  src={detailItem.image || (detailItem.gallery && detailItem.gallery[0]) || 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=600&q=80'} 
-                  alt="" 
-                  className="w-100 h-100 object-fit-cover"
+              <div className="mb-3">
+                <ImageCarousel
+                  images={resolveItemImages(detailItem, activeService)}
+                  alt={detailItem.name || 'Detail'}
+                  height="340px"
+                  rounded="16px"
                 />
               </div>
 
@@ -548,37 +596,280 @@ export default function B2BInventoryTab({
                 {detailItem.description || detailItem.detailed_description || 'Full experience managed and serviced under WOW GOA premium standards.'}
               </p>
 
-              {/* Day-wise itinerary for packages */}
-              {detailItem.day_wise_itinerary && (
-                <div className="mb-3">
-                  <h6 className="fw-bold text-dark text-xs text-uppercase mb-2 font-heading">Day-Wise Itinerary</h6>
-                  <div className="p-3 rounded-3 bg-light border text-xs">
-                    {typeof detailItem.day_wise_itinerary === 'string' ? detailItem.day_wise_itinerary : JSON.stringify(detailItem.day_wise_itinerary)}
-                  </div>
+              {/* Included Hotel / Vehicle (if applicable for packages) */}
+              {(detailItem.hotel_included || detailItem.car_included) && (
+                <div className="row g-2 mb-3">
+                  {detailItem.hotel_included && (
+                    <div className="col-12 col-md-6">
+                      <div className="p-2.5 rounded-3 bg-light border d-flex align-items-center gap-2">
+                        <Hotel size={16} className="text-primary flex-shrink-0" />
+                        <div>
+                          <span className="text-muted d-block" style={{ fontSize: '10px' }}>STAY / RESORT</span>
+                          <span className="text-dark fw-bold text-xxs">{detailItem.hotel_included}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {detailItem.car_included && (
+                    <div className="col-12 col-md-6">
+                      <div className="p-2.5 rounded-3 bg-light border d-flex align-items-center gap-2">
+                        <Car size={16} className="text-primary flex-shrink-0" />
+                        <div>
+                          <span className="text-muted d-block" style={{ fontSize: '10px' }}>INCLUDED VEHICLE</span>
+                          <span className="text-dark fw-bold text-xxs">{detailItem.car_included}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
+              {/* Day-wise itinerary for packages */}
+              {(() => {
+                const rawItin = detailItem.day_wise_itinerary || detailItem.itinerary || detailItem.day_plan || detailItem.dayPlan;
+                if (!rawItin) return null;
+                const parsedDays = parseItinerary(rawItin);
+
+                if (parsedDays && parsedDays.length > 0) {
+                  return (
+                    <div className="mb-3">
+                      <div className="d-flex align-items-center justify-content-between mb-2">
+                        <h6 className="fw-bold text-dark text-xs text-uppercase mb-0 font-heading">
+                          Day-Wise Itinerary ({parsedDays.length} Days)
+                        </h6>
+                        <span className="text-muted text-xxs">Click day to expand</span>
+                      </div>
+                      <div className="d-flex flex-column gap-2">
+                        {parsedDays.map((day, idx) => {
+                          const isExp = expandedItineraryDay === idx;
+                          const dayNum = day.day || idx + 1;
+                          return (
+                            <div key={idx} className="border rounded-3 overflow-hidden bg-white shadow-xs">
+                              <div 
+                                className="p-2.5 d-flex align-items-center justify-content-between cursor-pointer"
+                                style={{ 
+                                  background: isExp ? '#f8fafc' : '#ffffff', 
+                                  cursor: 'pointer',
+                                  userSelect: 'none',
+                                  transition: 'background-color 0.2s ease'
+                                }}
+                                onClick={() => setExpandedItineraryDay(isExp ? -1 : idx)}
+                              >
+                                <div className="d-flex align-items-center gap-2.5">
+                                  <span 
+                                    className="badge rounded-circle p-0 d-inline-flex align-items-center justify-content-center fw-bold" 
+                                    style={{ 
+                                      width: '26px', 
+                                      height: '26px', 
+                                      background: isExp ? '#FF6333' : '#0D1B2E', 
+                                      color: '#fff', 
+                                      fontSize: '0.72rem',
+                                      flexShrink: 0 
+                                    }}
+                                  >
+                                    {dayNum}
+                                  </span>
+                                  <span className="fw-bold text-dark" style={{ fontSize: '0.84rem' }}>
+                                    {day.title || `Day ${dayNum}`}
+                                  </span>
+                                </div>
+                                {isExp ? (
+                                  <ChevronUp size={16} className="text-muted flex-shrink-0" />
+                                ) : (
+                                  <ChevronDown size={16} className="text-muted flex-shrink-0" />
+                                )}
+                              </div>
+
+                              {isExp && (
+                                <div className="p-3 border-top bg-light" style={{ fontSize: '0.82rem' }}>
+                                  {day.description && (
+                                    <p className="text-muted lh-base mb-2.5" style={{ fontSize: '0.8rem' }}>
+                                      {day.description}
+                                    </p>
+                                  )}
+
+                                  {/* Structured activities by time of day */}
+                                  {(day.morning || day.afternoon || day.evening || day.night || day.activities || day.meals) && (
+                                    <div className="d-flex flex-column gap-2 mb-2">
+                                      {day.morning && (
+                                        <div className="p-2.5 bg-white rounded-3 border-start border-3 border-warning shadow-xs">
+                                          <div className="d-flex align-items-center gap-1.5 mb-1">
+                                            <span className="badge bg-warning text-dark fw-bold" style={{ fontSize: '9px', letterSpacing: '0.4px' }}>
+                                              MORNING
+                                            </span>
+                                          </div>
+                                          <p className="text-dark mb-0 lh-base" style={{ fontSize: '0.8rem' }}>{day.morning}</p>
+                                        </div>
+                                      )}
+                                      {day.afternoon && (
+                                        <div className="p-2.5 bg-white rounded-3 border-start border-3 border-primary shadow-xs">
+                                          <div className="d-flex align-items-center gap-1.5 mb-1">
+                                            <span className="badge bg-primary text-white fw-bold" style={{ fontSize: '9px', letterSpacing: '0.4px' }}>
+                                              AFTERNOON
+                                            </span>
+                                          </div>
+                                          <p className="text-dark mb-0 lh-base" style={{ fontSize: '0.8rem' }}>{day.afternoon}</p>
+                                        </div>
+                                      )}
+                                      {day.evening && (
+                                        <div className="p-2.5 bg-white rounded-3 border-start border-3 border-info shadow-xs">
+                                          <div className="d-flex align-items-center gap-1.5 mb-1">
+                                            <span className="badge bg-info text-dark fw-bold" style={{ fontSize: '9px', letterSpacing: '0.4px' }}>
+                                              EVENING
+                                            </span>
+                                          </div>
+                                          <p className="text-dark mb-0 lh-base" style={{ fontSize: '0.8rem' }}>{day.evening}</p>
+                                        </div>
+                                      )}
+                                      {day.night && (
+                                        <div className="p-2.5 bg-white rounded-3 border-start border-3 border-dark shadow-xs">
+                                          <div className="d-flex align-items-center gap-1.5 mb-1">
+                                            <span className="badge bg-dark text-white fw-bold" style={{ fontSize: '9px', letterSpacing: '0.4px' }}>
+                                              NIGHT
+                                            </span>
+                                          </div>
+                                          <p className="text-dark mb-0 lh-base" style={{ fontSize: '0.8rem' }}>{day.night}</p>
+                                        </div>
+                                      )}
+                                      {day.meals && (
+                                        <div className="p-2.5 bg-white rounded-3 border-start border-3 border-success shadow-xs">
+                                          <div className="d-flex align-items-center gap-1.5 mb-1">
+                                            <span className="badge bg-success text-white fw-bold d-inline-flex align-items-center gap-1" style={{ fontSize: '9px', letterSpacing: '0.4px' }}>
+                                              <Utensils size={10} /> MEALS
+                                            </span>
+                                          </div>
+                                          <p className="text-dark mb-0 lh-base" style={{ fontSize: '0.8rem' }}>{day.meals}</p>
+                                        </div>
+                                      )}
+                                      {day.activities && !day.morning && !day.afternoon && (
+                                        <div className="p-2.5 bg-white rounded-3 border-start border-3 border-secondary shadow-xs">
+                                          <div className="d-flex align-items-center gap-1.5 mb-1">
+                                            <span className="badge bg-secondary text-white fw-bold" style={{ fontSize: '9px', letterSpacing: '0.4px' }}>
+                                              ACTIVITIES
+                                            </span>
+                                          </div>
+                                          <p className="text-dark mb-0 lh-base" style={{ fontSize: '0.8rem' }}>{day.activities}</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* Sightseeing badges */}
+                                  {day.sightseeing_locations && Array.isArray(day.sightseeing_locations) && day.sightseeing_locations.length > 0 && (
+                                    <div className="d-flex flex-wrap gap-1.5 my-2">
+                                      {day.sightseeing_locations.map((loc, i) => (
+                                        <span key={i} className="badge bg-white text-dark border px-2 py-1" style={{ fontSize: '0.72rem' }}>
+                                          📍 {typeof loc === 'string' ? loc : loc.name}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {/* Hotel, Location, Tips badges if present */}
+                                  {(day.hotel || day.location || day.tips) && (
+                                    <div className="d-flex flex-wrap gap-1.5 my-1.5">
+                                      {day.hotel && (
+                                        <span className="badge bg-white text-dark border px-2 py-1" style={{ fontSize: '0.72rem' }}>
+                                          🏨 {day.hotel}
+                                        </span>
+                                      )}
+                                      {day.location && (
+                                        <span className="badge bg-white text-dark border px-2 py-1" style={{ fontSize: '0.72rem' }}>
+                                          📍 {day.location}
+                                        </span>
+                                      )}
+                                      {day.tips && (
+                                        <span className="badge bg-white text-muted border px-2 py-1" style={{ fontSize: '0.72rem' }}>
+                                          💡 {day.tips}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* Day inclusions */}
+                                  {day.inclusions && Array.isArray(day.inclusions) && day.inclusions.length > 0 && (
+                                    <div className="d-flex flex-wrap gap-1.5 mt-2">
+                                      {day.inclusions.map((inc, i) => (
+                                        <span key={i} className="badge bg-white text-secondary border px-2 py-1" style={{ fontSize: '0.68rem' }}>
+                                          ✓ {inc}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Fallback for plain text itinerary string
+                return (
+                  <div className="mb-3">
+                    <h6 className="fw-bold text-dark text-xs text-uppercase mb-2 font-heading">Day-Wise Itinerary</h6>
+                    <div className="p-3 rounded-3 bg-light border text-xs text-muted" style={{ whiteSpace: 'pre-line', lineHeight: '1.6' }}>
+                      {typeof rawItin === 'string' ? rawItin : JSON.stringify(rawItin, null, 2)}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Inclusions & Exclusions */}
-              {(detailItem.inclusions || detailItem.exclusions) && (
-                <div className="row g-2 mb-3">
-                  {detailItem.inclusions && (
-                    <div className="col-12 col-md-6">
-                      <div className="p-2.5 rounded-3 bg-success bg-opacity-10 border border-success border-opacity-25 text-xxs">
-                        <strong className="text-success d-block mb-1">Inclusions:</strong>
-                        <span className="text-dark">{detailItem.inclusions}</span>
+              {(() => {
+                const incList = parseBulletList(detailItem.inclusions);
+                const excList = parseBulletList(detailItem.exclusions);
+                if (incList.length === 0 && excList.length === 0 && !detailItem.inclusions && !detailItem.exclusions) return null;
+
+                return (
+                  <div className="row g-2 mb-3">
+                    {(incList.length > 0 || detailItem.inclusions) && (
+                      <div className="col-12 col-md-6">
+                        <div className="p-3 rounded-3 bg-success bg-opacity-10 border border-success border-opacity-25 h-100">
+                          <strong className="text-success text-xs d-flex align-items-center gap-1.5 mb-2">
+                            <CheckCircle2 size={14} /> What's Included:
+                          </strong>
+                          {incList.length > 0 ? (
+                            <ul className="list-unstyled mb-0 d-flex flex-column gap-1 text-xxs text-dark">
+                              {incList.map((inc, i) => (
+                                <li key={i} className="d-flex align-items-start gap-1.5">
+                                  <span className="text-success fw-bold">✓</span>
+                                  <span>{inc}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <span className="text-dark text-xxs">{detailItem.inclusions}</span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                  {detailItem.exclusions && (
-                    <div className="col-12 col-md-6">
-                      <div className="p-2.5 rounded-3 bg-danger bg-opacity-10 border border-danger border-opacity-25 text-xxs">
-                        <strong className="text-danger d-block mb-1">Exclusions:</strong>
-                        <span className="text-dark">{detailItem.exclusions}</span>
+                    )}
+                    {(excList.length > 0 || detailItem.exclusions) && (
+                      <div className="col-12 col-md-6">
+                        <div className="p-3 rounded-3 bg-danger bg-opacity-10 border border-danger border-opacity-25 h-100">
+                          <strong className="text-danger text-xs d-flex align-items-center gap-1.5 mb-2">
+                            <AlertCircle size={14} /> Exclusions:
+                          </strong>
+                          {excList.length > 0 ? (
+                            <ul className="list-unstyled mb-0 d-flex flex-column gap-1 text-xxs text-dark">
+                              {excList.map((exc, i) => (
+                                <li key={i} className="d-flex align-items-start gap-1.5">
+                                  <span className="text-danger fw-bold">✕</span>
+                                  <span>{exc}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <span className="text-dark text-xxs">{detailItem.exclusions}</span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
-              )}
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Amenities */}
               {detailItem.amenities && (
@@ -697,6 +988,16 @@ export default function B2BInventoryTab({
                       <span>{bookingError}</span>
                     </div>
                   )}
+
+                  {/* Multi-Image Preview Carousel */}
+                  <div className="mb-3">
+                    <ImageCarousel
+                      images={resolveItemImages(bookingItem, activeService)}
+                      alt={bookingItem.name || 'Booking Service'}
+                      height="220px"
+                      rounded="12px"
+                    />
+                  </div>
 
                   <div className="row g-2.5 mb-3">
                     <div className="col-12 col-md-6">

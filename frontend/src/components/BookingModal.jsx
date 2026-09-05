@@ -276,8 +276,9 @@ export default function BookingModal({
   const baseTotal = subtotal + tax + fee;
   const total = baseTotal + driverTotalCharge;
 
-  // Wallet Deduction & 10% Cashback Calculations
-  const appliedWalletAmount = (useWalletCashback && walletBalance > 0) ? Math.min(walletBalance, total) : 0;
+  // Wallet Deduction (Strictly 10% Discount/Benefit Only) & 10% Cashback Calculations
+  const maxWalletBenefit = Math.round(total * 0.10);
+  const appliedWalletAmount = (useWalletCashback && walletBalance > 0) ? Math.min(walletBalance, maxWalletBenefit) : 0;
   const finalPayable = Math.max(0, total - appliedWalletAmount);
   const projectedCashback = Math.round(finalPayable * 0.10);
 
@@ -1225,7 +1226,7 @@ export default function BookingModal({
                                 style={{ cursor: 'pointer' }}
                               />
                               <label className="form-check-label text-xs fw-bold text-success" htmlFor="useWalletCashback">
-                                Use ₹{Math.min(walletBalance, total).toLocaleString('en-IN')}
+                                Use ₹{Math.min(walletBalance, maxWalletBenefit).toLocaleString('en-IN')} (10% Benefit)
                               </label>
                             </div>
                           </div>

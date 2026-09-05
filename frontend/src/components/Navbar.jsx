@@ -47,7 +47,7 @@ export default function Navbar({ activeTab, setActiveTab, currentUser, triggerOp
               );
             })}
 
-            {/* Customer Portal My Trips Link */}
+            {/* Customer Bookings Link */}
             <li className="nav-item">
               <a 
                 className={`nav-link ${activeTab === 'customer' ? 'active' : ''}`} 
@@ -57,21 +57,7 @@ export default function Navbar({ activeTab, setActiveTab, currentUser, triggerOp
                   setActiveTab('customer');
                 }}
               >
-                <span>🎫 Track Booking</span>
-              </a>
-            </li>
-
-            {/* B2B Partner Portal Link */}
-            <li className="nav-item">
-              <a 
-                className={`nav-link ${activeTab === 'b2b' ? 'active' : ''}`} 
-                href="/b2b" 
-                onClick={(e) => {
-                  e.preventDefault();
-                  setActiveTab('b2b');
-                }}
-              >
-                <span>💼 B2B Portal</span>
+                <span>🎫 My Bookings</span>
               </a>
             </li>
 
