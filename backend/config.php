@@ -36,6 +36,7 @@ define('DUFFEL_API_BASE_URL', $_ENV['DUFFEL_API_BASE_URL'] ?? 'https://api.duffe
 define('DUFFEL_API_VERSION', $_ENV['DUFFEL_API_VERSION'] ?? 'v2');
 define('DUFFEL_MODE', $_ENV['DUFFEL_MODE'] ?? 'test');
 
+if (!defined('DB_CONNECTION')) define('DB_CONNECTION', $_ENV['DB_CONNECTION'] ?? getenv('DB_CONNECTION') ?: 'sqlite');
 if (!defined('DB_HOST')) define('DB_HOST', $_ENV['DB_HOST'] ?? getenv('DB_HOST') ?: 'localhost');
 if (!defined('DB_PORT')) define('DB_PORT', $_ENV['DB_PORT'] ?? getenv('DB_PORT') ?: '3306');
 if (!defined('DB_NAME')) define('DB_NAME', $_ENV['DB_NAME'] ?? getenv('DB_NAME') ?: 'tripgalileo');

@@ -38,21 +38,38 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/BookingService.php';
 
 // 1. Database Configuration loaded from config.php / .env
+$sqlitePath = __DIR__ . '/database.sqlite';
+$dbConnection = defined('DB_CONNECTION') ? strtolower(DB_CONNECTION) : (strtolower($_ENV['DB_CONNECTION'] ?? 'sqlite'));
 
+$connected = false;
 
-try {
-    $pdo = new PDO("mysql:host=" . DB_HOST . ";port=" . DB_PORT . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS);
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    
-    // Auto-seed empty tables to ensure the app always has working demo data
-    seedDatabaseIfEmpty($pdo);
-} catch (Exception $e) {
-    // Seamless Fallback to local SQLite database
+// If explicitly configured for MySQL, attempt MySQL connection first
+if ($dbConnection === 'mysql' && defined('DB_HOST') && DB_HOST) {
     try {
-        $sqlitePath = __DIR__ . '/database.sqlite';
+        $pdo = new PDO("mysql:host=" . DB_HOST . ";port=" . DB_PORT . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS);
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        seedDatabaseIfEmpty($pdo);
+        $connected = true;
+    } catch (Exception $e) {
+        $connected = false;
+    }
+}
+
+// Authoritative SQLite connection (matches development environment and all active data 100%)
+if (!$connected) {
+    try {
+        if (file_exists($sqlitePath)) {
+            @chmod($sqlitePath, 0666);
+            @chmod(__DIR__, 0777);
+        }
         $pdo = new PDO("sqlite:$sqlitePath");
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        $pdo->exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
+        try {
+            $pdo->exec("PRAGMA journal_mode = WAL;");
+        } catch (Exception $e) {
+            $pdo->exec("PRAGMA journal_mode = DELETE;");
+        }
+        $pdo->exec("PRAGMA busy_timeout = 5000;");
         
         // Verify if tables are populated, else run setup
         $checkStmt = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='hotels'");
@@ -61,6 +78,11 @@ try {
                 require_once __DIR__ . '/setup_sqlite.php';
             }
         }
+        $connected = true;
+    } catch (Exception $e) {
+        die(json_encode(['success' => false, 'error' => 'Database connection failed: ' . $e->getMessage()]));
+    }
+}
         
         // Ensure leads and lead_comments tables exist in SQLite
         $pdo->exec("CREATE TABLE IF NOT EXISTS leads (
@@ -317,16 +339,6 @@ try {
             $pdo->exec("UPDATE hotel_room_types SET hotel_id = 'hotel-4star' WHERE hotel_id = 'hotel-2' OR hotel_id = 'hotel-4'");
             $pdo->exec("UPDATE hotel_room_types SET hotel_id = 'hotel-5star' WHERE hotel_id = 'hotel-5'");
         } catch (Exception $e) {}
-    } catch (Exception $sqle) {
-        http_response_code(500);
-        echo json_encode([
-            "error" => "Database connection failed",
-            "message" => "Could not connect to MySQL or SQLite database.",
-            "details" => $sqle->getMessage()
-        ]);
-        exit();
-    }
-}
 
 function seedDatabaseIfEmpty($pdo) {
     $alters = [
