@@ -25,7 +25,9 @@ export default function CarsPage({
   onViewDetails,
   cars = [],
   searchQuery,
-  markups = []
+  markups = [],
+  appliedFilters = {},
+  setAppliedFilters
 }) {
   const getMarkupPrice = (basePrice, vendorId, entityType, itemId = 'all') => {
     if (!markups) return basePrice;
@@ -61,31 +63,76 @@ export default function CarsPage({
   }, [cars, markups]);
 
   const filteredCars = useMemo(() => {
+    const carSubs = appliedFilters?.carSubFilters || [];
+    const appTrans = appliedFilters?.vehicleTransmission || [];
+    const appFuel = appliedFilters?.vehicleFuel || [];
+    const appSeats = appliedFilters?.vehicleSeating || [];
+    const appBudget = appliedFilters?.vehicleBudget || [];
+
     const results = displayCars.filter(car => {
-      const fuelMatch = !carFilterFuel || carFilterFuel === 'All' || car.fuel === carFilterFuel;
-      const transMatch = !carFilterTrans || carFilterTrans === 'All' || car.transmission === carFilterTrans;
+      const name = (car.name || '').toLowerCase();
+      const cat = (car.category || '').toLowerCase();
+      const vFuel = (car.fuel || '').toLowerCase();
+      const vTrans = (car.transmission || '').toLowerCase();
+      const vSeat = String(car.seating || '5');
+      const price = parseFloat(car.price || 0);
+
+      const fuelMatch = (!carFilterFuel || carFilterFuel === 'All' || car.fuel === carFilterFuel) &&
+        (appFuel.length === 0 || appFuel.some(f => {
+          if (f.toLowerCase().includes('petrol')) return vFuel.includes('petrol');
+          if (f.toLowerCase().includes('diesel')) return vFuel.includes('diesel');
+          if (f.toLowerCase().includes('electric') || f.toLowerCase().includes('ev')) return vFuel.includes('electric') || vFuel.includes('ev');
+          return true;
+        }));
+
+      const transMatch = (!carFilterTrans || carFilterTrans === 'All' || car.transmission === carFilterTrans) &&
+        (appTrans.length === 0 || appTrans.some(t => {
+          if (t.toLowerCase() === 'manual') return vTrans.includes('manual');
+          if (t.toLowerCase() === 'automatic') return vTrans.includes('auto') || vTrans.includes('amt') || vTrans.includes('at') || vTrans.includes('cvt') || vTrans.includes('dct');
+          return true;
+        }));
+
+      const bodyMatch = carSubs.length === 0 || carSubs.some(sub => {
+        const s = sub.toLowerCase();
+        if (s.includes('hatchback')) return cat.includes('hatchback') || name.includes('swift') || name.includes('i10') || name.includes('i20');
+        if (s.includes('sedan')) return cat.includes('sedan') || name.includes('dzire') || name.includes('city') || name.includes('verna');
+        if (s.includes('suv')) return cat.includes('suv') || name.includes('creta') || name.includes('brezza') || name.includes('seltos');
+        if (s.includes('7-seater') || s.includes('muv')) return cat.includes('7') || cat.includes('muv') || name.includes('ertiga') || name.includes('innova');
+        if (s.includes('open top') || s.includes('thar')) return cat.includes('open') || cat.includes('thar') || name.includes('thar') || name.includes('jimny');
+        if (s.includes('convertible')) return cat.includes('convertible') || cat.includes('cabriolet') || cat.includes('coupe');
+        return cat.includes(s) || name.includes(s);
+      });
+
+      const seatMatch = appSeats.length === 0 || appSeats.some(st => {
+        if (st.includes('2')) return vSeat.includes('2');
+        if (st.includes('4') || st.includes('5')) return vSeat.includes('4') || vSeat.includes('5');
+        if (st.includes('7')) return vSeat.includes('7') || vSeat.includes('8');
+        return true;
+      });
+
+      const budgetMatch = appBudget.length === 0 || appBudget.some(b => {
+        if (b === '< 1500') return price < 1500;
+        if (b === '1500-3000') return price >= 1500 && price <= 3000;
+        if (b === '3000-6000') return price >= 3000 && price <= 6000;
+        if (b === '> 6000') return price > 6000;
+        return true;
+      });
+
       const q = (searchQuery || '').toLowerCase().trim();
       const searchMatch = !q || 
                           q === 'goa' || 
                           q === 'all goa' || 
                           q === 'all' || 
                           q === 'india' ||
-                          (car.name && car.name.toLowerCase().includes(q)) || 
-                          (car.category && car.category.toLowerCase().includes(q)) ||
+                          name.includes(q) || 
+                          cat.includes(q) || 
                           (car.location && car.location.toLowerCase().includes(q));
-      return fuelMatch && transMatch && searchMatch;
-    });
 
-    console.log('[CarsPage Filter Evaluation]', {
-      totalCars: (cars || []).length,
-      matchedCars: results.length,
-      searchQuery,
-      carFilterFuel,
-      carFilterTrans
+      return fuelMatch && transMatch && bodyMatch && seatMatch && budgetMatch && searchMatch;
     });
 
     return results;
-  }, [displayCars, carFilterFuel, carFilterTrans, searchQuery, cars]);
+  }, [displayCars, carFilterFuel, carFilterTrans, searchQuery, appliedFilters]);
 
   const carsToRender = filteredCars;
 

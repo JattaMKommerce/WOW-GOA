@@ -23,7 +23,7 @@ import { getTodayDateStr } from '../../utils/dateUtils';
 import { getBookingDisplayImage, getBookingDisplayImages } from '../../utils/bookingImageHelper';
 import ImageCarousel from '../../components/common/ImageCarousel';
 import NotificationSoundToggle from '../../components/common/NotificationSoundToggle';
-import { handleIncomingNotifications, registerSeenNotifications } from '../../utils/notificationSound';
+import { handleIncomingNotifications, registerSeenNotifications, getRelativeTimeString, parseNotificationTitleAndStatus } from '../../utils/notificationSound';
 
 const SIDEBAR_GROUPS = [
   {
@@ -762,24 +762,24 @@ export default function CustomerPortalPage({
 
                     {notifDropdownOpen && (
                       <div 
-                        className="card border-0 shadow-lg rounded-4 position-absolute end-0 mt-2 animate-fade-in-up bg-white overflow-hidden"
-                        style={{ width: '350px', maxWidth: '94vw', zIndex: 1060, border: '1px solid #eef2f6' }}
+                        className="card border-0 shadow-lg rounded-4 position-absolute end-0 mt-2 bg-white overflow-hidden"
+                        style={{ width: '390px', maxWidth: 'calc(100vw - 20px)', zIndex: 1060, border: '1px solid #eef2f6', boxShadow: '0 12px 36px rgba(0,0,0,0.15)' }}
                         onClick={e => e.stopPropagation()}
                       >
-                        <div className="d-flex align-items-center justify-content-between px-3 py-2.5 bg-light border-bottom">
+                        <div className="d-flex align-items-center justify-content-between px-3 py-2.5 bg-light border-bottom flex-wrap gap-2">
                           {/* Left: Title + Badge */}
                           <div className="d-flex align-items-center gap-2 flex-shrink-0">
                             <Bell size={14} className="text-warning flex-shrink-0" />
                             <span className="fw-bold text-dark small text-nowrap">Notifications</span>
                             {customerUnreadCount > 0 && (
                               <span className="badge bg-danger rounded-pill text-nowrap" style={{ fontSize: '0.62rem', padding: '0.22em 0.45em' }}>
-                                {customerUnreadCount} new
+                                {customerUnreadCount}
                               </span>
                             )}
                           </div>
 
                           {/* Right: Sound Control + Mark All Read */}
-                          <div className="d-flex align-items-center gap-2 flex-shrink-0">
+                          <div className="d-flex align-items-center gap-2 flex-shrink-0 ms-auto">
                             <NotificationSoundToggle variant="light" />
                             {customerUnreadCount > 0 && (
                               <button
@@ -799,7 +799,7 @@ export default function CustomerPortalPage({
                           </div>
                         </div>
 
-                        <div style={{ maxHeight: '280px', overflowY: 'auto' }}>
+                        <div style={{ maxHeight: '300px', overflowY: 'auto', paddingRight: '4px' }}>
                           {customerNotificationItems.length === 0 ? (
                             <div className="p-4 text-center text-muted small">
                               No notifications yet
@@ -807,10 +807,11 @@ export default function CustomerPortalPage({
                           ) : (
                             customerNotificationItems.slice(0, 6).map(n => {
                               const unread = !n.is_read;
+                              const { cleanTitle, status, badgeStyle } = parseNotificationTitleAndStatus(n.title, n.message);
                               return (
                                 <div
                                   key={n.id}
-                                  className={`px-3 py-2.5 border-bottom cursor-pointer transition-all ${unread ? 'bg-light bg-opacity-75' : 'bg-white'}`}
+                                  className={`px-3 py-2.5 border-bottom cursor-pointer transition-all d-flex align-items-start gap-2 ${unread ? 'bg-light bg-opacity-75' : 'bg-white'}`}
                                   onClick={() => {
                                     if (!readNotifIds.includes(n.id)) {
                                       const updated = [...readNotifIds, n.id];
@@ -828,11 +829,39 @@ export default function CustomerPortalPage({
                                     }
                                   }}
                                 >
-                                  <div className="d-flex align-items-center justify-content-between mb-1">
-                                    <strong className="text-dark text-truncate" style={{ fontSize: '0.78rem' }}>{n.title}</strong>
-                                    <span className="text-muted text-xxs flex-shrink-0 ms-1">{n.time}</span>
+                                  <div className="rounded-circle mt-1.5 flex-shrink-0" style={{ width: '8px', height: '8px', background: unread ? '#FF6333' : '#cbd5e1' }}></div>
+                                  <div className="flex-grow-1 overflow-hidden pe-1">
+                                    <div className="d-flex flex-wrap align-items-center gap-1.5 mb-0.5">
+                                      <span
+                                        className="fw-bold text-dark"
+                                        style={{
+                                          fontSize: '0.80rem',
+                                          display: '-webkit-box',
+                                          WebkitLineClamp: 2,
+                                          WebkitBoxOrient: 'vertical',
+                                          overflow: 'hidden',
+                                          lineHeight: 1.3
+                                        }}
+                                      >
+                                        {cleanTitle}
+                                      </span>
+                                      {status && (
+                                        <span
+                                          className="badge px-1.5 py-0.5 rounded-1 fw-semibold"
+                                          style={{
+                                            fontSize: '0.60rem',
+                                            background: badgeStyle?.bg || '#f1f5f9',
+                                            color: badgeStyle?.text || '#1e293b',
+                                            border: `1px solid ${badgeStyle?.border || '#cbd5e1'}`
+                                          }}
+                                        >
+                                          {status}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-muted mb-0" style={{ fontSize: '0.72rem', lineHeight: 1.35, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{n.message}</p>
+                                    <span className="text-muted opacity-75 mt-0.5 d-inline-block" style={{ fontSize: '0.65rem' }}>{getRelativeTimeString(n.time || n.created_at)}</span>
                                   </div>
-                                  <p className="text-muted mb-0 text-truncate" style={{ fontSize: '0.72rem' }}>{n.message}</p>
                                 </div>
                               );
                             })

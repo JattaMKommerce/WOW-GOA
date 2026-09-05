@@ -99,6 +99,9 @@ export default function SelfDrivePage({
   const activeTripTypes = appliedFilters?.tripTypes || [];
   const activeDurations = appliedFilters?.durations || [];
   const activeInclusions = appliedFilters?.inclusions || [];
+  const activeActivities = appliedFilters?.packageActivities || [];
+  const activeBudgetBasis = appliedFilters?.packageBudgetBasis || [];
+  const activeMeals = appliedFilters?.packageMeals || [];
 
   const totalActiveFiltersCount = 
     activePriceRanges.length +
@@ -106,6 +109,9 @@ export default function SelfDrivePage({
     activeTripTypes.length +
     activeDurations.length +
     activeInclusions.length +
+    activeActivities.length +
+    activeBudgetBasis.length +
+    activeMeals.length +
     (activeTab !== 'ALL PACKAGES' ? 1 : 0);
 
   // Helper matching functions
@@ -115,6 +121,12 @@ export default function SelfDrivePage({
     }
     if (rangeId === '15000-25000' || rangeId === '₹15,000 - ₹20,000' || rangeId === '₹15,000 - ₹25,000' || rangeId === '15k - 25k') {
       return price >= 15000 && price <= 25000;
+    }
+    if (rangeId === '25000-40000' || rangeId === '₹25,000 - ₹40,000' || rangeId === '25k - 40k') {
+      return price >= 25000 && price <= 40000;
+    }
+    if (rangeId === '> 40000' || rangeId === '> ₹40,000' || rangeId === '> 40k') {
+      return price > 40000;
     }
     if (rangeId === '> 25000' || rangeId === '> ₹20,000' || rangeId === '> ₹25k') {
       return price > 25000 || price > 20000;
@@ -145,17 +157,20 @@ export default function SelfDrivePage({
     if (t === 'family') {
       return pkgText.includes('family') || pkgText.includes('popular') || pkgText.includes('explorer') || pkgText.includes('sightseeing') || !pkgText.includes('honeymoon');
     }
-    if (t === 'couple') {
+    if (t === 'couple' || t.includes('honeymoon') || t.includes('couples')) {
       return pkgText.includes('couple') || pkgText.includes('romantic') || pkgText.includes('honeymoon') || pkgText.includes('sunset') || pkgText.includes('candlelight');
-    }
-    if (t === 'honeymoon') {
-      return pkgText.includes('honeymoon') || pkgText.includes('romantic') || pkgText.includes('couple') || pkgText.includes('candlelight');
     }
     if (t === 'adventure') {
       return pkgText.includes('adventure') || pkgText.includes('water sports') || pkgText.includes('sports') || pkgText.includes('scuba') || pkgText.includes('trek') || pkgText.includes('thar') || pkgText.includes('4x4') || pkgText.includes('explorer');
     }
+    if (t.includes('group') || t.includes('friends')) {
+      return pkgText.includes('group') || pkgText.includes('friends') || pkgText.includes('bachelor') || pkgText.includes('party') || pkgText.includes('villa');
+    }
     if (t === 'luxury') {
-      return pkgText.includes('luxury') || pkgText.includes('audi') || pkgText.includes('cabriolet') || pkgText.includes('convertible') || pkgText.includes('5-star') || pkgText.includes('5★') || pkgText.includes('w goa') || pkgText.includes('marriott') || normalizePrice(pkg.price) >= 20000;
+      return pkgText.includes('luxury') || pkgText.includes('audi') || pkgText.includes('cabriolet') || pkgText.includes('convertible') || pkgText.includes('5-star') || pkgText.includes('5★') || pkgText.includes('w goa') || pkgText.includes('marriott') || normalizePrice(pkg.price) >= 25000;
+    }
+    if (t.includes('beach') || t.includes('leisure')) {
+      return pkgText.includes('beach') || pkgText.includes('leisure') || pkgText.includes('relax') || pkgText.includes('resort') || pkgText.includes('shack') || pkgText.includes('calangute') || pkgText.includes('candolim');
     }
     if (t === 'self drive') {
       return (pkg.package_type || '').toLowerCase().includes('self drive') || !!pkg.car_included || !!pkg.self_drive_included;
@@ -166,13 +181,14 @@ export default function SelfDrivePage({
   const checkDurationMatch = (pkg, durLabel) => {
     const nights = getPackageNights(pkg);
     const days = nights + 1;
-    if (durLabel.includes('1-3')) {
+    const cleanDur = durLabel.replace('–', '-');
+    if (cleanDur.includes('1-3')) {
       return days <= 3 || nights <= 2;
     }
-    if (durLabel.includes('4-6')) {
+    if (cleanDur.includes('4-6')) {
       return (days >= 4 && days <= 6) || (nights >= 3 && nights <= 5);
     }
-    if (durLabel.includes('7+')) {
+    if (cleanDur.includes('7+')) {
       return days >= 7 || nights >= 6;
     }
     return true;
@@ -186,9 +202,67 @@ export default function SelfDrivePage({
     if (inc.includes('cab') || inc.includes('car') || inc.includes('drive')) {
       return !!pkg.car_included || !!pkg.self_drive_included || !!pkg.is_cab_customizable || !!pkg.pickup_drop_included;
     }
+    if (inc.includes('transfer') || inc.includes('airport')) {
+      return !!pkg.pickup_drop_included || !!pkg.car_included || (pkg.inclusions || '').toLowerCase().includes('transfer') || (pkg.description || '').toLowerCase().includes('airport');
+    }
+    if (inc.includes('guide')) {
+      return !!pkg.guide_included || (pkg.inclusions || '').toLowerCase().includes('guide') || (pkg.description || '').toLowerCase().includes('guide');
+    }
     if (inc.includes('meal') || inc.includes('food')) {
       const foodStr = (pkg.food_included || pkg.meals_included || '').toLowerCase();
       return !!pkg.food_included || !!pkg.meals_included || (foodStr && !foodStr.includes('no meal'));
+    }
+    return true;
+  };
+
+  const checkActivityMatch = (pkg, act) => {
+    const actLower = act.toLowerCase();
+    const pkgText = `${pkg.name || ''} ${pkg.tag || ''} ${pkg.category || ''} ${pkg.description || ''} ${pkg.places_included || ''} ${pkg.inclusions || ''}`.toLowerCase();
+
+    if (actLower.includes('water sports')) {
+      return pkgText.includes('water sport') || pkgText.includes('watersport') || pkgText.includes('parasail') || pkgText.includes('banana') || pkgText.includes('jet ski') || pkgText.includes('scooter') || pkgText.includes('adventure');
+    }
+    if (actLower.includes('cruise') || actLower.includes('mandovi')) {
+      return pkgText.includes('cruise') || pkgText.includes('mandovi') || pkgText.includes('boat') || pkgText.includes('sunset');
+    }
+    if (actLower.includes('scuba') || actLower.includes('island')) {
+      return pkgText.includes('scuba') || pkgText.includes('dive') || pkgText.includes('island') || pkgText.includes('grand island');
+    }
+    if (actLower.includes('north goa')) {
+      return pkgText.includes('north goa') || pkgText.includes('calangute') || pkgText.includes('baga') || pkgText.includes('aguada') || pkgText.includes('anjuna') || pkgText.includes('vagator');
+    }
+    if (actLower.includes('south goa')) {
+      return pkgText.includes('south goa') || pkgText.includes('old goa') || pkgText.includes('basilica') || pkgText.includes('mangeshi') || pkgText.includes('miramar') || pkgText.includes('dona paula');
+    }
+    if (actLower.includes('dudhsagar') || actLower.includes('waterfall')) {
+      return pkgText.includes('dudhsagar') || pkgText.includes('waterfall') || pkgText.includes('safari');
+    }
+    if (actLower.includes('club') || actLower.includes('nightlife')) {
+      return pkgText.includes('club') || pkgText.includes('nightlife') || pkgText.includes('party') || pkgText.includes('casino') || pkgText.includes('tito');
+    }
+    return pkgText.includes(actLower);
+  };
+
+  const checkBudgetBasisMatch = (pkg, basis) => {
+    const basisLower = basis.toLowerCase();
+    const pkgText = `${pkg.name || ''} ${pkg.tag || ''} ${pkg.category || ''} ${pkg.package_type || ''} ${pkg.description || ''}`.toLowerCase();
+    if (basisLower.includes('couple')) {
+      return pkgText.includes('couple') || pkgText.includes('romantic') || pkgText.includes('honeymoon') || (pkg.tag || '').toLowerCase() === 'couple';
+    }
+    if (basisLower.includes('person')) {
+      return !pkgText.includes('couple only') || pkgText.includes('person') || pkgText.includes('adult');
+    }
+    return true;
+  };
+
+  const checkMealMatch = (pkg, meal) => {
+    const mealLower = meal.toLowerCase();
+    const pkgText = `${pkg.food_included || ''} ${pkg.meals_included || ''} ${pkg.inclusions || ''} ${pkg.description || ''}`.toLowerCase();
+    if (mealLower.includes('all meal')) {
+      return pkgText.includes('all meal') || pkgText.includes('lunch & dinner') || pkgText.includes('full board') || pkgText.includes('apa');
+    }
+    if (mealLower.includes('breakfast')) {
+      return !!pkg.food_included || !!pkg.meals_included || pkgText.includes('breakfast') || pkgText.includes('b/f') || pkgText.includes('cpa') || pkgText.includes('meal');
     }
     return true;
   };
@@ -256,9 +330,27 @@ export default function SelfDrivePage({
         if (!matchesIncs) return false;
       }
 
+      // 8. Activities filter (OR logic)
+      if (activeActivities.length > 0) {
+        const matchesAct = activeActivities.some(act => checkActivityMatch(pkg, act));
+        if (!matchesAct) return false;
+      }
+
+      // 9. Budget Basis filter (OR logic)
+      if (activeBudgetBasis.length > 0) {
+        const matchesBasis = activeBudgetBasis.some(basis => checkBudgetBasisMatch(pkg, basis));
+        if (!matchesBasis) return false;
+      }
+
+      // 10. Meals filter (OR logic)
+      if (activeMeals.length > 0) {
+        const matchesMeal = activeMeals.some(meal => checkMealMatch(pkg, meal));
+        if (!matchesMeal) return false;
+      }
+
       return true;
     });
-  }, [displayPackages, searchQuery, activeTab, activePriceRanges, activeHotelStars, activeTripTypes, activeDurations, activeInclusions]);
+  }, [displayPackages, searchQuery, activeTab, activePriceRanges, activeHotelStars, activeTripTypes, activeDurations, activeInclusions, activeActivities, activeBudgetBasis, activeMeals]);
 
   // Handler to remove a specific filter
   const removeFilter = (type, value) => {
@@ -274,6 +366,12 @@ export default function SelfDrivePage({
       current.durations = (current.durations || []).filter(v => v !== value);
     } else if (type === 'inclusions') {
       current.inclusions = (current.inclusions || []).filter(v => v !== value);
+    } else if (type === 'packageActivities') {
+      current.packageActivities = (current.packageActivities || []).filter(v => v !== value);
+    } else if (type === 'packageBudgetBasis') {
+      current.packageBudgetBasis = (current.packageBudgetBasis || []).filter(v => v !== value);
+    } else if (type === 'packageMeals') {
+      current.packageMeals = (current.packageMeals || []).filter(v => v !== value);
     }
     setAppliedFilters(current);
   };
@@ -286,7 +384,10 @@ export default function SelfDrivePage({
         hotelStars: [],
         tripTypes: [],
         durations: [],
-        inclusions: []
+        inclusions: [],
+        packageActivities: [],
+        packageBudgetBasis: [],
+        packageMeals: []
       });
     }
     if (onClearSearch) onClearSearch();
@@ -362,6 +463,27 @@ export default function SelfDrivePage({
               <span key={inc} className="badge bg-white text-dark border px-3 py-2 rounded-pill d-flex align-items-center gap-1 shadow-xs">
                 {inc}
                 <button type="button" className="btn-close btn-close-xs ms-1" style={{ fontSize: '9px' }} onClick={() => removeFilter('inclusions', inc)}></button>
+              </span>
+            ))}
+
+            {activeActivities.map(act => (
+              <span key={act} className="badge bg-white text-dark border px-3 py-2 rounded-pill d-flex align-items-center gap-1 shadow-xs">
+                {act}
+                <button type="button" className="btn-close btn-close-xs ms-1" style={{ fontSize: '9px' }} onClick={() => removeFilter('packageActivities', act)}></button>
+              </span>
+            ))}
+
+            {activeBudgetBasis.map(basis => (
+              <span key={basis} className="badge bg-white text-dark border px-3 py-2 rounded-pill d-flex align-items-center gap-1 shadow-xs">
+                {basis}
+                <button type="button" className="btn-close btn-close-xs ms-1" style={{ fontSize: '9px' }} onClick={() => removeFilter('packageBudgetBasis', basis)}></button>
+              </span>
+            ))}
+
+            {activeMeals.map(meal => (
+              <span key={meal} className="badge bg-white text-dark border px-3 py-2 rounded-pill d-flex align-items-center gap-1 shadow-xs">
+                {meal}
+                <button type="button" className="btn-close btn-close-xs ms-1" style={{ fontSize: '9px' }} onClick={() => removeFilter('packageMeals', meal)}></button>
               </span>
             ))}
           </div>

@@ -20,6 +20,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { getTodayDateStr, getNextDayDateStr, validateBookingDates } from '../utils/dateUtils';
+import UnifiedFilterPopover, { countActiveTabFilters } from './common/UnifiedFilterPopover';
 
 // ─── STATIC DATASETS ──────────────────────────────────────────────────────────
 
@@ -135,11 +136,40 @@ export default function SearchWidget({
   const [flightFromSearch, setFlightFromSearch] = useState('');
   const [flightToSearch, setFlightToSearch] = useState('');
 
-  // Local filter states
+  // Local filter states for all 4 search tabs
   const [localFilters, setLocalFilters] = useState({
-    priceRanges: appliedFilters?.priceRanges || [],
+    // Self Drive
+    vehicleTypes: appliedFilters?.vehicleTypes || [],
+    carSubFilters: appliedFilters?.carSubFilters || [],
+    bikeSubFilters: appliedFilters?.bikeSubFilters || [],
+    vehicleTransmission: appliedFilters?.vehicleTransmission || [],
+    vehicleFuel: appliedFilters?.vehicleFuel || [],
+    vehicleSeating: appliedFilters?.vehicleSeating || [],
+    vehicleBudget: appliedFilters?.vehicleBudget || [],
+    vehicleFeatures: appliedFilters?.vehicleFeatures || [],
+
+    // Hotels
     hotelStars: appliedFilters?.hotelStars || [],
+    hotelPropertyType: appliedFilters?.hotelPropertyType || [],
+    hotelPriceRanges: appliedFilters?.hotelPriceRanges || [],
+    hotelAreas: appliedFilters?.hotelAreas || [],
+    hotelAmenities: appliedFilters?.hotelAmenities || [],
+
+    // Flights
+    flightStops: appliedFilters?.flightStops || [],
+    flightDepTimes: appliedFilters?.flightDepTimes || [],
+    flightArrTimes: appliedFilters?.flightArrTimes || [],
+    flightAirlines: appliedFilters?.flightAirlines || [],
+    flightClassFilter: appliedFilters?.flightClassFilter || [],
+    flightPriceRanges: appliedFilters?.flightPriceRanges || [],
+    flightBaggage: appliedFilters?.flightBaggage || [],
+
+    // Trip Packages
     tripTypes: appliedFilters?.tripTypes || [],
+    packageActivities: appliedFilters?.packageActivities || [],
+    priceRanges: appliedFilters?.priceRanges || [],
+    packageBudgetBasis: appliedFilters?.packageBudgetBasis || [],
+    packageMeals: appliedFilters?.packageMeals || [],
     durations: appliedFilters?.durations || [],
     inclusions: appliedFilters?.inclusions || []
   });
@@ -161,13 +191,10 @@ export default function SearchWidget({
   // Sync appliedFilters
   useEffect(() => {
     if (appliedFilters) {
-      setLocalFilters({
-        priceRanges: appliedFilters.priceRanges || [],
-        hotelStars: appliedFilters.hotelStars || [],
-        tripTypes: appliedFilters.tripTypes || [],
-        durations: appliedFilters.durations || [],
-        inclusions: appliedFilters.inclusions || []
-      });
+      setLocalFilters(prev => ({
+        ...prev,
+        ...appliedFilters
+      }));
     }
   }, [appliedFilters]);
 
@@ -343,12 +370,69 @@ export default function SearchWidget({
   const displayDropMonthYear = validDropObj.toLocaleString('en-US', { month: 'short', year: 'numeric' });
   const displayDropWeekday = validDropObj.toLocaleString('en-US', { weekday: 'long' });
 
-  const totalAppliedCount = 
-    (localFilters?.priceRanges?.length || 0) +
-    (localFilters?.hotelStars?.length || 0) +
-    (localFilters?.tripTypes?.length || 0) +
-    (localFilters?.durations?.length || 0) +
-    (localFilters?.inclusions?.length || 0);
+  const activeTabFiltersCount = countActiveTabFilters(activeTab, localFilters);
+
+  const handleClearAllForTab = () => {
+    setLocalFilters(prev => {
+      let cleared = { ...prev };
+      if (activeTab === 'selfdrive') {
+        cleared = {
+          ...cleared,
+          vehicleTypes: [],
+          carSubFilters: [],
+          bikeSubFilters: [],
+          vehicleTransmission: [],
+          vehicleFuel: [],
+          vehicleSeating: [],
+          vehicleBudget: [],
+          vehicleFeatures: []
+        };
+      } else if (activeTab === 'hotels') {
+        cleared = {
+          ...cleared,
+          hotelStars: [],
+          hotelPropertyType: [],
+          hotelPriceRanges: [],
+          hotelAreas: [],
+          hotelAmenities: []
+        };
+      } else if (activeTab === 'flights') {
+        cleared = {
+          ...cleared,
+          flightStops: [],
+          flightDepTimes: [],
+          flightArrTimes: [],
+          flightAirlines: [],
+          flightClassFilter: [],
+          flightPriceRanges: [],
+          flightBaggage: []
+        };
+      } else if (activeTab === 'packages') {
+        cleared = {
+          ...cleared,
+          tripTypes: [],
+          packageActivities: [],
+          priceRanges: [],
+          packageBudgetBasis: [],
+          hotelStars: [],
+          packageMeals: [],
+          durations: [],
+          inclusions: []
+        };
+      }
+      if (setAppliedFilters) setAppliedFilters(cleared);
+      return cleared;
+    });
+  };
+
+  const handleApplyFilters = () => {
+    if (setAppliedFilters) setAppliedFilters(localFilters);
+    if (setSearchTriggered) setSearchTriggered(true);
+    setActiveDropdown(null);
+    setTimeout(() => {
+      document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
+  };
 
   const totalPassengers = (flightAdults || 1) + (flightChildren || 0) + (flightInfants || 0);
 
@@ -430,7 +514,7 @@ export default function SearchWidget({
               TAB: HOTELS
           ────────────────────────────────────────────────────────────────── */}
           {activeTab === 'hotels' ? (
-            <div className="booking-inputs-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+            <div className="booking-inputs-grid">
               
               {/* Hotel Field 1: Destination / Location */}
               <div 
@@ -597,12 +681,46 @@ export default function SearchWidget({
                 )}
               </div>
 
+              {/* Hotel Field 5: Filters */}
+              <div 
+                className="input-block position-relative" 
+                onClick={() => setActiveDropdown(activeDropdown === 'filters' ? null : 'filters')}
+              >
+                <span className="input-block-label d-flex align-items-center justify-content-between">
+                  <span>Filters</span>
+                  <ChevronDown size={14} />
+                </span>
+                <div className="d-flex align-items-baseline gap-1 mt-1">
+                  <span className="fw-bold text-dark" style={{ fontSize: '16px', lineHeight: '1.2' }}>
+                    {activeTabFiltersCount > 0 ? (
+                      <span className="text-warning fw-black">{activeTabFiltersCount} Applied</span>
+                    ) : (
+                      'Select Filters'
+                    )}
+                  </span>
+                </div>
+                <span className="input-block-sub mt-1">
+                  {activeTabFiltersCount > 0 ? 'Click to edit' : '(Optional)'}
+                </span>
+
+                {activeDropdown === 'filters' && (
+                  <UnifiedFilterPopover
+                    activeTab={activeTab}
+                    localFilters={localFilters}
+                    setLocalFilters={setLocalFilters}
+                    onApply={handleApplyFilters}
+                    onClearAll={handleClearAllForTab}
+                    onClose={() => setActiveDropdown(null)}
+                  />
+                )}
+              </div>
+
             </div>
           ) : activeTab === 'flights' ? (
             /* ──────────────────────────────────────────────────────────────────
                 TAB: FLIGHTS
             ────────────────────────────────────────────────────────────────── */
-            <div className="booking-inputs-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+            <div className="booking-inputs-grid">
               
               {/* Flight Field 1: FROM Airport */}
               <div 
@@ -794,12 +912,46 @@ export default function SearchWidget({
                 )}
               </div>
 
+              {/* Flight Field 5: Filters */}
+              <div 
+                className="input-block position-relative" 
+                onClick={() => setActiveDropdown(activeDropdown === 'filters' ? null : 'filters')}
+              >
+                <span className="input-block-label d-flex align-items-center justify-content-between">
+                  <span>Filters</span>
+                  <ChevronDown size={14} />
+                </span>
+                <div className="d-flex align-items-baseline gap-1 mt-1">
+                  <span className="fw-bold text-dark" style={{ fontSize: '16px', lineHeight: '1.2' }}>
+                    {activeTabFiltersCount > 0 ? (
+                      <span className="text-warning fw-black">{activeTabFiltersCount} Applied</span>
+                    ) : (
+                      'Select Filters'
+                    )}
+                  </span>
+                </div>
+                <span className="input-block-sub mt-1">
+                  {activeTabFiltersCount > 0 ? 'Click to edit' : '(Optional)'}
+                </span>
+
+                {activeDropdown === 'filters' && (
+                  <UnifiedFilterPopover
+                    activeTab={activeTab}
+                    localFilters={localFilters}
+                    setLocalFilters={setLocalFilters}
+                    onApply={handleApplyFilters}
+                    onClearAll={handleClearAllForTab}
+                    onClose={() => setActiveDropdown(null)}
+                  />
+                )}
+              </div>
+
             </div>
           ) : activeTab === 'selfdrive' ? (
             /* ──────────────────────────────────────────────────────────────────
                 TAB: SELF DRIVE HOLIDAYS (Reference Image Style)
             ────────────────────────────────────────────────────────────────── */
-            <div className="booking-inputs-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+            <div className="booking-inputs-grid">
               
               {/* Self-Drive Field 1: Pickup Location */}
               <div 
@@ -1022,6 +1174,40 @@ export default function SearchWidget({
                       </div>
                     </div>
                   </div>
+                )}
+              </div>
+
+              {/* Self-Drive Field 5: Filters */}
+              <div 
+                className="input-block position-relative" 
+                onClick={() => setActiveDropdown(activeDropdown === 'filters' ? null : 'filters')}
+              >
+                <span className="input-block-label d-flex align-items-center justify-content-between">
+                  <span>Filters</span>
+                  <ChevronDown size={14} />
+                </span>
+                <div className="d-flex align-items-baseline gap-1 mt-1">
+                  <span className="fw-bold text-dark" style={{ fontSize: '16px', lineHeight: '1.2' }}>
+                    {activeTabFiltersCount > 0 ? (
+                      <span className="text-warning fw-black">{activeTabFiltersCount} Applied</span>
+                    ) : (
+                      'Select Filters'
+                    )}
+                  </span>
+                </div>
+                <span className="input-block-sub mt-1">
+                  {activeTabFiltersCount > 0 ? 'Click to edit' : '(Optional)'}
+                </span>
+
+                {activeDropdown === 'filters' && (
+                  <UnifiedFilterPopover
+                    activeTab={activeTab}
+                    localFilters={localFilters}
+                    setLocalFilters={setLocalFilters}
+                    onApply={handleApplyFilters}
+                    onClearAll={handleClearAllForTab}
+                    onClose={() => setActiveDropdown(null)}
+                  />
                 )}
               </div>
 
@@ -1262,193 +1448,26 @@ export default function SearchWidget({
                 </span>
                 <div className="d-flex align-items-baseline gap-1 mt-1">
                   <span className="fw-bold text-dark" style={{ fontSize: '16px', lineHeight: '1.2' }}>
-                    {totalAppliedCount > 0 ? (
-                      <span className="text-warning fw-black">{totalAppliedCount} Applied</span>
+                    {activeTabFiltersCount > 0 ? (
+                      <span className="text-warning fw-black">{activeTabFiltersCount} Applied</span>
                     ) : (
                       'Select Filters'
                     )}
                   </span>
                 </div>
                 <span className="input-block-sub mt-1">
-                  {totalAppliedCount > 0 ? 'Click to edit' : '(Optional)'}
+                  {activeTabFiltersCount > 0 ? 'Click to edit' : '(Optional)'}
                 </span>
 
                 {activeDropdown === 'filters' && (
-                  <div className="tg-popover-card tg-filters-popover shadow-xl p-3" onClick={e => e.stopPropagation()}>
-                    <div className="d-flex justify-content-between align-items-center pb-2 mb-2 border-bottom">
-                      <span className="fw-bold text-dark small"><SlidersHorizontal size={14} className="text-primary me-1" /> Trip Filters</span>
-                      <button type="button" className="btn btn-sm btn-link p-0 text-muted" onClick={() => setActiveDropdown(null)}><X size={16} /></button>
-                    </div>
-
-                    <div className="tg-scroll-area pe-1">
-                      {/* Price Range */}
-                      <div className="mb-3">
-                        <div className="text-muted small fw-bold mb-1">Budget / Price</div>
-                        <div className="d-flex flex-wrap gap-1">
-                          {[
-                            { id: '< 15000', label: '< ₹15k' },
-                            { id: '15000-25000', label: '₹15k - ₹25k' },
-                            { id: '> 25000', label: '> ₹25k' }
-                          ].map(pr => {
-                            const isChecked = localFilters.priceRanges?.includes(pr.id);
-                            return (
-                              <button
-                                key={pr.id}
-                                type="button"
-                                className={`tg-filter-chip ${isChecked ? 'active' : ''}`}
-                                onClick={() => {
-                                  setLocalFilters(prev => ({
-                                    ...prev,
-                                    priceRanges: isChecked ? prev.priceRanges.filter(id => id !== pr.id) : [...(prev.priceRanges || []), pr.id]
-                                  }));
-                                }}
-                              >
-                                {isChecked && <Check size={12} />}
-                                <span>{pr.label}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Hotel Stars */}
-                      <div className="mb-3">
-                        <div className="text-muted small fw-bold mb-1">Hotel Category</div>
-                        <div className="d-flex flex-wrap gap-1">
-                          {[
-                            { id: '3', label: '3★ Standard' },
-                            { id: '4', label: '4★ Premium' },
-                            { id: '5', label: '5★ Luxury' }
-                          ].map(st => {
-                            const isChecked = localFilters.hotelStars?.includes(st.id);
-                            return (
-                              <button
-                                key={st.id}
-                                type="button"
-                                className={`tg-filter-chip ${isChecked ? 'active' : ''}`}
-                                onClick={() => {
-                                  setLocalFilters(prev => ({
-                                    ...prev,
-                                    hotelStars: isChecked ? prev.hotelStars.filter(id => id !== st.id) : [...(prev.hotelStars || []), st.id]
-                                  }));
-                                }}
-                              >
-                                {isChecked && <Check size={12} />}
-                                <span>{st.label}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Trip Types */}
-                      <div className="mb-3">
-                        <div className="text-muted small fw-bold mb-1">Trip Theme</div>
-                        <div className="d-flex flex-wrap gap-1">
-                          {['Family', 'Couple', 'Adventure', 'Honeymoon', 'Luxury', 'Self Drive'].map(tt => {
-                            const isChecked = localFilters.tripTypes?.includes(tt);
-                            return (
-                              <button
-                                key={tt}
-                                type="button"
-                                className={`tg-filter-chip ${isChecked ? 'active' : ''}`}
-                                onClick={() => {
-                                  setLocalFilters(prev => ({
-                                    ...prev,
-                                    tripTypes: isChecked ? prev.tripTypes.filter(id => id !== tt) : [...(prev.tripTypes || []), tt]
-                                  }));
-                                }}
-                              >
-                                {isChecked && <Check size={12} />}
-                                <span>{tt}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Duration */}
-                      <div className="mb-3">
-                        <div className="text-muted small fw-bold mb-1">Duration</div>
-                        <div className="d-flex flex-wrap gap-1">
-                          {['1-3 Days', '4-6 Days', '7+ Days'].map(dur => {
-                            const isChecked = localFilters.durations?.includes(dur);
-                            return (
-                              <button
-                                key={dur}
-                                type="button"
-                                className={`tg-filter-chip ${isChecked ? 'active' : ''}`}
-                                onClick={() => {
-                                  setLocalFilters(prev => ({
-                                    ...prev,
-                                    durations: isChecked ? prev.durations.filter(id => id !== dur) : [...(prev.durations || []), dur]
-                                  }));
-                                }}
-                              >
-                                {isChecked && <Check size={12} />}
-                                <span>{dur}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Inclusions */}
-                      <div>
-                        <div className="text-muted small fw-bold mb-1">Inclusions</div>
-                        <div className="d-flex flex-wrap gap-1">
-                          {['Flight Included', 'Cab Included', 'Meals Included'].map(inc => {
-                            const isChecked = localFilters.inclusions?.includes(inc);
-                            return (
-                              <button
-                                key={inc}
-                                type="button"
-                                className={`tg-filter-chip ${isChecked ? 'active' : ''}`}
-                                onClick={() => {
-                                  setLocalFilters(prev => ({
-                                    ...prev,
-                                    inclusions: isChecked ? prev.inclusions.filter(id => id !== inc) : [...(prev.inclusions || []), inc]
-                                  }));
-                                }}
-                              >
-                                {isChecked && <Check size={12} />}
-                                <span>{inc}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="d-flex justify-content-between align-items-center pt-3 border-top mt-2">
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-outline-secondary px-3"
-                        onClick={() => {
-                          const reset = { priceRanges: [], hotelStars: [], tripTypes: [], durations: [], inclusions: [] };
-                          setLocalFilters(reset);
-                          if (setAppliedFilters) setAppliedFilters(reset);
-                        }}
-                      >
-                        Clear All
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-primary px-3 fw-bold"
-                        style={{ background: '#FF6333', borderColor: '#FF6333' }}
-                        onClick={() => {
-                          if (setAppliedFilters) setAppliedFilters(localFilters);
-                          if (setSearchTriggered) setSearchTriggered(true);
-                          setActiveDropdown(null);
-                          setTimeout(() => {
-                            document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
-                          }, 100);
-                        }}
-                      >
-                        Apply Filters
-                      </button>
-                    </div>
-                  </div>
+                  <UnifiedFilterPopover
+                    activeTab={activeTab}
+                    localFilters={localFilters}
+                    setLocalFilters={setLocalFilters}
+                    onApply={handleApplyFilters}
+                    onClearAll={handleClearAllForTab}
+                    onClose={() => setActiveDropdown(null)}
+                  />
                 )}
               </div>
 

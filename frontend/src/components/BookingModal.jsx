@@ -520,7 +520,7 @@ export default function BookingModal({
                       
                       <div className="mb-3">
                         <label className="form-label small fw-bold">
-                          Mobile Phone Number <span className="text-danger">* (Required for Tracking)</span>
+                          Mobile Phone Number <span className="text-danger">*</span>
                         </label>
                         <div className="input-group">
                           <span className="input-group-text bg-light fw-bold text-xs">+91</span>

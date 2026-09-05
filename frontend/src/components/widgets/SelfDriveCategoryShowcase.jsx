@@ -559,6 +559,104 @@ function CategoryRow({
   );
 }
 
+function matchesVehicleFilters(vehicle, appliedFilters, vehicleCategoryType) {
+  if (!appliedFilters) return true;
+
+  // 1. Vehicle Type
+  const vTypes = appliedFilters.vehicleTypes || [];
+  if (vTypes.length > 0 && vehicleCategoryType) {
+    if (!vTypes.includes(vehicleCategoryType)) return false;
+  }
+
+  // 2. Car Sub-Filters
+  const carSubs = appliedFilters.carSubFilters || [];
+  if (carSubs.length > 0 && vehicle.type === 'car') {
+    const name = (vehicle.name || '').toLowerCase();
+    const cat = (vehicle.category || '').toLowerCase();
+    const matchesCarSub = carSubs.some(sub => {
+      const s = sub.toLowerCase();
+      if (s.includes('hatchback')) return cat.includes('hatchback') || name.includes('swift') || name.includes('i10') || name.includes('i20') || name.includes('tiago') || name.includes('wagon');
+      if (s.includes('sedan')) return cat.includes('sedan') || name.includes('dzire') || name.includes('city') || name.includes('verna') || name.includes('ciaz') || name.includes('aura') || name.includes('c-class') || name.includes('a4');
+      if (s.includes('suv')) return cat.includes('suv') || name.includes('creta') || name.includes('brezza') || name.includes('seltos') || name.includes('nexon') || name.includes('thar') || name.includes('fortuner') || name.includes('x1') || name.includes('q3');
+      if (s.includes('7-seater') || s.includes('muv')) return cat.includes('7') || cat.includes('muv') || name.includes('ertiga') || name.includes('innova') || name.includes('carens') || name.includes('scorpio') || name.includes('fortuner');
+      if (s.includes('open top') || s.includes('thar')) return cat.includes('open') || cat.includes('thar') || name.includes('thar') || name.includes('jimny') || name.includes('gypsy');
+      if (s.includes('convertible')) return cat.includes('convertible') || cat.includes('cabriolet') || cat.includes('coupe') || name.includes('convertible') || name.includes('cla') || name.includes('z4') || name.includes('cabriolet');
+      return cat.includes(s) || name.includes(s);
+    });
+    if (!matchesCarSub) return false;
+  }
+
+  // 3. Bike Sub-Filters
+  const bikeSubs = appliedFilters.bikeSubFilters || [];
+  if (bikeSubs.length > 0 && vehicle.type === 'bike') {
+    const name = (vehicle.name || '').toLowerCase();
+    const cat = (vehicle.category || '').toLowerCase();
+    const matchesBikeSub = bikeSubs.some(sub => {
+      const s = sub.toLowerCase();
+      if (s.includes('scooter')) return cat.includes('scooter') || name.includes('activa') || name.includes('jupiter') || name.includes('access') || name.includes('dio') || name.includes('ntorq') || name.includes('fascino');
+      if (s.includes('cruiser') || s.includes('enfield')) return cat.includes('cruiser') || name.includes('classic') || name.includes('bullet') || name.includes('hunter') || name.includes('meteor') || name.includes('himalayan') || name.includes('thunderbird') || name.includes('interceptor') || name.includes('continental');
+      if (s.includes('sports')) return cat.includes('sports') || cat.includes('superbike') || name.includes('r15') || name.includes('ktm') || name.includes('duke') || name.includes('pulsar') || name.includes('ninja') || name.includes('rc') || name.includes('apache');
+      if (s.includes('electric') || s.includes('ev')) return (vehicle.fuel || '').toLowerCase().includes('electric') || name.includes('ev') || name.includes('ather') || name.includes('ola') || name.includes('chetak') || cat.includes('ev') || cat.includes('electric');
+      return cat.includes(s) || name.includes(s);
+    });
+    if (!matchesBikeSub) return false;
+  }
+
+  // 4. Transmission
+  const trans = appliedFilters.vehicleTransmission || [];
+  if (trans.length > 0 && vehicle.transmission) {
+    const vTrans = (vehicle.transmission || '').toLowerCase();
+    const matchesTrans = trans.some(t => {
+      if (t.toLowerCase() === 'manual') return vTrans.includes('manual');
+      if (t.toLowerCase() === 'automatic') return vTrans.includes('auto') || vTrans.includes('amt') || vTrans.includes('at') || vTrans.includes('cvt') || vTrans.includes('dct');
+      return true;
+    });
+    if (!matchesTrans) return false;
+  }
+
+  // 5. Fuel Type
+  const fuels = appliedFilters.vehicleFuel || [];
+  if (fuels.length > 0 && vehicle.fuel) {
+    const vFuel = (vehicle.fuel || '').toLowerCase();
+    const matchesFuel = fuels.some(f => {
+      if (f.toLowerCase().includes('petrol')) return vFuel.includes('petrol');
+      if (f.toLowerCase().includes('diesel')) return vFuel.includes('diesel');
+      if (f.toLowerCase().includes('electric') || f.toLowerCase().includes('ev')) return vFuel.includes('electric') || vFuel.includes('ev');
+      return true;
+    });
+    if (!matchesFuel) return false;
+  }
+
+  // 6. Seating
+  const seatings = appliedFilters.vehicleSeating || [];
+  if (seatings.length > 0 && vehicle.type === 'car') {
+    const vSeat = String(vehicle.seating || '5');
+    const matchesSeat = seatings.some(st => {
+      if (st.includes('2')) return vSeat.includes('2');
+      if (st.includes('4') || st.includes('5')) return vSeat.includes('4') || vSeat.includes('5');
+      if (st.includes('7')) return vSeat.includes('7') || vSeat.includes('8');
+      return true;
+    });
+    if (!matchesSeat) return false;
+  }
+
+  // 7. Budget Per Day
+  const budgets = appliedFilters.vehicleBudget || [];
+  if (budgets.length > 0) {
+    const price = parseFloat(vehicle.price) || 0;
+    const matchesBudget = budgets.some(b => {
+      if (b === '< 1500') return price < 1500;
+      if (b === '1500-3000') return price >= 1500 && price <= 3000;
+      if (b === '3000-6000') return price >= 3000 && price <= 6000;
+      if (b === '> 6000') return price > 6000;
+      return true;
+    });
+    if (!matchesBudget) return false;
+  }
+
+  return true;
+}
+
 // ─── MAIN SELF DRIVE CATEGORY SHOWCASE COMPONENT ─────────────────────────────
 export default function SelfDriveCategoryShowcase({
   cars = [],
@@ -566,7 +664,9 @@ export default function SelfDriveCategoryShowcase({
   onBookVehicle,
   onViewVehicle,
   setActiveTab,
-  searchQuery = ''
+  searchQuery = '',
+  appliedFilters = {},
+  setAppliedFilters
 }) {
   // 1. Process Two Wheelers (incoming live bikes + curated defaults)
   const twoWheelers = useMemo(() => {
@@ -592,12 +692,13 @@ export default function SelfDriveCategoryShowcase({
       }
     });
 
+    let filtered = result;
     if (searchQuery) {
       const q = searchQuery.toLowerCase().trim();
-      return result.filter(v => v.name.toLowerCase().includes(q) || (v.category || '').toLowerCase().includes(q));
+      filtered = filtered.filter(v => v.name.toLowerCase().includes(q) || (v.category || '').toLowerCase().includes(q));
     }
-    return result;
-  }, [bikes, cars, searchQuery]);
+    return filtered.filter(v => matchesVehicleFilters(v, appliedFilters, 'Two Wheelers'));
+  }, [bikes, cars, searchQuery, appliedFilters]);
 
   // 2. Process Four Wheelers (Standard non-luxury cars + curated defaults)
   const fourWheelers = useMemo(() => {
@@ -620,12 +721,13 @@ export default function SelfDriveCategoryShowcase({
       }
     });
 
+    let filtered = result;
     if (searchQuery) {
       const q = searchQuery.toLowerCase().trim();
-      return result.filter(v => v.name.toLowerCase().includes(q) || (v.category || '').toLowerCase().includes(q));
+      filtered = filtered.filter(v => v.name.toLowerCase().includes(q) || (v.category || '').toLowerCase().includes(q));
     }
-    return result;
-  }, [cars, searchQuery]);
+    return filtered.filter(v => matchesVehicleFilters(v, appliedFilters, 'Four Wheelers'));
+  }, [cars, searchQuery, appliedFilters]);
 
   // 3. Process Luxury Cars (Luxury cars + curated defaults)
   const luxuryCars = useMemo(() => {
@@ -648,75 +750,90 @@ export default function SelfDriveCategoryShowcase({
       }
     });
 
+    let filtered = result;
     if (searchQuery) {
       const q = searchQuery.toLowerCase().trim();
-      return result.filter(v => v.name.toLowerCase().includes(q) || (v.category || '').toLowerCase().includes(q));
+      filtered = filtered.filter(v => v.name.toLowerCase().includes(q) || (v.category || '').toLowerCase().includes(q));
     }
-    return result;
-  }, [cars, searchQuery]);
+    return filtered.filter(v => matchesVehicleFilters(v, appliedFilters, 'Luxury Cars'));
+  }, [cars, searchQuery, appliedFilters]);
 
   const handleViewAllBikes = () => {
     if (setActiveTab) setActiveTab('bikes');
-    else {
-      const el = document.getElementById('results-section');
-      if (el) el.scrollIntoView({ behavior: 'smooth' });
-    }
   };
 
   const handleViewAllCars = () => {
     if (setActiveTab) setActiveTab('cars');
-    else {
-      const el = document.getElementById('results-section');
-      if (el) el.scrollIntoView({ behavior: 'smooth' });
-    }
   };
 
   const handleViewAllLuxury = () => {
     if (setActiveTab) setActiveTab('cars');
-    else {
-      const el = document.getElementById('results-section');
-      if (el) el.scrollIntoView({ behavior: 'smooth' });
-    }
   };
+
+  const hasAnyMatches = twoWheelers.length > 0 || fourWheelers.length > 0 || luxuryCars.length > 0;
 
   return (
     <section className="sd-category-showcase-section" id="self-drive-categories">
       <div className="container px-md-3">
-        {/* Row 1: Two Wheelers (Orange gradient) */}
-        <CategoryRow
-          badgeGradient="linear-gradient(135deg, #FF6026 0%, #FF833E 100%)"
-          badgeIcon={Bike}
-          badgeTitle="Two Wheelers"
-          badgeSubtitle="Ride in style"
-          vehicles={twoWheelers}
-          onViewAll={handleViewAllBikes}
-          onBookVehicle={onBookVehicle}
-          onViewVehicle={onViewVehicle}
-        />
+        {!hasAnyMatches ? (
+          <div className="text-center py-5 bg-white rounded-4 shadow-sm border p-4 my-4">
+            <h5 className="fw-bold text-dark mb-2">No Vehicles Match Your Selected Filters</h5>
+            <p className="text-muted small mb-3">Try adjusting your filters, budget, or transmission options to see more vehicles.</p>
+            {setAppliedFilters && (
+              <button
+                type="button"
+                className="btn btn-warning btn-sm fw-bold px-3 py-1.5"
+                onClick={() => setAppliedFilters({})}
+              >
+                Clear All Vehicle Filters
+              </button>
+            )}
+          </div>
+        ) : (
+          <>
+            {/* Row 1: Two Wheelers (Orange gradient) */}
+            {twoWheelers.length > 0 && (
+              <CategoryRow
+                badgeGradient="linear-gradient(135deg, #FF6026 0%, #FF833E 100%)"
+                badgeIcon={Bike}
+                badgeTitle="Two Wheelers"
+                badgeSubtitle="Ride in style"
+                vehicles={twoWheelers}
+                onViewAll={handleViewAllBikes}
+                onBookVehicle={onBookVehicle}
+                onViewVehicle={onViewVehicle}
+              />
+            )}
 
-        {/* Row 2: Four Wheelers (Blue gradient) */}
-        <CategoryRow
-          badgeGradient="linear-gradient(135deg, #0284C7 0%, #2563EB 100%)"
-          badgeIcon={Car}
-          badgeTitle="Four Wheelers"
-          badgeSubtitle="Comfort for every trip"
-          vehicles={fourWheelers}
-          onViewAll={handleViewAllCars}
-          onBookVehicle={onBookVehicle}
-          onViewVehicle={onViewVehicle}
-        />
+            {/* Row 2: Four Wheelers (Blue gradient) */}
+            {fourWheelers.length > 0 && (
+              <CategoryRow
+                badgeGradient="linear-gradient(135deg, #0284C7 0%, #2563EB 100%)"
+                badgeIcon={Car}
+                badgeTitle="Four Wheelers"
+                badgeSubtitle="Comfort for every trip"
+                vehicles={fourWheelers}
+                onViewAll={handleViewAllCars}
+                onBookVehicle={onBookVehicle}
+                onViewVehicle={onViewVehicle}
+              />
+            )}
 
-        {/* Row 3: Luxury Cars (Purple / Violet gradient) */}
-        <CategoryRow
-          badgeGradient="linear-gradient(135deg, #7C3AED 0%, #9333EA 100%)"
-          badgeIcon={Crown}
-          badgeTitle="Luxury Cars"
-          badgeSubtitle="Live the experience"
-          vehicles={luxuryCars}
-          onViewAll={handleViewAllLuxury}
-          onBookVehicle={onBookVehicle}
-          onViewVehicle={onViewVehicle}
-        />
+            {/* Row 3: Luxury Cars (Purple / Violet gradient) */}
+            {luxuryCars.length > 0 && (
+              <CategoryRow
+                badgeGradient="linear-gradient(135deg, #7C3AED 0%, #9333EA 100%)"
+                badgeIcon={Crown}
+                badgeTitle="Luxury Cars"
+                badgeSubtitle="Live the experience"
+                vehicles={luxuryCars}
+                onViewAll={handleViewAllLuxury}
+                onBookVehicle={onBookVehicle}
+                onViewVehicle={onViewVehicle}
+              />
+            )}
+          </>
+        )}
       </div>
     </section>
   );
