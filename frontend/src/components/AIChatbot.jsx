@@ -4,7 +4,7 @@ import chatbotVideo from '../assets/aichatbot.mp4';
 import { chatWithAI, API_BASE, createAiLead, updateAiLeadChat } from '../services/api';
 
 const aiMessages = [
-  "Hey, I am Kratu.ai",
+  "Hey, I'm Sophia",
   "Plan your Goa trip",
   "Need help booking?",
   "Rent a Car or Bike"
@@ -103,7 +103,7 @@ export default function AIChatbot() {
       console.error('Failed to submit lead:', err);
     }
     
-    setMessages([{ role: 'assistant', content: `Hi ${leadName}! I am Kratu.ai, your AI travel expert for Goa. How can I help you customize a package, book a car, or find a luxury hotel today?` }]);
+    setMessages([{ role: 'assistant', content: `Hi ${leadName}! I'm Sophia, your AI travel expert for Goa. How can I help you customize a package, book a car, or find a luxury hotel today?` }]);
   };
 
   const handleSendMessage = async (e) => {
@@ -158,7 +158,7 @@ export default function AIChatbot() {
           <canvas ref={canvasRef} className="head-movement" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         </div>
         <div style={{ marginLeft: '12px', marginRight: '10px', fontSize: '15px', color: '#1a202c', transition: 'opacity 0.5s ease-in-out', opacity: fade ? 1 : 0, whiteSpace: 'nowrap' }}>
-          {msgIndex === 0 ? <span>Hey, <strong style={{ color: '#6b46c1', fontSize: '16px' }}>I am Kratu.ai</strong></span> : <span style={{ fontWeight: '500' }}>{aiMessages[msgIndex]}</span>}
+          {msgIndex === 0 ? <span>Hey, <strong style={{ color: '#6b46c1', fontSize: '16px' }}>I'm Sophia</strong></span> : <span style={{ fontWeight: '500' }}>{aiMessages[msgIndex]}</span>}
         </div>
       </button>
 
@@ -176,7 +176,7 @@ export default function AIChatbot() {
           <div className="d-flex align-items-center gap-2">
             <div className="rounded-circle bg-white d-flex align-items-center justify-content-center shadow-sm" style={{ width: '40px', height: '40px', fontSize: '20px' }}>🤖</div>
             <div>
-              <h6 className="mb-0 fw-bold">I am Kratu.ai - Your Goa Expert</h6>
+              <h6 className="mb-0 fw-bold">I'm Sophia - Your Goa Expert</h6>
               <small style={{ opacity: 0.9 }}>Online | Powered by TripGalileo</small>
             </div>
           </div>
@@ -191,7 +191,7 @@ export default function AIChatbot() {
             <div className="d-flex align-items-center justify-content-center h-100 position-absolute top-0 start-0 w-100" style={{ background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(5px)', zIndex: 10 }}>
               <div className="bg-white p-4 rounded-3 border shadow-sm w-75 text-center">
                 <h5 className="fw-bold text-dark mb-2">Welcome to Goa! 🌴</h5>
-                <p className="text-muted small mb-4">Please enter your details to start chatting with Kratu.ai, our AI expert.</p>
+                <p className="text-muted small mb-4">Please enter your details to start chatting with Sophia, our AI expert.</p>
                 <form onSubmit={handleLeadSubmit}>
                   <input type="text" className="form-control mb-3" placeholder="Your Name" value={leadName} onChange={e => setLeadName(e.target.value)} required />
                   <input type="tel" className="form-control mb-3" placeholder="Mobile Number" value={leadPhone} onChange={e => setLeadPhone(e.target.value)} required />

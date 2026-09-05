@@ -80,7 +80,7 @@ export default function CustomerLoyaltyCard({ bookings = [], loyaltyData = null 
 
             return (
               <div key={cat.key} className="col-12 col-md-4">
-                <div className="card h-100 border-0 rounded-4 shadow-sm p-3.5 bg-white position-relative overflow-hidden" style={{ border: '1px solid #e2e8f0', transition: 'transform 0.2s' }}>
+                <div className="card h-100 border-0 rounded-4 shadow-sm p-3.5 bg-white position-relative overflow-hidden d-flex flex-column" style={{ border: '1px solid #e2e8f0', transition: 'transform 0.2s' }}>
                   {/* Top Header */}
                   <div className="d-flex align-items-center justify-content-between mb-3">
                     <div className="d-flex align-items-center gap-2">
@@ -98,18 +98,33 @@ export default function CustomerLoyaltyCard({ bookings = [], loyaltyData = null 
                     </span>
                   </div>
 
-                  {/* Progress Bar & Status */}
-                  <div className="mb-2">
+                  {/* Current Active Benefits */}
+                  <div className="mb-3">
+                    <div className="text-muted fw-bold mb-1" style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Current Tier Benefits
+                    </div>
+                    <div className="d-flex flex-column gap-1">
+                      {(d.benefits || ['Standard 10% cashback']).map((b, bIdx) => (
+                        <div key={bIdx} className="d-flex align-items-center gap-1.5 text-xs text-dark">
+                          <CheckCircle2 size={13} className="text-success flex-shrink-0" />
+                          <span style={{ fontSize: '11px' }}>{b}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Progress Bar & Target */}
+                  <div className="mt-auto mb-2">
                     <div className="d-flex align-items-center justify-content-between text-xs mb-1">
-                      <span className="fw-bold text-dark" style={{ fontSize: '12px' }}>
-                        {isPlat ? 'Highest Tier Reached' : `Progress to ${d.tier === 'Bronze' ? 'Silver' : d.tier === 'Silver' ? 'Gold' : 'Platinum'}`}
+                      <span className="fw-bold text-dark" style={{ fontSize: '11px' }}>
+                        {isPlat ? 'Highest Tier Reached' : `Progress to ${d.next_tier || 'Next Tier'}`}
                       </span>
                       <span className="text-muted fw-bold" style={{ fontSize: '11px' }}>
                         {isPlat ? '10+ / 10' : `${count} / ${d.target || 4}`}
                       </span>
                     </div>
 
-                    <div className="progress rounded-pill overflow-hidden" style={{ height: '8px', background: '#e2e8f0' }}>
+                    <div className="progress rounded-pill overflow-hidden" style={{ height: '7px', background: '#e2e8f0' }}>
                       <div 
                         className="progress-bar rounded-pill" 
                         role="progressbar" 
@@ -122,18 +137,30 @@ export default function CustomerLoyaltyCard({ bookings = [], loyaltyData = null 
                     </div>
                   </div>
 
-                  {/* Target / Remaining Note */}
-                  <div className="d-flex align-items-center justify-content-between pt-2 border-top mt-2" style={{ fontSize: '11px' }}>
-                    <span className="text-muted d-flex align-items-center gap-1">
-                      {isPlat ? (
-                        <span className="text-purple fw-bold d-flex align-items-center gap-1">
-                          <Sparkles size={12} /> Platinum VIP Privileges Active
-                        </span>
-                      ) : (
-                        <span>{d.description || `${d.remaining} more to next tier`}</span>
-                      )}
-                    </span>
-                  </div>
+                  {/* Next-Tier UI Callout */}
+                  {!isPlat && d.next_tier && d.next_perk && (
+                    <div className="p-2.5 rounded-3 mt-1" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+                      <div className="fw-bold text-dark text-xs mb-0.5 d-flex align-items-center gap-1.5">
+                        <Sparkles size={13} className="text-warning flex-shrink-0" />
+                        <span><strong>{d.remaining}</strong> {d.remaining === 1 ? 'booking' : 'bookings'} away from <strong>{d.next_tier}</strong></span>
+                      </div>
+                      <div className="text-xs fw-bold ps-3.5" style={{ color: '#15803d', fontSize: '11px' }}>
+                        Unlock {d.next_perk}
+                      </div>
+                    </div>
+                  )}
+
+                  {isPlat && (
+                    <div className="p-2.5 rounded-3 mt-1" style={{ background: '#faf5ff', border: '1px solid #e9d5ff' }}>
+                      <div className="fw-bold text-xs d-flex align-items-center gap-1.5" style={{ color: '#7e22ce' }}>
+                        <Sparkles size={13} />
+                        <span>Platinum VIP Privileges Active</span>
+                      </div>
+                      <div className="text-muted mt-0.5 ps-3.5" style={{ fontSize: '10px' }}>
+                        10% cashback • Free upgrade / VIP benefits
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -141,16 +168,36 @@ export default function CustomerLoyaltyCard({ bookings = [], loyaltyData = null 
         </div>
 
         {/* Tier Progression Explanation Legend */}
-        <div className="mt-3 p-3 rounded-3 bg-white border d-flex flex-wrap align-items-center justify-content-between gap-2 text-xs">
-          <div className="d-flex align-items-center gap-2 text-muted">
-            <Info size={14} className="text-primary" />
-            <span>Tier Milestones:</span>
+        <div className="mt-3 p-3 rounded-3 bg-white border d-flex flex-column gap-2 text-xs">
+          <div className="d-flex align-items-center gap-2 text-dark fw-bold">
+            <Info size={14} className="text-primary flex-shrink-0" />
+            <span>WOW GOA Loyalty Tier Milestones &amp; Benefits:</span>
           </div>
-          <div className="d-flex flex-wrap align-items-center gap-3 text-xs">
-            <span className="badge bg-light text-dark border px-2 py-1">🥉 Bronze: 1–3 Trips</span>
-            <span className="badge bg-light text-dark border px-2 py-1">🥈 Silver: 4–6 Trips</span>
-            <span className="badge bg-light text-dark border px-2 py-1">🥇 Gold: 7–9 Trips</span>
-            <span className="badge bg-light text-dark border px-2 py-1">💎 Platinum: 10+ Trips</span>
+          <div className="row g-2">
+            <div className="col-12 col-md-6 col-lg-3">
+              <div className="p-2 rounded-2 bg-light border h-100">
+                <div className="fw-bold text-dark">🥉 Bronze (1–3 Bookings)</div>
+                <div className="text-muted mt-0.5" style={{ fontSize: '11px' }}>• Standard 10% cashback</div>
+              </div>
+            </div>
+            <div className="col-12 col-md-6 col-lg-3">
+              <div className="p-2 rounded-2 bg-light border h-100">
+                <div className="fw-bold text-dark">🥈 Silver (4–6 Bookings)</div>
+                <div className="text-muted mt-0.5" style={{ fontSize: '11px' }}>• 10% cashback<br />• Priority support</div>
+              </div>
+            </div>
+            <div className="col-12 col-md-6 col-lg-3">
+              <div className="p-2 rounded-2 bg-light border h-100">
+                <div className="fw-bold text-dark">🥇 Gold (7–9 Bookings)</div>
+                <div className="text-muted mt-0.5" style={{ fontSize: '11px' }}>• 10% cashback<br />• ₹500 extra discount on eligible bookings</div>
+              </div>
+            </div>
+            <div className="col-12 col-md-6 col-lg-3">
+              <div className="p-2 rounded-2 bg-light border h-100">
+                <div className="fw-bold text-dark">💎 Platinum (10+ Bookings)</div>
+                <div className="text-muted mt-0.5" style={{ fontSize: '11px' }}>• 10% cashback<br />• Free upgrade / VIP benefits</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

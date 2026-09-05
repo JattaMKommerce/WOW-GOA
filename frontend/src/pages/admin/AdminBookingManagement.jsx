@@ -1,10 +1,211 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Calendar, Search, Filter, Plus, Edit2, Trash2, Eye, CheckCircle2,
   XCircle, Clock, AlertCircle, RefreshCw, DollarSign, User, Phone,
-  MapPin, ChevronRight, X, Shield, FileText, Download
+  MapPin, ChevronRight, X, Shield, FileText, Download, RotateCcw,
+  Layers, Radio, SlidersHorizontal
 } from 'lucide-react';
 import * as api from '../../services/api';
+
+// ─── Classification & Formatting Helpers ───
+
+export function getBookingServiceType(b) {
+  if (!b) return 'VEHICLE';
+  const type = String(b.type || '').trim().toLowerCase();
+  const pkgType = String(b.package_type || '').trim().toLowerCase();
+  const itemId = String(b.item_id || '').trim().toLowerCase();
+  const itemName = String(b.item_name || b.service_name || b.package_name || b.hotel_name || '').trim().toLowerCase();
+
+  // 1. FLIGHT
+  if (
+    type === 'flight' ||
+    type.includes('flight') ||
+    pkgType.includes('flight') ||
+    itemId.includes('flight') ||
+    itemName.includes('flight') ||
+    itemName.includes('airways') ||
+    itemName.includes('airline') ||
+    Boolean(b.flight_number || b.airline)
+  ) {
+    return 'FLIGHT';
+  }
+
+  // 2. TRIP (Packages, Tours, Craft Trips, Itinerary escapes)
+  const isTrip = (
+    type === 'package' ||
+    type === 'trip' ||
+    type === 'custom' ||
+    type === 'tour' ||
+    itemId.startsWith('pkg-') ||
+    itemId.startsWith('package-') ||
+    itemId.startsWith('craft-') ||
+    itemId.startsWith('tp-') ||
+    pkgType.includes('package') ||
+    pkgType.includes('trip') ||
+    pkgType.includes('tour') ||
+    pkgType.includes('holiday') ||
+    itemName.includes('craft my trip') ||
+    itemName.includes('explorer pack') ||
+    itemName.includes('package') ||
+    itemName.includes('getaway') ||
+    itemName.includes('escape') ||
+    itemName.includes('tour') ||
+    itemName.includes('heritage trail')
+  );
+
+  if (isTrip) {
+    return 'TRIP';
+  }
+
+  // 3. HOTEL (Pure hotel stays, resorts, villas)
+  if (
+    type === 'hotel' ||
+    itemId.includes('hotel') ||
+    pkgType.includes('hotel') ||
+    itemName.includes('hotel') ||
+    itemName.includes('resort') ||
+    itemName.includes('villa') ||
+    itemName.includes('palace') ||
+    itemName.includes('suites') ||
+    itemName.includes('stay') ||
+    Boolean(b.hotel_name && !b.vehicle_name && !b.car_included)
+  ) {
+    return 'HOTEL';
+  }
+
+  // 4. VEHICLE (Cars, bikes, self-drive, driver transport, scooters)
+  return 'VEHICLE';
+}
+
+export function getBookingChannel(b) {
+  if (!b) return 'D2C';
+  const ch = String(b.booking_channel || '').trim().toUpperCase();
+  if (ch === 'B2B' || b.b2b_partner_id || b.b2b_partner_name) {
+    return 'B2B';
+  }
+  return 'D2C';
+}
+
+export function getBookingServiceDates(b) {
+  if (!b) return { start: '', end: '' };
+  
+  const svc = getBookingServiceType(b);
+  let start = '';
+  let end = '';
+
+  if (svc === 'HOTEL') {
+    start = b.check_in_date || b.pickup_date || b.departure_date || b.start_date || '';
+    end = b.check_out_date || b.drop_date || b.return_date || b.end_date || start;
+  } else if (svc === 'FLIGHT') {
+    start = b.departure_date || b.pickup_date || b.check_in_date || b.start_date || '';
+    end = b.return_date || b.drop_date || b.check_out_date || b.end_date || start;
+  } else {
+    // VEHICLE and TRIP
+    start = b.pickup_date || b.check_in_date || b.departure_date || b.start_date || '';
+    end = b.drop_date || b.check_out_date || b.return_date || b.end_date || start;
+  }
+
+  if (start && typeof start === 'string') {
+    if (start.includes('T')) start = start.split('T')[0];
+    if (start.includes(' ')) start = start.split(' ')[0];
+  }
+  if (end && typeof end === 'string') {
+    if (end.includes('T')) end = end.split('T')[0];
+    if (end.includes(' ')) end = end.split(' ')[0];
+  }
+  if (!end) end = start;
+
+  return { start, end };
+}
+
+export function formatServiceDateRange(start, end) {
+  if (!start && !end) return '—';
+  if (!start) return end;
+  if (!end || start === end) {
+    try {
+      const [y, m, d] = start.split('-');
+      if (!y || !m || !d) return start;
+      const dt = new Date(Number(y), Number(m) - 1, Number(d));
+      return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch {
+      return start;
+    }
+  }
+
+  try {
+    const [y1, m1, d1] = start.split('-');
+    const [y2, m2, d2] = end.split('-');
+    const dt1 = new Date(Number(y1), Number(m1) - 1, Number(d1));
+    const dt2 = new Date(Number(y2), Number(m2) - 1, Number(d2));
+    const s1 = dt1.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const s2 = dt2.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return `${s1} – ${s2}`;
+  } catch {
+    return `${start} to ${end}`;
+  }
+}
+
+export function ServiceBadge({ type }) {
+  switch (type) {
+    case 'VEHICLE':
+      return (
+        <span className="badge rounded-pill px-2.5 py-1 fw-bold text-primary border border-primary-subtle" style={{ background: '#eff6ff', fontSize: '0.72rem' }}>
+          🚗 VEHICLE
+        </span>
+      );
+    case 'HOTEL':
+      return (
+        <span className="badge rounded-pill px-2.5 py-1 fw-bold border border-indigo-subtle" style={{ background: '#f5f3ff', color: '#6366f1', fontSize: '0.72rem' }}>
+          🏨 HOTEL
+        </span>
+      );
+    case 'TRIP':
+      return (
+        <span className="badge rounded-pill px-2.5 py-1 fw-bold border border-success-subtle" style={{ background: '#ecfdf5', color: '#059669', fontSize: '0.72rem' }}>
+          🌴 TRIP
+        </span>
+      );
+    case 'FLIGHT':
+      return (
+        <span className="badge rounded-pill px-2.5 py-1 fw-bold border border-info-subtle" style={{ background: '#f0f9ff', color: '#0284c7', fontSize: '0.72rem' }}>
+          ✈️ FLIGHT
+        </span>
+      );
+    default:
+      return (
+        <span className="badge rounded-pill px-2.5 py-1 fw-bold text-secondary border bg-light" style={{ fontSize: '0.72rem' }}>
+          📦 {type}
+        </span>
+      );
+  }
+}
+
+export function ChannelBadge({ channel, mode, partnerName }) {
+  if (channel === 'B2B') {
+    return (
+      <div>
+        <span className="badge rounded-pill px-2.5 py-1 fw-bold border border-warning-subtle" style={{ background: '#fffbeb', color: '#b45309', fontSize: '0.72rem' }}>
+          💼 B2B
+        </span>
+        {mode && (
+          <div className="text-muted mt-0.5 fw-semibold" style={{ fontSize: '0.66rem' }}>
+            {mode === 'COMMISSION' ? '💰 Comm' : '🏷️ Net'}
+          </div>
+        )}
+        {partnerName && (
+          <div className="text-muted text-truncate mt-0.5" style={{ fontSize: '0.70rem', maxWidth: '110px' }} title={partnerName}>
+            {partnerName}
+          </div>
+        )}
+      </div>
+    );
+  }
+  return (
+    <span className="badge rounded-pill px-2.5 py-1 fw-bold border border-secondary-subtle" style={{ background: '#f8fafc', color: '#334155', fontSize: '0.72rem' }}>
+      🔵 D2C
+    </span>
+  );
+}
 
 function StatusBadge({ status }) {
   const s = (status || 'pending').toLowerCase();
@@ -43,7 +244,11 @@ export default function AdminBookingManagement({
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [channelFilter, setChannelFilter] = useState('all');
+  const [serviceFilter, setServiceFilter] = useState('ALL');
+  const [channelFilter, setChannelFilter] = useState('ALL');
+  const [dateFilter, setDateFilter] = useState('ALL');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
   
   // Modals
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -132,30 +337,138 @@ export default function AdminBookingManagement({
     }
   };
 
-  // Filter Bookings
-  const filteredBookings = (bookingsList || []).filter(b => {
-    const s = (b.status || 'pending').toLowerCase();
-    const matchStatus = statusFilter === 'all' || s === statusFilter.toLowerCase();
-    
-    // Channel filter
-    const ch = (b.booking_channel || 'D2C').toUpperCase();
-    const mode = (b.b2b_mode || '').toUpperCase();
-    let matchChannel = true;
-    if (channelFilter === 'D2C') matchChannel = ch === 'D2C';
-    else if (channelFilter === 'B2B') matchChannel = ch === 'B2B';
-    else if (channelFilter === 'COMMISSION') matchChannel = ch === 'B2B' && mode === 'COMMISSION';
-    else if (channelFilter === 'NON_COMMISSION') matchChannel = ch === 'B2B' && mode === 'NON_COMMISSION';
+  // Date overlap helper: Universal interval overlap [bStart, bEnd] with [targetStart, targetEnd]
+  const matchesOperationalDate = (b) => {
+    if (dateFilter === 'ALL') return true;
 
-    const query = search.toLowerCase();
-    const matchSearch =
-      String(b.id || '').toLowerCase().includes(query) ||
-      String(b.name || b.customer_name || '').toLowerCase().includes(query) ||
-      String(b.phone || '').toLowerCase().includes(query) ||
-      String(b.item_name || '').toLowerCase().includes(query) ||
-      String(b.b2b_partner_name || '').toLowerCase().includes(query) ||
-      String(b.email || '').toLowerCase().includes(query);
-    return matchStatus && matchChannel && matchSearch;
+    const { start, end } = getBookingServiceDates(b);
+    if (!start) return false;
+    const bStart = start;
+    const bEnd = end || start;
+
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+    const todayStr = fmt(now);
+
+    if (dateFilter === 'TODAY') {
+      // Overlap with today: starts on or before today, and ends on or after today
+      return bStart <= todayStr && bEnd >= todayStr;
+    }
+
+    if (dateFilter === 'TOMORROW') {
+      const tmr = new Date(now);
+      tmr.setDate(tmr.getDate() + 1);
+      const tmrStr = fmt(tmr);
+      // Overlap with tomorrow
+      return bStart <= tmrStr && bEnd >= tmrStr;
+    }
+
+    if (dateFilter === 'THIS_WEEK') {
+      // Monday to Sunday of current week
+      const dayOfWeek = now.getDay();
+      const distToMon = (dayOfWeek + 6) % 7;
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - distToMon);
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+
+      const weekStart = fmt(monday);
+      const weekEnd = fmt(sunday);
+
+      return bStart <= weekEnd && bEnd >= weekStart;
+    }
+
+    if (dateFilter === 'THIS_MONTH') {
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+      const monthStart = fmt(firstDay);
+      const monthEnd = fmt(lastDay);
+
+      return bStart <= monthEnd && bEnd >= monthStart;
+    }
+
+    if (dateFilter === 'CUSTOM') {
+      if (!customStartDate && !customEndDate) return true;
+      const targetStart = customStartDate || customEndDate;
+      const targetEnd = customEndDate || customStartDate;
+      return bStart <= targetEnd && bEnd >= targetStart;
+    }
+
+    return true;
+  };
+
+  // Filter Bookings - combinable across Service, Channel, Date, Status, Search
+  const filteredBookings = (bookingsList || []).filter(b => {
+    // 1. Service filter
+    if (serviceFilter !== 'ALL') {
+      const svc = getBookingServiceType(b);
+      if (svc !== serviceFilter) return false;
+    }
+
+    // 2. Channel filter
+    const ch = getBookingChannel(b);
+    if (channelFilter === 'D2C' && ch !== 'D2C') return false;
+    if (channelFilter === 'B2B' && ch !== 'B2B') return false;
+
+    // 3. Operational Date filter
+    if (!matchesOperationalDate(b)) return false;
+
+    // 4. Status filter
+    const s = (b.status || 'pending').toLowerCase();
+    if (statusFilter !== 'all' && s !== statusFilter.toLowerCase()) return false;
+
+    // 5. Search query
+    if (search.trim()) {
+      const query = search.toLowerCase();
+      const matchSearch =
+        String(b.id || '').toLowerCase().includes(query) ||
+        String(b.name || b.customer_name || '').toLowerCase().includes(query) ||
+        String(b.phone || '').toLowerCase().includes(query) ||
+        String(b.item_name || '').toLowerCase().includes(query) ||
+        String(b.b2b_partner_name || '').toLowerCase().includes(query) ||
+        String(b.email || '').toLowerCase().includes(query);
+      if (!matchSearch) return false;
+    }
+
+    return true;
   });
+
+  // Dynamic counts calculated from current bookingsList (NEVER hardcoded)
+  const serviceCounts = useMemo(() => ({
+    ALL: bookingsList.length,
+    VEHICLE: bookingsList.filter(b => getBookingServiceType(b) === 'VEHICLE').length,
+    HOTEL: bookingsList.filter(b => getBookingServiceType(b) === 'HOTEL').length,
+    TRIP: bookingsList.filter(b => getBookingServiceType(b) === 'TRIP').length,
+    FLIGHT: bookingsList.filter(b => getBookingServiceType(b) === 'FLIGHT').length,
+  }), [bookingsList]);
+
+  const channelCounts = useMemo(() => ({
+    ALL: bookingsList.length,
+    D2C: bookingsList.filter(b => getBookingChannel(b) === 'D2C').length,
+    B2B: bookingsList.filter(b => getBookingChannel(b) === 'B2B').length,
+  }), [bookingsList]);
+
+  const handleResetFilters = () => {
+    setServiceFilter('ALL');
+    setChannelFilter('ALL');
+    setDateFilter('ALL');
+    setCustomStartDate('');
+    setCustomEndDate('');
+    setStatusFilter('all');
+    setSearch('');
+  };
+
+  const isAnyFilterActive =
+    serviceFilter !== 'ALL' ||
+    channelFilter !== 'ALL' ||
+    dateFilter !== 'ALL' ||
+    customStartDate !== '' ||
+    customEndDate !== '' ||
+    statusFilter !== 'all' ||
+    search.trim() !== '';
 
   // Calculate Metrics
   const totalCount = bookingsList.length;
@@ -370,48 +683,323 @@ export default function AdminBookingManagement({
         </div>
       </div>
 
-      {/* Filter & Search Bar */}
-      <div className="card border-0 shadow-sm rounded-3 p-3 mb-3" style={{ background: '#fff' }}>
-        <div className="row g-2 align-items-center">
-          <div className="col-12 col-md-5">
-            <div className="input-group input-group-sm">
-              <span className="input-group-text bg-white border-end-0 text-muted">
-                <Search size={15} />
+      {/* Filter & Search Control Center */}
+      <div className="admin-filter-control-card">
+        {/* Top Row: Search and Status Tabs */}
+        <div className="row g-3 align-items-center mb-3 pb-3 border-bottom" style={{ borderColor: '#f1f5f9' }}>
+          <div className="col-12 col-lg-5">
+            <div className="input-group">
+              <span
+                className="input-group-text border-end-0 text-muted"
+                style={{ background: '#f8fafc', borderColor: '#e2e8f0', paddingLeft: '14px', paddingRight: '10px' }}
+              >
+                <Search size={16} />
               </span>
               <input
                 type="text"
-                className="form-control border-start-0 ps-0"
+                className="form-control border-start-0 ps-1"
                 placeholder="Search booking ID, customer name, phone, item..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
+                style={{
+                  background: '#f8fafc',
+                  borderColor: '#e2e8f0',
+                  fontSize: '0.82rem',
+                  paddingTop: '8px',
+                  paddingBottom: '8px',
+                  boxShadow: 'none'
+                }}
               />
+              {search && (
+                <button
+                  type="button"
+                  className="btn border-start-0 text-muted"
+                  style={{ background: '#f8fafc', borderColor: '#e2e8f0' }}
+                  onClick={() => setSearch('')}
+                  title="Clear Search"
+                >
+                  <X size={14} />
+                </button>
+              )}
             </div>
           </div>
-          <div className="col-12 col-md-7 d-flex justify-content-md-end align-items-center gap-1.5 flex-wrap">
-            <select
-              className="form-select form-select-sm bg-light"
-              value={channelFilter}
-              onChange={e => setChannelFilter(e.target.value)}
-              style={{ width: 'auto', fontSize: '0.75rem', fontWeight: '600' }}
-            >
-              <option value="all">🌐 All Channels</option>
-              <option value="D2C">🔵 D2C Website</option>
-              <option value="B2B">💼 All B2B Partners</option>
-              <option value="COMMISSION">💰 B2B Commission</option>
-              <option value="NON_COMMISSION">🏷️ B2B Non-Commission</option>
-            </select>
+          <div className="col-12 col-lg-7 d-flex justify-content-lg-end align-items-center gap-2 flex-wrap">
+            <span className="text-secondary fw-bold text-uppercase d-flex align-items-center gap-1.5 me-1" style={{ fontSize: '0.72rem', letterSpacing: '0.5px' }}>
+              <SlidersHorizontal size={13} className="text-muted" /> Status:
+            </span>
+            <div className="d-flex align-items-center gap-2 flex-wrap">
+              {['all', 'confirmed', 'pending', 'completed', 'cancelled'].map(tab => (
+                <button
+                  key={tab}
+                  type="button"
+                  className={`admin-filter-pill text-capitalize ${statusFilter === tab ? 'active-navy' : ''}`}
+                  onClick={() => setStatusFilter(tab)}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
 
-            {['all', 'confirmed', 'pending', 'completed', 'cancelled'].map(tab => (
+        {/* Filter Rows (Service, Channel, Date) */}
+        <div className="d-flex flex-column gap-3 py-1">
+          {/* Row 1: Service Filter */}
+          <div className="d-flex align-items-center gap-3 flex-wrap">
+            <div className="admin-filter-label">
+              <Layers size={14} className="text-primary" />
+              <span>Service:</span>
+            </div>
+            <div className="d-flex align-items-center gap-2 flex-wrap flex-grow-1">
               <button
-                key={tab}
                 type="button"
-                className={`btn btn-sm px-3 py-1 rounded-pill fw-semibold text-capitalize ${statusFilter === tab ? 'btn-dark' : 'btn-light border'}`}
-                style={{ fontSize: '0.75rem' }}
-                onClick={() => setStatusFilter(tab)}
+                className={`admin-filter-pill ${serviceFilter === 'ALL' ? 'active-navy' : ''}`}
+                onClick={() => setServiceFilter('ALL')}
               >
-                {tab}
+                ALL <span className="admin-pill-badge">{serviceCounts.ALL}</span>
               </button>
-            ))}
+              <button
+                type="button"
+                className={`admin-filter-pill ${serviceFilter === 'VEHICLE' ? 'active-blue' : ''}`}
+                onClick={() => setServiceFilter('VEHICLE')}
+              >
+                🚗 VEHICLE <span className="admin-pill-badge">{serviceCounts.VEHICLE}</span>
+              </button>
+              <button
+                type="button"
+                className={`admin-filter-pill ${serviceFilter === 'HOTEL' ? 'active-indigo' : ''}`}
+                onClick={() => setServiceFilter('HOTEL')}
+              >
+                🏨 HOTEL <span className="admin-pill-badge">{serviceCounts.HOTEL}</span>
+              </button>
+              <button
+                type="button"
+                className={`admin-filter-pill ${serviceFilter === 'TRIP' ? 'active-emerald' : ''}`}
+                onClick={() => setServiceFilter('TRIP')}
+              >
+                🌴 TRIP <span className="admin-pill-badge">{serviceCounts.TRIP}</span>
+              </button>
+              <button
+                type="button"
+                className={`admin-filter-pill ${serviceFilter === 'FLIGHT' ? 'active-sky' : ''}`}
+                onClick={() => setServiceFilter('FLIGHT')}
+              >
+                ✈️ FLIGHT <span className="admin-pill-badge">{serviceCounts.FLIGHT}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Row 2: Channel Filter */}
+          <div className="d-flex align-items-center gap-3 flex-wrap">
+            <div className="admin-filter-label">
+              <Radio size={14} className="text-info" />
+              <span>Channel:</span>
+            </div>
+            <div className="d-flex align-items-center gap-2 flex-wrap flex-grow-1">
+              <button
+                type="button"
+                className={`admin-filter-pill ${channelFilter === 'ALL' ? 'active-navy' : ''}`}
+                onClick={() => setChannelFilter('ALL')}
+              >
+                ALL <span className="admin-pill-badge">{channelCounts.ALL}</span>
+              </button>
+              <button
+                type="button"
+                className={`admin-filter-pill ${channelFilter === 'D2C' ? 'active-blue' : ''}`}
+                onClick={() => setChannelFilter('D2C')}
+              >
+                🔵 D2C <span className="admin-pill-badge">{channelCounts.D2C}</span>
+              </button>
+              <button
+                type="button"
+                className={`admin-filter-pill ${channelFilter === 'B2B' ? 'active-amber' : ''}`}
+                onClick={() => setChannelFilter('B2B')}
+              >
+                💼 B2B <span className="admin-pill-badge">{channelCounts.B2B}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Row 3: Operational Date Filter */}
+          <div className="d-flex align-items-center gap-3 flex-wrap">
+            <div className="admin-filter-label">
+              <Calendar size={14} className="text-warning" />
+              <span>Date:</span>
+            </div>
+            <div className="d-flex align-items-center gap-2 flex-wrap flex-grow-1">
+              <button
+                type="button"
+                className={`admin-filter-pill ${dateFilter === 'ALL' ? 'active-navy' : ''}`}
+                onClick={() => setDateFilter('ALL')}
+              >
+                ALL
+              </button>
+              <button
+                type="button"
+                className={`admin-filter-pill ${dateFilter === 'TODAY' ? 'active-navy' : ''}`}
+                onClick={() => setDateFilter('TODAY')}
+              >
+                TODAY
+              </button>
+              <button
+                type="button"
+                className={`admin-filter-pill ${dateFilter === 'TOMORROW' ? 'active-navy' : ''}`}
+                onClick={() => setDateFilter('TOMORROW')}
+              >
+                TOMORROW
+              </button>
+              <button
+                type="button"
+                className={`admin-filter-pill ${dateFilter === 'THIS_WEEK' ? 'active-navy' : ''}`}
+                onClick={() => setDateFilter('THIS_WEEK')}
+              >
+                THIS WEEK
+              </button>
+              <button
+                type="button"
+                className={`admin-filter-pill ${dateFilter === 'THIS_MONTH' ? 'active-navy' : ''}`}
+                onClick={() => setDateFilter('THIS_MONTH')}
+              >
+                THIS MONTH
+              </button>
+              <button
+                type="button"
+                className={`admin-filter-pill ${dateFilter === 'CUSTOM' ? 'active-blue' : ''}`}
+                onClick={() => setDateFilter('CUSTOM')}
+              >
+                📅 CUSTOM DATE
+              </button>
+            </div>
+          </div>
+
+          {/* Row 4: Custom Date Picker Inputs (shown when dateFilter === 'CUSTOM') */}
+          {dateFilter === 'CUSTOM' && (
+            <div
+              className="p-3 rounded-3 border d-flex align-items-center gap-3 flex-wrap mt-1"
+              style={{ background: '#f8fafc', borderColor: '#e2e8f0' }}
+            >
+              <div className="d-flex align-items-center gap-1.5 text-dark fw-bold" style={{ fontSize: '0.78rem' }}>
+                <Calendar size={14} className="text-primary" />
+                <span>Custom Period:</span>
+              </div>
+              <div className="d-flex align-items-center gap-2">
+                <span className="text-muted small fw-semibold" style={{ fontSize: '0.74rem' }}>From:</span>
+                <input
+                  type="date"
+                  className="form-control form-control-sm py-1 px-2.5 bg-white border"
+                  style={{ width: 'auto', fontSize: '0.78rem', borderColor: '#cbd5e1' }}
+                  value={customStartDate}
+                  onChange={e => setCustomStartDate(e.target.value)}
+                />
+              </div>
+              <div className="d-flex align-items-center gap-2">
+                <span className="text-muted small fw-semibold" style={{ fontSize: '0.74rem' }}>To:</span>
+                <input
+                  type="date"
+                  className="form-control form-control-sm py-1 px-2.5 bg-white border"
+                  style={{ width: 'auto', fontSize: '0.78rem', borderColor: '#cbd5e1' }}
+                  value={customEndDate}
+                  onChange={e => setCustomEndDate(e.target.value)}
+                />
+              </div>
+              {(customStartDate || customEndDate) && (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary py-1 px-3 rounded-pill fw-semibold ms-auto"
+                  style={{ fontSize: '0.72rem' }}
+                  onClick={() => { setCustomStartDate(''); setCustomEndDate(''); }}
+                >
+                  Clear Dates
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Active Filter Summary Bar */}
+          <div
+            className="d-flex align-items-center justify-content-between flex-wrap gap-3 mt-2 pt-3 border-top"
+            style={{ borderColor: '#f1f5f9' }}
+          >
+            <div className="d-flex align-items-center gap-2 flex-wrap">
+              <div
+                className="d-flex align-items-center gap-1.5 px-3 py-1.5 rounded-pill"
+                style={{ background: '#f1f5f9', fontSize: '0.76rem', color: '#475569' }}
+              >
+                <span>Showing</span>
+                <strong className="text-dark fw-bold px-1.5 py-0.5 rounded" style={{ background: '#ffffff', color: '#0f172a' }}>
+                  {filteredBookings.length}
+                </strong>
+                <span>of <strong>{bookingsList.length}</strong> total bookings</span>
+              </div>
+
+              {/* Active Filter Removable Tags / Chips */}
+              {serviceFilter !== 'ALL' && (
+                <span
+                  className="admin-filter-chip bg-primary-subtle text-primary border border-primary-subtle"
+                  onClick={() => setServiceFilter('ALL')}
+                  title="Click to remove service filter"
+                >
+                  Service: {serviceFilter}
+                  <X size={12} />
+                </span>
+              )}
+
+              {channelFilter !== 'ALL' && (
+                <span
+                  className="admin-filter-chip bg-info-subtle text-info-emphasis border border-info-subtle"
+                  onClick={() => setChannelFilter('ALL')}
+                  title="Click to remove channel filter"
+                >
+                  Channel: {channelFilter}
+                  <X size={12} />
+                </span>
+              )}
+
+              {dateFilter !== 'ALL' && (
+                <span
+                  className="admin-filter-chip bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                  onClick={() => { setDateFilter('ALL'); setCustomStartDate(''); setCustomEndDate(''); }}
+                  title="Click to remove date filter"
+                >
+                  Date: {dateFilter === 'CUSTOM' ? (customStartDate && customEndDate ? `${customStartDate} → ${customEndDate}` : 'Custom') : dateFilter}
+                  <X size={12} />
+                </span>
+              )}
+
+              {statusFilter !== 'all' && (
+                <span
+                  className="admin-filter-chip bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle text-capitalize"
+                  onClick={() => setStatusFilter('all')}
+                  title="Click to remove status filter"
+                >
+                  Status: {statusFilter}
+                  <X size={12} />
+                </span>
+              )}
+
+              {search.trim() && (
+                <span
+                  className="admin-filter-chip bg-light text-dark border"
+                  onClick={() => setSearch('')}
+                  title="Click to clear search query"
+                >
+                  Search: "{search}"
+                  <X size={12} />
+                </span>
+              )}
+            </div>
+
+            {isAnyFilterActive && (
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-danger px-3 py-1.5 rounded-pill d-inline-flex align-items-center gap-1.5 fw-semibold"
+                style={{ fontSize: '0.74rem', transition: 'all 0.15s ease' }}
+                onClick={handleResetFilters}
+              >
+                <RotateCcw size={13} />
+                Reset All Filters
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -423,10 +1011,10 @@ export default function AdminBookingManagement({
             <thead className="table-light text-muted fw-semibold" style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
               <tr>
                 <th className="ps-3 py-3">Booking ID</th>
-                <th className="py-3">Channel</th>
                 <th className="py-3">Customer</th>
-                <th className="py-3">Service / Item</th>
-                <th className="py-3">Travel Dates</th>
+                <th className="py-3">Service</th>
+                <th className="py-3">Channel</th>
+                <th className="py-3">Service Date</th>
                 <th className="py-3">Amount</th>
                 <th className="py-3">Status</th>
                 <th className="py-3">Payment</th>
@@ -438,7 +1026,17 @@ export default function AdminBookingManagement({
                 <tr>
                   <td colSpan="9" className="text-center py-5 text-muted">
                     <Calendar size={36} className="text-muted opacity-50 mb-2" />
-                    <div>No bookings found matching the current filters.</div>
+                    <div className="fw-semibold text-dark">No bookings found matching current filters.</div>
+                    <div className="small text-muted mt-1">Try adjusting the Service, Channel, Date, or Status filters.</div>
+                    {isAnyFilterActive && (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-primary px-3 py-1 rounded-pill mt-2.5"
+                        onClick={handleResetFilters}
+                      >
+                        Reset All Filters
+                      </button>
+                    )}
                   </td>
                 </tr>
               ) : (
@@ -448,42 +1046,29 @@ export default function AdminBookingManagement({
                   const cPhone = b.phone || '—';
                   const itemName = b.item_name || b.service_name || 'Package / Stay';
                   const amount = Number(b.total_amount || b.total_paid || b.price || 0);
-                  const isB2B = (b.booking_channel || '').toUpperCase() === 'B2B';
-                  const b2bMode = (b.b2b_mode || '').toUpperCase();
-                  
+                  const svcType = getBookingServiceType(b);
+                  const chType = getBookingChannel(b);
+                  const svcDates = getBookingServiceDates(b);
+
                   return (
                     <tr key={bId}>
                       <td className="ps-3 fw-bold text-dark font-monospace" style={{ fontSize: '0.8rem' }}>
                         #{bId}
                       </td>
                       <td>
-                        {isB2B ? (
-                          <div>
-                            <span className={`badge rounded-pill px-2 py-0.5 fw-bold ${b2bMode === 'COMMISSION' ? 'bg-success bg-opacity-10 text-success' : 'bg-primary bg-opacity-10 text-primary'}`} style={{ fontSize: '0.68rem' }}>
-                              {b2bMode === 'COMMISSION' ? '💰 B2B Comm' : '🏷️ B2B Net'}
-                            </span>
-                            {b.b2b_partner_name && (
-                              <div className="text-muted text-xxs mt-0.5 text-truncate" style={{ maxWidth: '110px' }} title={b.b2b_partner_name}>
-                                {b.b2b_partner_name}
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="badge bg-secondary bg-opacity-10 text-secondary rounded-pill px-2 py-0.5 fw-bold text-xxs">
-                            🔵 D2C
-                          </span>
-                        )}
-                      </td>
-                      <td>
                         <div className="fw-bold text-dark">{cName}</div>
                         <div className="text-muted small" style={{ fontSize: '0.75rem' }}>{cPhone}</div>
+                        {b.email && <div className="text-muted text-xxs" style={{ fontSize: '0.68rem' }}>{b.email}</div>}
                       </td>
                       <td>
-                        <div className="fw-semibold text-truncate" style={{ maxWidth: '200px' }} title={itemName}>
+                        <div className="d-flex align-items-center gap-1.5 mb-1">
+                          <ServiceBadge type={svcType} />
+                        </div>
+                        <div className="fw-semibold text-truncate text-dark" style={{ maxWidth: '200px' }} title={itemName}>
                           {itemName}
                         </div>
                         {b.pickup_loc && (
-                          <div className="text-muted small d-flex align-items-center gap-1" style={{ fontSize: '0.72rem' }}>
+                          <div className="text-muted small d-flex align-items-center gap-1 mt-0.5" style={{ fontSize: '0.72rem' }}>
                             <MapPin size={11} /> {b.pickup_loc}
                           </div>
                         )}
@@ -519,8 +1104,22 @@ export default function AdminBookingManagement({
                         )}
                       </td>
                       <td>
-                        <div className="small fw-semibold">{b.pickup_date || '—'}</div>
-                        {b.drop_date && <div className="text-muted small" style={{ fontSize: '0.72rem' }}>to {b.drop_date}</div>}
+                        <ChannelBadge
+                          channel={chType}
+                          mode={b.b2b_mode}
+                          partnerName={b.b2b_partner_name}
+                        />
+                      </td>
+                      <td>
+                        <div className="d-flex align-items-center gap-1.5 fw-semibold text-dark" style={{ fontSize: '0.80rem' }}>
+                          <Calendar size={13} className="text-primary flex-shrink-0" />
+                          <span>{formatServiceDateRange(svcDates.start, svcDates.end)}</span>
+                        </div>
+                        {svcDates.start && svcDates.end && svcDates.start !== svcDates.end && (
+                          <div className="text-muted text-xxs mt-0.5" style={{ fontSize: '0.70rem' }}>
+                            {svcDates.start} → {svcDates.end}
+                          </div>
+                        )}
                       </td>
                       <td>
                         <div className="fw-bold text-dark">₹{amount.toLocaleString()}</div>
@@ -867,13 +1466,25 @@ export default function AdminBookingManagement({
                 <button type="button" className="btn-close btn-close-white" onClick={() => setViewBooking(null)} />
               </div>
               <div className="modal-body p-4">
-                <div className="mb-3 d-flex justify-content-between align-items-center">
+                <div className="mb-2 d-flex justify-content-between align-items-center">
                   <span className="text-muted small">Status:</span>
                   <StatusBadge status={viewBooking.status} />
                 </div>
-                <div className="mb-3 d-flex justify-content-between align-items-center">
+                <div className="mb-2 d-flex justify-content-between align-items-center">
                   <span className="text-muted small">Payment:</span>
                   <PaymentBadge status={viewBooking.payment_status} />
+                </div>
+                <div className="mb-2 d-flex justify-content-between align-items-center">
+                  <span className="text-muted small">Service:</span>
+                  <ServiceBadge type={getBookingServiceType(viewBooking)} />
+                </div>
+                <div className="mb-2 d-flex justify-content-between align-items-center">
+                  <span className="text-muted small">Channel:</span>
+                  <ChannelBadge
+                    channel={getBookingChannel(viewBooking)}
+                    mode={viewBooking.b2b_mode}
+                    partnerName={viewBooking.b2b_partner_name}
+                  />
                 </div>
                 <hr className="my-2 text-muted opacity-25" />
                 <div className="row g-2 mb-3">
@@ -890,8 +1501,15 @@ export default function AdminBookingManagement({
                     <div className="fw-semibold text-primary">{viewBooking.item_name || '—'}</div>
                   </div>
                   <div className="col-6 mt-2">
-                    <div className="text-muted small">Dates</div>
-                    <div className="small fw-semibold">{viewBooking.pickup_date || '—'} to {viewBooking.drop_date || '—'}</div>
+                    <div className="text-muted small">Service / Travel Dates</div>
+                    <div className="small fw-semibold text-dark">
+                      {formatServiceDateRange(getBookingServiceDates(viewBooking).start, getBookingServiceDates(viewBooking).end)}
+                    </div>
+                    {getBookingServiceDates(viewBooking).start && (
+                      <div className="text-muted text-xxs mt-0.5">
+                        {getBookingServiceDates(viewBooking).start} to {getBookingServiceDates(viewBooking).end}
+                      </div>
+                    )}
                   </div>
                   <div className="col-6 mt-2">
                     <div className="text-muted small">Pickup Location</div>

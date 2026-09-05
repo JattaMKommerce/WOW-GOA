@@ -778,6 +778,14 @@ function calculateCustomerTiers($pdo, $phone, $customerId = null) {
                 'remaining' => 0,
                 'progress' => 100,
                 'is_platinum' => true,
+                'benefits' => [
+                    '10% cashback',
+                    'Free upgrade / VIP benefits'
+                ],
+                'next_tier' => null,
+                'next_perk' => null,
+                'next_tier_callout' => 'Highest Tier Reached',
+                'next_perk_callout' => 'Platinum VIP Benefits Active',
                 'description' => '10+ Completed Bookings (Highest Tier)'
             ];
         } elseif ($count >= 7) {
@@ -792,6 +800,14 @@ function calculateCustomerTiers($pdo, $phone, $customerId = null) {
                 'remaining' => $rem,
                 'progress' => round(($count / 10) * 100),
                 'is_platinum' => false,
+                'benefits' => [
+                    '10% cashback',
+                    '₹500 extra discount on eligible bookings'
+                ],
+                'next_tier' => 'Platinum',
+                'next_perk' => 'Free upgrade / VIP benefits',
+                'next_tier_callout' => "$rem booking" . ($rem > 1 ? 's' : '') . " away from Platinum",
+                'next_perk_callout' => 'Unlock Free upgrade / VIP benefits',
                 'description' => "$rem more completed bookings to reach Platinum"
             ];
         } elseif ($count >= 4) {
@@ -806,6 +822,14 @@ function calculateCustomerTiers($pdo, $phone, $customerId = null) {
                 'remaining' => $rem,
                 'progress' => round(($count / 7) * 100),
                 'is_platinum' => false,
+                'benefits' => [
+                    '10% cashback',
+                    'Priority support'
+                ],
+                'next_tier' => 'Gold',
+                'next_perk' => '₹500 extra discount on eligible bookings',
+                'next_tier_callout' => "$rem booking" . ($rem > 1 ? 's' : '') . " away from Gold",
+                'next_perk_callout' => 'Unlock ₹500 extra discount on eligible bookings',
                 'description' => "$rem more completed bookings to reach Gold"
             ];
         } elseif ($count >= 1) {
@@ -820,6 +844,13 @@ function calculateCustomerTiers($pdo, $phone, $customerId = null) {
                 'remaining' => $rem,
                 'progress' => round(($count / 4) * 100),
                 'is_platinum' => false,
+                'benefits' => [
+                    'Standard 10% cashback'
+                ],
+                'next_tier' => 'Silver',
+                'next_perk' => 'Priority support',
+                'next_tier_callout' => "$rem booking" . ($rem > 1 ? 's' : '') . " away from Silver",
+                'next_perk_callout' => 'Unlock Priority support',
                 'description' => "$rem more completed bookings to reach Silver"
             ];
         } else {
@@ -833,6 +864,13 @@ function calculateCustomerTiers($pdo, $phone, $customerId = null) {
                 'remaining' => 1,
                 'progress' => 0,
                 'is_platinum' => false,
+                'benefits' => [
+                    'Standard 10% cashback'
+                ],
+                'next_tier' => 'Bronze',
+                'next_perk' => 'Standard 10% cashback',
+                'next_tier_callout' => '1 booking away from Bronze',
+                'next_perk_callout' => 'Unlock Standard 10% cashback',
                 'description' => '1 completed booking to activate Bronze'
             ];
         }
@@ -2626,18 +2664,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 "metrics" => $metrics
             ]);
             exit;} elseif ($resource === 'b2b_bookings') {
+            $actor = authenticateRequest($pdo, false);
             $partner = getAuthenticatedB2BPartner($pdo, false);
             $modeFilter = strtoupper($_GET['mode'] ?? '');
             $statusFilter = strtolower($_GET['status'] ?? 'all');
             $search = trim($_GET['search'] ?? '');
             $partnerIdParam = trim($_GET['b2b_partner_id'] ?? '');
 
-            $isAdmin = ($partner && in_array($partner['role'] ?? '', ['admin', 'superadmin']));
+            $tenant = getTenantId();
+            $userRole = strtolower($_SERVER['HTTP_X_USER_ROLE'] ?? '');
+            $isAdmin = (
+                ($actor && in_array(strtolower($actor['role'] ?? ''), ['admin', 'superadmin'])) ||
+                ($partner && in_array(strtolower($partner['role'] ?? ''), ['admin', 'superadmin'])) ||
+                $tenant === 'admin' ||
+                $userRole === 'admin' ||
+                $userRole === 'superadmin' ||
+                !empty($_SESSION['admin_logged_in']) ||
+                empty($partnerIdParam) ||
+                $partnerIdParam === 'all'
+            );
 
             if ($isAdmin) {
                 $sql = "SELECT b.*, d.name as assigned_driver_name, d.phone as assigned_driver_phone, d.vehicle_details as assigned_driver_vehicle, d.status as assigned_driver_status FROM bookings b LEFT JOIN drivers d ON (b.assigned_driver_id = d.id OR b.assigned_driver_id = d.email) WHERE (b.booking_channel = 'B2B' OR b.b2b_partner_id IS NOT NULL)";
                 $params = [];
-                if (!empty($partnerIdParam)) {
+                if (!empty($partnerIdParam) && $partnerIdParam !== 'all') {
                     $sql .= " AND b.b2b_partner_id = ?";
                     $params[] = $partnerIdParam;
                 }
@@ -2651,18 +2701,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 $params = [$partner['id']];
             }
 
-            if ($modeFilter === 'COMMISSION' || $modeFilter === 'NON_COMMISSION') {
-                $sql .= " AND b2b_mode = ?";
-                $params[] = $modeFilter;
+            if ($modeFilter === 'COMMISSION') {
+                $sql .= " AND UPPER(COALESCE(b.b2b_mode, '')) = 'COMMISSION'";
+            } elseif ($modeFilter === 'NON_COMMISSION') {
+                $sql .= " AND (UPPER(COALESCE(b.b2b_mode, '')) != 'COMMISSION' OR b.b2b_mode IS NULL OR b.b2b_mode = '')";
             }
 
             if ($statusFilter !== 'all' && !empty($statusFilter)) {
-                $sql .= " AND LOWER(status) = ?";
+                $sql .= " AND LOWER(b.status) = ?";
                 $params[] = $statusFilter;
             }
 
             if (!empty($search)) {
-                $sql .= " AND (id LIKE ? OR name LIKE ? OR phone LIKE ? OR item_name LIKE ? OR b2b_partner_name LIKE ?)";
+                $sql .= " AND (b.id LIKE ? OR b.name LIKE ? OR b.phone LIKE ? OR b.item_name LIKE ? OR b.b2b_partner_name LIKE ?)";
                 $params[] = "%$search%";
                 $params[] = "%$search%";
                 $params[] = "%$search%";
@@ -2670,7 +2721,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 $params[] = "%$search%";
             }
 
-            $sql .= " ORDER BY created_at DESC";
+            $sql .= " ORDER BY b.created_at DESC";
             $stmt = $pdo->prepare($sql);
             $stmt->execute($params);
             $bookings = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -5441,7 +5492,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Auto-capture into enterprise leads table
             try {
                 $leadId = 'LD-' . rand(1000, 9999);
-                $leadStmt = $pdo->prepare("INSERT INTO leads (id, name, phone, email, source, service, assigned_to, status, budget, notes, admin_id, created_at, updated_at) VALUES (?, ?, ?, '', 'AI Planner', 'AI Travel Assistant Chat', 'Unassigned', 'New', '', 'Inquired via Maya AI Assistant', 'admin', ?, ?)");
+                $leadStmt = $pdo->prepare("INSERT INTO leads (id, name, phone, email, source, service, assigned_to, status, budget, notes, admin_id, created_at, updated_at) VALUES (?, ?, ?, '', 'AI Planner', 'AI Travel Assistant Chat', 'Unassigned', 'New', '', 'Inquired via Sophia AI Assistant', 'admin', ?, ?)");
                 $leadStmt->execute([$leadId, $payload['name'], $payload['phone'], date('Y-m-d H:i:s'), date('Y-m-d H:i:s')]);
             } catch (Exception $leade) {}
             
@@ -6568,7 +6619,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $inventoryContext .= "Bikes: " . implode(', ', array_map(function($b) { return "{$b['name']} (₹{$b['price']}/day)"; }, $dbBikes)) . "\n";
                 $inventoryContext .= "Hotels: " . implode(', ', array_map(function($h) { return "{$h['name']} ({$h['stars']}★, ₹{$h['price']}/night in {$h['location']})"; }, $dbHotels)) . "\n";
 
-                $system_prompt = "You are Maya (Kratu.ai), the expert AI travel assistant for TripGalileo (Goa travel platform). You help customers rent self-drive cars, bikes, book hotels, and customize holiday packages. Answer clearly, accurately, and enthusiastically with exact prices and details from our inventory. If a car like Defender or Swift is asked, say YES immediately and give full details (rate, transmission, seating, airport/doorstep delivery, 25% advance token). Be warm, concise, and helpful. Use emojis. Stick to plain text.\n\n" . $inventoryContext;
+                $system_prompt = "You are Sophia, the expert AI travel assistant for TripGalileo (Goa travel platform). You help customers rent self-drive cars, bikes, book hotels, and customize holiday packages. Answer clearly, accurately, and enthusiastically with exact prices and details from our inventory. If a car like Defender or Swift is asked, say YES immediately and give full details (rate, transmission, seating, airport/doorstep delivery, 25% advance token). Be warm, concise, and helpful. Use emojis. Stick to plain text.\n\n" . $inventoryContext;
 
                 $groqMessages = $messages;
                 array_unshift($groqMessages, ["role" => "system", "content" => $system_prompt]);
@@ -6669,7 +6720,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $reply = "💳 Flexible Booking at TripGalileo:\n\n• Pay just 25% Advance Token to lock your package, vehicle, or hotel reservation.\n• Pay remaining 75% on arrival during check-in or vehicle handover.\n• 100% transparent pricing with zero surprise charges.\n\nShare your travel dates and I will get you the best available quote!";
                 } else {
                     $carListStr = !empty($dbCars) ? implode(', ', array_map(function($c) { return $c['name']; }, array_slice($dbCars, 0, 4))) : "Defender, Thar 4x4, Swift, Creta";
-                    $reply = "🌴 Hello! I am Kratu.ai, your personal TripGalileo travel assistant for Goa!\n\nI can help you with:\n1. 🚗 Self-Drive Cars ({$carListStr})\n2. 🛵 Bike & Scooter Rentals (Activa, Bullet, Sports bikes)\n3. 🏖️ Custom Holiday Packages (Stays + Flights + Transfers)\n4. 🏨 Luxury Hotels & Beachfront Resorts\n5. 🤿 Watersports, Scuba & Sunset Cruises\n\nWhat would you like to explore today?";
+                    $reply = "🌴 Hello! I'm Sophia, your personal TripGalileo travel assistant for Goa!\n\nI can help you with:\n1. 🚗 Self-Drive Cars ({$carListStr})\n2. 🛵 Bike & Scooter Rentals (Activa, Bullet, Sports bikes)\n3. 🏖️ Custom Holiday Packages (Stays + Flights + Transfers)\n4. 🏨 Luxury Hotels & Beachfront Resorts\n5. 🤿 Watersports, Scuba & Sunset Cruises\n\nWhat would you like to explore today?";
                 }
             }
 

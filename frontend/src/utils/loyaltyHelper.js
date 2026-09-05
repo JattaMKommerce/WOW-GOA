@@ -45,6 +45,14 @@ export function calculateLoyaltyTiers(bookings = []) {
         remaining: 0,
         progress: 100,
         is_platinum: true,
+        benefits: [
+          '10% cashback',
+          'Free upgrade / VIP benefits'
+        ],
+        next_tier: null,
+        next_perk: null,
+        next_tier_callout: 'Highest Tier Reached',
+        next_perk_callout: 'Platinum VIP Benefits Active',
         description: '10+ Completed Bookings (Highest Tier)'
       };
     } else if (count >= 7) {
@@ -62,6 +70,14 @@ export function calculateLoyaltyTiers(bookings = []) {
         remaining: remaining,
         progress: Math.round((count / 10) * 100),
         is_platinum: false,
+        benefits: [
+          '10% cashback',
+          '₹500 extra discount on eligible bookings'
+        ],
+        next_tier: 'Platinum',
+        next_perk: 'Free upgrade / VIP benefits',
+        next_tier_callout: `${remaining} booking${remaining > 1 ? 's' : ''} away from Platinum`,
+        next_perk_callout: 'Unlock Free upgrade / VIP benefits',
         description: `${remaining} more completed booking${remaining > 1 ? 's' : ''} to reach Platinum`
       };
     } else if (count >= 4) {
@@ -79,6 +95,14 @@ export function calculateLoyaltyTiers(bookings = []) {
         remaining: remaining,
         progress: Math.round((count / 7) * 100),
         is_platinum: false,
+        benefits: [
+          '10% cashback',
+          'Priority support'
+        ],
+        next_tier: 'Gold',
+        next_perk: '₹500 extra discount on eligible bookings',
+        next_tier_callout: `${remaining} booking${remaining > 1 ? 's' : ''} away from Gold`,
+        next_perk_callout: 'Unlock ₹500 extra discount on eligible bookings',
         description: `${remaining} more completed booking${remaining > 1 ? 's' : ''} to reach Gold`
       };
     } else if (count >= 1) {
@@ -96,6 +120,13 @@ export function calculateLoyaltyTiers(bookings = []) {
         remaining: remaining,
         progress: Math.round((count / 4) * 100),
         is_platinum: false,
+        benefits: [
+          'Standard 10% cashback'
+        ],
+        next_tier: 'Silver',
+        next_perk: 'Priority support',
+        next_tier_callout: `${remaining} booking${remaining > 1 ? 's' : ''} away from Silver`,
+        next_perk_callout: 'Unlock Priority support',
         description: `${remaining} more completed booking${remaining > 1 ? 's' : ''} to reach Silver`
       };
     } else {
@@ -112,6 +143,13 @@ export function calculateLoyaltyTiers(bookings = []) {
         remaining: 1,
         progress: 0,
         is_platinum: false,
+        benefits: [
+          'Standard 10% cashback'
+        ],
+        next_tier: 'Bronze',
+        next_perk: 'Standard 10% cashback',
+        next_tier_callout: '1 booking away from Bronze',
+        next_perk_callout: 'Unlock Standard 10% cashback',
         description: '1 completed booking to activate Bronze'
       };
     }

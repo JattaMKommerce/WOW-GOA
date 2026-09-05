@@ -164,3 +164,78 @@ export function getBookingDisplayImage(booking, allCars = [], allBikes = [], all
   const images = getBookingDisplayImages(booking, allCars, allBikes, allPackages, allHotels, allFlights);
   return images[0] || 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=600&q=80';
 }
+
+/**
+ * Resolves all images for an individual inventory item (hotel, vehicle, package, flight)
+ * for rich display in ImageCarousel and detail/booking modals across D2C and B2B portals.
+ */
+export function resolveItemImages(item, type = '') {
+  if (!item) return ['https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=1200&q=80'];
+  const list = [];
+  const add = (img) => {
+    if (!img) return;
+    if (typeof img === 'string' && img.trim().length > 5 && !img.includes('undefined') && !img.includes('null')) {
+      const trimmed = img.trim();
+      if (!list.includes(trimmed)) list.push(trimmed);
+    } else if (Array.isArray(img)) {
+      img.forEach(add);
+    } else if (typeof img === 'object' && img !== null) {
+      add(img.url || img.src || img.image || null);
+    }
+  };
+
+  add(item.image);
+  add(item.image_url);
+  add(item.imageUrl);
+  add(item.images);
+  add(item.gallery);
+
+  if (item.images_json) {
+    try {
+      const parsed = typeof item.images_json === 'string' ? JSON.parse(item.images_json) : item.images_json;
+      add(parsed);
+    } catch (e) {}
+  }
+
+  if (item.documents_json) {
+    try {
+      const parsed = typeof item.documents_json === 'string' ? JSON.parse(item.documents_json) : item.documents_json;
+      add(parsed);
+    } catch (e) {}
+  }
+
+  // CRITICAL: If this vehicle/item already has its own authentic images from the main website/database,
+  // return ONLY those exact images! Never append or mix in unrelated vehicles (e.g. bullets or ducatis on a ninja).
+  if (list.length > 0) {
+    return list;
+  }
+
+  // Fallbacks ONLY if the record has NO images at all in the database:
+  const name = String(item.name || item.title || '').toLowerCase();
+  const cat = String(item.category || type || '').toLowerCase();
+
+  if (type === 'hotels' || item.stars || item.star_rating || name.includes('resort') || name.includes('hotel') || name.includes('inn') || name.includes('baga') || name.includes('beach') || name.includes('candolim') || name.includes('exotica')) {
+    return [
+      'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=1200&q=80'
+    ];
+  } else if (cat.includes('bike') || cat.includes('scooter') || name.includes('ninja') || name.includes('activa') || name.includes('bullet') || name.includes('bike')) {
+    return [
+      'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=1200&q=80'
+    ];
+  } else if (name.includes('thar') || name.includes('suv') || name.includes('fortuner') || name.includes('defender') || name.includes('creta') || name.includes('ertiga')) {
+    return [
+      'https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=1200&q=80'
+    ];
+  } else if (type === 'packages' || type === 'trips' || name.includes('holiday') || name.includes('package') || name.includes('tour') || name.includes('trip')) {
+    return [
+      'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80'
+    ];
+  } else {
+    return [
+      'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=1200&q=80'
+    ];
+  }
+}

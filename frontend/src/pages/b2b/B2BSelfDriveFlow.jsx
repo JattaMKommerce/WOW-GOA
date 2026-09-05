@@ -2,9 +2,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Car, Calendar, Clock, MapPin, Fuel, Gauge, Users, Shield, 
   CheckCircle2, AlertCircle, ArrowRight, ChevronRight, User, Phone, 
-  Mail, FileText, Check, DollarSign, Percent, Sparkles, Navigation, X, Wallet, UserCheck
+  Mail, FileText, Check, DollarSign, Percent, Sparkles, Navigation, X, Wallet, UserCheck,
+  Eye
 } from 'lucide-react';
 import * as api from '../../services/api';
+import ImageCarousel from '../../components/common/ImageCarousel';
+import { resolveItemImages } from '../../utils/bookingImageHelper';
 
 const GOA_LOCATIONS = [
   { id: 'mopa', name: 'Manohar International Airport (Mopa - GOX)', type: 'Airport' },
@@ -85,6 +88,7 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedVehicle, setSelectedVehicle] = useState(null);
+  const [detailVehicle, setDetailVehicle] = useState(null);
   const [filterCategory, setFilterCategory] = useState('All');
 
   // Booking modal & form
@@ -741,15 +745,25 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
                         </div>
                       )}
 
-                      <button
-                        type="button"
-                        onClick={() => handleSelectToBook(veh)}
-                        className={`btn w-100 btn-sm rounded-pill fw-bold py-2 d-flex align-items-center justify-content-center gap-2 ${
-                          mode === 'COMMISSION' ? 'btn-warning text-dark' : 'btn-primary text-white'
-                        }`}
-                      >
-                        Book for Guest <ArrowRight size={14} />
-                      </button>
+                      <div className="d-flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setDetailVehicle(veh)}
+                          className="btn btn-outline-secondary btn-sm rounded-pill text-xxs px-3 py-2 d-flex align-items-center justify-content-center gap-1"
+                        >
+                          <Eye size={13} /> Details
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectToBook(veh)}
+                          className={`btn flex-grow-1 btn-sm rounded-pill fw-bold py-2 d-flex align-items-center justify-content-center gap-1.5 ${
+                            mode === 'COMMISSION' ? 'btn-warning text-dark' : 'btn-primary text-white'
+                          }`}
+                        >
+                          <span>Book for Guest</span>
+                          <ArrowRight size={14} />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -832,6 +846,16 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
                 </div>
               ) : (
                 <form onSubmit={handleConfirmBooking}>
+                  {/* Multi-Image Preview Carousel in Booking Modal */}
+                  <div className="mb-3">
+                    <ImageCarousel
+                      images={resolveItemImages(selectedVehicle, 'selfdrive')}
+                      alt={selectedVehicle.name}
+                      height="200px"
+                      rounded="12px"
+                    />
+                  </div>
+
                   {/* Interactive Calendar & Schedule Selector */}
                   <div className="p-3 bg-white rounded-3 border mb-3">
                     <div className="d-flex align-items-center justify-content-between mb-2.5">
@@ -1433,6 +1457,169 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
                   </button>
                 </form>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── VEHICLE RICH DETAILS MODAL WITH MULTI-IMAGE CAROUSEL ── */}
+      {detailVehicle && (
+        <div 
+          className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center p-3"
+          style={{ background: 'rgba(13, 27, 46, 0.75)', zIndex: 1060, backdropFilter: 'blur(4px)' }}
+          onClick={() => setDetailVehicle(null)}
+        >
+          <div 
+            className="card border-0 shadow-2xl rounded-4 overflow-hidden animate-fade-in"
+            style={{ maxWidth: '720px', width: '100%', maxHeight: '92vh', display: 'flex', flexDirection: 'column', background: '#ffffff' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-3.5 text-white d-flex align-items-center justify-content-between" style={{ background: '#0D1B2E' }}>
+              <div>
+                <span className="badge bg-warning text-dark text-xxs fw-bold px-2 py-0.5 rounded-pill mb-1">
+                  SELF DRIVE FLEET SPECIFICATION
+                </span>
+                <h5 className="fw-bold mb-0 text-white font-heading">{detailVehicle.name}</h5>
+              </div>
+              <button 
+                type="button"
+                className="btn btn-link text-white-50 p-0 border-0" 
+                onClick={() => setDetailVehicle(null)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Body */}
+            {(() => {
+              const isBike = Boolean(
+                String(detailVehicle.category || '').toLowerCase().includes('bike') ||
+                String(detailVehicle.category || '').toLowerCase().includes('scooter') ||
+                String(detailVehicle.category || '').toLowerCase().includes('moped') ||
+                detailVehicle.type === 'bike' ||
+                detailVehicle.engine ||
+                detailVehicle.mileage
+              );
+              return (
+                <div className="p-4 overflow-y-auto flex-grow-1">
+                  {/* Multi-Image Carousel with Thumbnails & Lightbox */}
+                  <div className="mb-3">
+                    <ImageCarousel
+                      images={resolveItemImages(detailVehicle, isBike ? 'bikes' : 'selfdrive')}
+                      alt={detailVehicle.name}
+                      height="340px"
+                      rounded="16px"
+                    />
+                  </div>
+
+                  {/* Specs & Highlights */}
+                  <div className="d-flex align-items-center gap-2 mb-3 pb-2 border-bottom flex-wrap">
+                    <span className={`badge ${isBike ? 'bg-primary' : 'bg-primary bg-opacity-10 text-primary'} px-2 py-1 rounded`}>
+                      {detailVehicle.category || (isBike ? 'Two Wheeler / Bike' : 'Standard Fleet')}
+                    </span>
+                    <span className="badge bg-dark text-white px-2 py-1 rounded">
+                      {detailVehicle.transmission || (isBike ? (detailVehicle.engine ? `${detailVehicle.engine}` : 'Manual') : 'Manual')}
+                    </span>
+                    <span className="badge bg-warning bg-opacity-10 text-dark border border-warning border-opacity-25 px-2 py-1 rounded">
+                      {detailVehicle.fuel_type || detailVehicle.fuel || 'Petrol'}
+                    </span>
+                    {isBike && (
+                      <span className="badge bg-info bg-opacity-10 text-dark border border-info border-opacity-25 px-2 py-1 rounded">
+                        2 Helmets Included
+                      </span>
+                    )}
+                    <span className="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-2 py-1 rounded">
+                      Goa Authorized Fleet
+                    </span>
+                  </div>
+
+                  {/* Specifications Grid */}
+                  <h6 className="fw-bold text-dark text-xs text-uppercase mb-2 font-heading">Specifications</h6>
+                  <div className="row g-2 mb-3">
+                    <div className="col-4">
+                      <div className="p-2.5 rounded-3 bg-light border text-center">
+                        <Users size={18} className="text-primary mb-1 mx-auto" />
+                        <div className="text-muted text-3xs">{isBike ? 'Seating Capacity' : 'Seating'}</div>
+                        <strong className="text-xs text-dark">{isBike ? '2 Persons' : `${detailVehicle.seating_capacity || 5} Seats`}</strong>
+                      </div>
+                    </div>
+                    <div className="col-4">
+                      <div className="p-2.5 rounded-3 bg-light border text-center">
+                        <Fuel size={18} className="text-primary mb-1 mx-auto" />
+                        <div className="text-muted text-3xs">{isBike && detailVehicle.engine ? 'Engine Spec' : 'Fuel Type'}</div>
+                        <strong className="text-xs text-dark">{isBike && detailVehicle.engine ? detailVehicle.engine : (detailVehicle.fuel_type || detailVehicle.fuel || 'Petrol')}</strong>
+                      </div>
+                    </div>
+                    <div className="col-4">
+                      <div className="p-2.5 rounded-3 bg-light border text-center">
+                        <Gauge size={18} className="text-primary mb-1 mx-auto" />
+                        <div className="text-muted text-3xs">{isBike ? 'Mileage / Limits' : 'Kilometers'}</div>
+                        <strong className="text-xs text-dark">{isBike && detailVehicle.mileage ? detailVehicle.mileage : 'Unlimited KMs'}</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Description */}
+                  <h6 className="fw-bold text-dark text-xs text-uppercase mb-1.5 font-heading">Overview</h6>
+                  <p className="text-muted text-xs leading-relaxed mb-3">
+                    {detailVehicle.description || 'Full comprehensive insurance included. Clean & sanitized delivery. 24/7 roadside assistance across North and South Goa.'}
+                  </p>
+
+                  {/* Rental Features */}
+                  <h6 className="fw-bold text-dark text-xs text-uppercase mb-1.5 font-heading">Included Benefits</h6>
+                  <div className="d-flex gap-1.5 flex-wrap mb-2">
+                    <span className="badge bg-light text-dark border text-xxs py-1 px-2">✓ Comprehensive Insurance</span>
+                    {isBike && <span className="badge bg-light text-dark border text-xxs py-1 px-2">✓ 2 Sanitized Helmets</span>}
+                    <span className="badge bg-light text-dark border text-xxs py-1 px-2">✓ Sanitized Vehicle Delivery</span>
+                    <span className="badge bg-light text-dark border text-xxs py-1 px-2">✓ 24/7 Roadside Assistance</span>
+                    <span className="badge bg-light text-dark border text-xxs py-1 px-2">✓ Free Airport / Hub Delivery</span>
+                    <span className="badge bg-light text-dark border text-xxs py-1 px-2">✓ Instant B2B Confirmation</span>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Footer */}
+            <div className="p-3 border-top bg-light d-flex align-items-center justify-content-between">
+              <div>
+                {(() => {
+                  const pr = calculateVehiclePricingEstimate(detailVehicle);
+                  return mode === 'COMMISSION' ? (
+                    <div>
+                      <span className="text-xxs text-muted d-block">Retail Daily: ₹{pr.sellingPrice.toLocaleString()}/day</span>
+                      <strong className="text-success text-xs">Agent Commission ({pr.commissionPercent}%): +₹{pr.commissionAmount.toLocaleString()}/day</strong>
+                    </div>
+                  ) : (
+                    <div>
+                      <span className="text-xxs text-muted d-block">Retail Daily: <del>₹{pr.sellingPrice.toLocaleString()}</del></span>
+                      <strong className="text-primary text-xs">B2B Net Rate: ₹{pr.netPrice.toLocaleString()}/day</strong>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              <div className="d-flex gap-2">
+                <button 
+                  type="button"
+                  className="btn btn-outline-secondary btn-sm rounded-pill px-3 text-xs" 
+                  onClick={() => setDetailVehicle(null)}
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-sm rounded-pill px-4 fw-bold text-xs ${
+                    mode === 'COMMISSION' ? 'btn-warning text-dark' : 'btn-primary text-white'
+                  }`}
+                  onClick={() => {
+                    const veh = detailVehicle;
+                    setDetailVehicle(null);
+                    handleSelectToBook(veh);
+                  }}
+                >
+                  Book for Guest &rarr;
+                </button>
+              </div>
             </div>
           </div>
         </div>

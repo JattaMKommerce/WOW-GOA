@@ -53,31 +53,39 @@ export default function CustomerCashbackTab({
 
         <div className="col-lg-6">
           <div className="card border-0 shadow-sm rounded-4 p-4 h-100 bg-white" style={{ border: '1px solid #eef2f6' }}>
-            <h6 className="fw-bold text-dark mb-3 font-heading">Cashback Tiers & Benefits</h6>
+            <h6 className="fw-bold text-dark mb-3 font-heading">Loyalty Tiers &amp; Cashback Benefits</h6>
             
-            <div className="d-flex flex-column gap-2.5">
-              <div className="p-2.5 rounded-3 bg-light d-flex align-items-center justify-content-between text-xs">
+            <div className="d-flex flex-column gap-2">
+              <div className="p-2 rounded-3 bg-light d-flex align-items-center justify-content-between text-xs border">
                 <div className="d-flex align-items-center gap-2">
-                  <span className="badge bg-warning text-dark fw-bold">5% BACK</span>
-                  <span className="fw-bold text-dark">Self Drive Holiday Packages</span>
+                  <span className="badge text-dark fw-bold" style={{ background: '#cd7f32', color: '#fff' }}>🥉 BRONZE (1–3)</span>
+                  <span className="fw-bold text-dark">Standard 10% Cashback</span>
                 </div>
-                <span className="text-muted text-xxs">Credited after trip</span>
+                <span className="text-muted text-xxs">All completed bookings</span>
               </div>
 
-              <div className="p-2.5 rounded-3 bg-light d-flex align-items-center justify-content-between text-xs">
+              <div className="p-2 rounded-3 bg-light d-flex align-items-center justify-content-between text-xs border">
                 <div className="d-flex align-items-center gap-2">
-                  <span className="badge bg-primary text-white fw-bold">₹500 OFF</span>
-                  <span className="fw-bold text-dark">Luxury Car Rentals (3+ Days)</span>
+                  <span className="badge bg-secondary text-white fw-bold">🥈 SILVER (4–6)</span>
+                  <span className="fw-bold text-dark">10% Cashback + Priority Support</span>
                 </div>
-                <span className="text-muted text-xxs">Instant voucher</span>
+                <span className="text-muted text-xxs">Dedicated assistance</span>
               </div>
 
-              <div className="p-2.5 rounded-3 bg-light d-flex align-items-center justify-content-between text-xs">
+              <div className="p-2 rounded-3 bg-light d-flex align-items-center justify-content-between text-xs border">
                 <div className="d-flex align-items-center gap-2">
-                  <span className="badge bg-success text-white fw-bold">EARLY BIRD</span>
-                  <span className="fw-bold text-dark">Advance Bookings (15+ Days)</span>
+                  <span className="badge bg-warning text-dark fw-bold">🥇 GOLD (7–9)</span>
+                  <span className="fw-bold text-dark">10% Cashback + ₹500 Extra Discount</span>
                 </div>
-                <span className="text-muted text-xxs">Bonus wallet credit</span>
+                <span className="text-muted text-xxs">On eligible bookings</span>
+              </div>
+
+              <div className="p-2 rounded-3 bg-light d-flex align-items-center justify-content-between text-xs border">
+                <div className="d-flex align-items-center gap-2">
+                  <span className="badge bg-purple text-white fw-bold" style={{ background: '#8b5cf6' }}>💎 PLATINUM (10+)</span>
+                  <span className="fw-bold text-dark">10% Cashback + Free Upgrade / VIP</span>
+                </div>
+                <span className="text-muted text-xxs">Highest tier perks</span>
               </div>
             </div>
           </div>

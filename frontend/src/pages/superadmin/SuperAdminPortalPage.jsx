@@ -439,8 +439,8 @@ export default function SuperAdminPortalPage({
   const leadNotifs = (aiLeads || []).map(l => ({
     id: `l-${l.id}`,
     type: 'lead',
-    title: `Maya AI Lead: ${l.name}`,
-    message: `Customer ${l.name} (${l.phone || 'No phone'}) chatted with Maya AI`,
+    title: `Sophia AI Lead: ${l.name}`,
+    message: `Customer ${l.name} (${l.phone || 'No phone'}) chatted with Sophia AI`,
     time: l.created_at?.slice(0, 16) || 'Recent',
     color: '#059669',
     tab: 'lead_management',

@@ -3,7 +3,7 @@ import {
   Compass, LogOut, Box, Building, MessageSquare, CreditCard, Calendar,
   Plane, Hotel, Shield, LayoutDashboard, Globe, Users, Tag, BarChart2,
   ChevronDown, ChevronRight, Menu, Bell, Layers, FileText, Star, PlusCircle, Settings, X, UserPlus,
-  Briefcase, Gift, Clock, AlertCircle
+  Briefcase, Gift, Clock, AlertCircle, Wallet
 } from 'lucide-react';
 import AdminDashboard from './AdminDashboard';
 import AdminDashboardOverview from './AdminDashboardOverview';
@@ -37,6 +37,7 @@ const SIDEBAR_GROUPS = [
       { id: 'b2b_dashboard', label: 'B2B Dashboard', icon: <Briefcase size={15} /> },
       { id: 'b2b_applications', label: 'Partner Applications', icon: <Clock size={15} /> },
       { id: 'b2b_all_partners', label: 'All Partners', icon: <Users size={15} /> },
+      { id: 'b2b_wallets', label: 'Agent Wallets & Ledgers', icon: <Wallet size={15} /> },
       { id: 'b2b_commission_partners', label: 'Commission Partners', icon: <Gift size={15} /> },
       { id: 'b2b_non_commission_partners', label: 'Non-Commission Partners', icon: <Tag size={15} /> },
       { id: 'b2b_mode_requests', label: 'Mode Change Requests', icon: <AlertCircle size={15} /> },
@@ -356,6 +357,7 @@ export default function AdminPortalPage({
       case 'b2b_dashboard':
       case 'b2b_applications':
       case 'b2b_all_partners':
+      case 'b2b_wallets':
       case 'b2b_commission_partners':
       case 'b2b_non_commission_partners':
       case 'b2b_mode_requests':

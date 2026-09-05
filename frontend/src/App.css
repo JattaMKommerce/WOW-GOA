@@ -2748,4 +2748,137 @@
   }
 }
 
+/* ==========================================
+   ADMIN BOOKING MANAGEMENT FILTER CONTROLS
+   ========================================== */
+.admin-filter-control-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.04), 0 2px 6px -1px rgba(15, 23, 42, 0.02);
+  padding: 24px;
+  margin-bottom: 24px;
+}
+
+@media (max-width: 768px) {
+  .admin-filter-control-card {
+    padding: 16px;
+  }
+}
+
+.admin-filter-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 95px;
+  min-width: 95px;
+  flex-shrink: 0;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.admin-filter-pill {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  border: 1px solid #e2e8f0;
+  background-color: #f8fafc;
+  color: #475569;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  white-space: nowrap;
+  user-select: none;
+  line-height: 1.2;
+}
+
+.admin-filter-pill:hover {
+  background-color: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #0f172a;
+  transform: translateY(-1px);
+}
+
+.admin-filter-pill .admin-pill-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 7.5px;
+  border-radius: 9999px;
+  background-color: #e2e8f0;
+  color: #475569;
+  line-height: 1;
+}
+
+/* Active states */
+.admin-filter-pill.active-navy {
+  background-color: #0f172a !important;
+  border-color: #0f172a !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.22);
+}
+
+.admin-filter-pill.active-blue {
+  background-color: #2563eb !important;
+  border-color: #2563eb !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.28);
+}
+
+.admin-filter-pill.active-indigo {
+  background-color: #4f46e5 !important;
+  border-color: #4f46e5 !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.28);
+}
+
+.admin-filter-pill.active-emerald {
+  background-color: #059669 !important;
+  border-color: #059669 !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(5, 150, 105, 0.28);
+}
+
+.admin-filter-pill.active-sky {
+  background-color: #0284c7 !important;
+  border-color: #0284c7 !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.28);
+}
+
+.admin-filter-pill.active-amber {
+  background-color: #d97706 !important;
+  border-color: #d97706 !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(217, 119, 6, 0.28);
+}
+
+.admin-filter-pill[class*="active-"] .admin-pill-badge {
+  background-color: rgba(255, 255, 255, 0.24) !important;
+  color: #ffffff !important;
+}
+
+.admin-filter-chip {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.admin-filter-chip:hover {
+  opacity: 0.85;
+  transform: scale(0.98);
+}
+
 

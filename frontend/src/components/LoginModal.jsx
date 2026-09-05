@@ -293,6 +293,15 @@ export default function LoginModal({ isOpen, onClose, onLogin }) {
                 <button
                   type="button"
                   className="btn btn-xs btn-outline-secondary text-start d-flex justify-content-between align-items-center py-1.5 px-2.5 rounded-2 border-0 small text-dark"
+                  style={{ background: '#eff6ff', border: '1px solid #dbeafe' }}
+                  onClick={() => handleQuickLogin('partner_a@agency.com', 'admin@2026')}
+                >
+                  <span className="fw-bold small text-dark" style={{ fontSize: '11px' }}>💼 B2B Portal (Travel Partner Agency)</span>
+                  <span className="text-xxs text-primary fw-bold">partner_a / admin@2026</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-xs btn-outline-secondary text-start d-flex justify-content-between align-items-center py-1.5 px-2.5 rounded-2 border-0 small text-dark"
                   style={{ background: '#fffbeb', border: '1px solid #fef3c7' }}
                   onClick={() => handleQuickLogin('driver@gmail.com', 'driver')}
                 >

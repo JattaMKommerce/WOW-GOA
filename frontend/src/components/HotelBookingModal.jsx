@@ -238,8 +238,9 @@ export default function HotelBookingModal({
   const totalAmount = roomTotal + gst + platformFee + driverCharge;
   const advanceAmount = Math.round(totalAmount * 0.20); // 20% advance
 
-  // Wallet Deduction & 10% Cashback Calculations
-  const appliedWalletAmount = (useWalletCashback && walletBalance > 0) ? Math.min(walletBalance, totalAmount) : 0;
+  // Wallet Deduction (Strictly 10% Discount/Benefit Only) & 10% Cashback Calculations
+  const maxWalletBenefit = Math.round(totalAmount * 0.10);
+  const appliedWalletAmount = (useWalletCashback && walletBalance > 0) ? Math.min(walletBalance, maxWalletBenefit) : 0;
   const finalTotalPayable = Math.max(0, totalAmount - appliedWalletAmount);
 
   const isPayAtHotel = paymentOption === 'pay_at_hotel' || paymentOption === 'hotel';
@@ -1177,7 +1178,7 @@ export default function HotelBookingModal({
                                                 style={{ cursor: 'pointer' }}
                                             />
                                             <label className="form-check-label text-xs fw-bold text-success" htmlFor="useHotelWalletCashback">
-                                                Use ₹{Math.min(walletBalance, totalAmount).toLocaleString('en-IN')}
+                                                Use ₹{Math.min(walletBalance, maxWalletBenefit).toLocaleString('en-IN')} (10% Benefit)
                                             </label>
                                         </div>
                                     </div>

@@ -272,8 +272,20 @@ class BookingService {
             // 8. Generate Authoritative Master Booking ID
             $bookingId = !empty($payload['id']) ? $payload['id'] : ($isB2B ? ('TG-B2B-' . strtoupper(substr(uniqid(), -6))) : ('TG-' . rand(100000, 999999)));
 
-            // 9. Customer Wallet Deduction (D2C)
+            // 9. Customer Wallet Deduction (D2C - strictly 10% discount/benefit only)
             $walletAmountUsed = max(0, round(floatval($payload['wallet_amount_used'] ?? 0), 2));
+            $maxAllowedWalletBenefit = round($totalAmount * 0.10, 2);
+            if ($walletAmountUsed > $maxAllowedWalletBenefit) {
+                $walletAmountUsed = $maxAllowedWalletBenefit;
+            }
+
+            if (!$isB2B) {
+                $remainingAmount = max(0, round($totalAmount - ($amountPaid + $walletAmountUsed), 2));
+                $totalPaid = round($amountPaid + $walletAmountUsed, 2);
+            } else {
+                $totalPaid = $amountPaid;
+            }
+
             $cashbackEarned = 0;
             $cashbackStatus = 'Pending';
             if ($walletAmountUsed > 0 && function_exists('deductCustomerWallet')) {
@@ -339,7 +351,7 @@ class BookingService {
                 $totalAmount,
                 $amountPaid,
                 $remainingAmount,
-                $amountPaid,
+                $totalPaid,
                 $initStatus,
                 $paymentStatus,
                 is_array($payload['customizations'] ?? null) ? json_encode($payload['customizations']) : ($payload['customizations'] ?? null),
