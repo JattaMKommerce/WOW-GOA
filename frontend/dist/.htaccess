@@ -1,0 +1,24 @@
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Security: Block direct web access to sensitive files (.sqlite, .env, .log, .sql)
+  <FilesMatch "\.(sqlite|env|log|sql)$">
+    <IfModule mod_authz_core.c>
+      Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+      Order deny,allow
+      Deny from all
+    </IfModule>
+  </FilesMatch>
+
+  # Do not rewrite existing files or directories (allows /backend/api.php and static assets to load)
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # Route all SPA pages (like /admin, /vendor, etc.) to index.html
+  RewriteRule . index.html [L]
+</IfModule>
+
