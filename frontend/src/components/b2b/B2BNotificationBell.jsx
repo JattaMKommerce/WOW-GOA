@@ -73,7 +73,7 @@ export default function B2BNotificationBell({ partner, onNotificationClick }) {
 
   useEffect(() => {
     loadNotifications();
-    const interval = setInterval(loadNotifications, 5000);
+    const interval = setInterval(loadNotifications, 3500);
     const sync = () => loadNotifications();
     const events = [
       'tripgalileo-notification-sync',

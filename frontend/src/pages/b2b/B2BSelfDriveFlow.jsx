@@ -809,7 +809,11 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
                   <div className="rounded-circle p-3 bg-success bg-opacity-20 text-success d-inline-flex mb-3">
                     <CheckCircle2 size={42} />
                   </div>
-                  <h4 className="fw-bold text-dark font-heading mb-1">Booking Confirmed Successfully!</h4>
+                  <h4 className="fw-bold text-dark font-heading mb-1">
+                    {(bookingSuccessData.status || 'Confirmed').toLowerCase() === 'pending'
+                      ? 'Booking Received (Pending Confirmation)'
+                      : `Booking ${bookingSuccessData.status || 'Confirmed'} Successfully!`}
+                  </h4>
                   <p className="text-muted text-xs mb-3">
                     B2B Booking ID: <strong>#{bookingSuccessData.booking_id}</strong>
                   </p>
@@ -826,6 +830,12 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
                     <div className="d-flex justify-content-between text-xs py-1 border-bottom">
                       <span className="text-muted">Pickup Location:</span>
                       <span className="fw-bold text-dark">{pickupLoc}</span>
+                    </div>
+                    <div className="d-flex justify-content-between text-xs py-1 border-bottom">
+                      <span className="text-muted">Fulfillment Status:</span>
+                      <span className={`badge ${(bookingSuccessData.status || 'Confirmed').toLowerCase() === 'pending' ? 'bg-warning text-dark' : 'bg-success text-white'}`}>
+                        {bookingSuccessData.status || 'Confirmed'}
+                      </span>
                     </div>
                     <div className="d-flex justify-content-between text-xs py-1">
                       <span className="text-muted">Guest:</span>

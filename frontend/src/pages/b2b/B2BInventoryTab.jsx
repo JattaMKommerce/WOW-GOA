@@ -963,9 +963,13 @@ export default function B2BInventoryTab({
                   <div className="rounded-circle p-3 bg-success bg-opacity-20 text-success d-inline-flex mb-3">
                     <CheckCircle2 size={42} />
                   </div>
-                  <h4 className="fw-bold text-dark font-heading mb-1">Booking Confirmed!</h4>
+                  <h4 className="fw-bold text-dark font-heading mb-1">
+                    {(bookingSuccess.status || 'Confirmed').toLowerCase() === 'pending'
+                      ? 'Booking Received (Pending Confirmation)'
+                      : `Booking ${bookingSuccess.status || 'Confirmed'}!`}
+                  </h4>
                   <p className="text-muted text-xs mb-3">
-                    Booking Reference ID: <strong>#{bookingSuccess.booking_id}</strong>
+                    Booking Reference ID: <strong>#{bookingSuccess.booking_id}</strong> • Status: <span className={`badge ${(bookingSuccess.status || 'Confirmed').toLowerCase() === 'pending' ? 'bg-warning text-dark' : 'bg-success text-white'}`}>{bookingSuccess.status || 'Confirmed'}</span>
                   </p>
                   <p className="text-xs text-muted">
                     Confirmation vouchers and notifications have been recorded.

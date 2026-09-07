@@ -10,18 +10,24 @@ export default function PMSNotifications({ currentUser, onNavigate, onNotificati
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('All');
 
+  const storagePrefix = `vendor_notifs_hotel_${currentUser?.id || 'vendor'}`;
+  const readStorageKey = `${storagePrefix}_read`;
+  const clearedStorageKey = `${storagePrefix}_cleared`;
+
   const fetchNotifs = async () => {
     setLoading(true);
     try {
       const res = await api.pmsListNotifications(currentUser.id);
-      setNotifications(res.notifications || []);
+      const fetched = res.notifications || [];
+      const savedCleared = JSON.parse(localStorage.getItem(clearedStorageKey) || '[]');
+      const savedRead = JSON.parse(localStorage.getItem(readStorageKey) || '[]');
+      const active = fetched.filter(n => !savedCleared.includes(String(n.id))).map(n => ({
+        ...n,
+        is_read: n.is_read || savedRead.includes(String(n.id)) ? 1 : 0
+      }));
+      setNotifications(active);
     } catch {
-      setNotifications([
-        { id: 'demo1', type: 'booking', title: 'New Booking Received', message: 'A new booking has been made for Calangute Beach Resort for 15-18 July.', is_read: 0, created_at: new Date().toISOString() },
-        { id: 'demo2', type: 'payment', title: 'Payment Received', message: '₹12,500 received for booking #MB1234.', is_read: 1, created_at: new Date(Date.now() - 86400000).toISOString() },
-        { id: 'demo3', type: 'review', title: 'New Guest Review', message: 'Priya Sharma gave your hotel 4.5 stars. Click to read and reply.', is_read: 0, created_at: new Date(Date.now() - 3600000).toISOString() },
-        { id: 'demo4', type: 'approval', title: 'Hotel Approved!', message: 'Your hotel has been reviewed and approved. It is now live on the platform.', is_read: 1, created_at: new Date(Date.now() - 172800000).toISOString() }
-      ]);
+      setNotifications([]);
     }
     finally { setLoading(false); }
   };
@@ -29,24 +35,38 @@ export default function PMSNotifications({ currentUser, onNavigate, onNotificati
   useEffect(() => { fetchNotifs(); }, [currentUser.id]);
 
   const markAllRead = async () => {
+    try {
+      const allIds = notifications.map(n => String(n.id));
+      const savedRead = JSON.parse(localStorage.getItem(readStorageKey) || '[]');
+      localStorage.setItem(readStorageKey, JSON.stringify(Array.from(new Set([...savedRead, ...allIds]))));
+    } catch (_) {}
     await api.pmsMarkNotificationRead(null, currentUser.id, true);
+    setNotifications(n => n.map(x => ({ ...x, is_read: 1 })));
     window.dispatchEvent(new CustomEvent('pms-notification-updated'));
-    fetchNotifs();
+    window.dispatchEvent(new CustomEvent('tripgalileo-notification-sync'));
   };
 
   const markRead = async (id, e) => {
     if (e) e.stopPropagation();
+    try {
+      const savedRead = JSON.parse(localStorage.getItem(readStorageKey) || '[]');
+      localStorage.setItem(readStorageKey, JSON.stringify(Array.from(new Set([...savedRead, String(id)]))));
+    } catch (_) {}
     await api.pmsMarkNotificationRead(id, currentUser.id);
-    window.dispatchEvent(new CustomEvent('pms-notification-updated'));
     setNotifications(n => n.map(x => x.id === id ? { ...x, is_read: 1 } : x));
+    window.dispatchEvent(new CustomEvent('pms-notification-updated'));
+    window.dispatchEvent(new CustomEvent('tripgalileo-notification-sync'));
   };
 
   const deleteNotif = async (id, e) => {
     if (e) e.stopPropagation();
     try {
+      const savedCleared = JSON.parse(localStorage.getItem(clearedStorageKey) || '[]');
+      localStorage.setItem(clearedStorageKey, JSON.stringify(Array.from(new Set([...savedCleared, String(id)]))));
       await api.pmsDeleteNotification(id, currentUser.id);
       setNotifications(n => n.filter(x => x.id !== id));
       window.dispatchEvent(new CustomEvent('pms-notification-updated'));
+      window.dispatchEvent(new CustomEvent('tripgalileo-notification-sync'));
     } catch (err) {
       console.error(err);
     }
@@ -55,9 +75,13 @@ export default function PMSNotifications({ currentUser, onNavigate, onNotificati
   const clearAllNotifs = async () => {
     if (!window.confirm('Clear all notifications?')) return;
     try {
+      const allIds = notifications.map(n => String(n.id));
+      const savedCleared = JSON.parse(localStorage.getItem(clearedStorageKey) || '[]');
+      localStorage.setItem(clearedStorageKey, JSON.stringify(Array.from(new Set([...savedCleared, ...allIds]))));
       await api.pmsDeleteNotification(null, currentUser.id, true);
       setNotifications([]);
       window.dispatchEvent(new CustomEvent('pms-notification-updated'));
+      window.dispatchEvent(new CustomEvent('tripgalileo-notification-sync'));
     } catch (err) {
       console.error(err);
     }

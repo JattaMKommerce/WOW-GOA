@@ -30,7 +30,23 @@ export function getBookingServiceType(b) {
     return 'FLIGHT';
   }
 
-  // 2. TRIP (Packages, Tours, Craft Trips, Itinerary escapes)
+  // 2. SIGHTSEEING & ACTIVITY (Evaluated before TRIP to prevent activity bookings from being misclassified as Trip)
+  const isActivity = (
+    type === 'activity' ||
+    type === 'sightseeing' ||
+    pkgType === 'activity' ||
+    pkgType === 'sightseeing' ||
+    itemId.startsWith('act-') ||
+    itemId.startsWith('activity-') ||
+    itemId.startsWith('sight-') ||
+    itemId.startsWith('act_')
+  );
+
+  if (isActivity) {
+    return 'ACTIVITY';
+  }
+
+  // 3. TRIP (Packages, Tours, Craft Trips, Itinerary escapes)
   const isTrip = (
     type === 'package' ||
     type === 'trip' ||
@@ -163,6 +179,12 @@ export function ServiceBadge({ type }) {
       return (
         <span className="badge rounded-pill px-2.5 py-1 fw-bold border border-success-subtle" style={{ background: '#ecfdf5', color: '#059669', fontSize: '0.72rem' }}>
           🌴 TRIP
+        </span>
+      );
+    case 'ACTIVITY':
+      return (
+        <span className="badge rounded-pill px-2.5 py-1 fw-bold border border-teal-subtle" style={{ background: '#f0fdf4', color: '#16a34a', fontSize: '0.72rem' }}>
+          🎯 SIGHTSEEING & ACTIVITY
         </span>
       );
     case 'FLIGHT':
@@ -442,6 +464,7 @@ export default function AdminBookingManagement({
     VEHICLE: bookingsList.filter(b => getBookingServiceType(b) === 'VEHICLE').length,
     HOTEL: bookingsList.filter(b => getBookingServiceType(b) === 'HOTEL').length,
     TRIP: bookingsList.filter(b => getBookingServiceType(b) === 'TRIP').length,
+    ACTIVITY: bookingsList.filter(b => getBookingServiceType(b) === 'ACTIVITY').length,
     FLIGHT: bookingsList.filter(b => getBookingServiceType(b) === 'FLIGHT').length,
   }), [bookingsList]);
 
@@ -492,6 +515,7 @@ export default function AdminBookingManagement({
       const isCar = formData.serviceType === 'car';
       const isBike = formData.serviceType === 'bike';
       const isHotel = formData.serviceType === 'hotel';
+      const isActivity = formData.serviceType === 'activity';
 
       const payload = {
         name: formData.name,
@@ -500,11 +524,11 @@ export default function AdminBookingManagement({
         customer_phone: formData.phone,
         email: formData.email || null,
         customer_email: formData.email || null,
-        item_id: formData.item_id || `item-${Date.now()}`,
+        item_id: formData.item_id || (isActivity ? `act-${Date.now()}` : `item-${Date.now()}`),
         item_name: formData.item_name,
         package_name: formData.item_name,
-        package_type: isPkg ? 'Trip Package' : (isSd ? 'Self Drive Package' : (isCar ? 'Car Rental' : (isBike ? 'Bike Rental' : (isHotel ? 'Hotel Stay' : 'Trip Package')))),
-        type: isPkg ? 'package' : (isSd ? 'selfdrive' : (isCar ? 'car' : (isBike ? 'bike' : (isHotel ? 'hotel' : 'package')))),
+        package_type: isPkg ? 'Trip Package' : (isSd ? 'Self Drive Package' : (isCar ? 'Car Rental' : (isBike ? 'Bike Rental' : (isHotel ? 'Hotel Stay' : (isActivity ? 'Sightseeing & Activity' : 'Trip Package'))))),
+        type: isPkg ? 'package' : (isSd ? 'selfdrive' : (isCar ? 'car' : (isBike ? 'bike' : (isHotel ? 'hotel' : (isActivity ? 'activity' : 'package'))))),
         pickup_date: formData.pickup_date || null,
         drop_date: formData.drop_date || null,
         pickup_loc: formData.pickup_loc || 'Goa',
@@ -778,6 +802,14 @@ export default function AdminBookingManagement({
                 onClick={() => setServiceFilter('TRIP')}
               >
                 🌴 TRIP <span className="admin-pill-badge">{serviceCounts.TRIP}</span>
+              </button>
+              <button
+                type="button"
+                className={`admin-filter-pill ${serviceFilter === 'ACTIVITY' ? 'active-teal' : ''}`}
+                style={serviceFilter === 'ACTIVITY' ? { background: '#0D1B2E', color: '#fff', borderColor: '#0D1B2E' } : {}}
+                onClick={() => setServiceFilter('ACTIVITY')}
+              >
+                🎯 SIGHTSEEING & ACTIVITY <span className="admin-pill-badge">{serviceCounts.ACTIVITY}</span>
               </button>
               <button
                 type="button"
@@ -1268,6 +1300,7 @@ export default function AdminBookingManagement({
                         <option value="hotel">Hotel Stay</option>
                         <option value="car">Self-Drive Car Rental</option>
                         <option value="bike">Rental Bike</option>
+                        <option value="activity">Sightseeing & Activity</option>
                         <option value="custom">Custom Trip Package</option>
                       </select>
                     </div>

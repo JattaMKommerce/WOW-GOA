@@ -631,6 +631,8 @@ function seedDatabaseIfEmpty($pdo) {
         try { $pdo->exec($q); } catch (PDOException $e) {}
     }
 
+    // Existing add_ons schema is reused directly without modifying columns
+
     // Seed default B2B pricing rules if none exist
     try {
         $pdo->exec("INSERT IGNORE INTO b2b_pricing_rules (partner_id, service_type, commission_percent, net_discount_percent, is_active, notes) VALUES
@@ -2974,6 +2976,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 $paramsNotif = [$targetId];
                 $sqlCnt = "SELECT COUNT(*) as unread FROM notifications WHERE (role = 'admin' OR user_id = 'admin' OR user_id = ? OR type LIKE 'b2b_%') AND is_read = 0";
                 $paramsCnt = [$targetId];
+            } elseif ($role === 'subadmin' || $role === 'sub_admin') {
+                $targetId = $actorId ?: 'subadmin';
+                $sqlNotif = "SELECT * FROM notifications WHERE role IN ('subadmin', 'sub_admin') OR user_id = 'subadmin' OR user_id = ? ORDER BY created_at DESC LIMIT 100";
+                $paramsNotif = [$targetId];
+                $sqlCnt = "SELECT COUNT(*) as unread FROM notifications WHERE (role IN ('subadmin', 'sub_admin') OR user_id = 'subadmin' OR user_id = ?) AND is_read = 0";
+                $paramsCnt = [$targetId];
             } elseif ($role === 'vendor') {
                 if ($actorId === 'u-4') {
                     $sqlNotif = "SELECT * FROM notifications WHERE user_id IN ('u-4', 'vendor-1', 'vendor-2') OR (role = 'vendor' AND (user_id IN ('u-4', 'vendor-1', 'vendor-2') OR user_id IS NULL)) ORDER BY created_at DESC LIMIT 100";
@@ -3011,10 +3019,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 $paramsCnt = [$b2bId, $b2bId];
             } else {
                 $cId = !empty($last10) ? ('c_' . $last10) : ($actorId ?: 'guest');
-                $sqlNotif = "SELECT * FROM notifications WHERE user_id = ? OR user_id = ? OR user_id = ? OR (role = 'customer' AND user_id = ?) ORDER BY created_at DESC LIMIT 100";
-                $paramsNotif = [$actorId, $cId, $userPhone, $cId];
-                $sqlCnt = "SELECT COUNT(*) as unread FROM notifications WHERE (user_id = ? OR user_id = ? OR user_id = ? OR (role = 'customer' AND user_id = ?)) AND is_read = 0";
-                $paramsCnt = [$actorId, $cId, $userPhone, $cId];
+                $sqlNotif = "SELECT * FROM notifications WHERE user_id = ? OR user_id = ? OR user_id = ? OR (role = 'customer' AND (user_id = ? OR user_id = ? OR user_id = ?)) ORDER BY created_at DESC LIMIT 100";
+                $paramsNotif = [$actorId, $cId, $userPhone, $actorId, $cId, $userPhone];
+                $sqlCnt = "SELECT COUNT(*) as unread FROM notifications WHERE (user_id = ? OR user_id = ? OR user_id = ? OR (role = 'customer' AND (user_id = ? OR user_id = ? OR user_id = ?))) AND is_read = 0";
+                $paramsCnt = [$actorId, $cId, $userPhone, $actorId, $cId, $userPhone];
             }
 
             try {
@@ -3520,10 +3528,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $stmt->execute([$tenant_id, $tenant_id]);
             $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
             echo json_encode($data);
-            exit;} elseif ($resource === 'add_ons') {
-            $stmt = $pdo->query("SELECT * FROM add_ons");
+            exit;} elseif ($resource === 'add_ons' || $resource === 'activities') {
+            $stmt = $pdo->query("SELECT * FROM add_ons ORDER BY id DESC");
             $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            echo json_encode($data);
+            $normalized = array_map(function($r) {
+                $titleVal = !empty($r['title']) ? $r['title'] : ($r['name'] ?? '');
+                $typeVal = !empty($r['type']) ? $r['type'] : ($r['category'] ?? 'Activity');
+                $imgVal = !empty($r['image_url']) ? $r['image_url'] : ($r['image'] ?? '');
+                return [
+                    'id' => $r['id'],
+                    'title' => $titleVal,
+                    'name' => $titleVal,
+                    'type' => $typeVal,
+                    'category' => $typeVal,
+                    'location' => $r['location'] ?? 'Goa',
+                    'price' => intval($r['price'] ?? 0),
+                    'duration' => $r['duration'] ?? '2-3 Hours',
+                    'description' => $r['description'] ?? '',
+                    'image_url' => $imgVal,
+                    'image' => $imgVal,
+                    'is_active' => isset($r['is_active']) ? intval($r['is_active']) : 1,
+                ];
+            }, $data);
+            echo json_encode($normalized);
             exit;} elseif ($resource === 'markups') {
             $stmt = $pdo->query("SELECT * FROM markups");
             $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -4234,17 +4261,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $markAll = !empty($payload['all']);
             $actorId = $actor['id'] ?? ($payload['user_id'] ?? ($payload['userId'] ?? ''));
             $role = strtolower($actor['role'] ?? ($payload['role'] ?? ''));
+            $partnerId = $payload['b2b_partner_id'] ?? '';
+            $phone = preg_replace('/\D/', '', $payload['phone'] ?? ($payload['mobile'] ?? ''));
 
             if ($markAll) {
                 if ($role === 'admin' || $role === 'superadmin' || $actorId === 'admin') {
                     $stmt = $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE user_id = 'admin' OR role = 'admin' OR user_id = ? OR type LIKE 'b2b_%'");
                     $stmt->execute([$actorId ?: 'admin']);
-                } elseif ($role === 'customer') {
-                    $phone = preg_replace('/\D/', '', $payload['phone'] ?? ($payload['mobile'] ?? ''));
+                } elseif ($role === 'subadmin' || $role === 'sub_admin') {
+                    $stmt = $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE role IN ('subadmin', 'sub_admin') OR user_id = 'subadmin' OR user_id = ?");
+                    $stmt->execute([$actorId ?: 'subadmin']);
+                } elseif ($role === 'vendor') {
+                    if ($actorId === 'u-4' || empty($actorId)) {
+                        $stmt = $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE user_id IN ('u-4', 'vendor-1', 'vendor-2') OR (role = 'vendor' AND (user_id IN ('u-4', 'vendor-1', 'vendor-2') OR user_id IS NULL))");
+                        $stmt->execute();
+                    } else {
+                        $stmt = $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ? OR (role = 'vendor' AND user_id = ?)");
+                        $stmt->execute([$actorId, $actorId]);
+                    }
+                } elseif ($role === 'hotel_vendor') {
+                    if ($actorId === 'u-5' || $actorId === 'vendor-3' || $actorId === 'hotel_vendor' || empty($actorId)) {
+                        $stmt = $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE user_id IN ('u-5', 'vendor-3', 'hotel_vendor') OR (role = 'hotel_vendor' AND (user_id IN ('u-5', 'vendor-3', 'hotel_vendor') OR user_id IS NULL))");
+                        $stmt->execute();
+                        try {
+                            $stmtH = $pdo->prepare("UPDATE hotel_notifications SET is_read = 1 WHERE vendor_id IN ('u-5', 'vendor-3', 'hotel_vendor')");
+                            $stmtH->execute();
+                        } catch (Exception $he) {}
+                    } else {
+                        $stmt = $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ? OR (role = 'hotel_vendor' AND user_id = ?)");
+                        $stmt->execute([$actorId, $actorId]);
+                        try {
+                            $stmtH = $pdo->prepare("UPDATE hotel_notifications SET is_read = 1 WHERE vendor_id = ?");
+                            $stmtH->execute([$actorId]);
+                        } catch (Exception $he) {}
+                    }
+                } elseif ($role === 'driver') {
+                    $stmt = $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ? OR (role = 'driver' AND user_id = ?)");
+                    $stmt->execute([$actorId, $actorId]);
+                } elseif ($role === 'b2b' || $role === 'agent' || !empty($partnerId)) {
+                    $b2bId = $partnerId ?: $actorId;
+                    $stmt = $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE b2b_partner_id = ? OR user_id = ?");
+                    $stmt->execute([$b2bId, $b2bId]);
+                } elseif ($role === 'customer' || !empty($phone)) {
                     $last10 = strlen($phone) >= 10 ? substr($phone, -10) : $phone;
-                    $cId = 'c_' . $last10;
-                    $stmt = $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ? OR user_id = ? OR user_id = ? OR role = 'customer'");
-                    $stmt->execute([$actorId, $cId, $phone]);
+                    $cId = !empty($last10) ? ('c_' . $last10) : ($actorId ?: 'guest');
+                    $stmt = $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ? OR user_id = ? OR user_id = ? OR (role = 'customer' AND (user_id = ? OR user_id = ? OR user_id = ?))");
+                    $stmt->execute([$actorId, $cId, $phone, $actorId, $cId, $phone]);
                 } else {
                     $stmt = $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ? OR b2b_partner_id = ? OR role = ?");
                     $stmt->execute([$actorId, $actorId, $role]);
@@ -4252,50 +4314,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif ($notifId) {
                 $stmt = $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE id = ?");
                 $stmt->execute([$notifId]);
+                try {
+                    $stmtH = $pdo->prepare("UPDATE hotel_notifications SET is_read = 1 WHERE id = ?");
+                    $stmtH->execute([$notifId]);
+                } catch (Exception $he) {}
             }
 
             echo json_encode(["success" => true, "message" => "Notification marked as read."]);
             exit();
-        } elseif ($action === 'clear_notifications') {
+        } elseif ($action === 'clear_notifications' || $action === 'b2b_clear_notifications') {
             $actor = authenticateRequest($pdo, false);
             $actorId = $actor['id'] ?? ($payload['user_id'] ?? ($payload['userId'] ?? ''));
             $role = strtolower($actor['role'] ?? ($payload['role'] ?? ''));
+            $partnerId = $payload['b2b_partner_id'] ?? '';
+            $phone = preg_replace('/\D/', '', $payload['phone'] ?? ($payload['mobile'] ?? ''));
 
             if ($role === 'admin' || $role === 'superadmin' || $actorId === 'admin') {
                 $stmt = $pdo->prepare("DELETE FROM notifications WHERE user_id = 'admin' OR role = 'admin' OR type LIKE 'b2b_%'");
                 $stmt->execute();
-            } elseif ($role === 'customer') {
-                $phone = preg_replace('/\D/', '', $payload['phone'] ?? ($payload['mobile'] ?? ''));
+            } elseif ($role === 'subadmin' || $role === 'sub_admin') {
+                $stmt = $pdo->prepare("DELETE FROM notifications WHERE role IN ('subadmin', 'sub_admin') OR user_id = 'subadmin' OR user_id = ?");
+                $stmt->execute([$actorId ?: 'subadmin']);
+            } elseif ($role === 'vendor') {
+                if ($actorId === 'u-4' || empty($actorId)) {
+                    $stmt = $pdo->prepare("DELETE FROM notifications WHERE user_id IN ('u-4', 'vendor-1', 'vendor-2') OR (role = 'vendor' AND (user_id IN ('u-4', 'vendor-1', 'vendor-2') OR user_id IS NULL))");
+                    $stmt->execute();
+                } else {
+                    $stmt = $pdo->prepare("DELETE FROM notifications WHERE user_id = ? OR (role = 'vendor' AND user_id = ?)");
+                    $stmt->execute([$actorId, $actorId]);
+                }
+            } elseif ($role === 'hotel_vendor') {
+                if ($actorId === 'u-5' || $actorId === 'vendor-3' || $actorId === 'hotel_vendor' || empty($actorId)) {
+                    $stmt = $pdo->prepare("DELETE FROM notifications WHERE user_id IN ('u-5', 'vendor-3', 'hotel_vendor') OR (role = 'hotel_vendor' AND (user_id IN ('u-5', 'vendor-3', 'hotel_vendor') OR user_id IS NULL))");
+                    $stmt->execute();
+                    try {
+                        $stmtH = $pdo->prepare("DELETE FROM hotel_notifications WHERE vendor_id IN ('u-5', 'vendor-3', 'hotel_vendor')");
+                        $stmtH->execute();
+                    } catch (Exception $he) {}
+                } else {
+                    $stmt = $pdo->prepare("DELETE FROM notifications WHERE user_id = ? OR (role = 'hotel_vendor' AND user_id = ?)");
+                    $stmt->execute([$actorId, $actorId]);
+                    try {
+                        $stmtH = $pdo->prepare("DELETE FROM hotel_notifications WHERE vendor_id = ?");
+                        $stmtH->execute([$actorId]);
+                    } catch (Exception $he) {}
+                }
+            } elseif ($role === 'driver') {
+                $stmt = $pdo->prepare("DELETE FROM notifications WHERE user_id = ? OR (role = 'driver' AND user_id = ?)");
+                $stmt->execute([$actorId, $actorId]);
+            } elseif ($role === 'b2b' || $role === 'agent' || !empty($partnerId)) {
+                $b2bId = $partnerId ?: $actorId;
+                $stmt = $pdo->prepare("DELETE FROM notifications WHERE b2b_partner_id = ? OR user_id = ?");
+                $stmt->execute([$b2bId, $b2bId]);
+            } elseif ($role === 'customer' || !empty($phone)) {
                 $last10 = strlen($phone) >= 10 ? substr($phone, -10) : $phone;
-                $cId = 'c_' . $last10;
-                $stmt = $pdo->prepare("DELETE FROM notifications WHERE user_id = ? OR user_id = ? OR user_id = ?");
-                $stmt->execute([$actorId, $cId, $phone]);
+                $cId = !empty($last10) ? ('c_' . $last10) : ($actorId ?: 'guest');
+                $stmt = $pdo->prepare("DELETE FROM notifications WHERE user_id = ? OR user_id = ? OR user_id = ? OR (role = 'customer' AND (user_id = ? OR user_id = ? OR user_id = ?))");
+                $stmt->execute([$actorId, $cId, $phone, $actorId, $cId, $phone]);
             } elseif (!empty($actorId)) {
                 $stmt = $pdo->prepare("DELETE FROM notifications WHERE user_id = ? OR b2b_partner_id = ? OR role = ?");
                 $stmt->execute([$actorId, $actorId, $role]);
             }
             echo json_encode(["success" => true, "message" => "Notifications cleared."]);
             exit();
-        } elseif ($action === 'b2b_mark_notification_read') {
-            $notifId = $payload['id'] ?? '';
-            $partnerId = $payload['b2b_partner_id'] ?? '';
-            $markAll = !empty($payload['all']);
-
-            if ($markAll && $partnerId) {
-                $stmt = $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE b2b_partner_id = ? OR user_id = ?");
-                $stmt->execute([$partnerId, $partnerId]);
-            } elseif ($notifId) {
-                $stmt = $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE id = ?");
-                $stmt->execute([$notifId]);
-            }
-            echo json_encode(["success" => true, "message" => "Notification marked as read."]);
-            exit();
-        } elseif ($action === 'b2b_clear_notifications') {
-            $partnerId = $payload['b2b_partner_id'] ?? '';
-            if ($partnerId) {
-                $stmt = $pdo->prepare("DELETE FROM notifications WHERE b2b_partner_id = ? OR user_id = ?");
-                $stmt->execute([$partnerId, $partnerId]);
-            }
             echo json_encode(["success" => true, "message" => "Notifications cleared."]);
             exit();
         } elseif ($action === 'b2b_login') {
@@ -4979,6 +5060,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ]);
                     }
                 } catch (Exception $ae) {}
+
+                try {
+                    createAuthoritativeNotification(
+                        $pdo,
+                        $driverId,
+                        'driver',
+                        'driver_job_assigned',
+                        'New Transport Job Assigned #' . $bookingId,
+                        "Admin has assigned you to Transport Job #{$bookingId}.",
+                        'driver_job',
+                        $bookingId
+                    );
+                    $bPhone = preg_replace('/\D/', '', $bRow['phone'] ?? '');
+                    $last10 = strlen($bPhone) >= 10 ? substr($bPhone, -10) : $bPhone;
+                    $custRecipient = !empty($last10) ? ('c_' . $last10) : ($bRow['customer_id'] ?? $bPhone);
+                    createAuthoritativeNotification(
+                        $pdo,
+                        $custRecipient,
+                        'customer',
+                        'driver_job_accepted',
+                        'Driver Assigned #' . $bookingId,
+                        "Driver {$driver['name']} ({$driver['phone']}) has been assigned to your booking #{$bookingId}.",
+                        'booking',
+                        $bookingId
+                    );
+                } catch (Exception $ane) {}
             }
 
             echo json_encode([
@@ -5015,7 +5122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $driver = $stmtDrv->fetch(PDO::FETCH_ASSOC);
             if (!$driver) {
                 http_response_code(404);
-                echo json_encode(["success" => false, "error" => "Driver account not found."]);
+                echo json_encode(["success" => false, "error" => "Driver record not found."]);
                 exit;
             }
 
@@ -5107,7 +5214,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
             }
 
-            // Phase 8: Authoritative driver notifications
+            // Phase 8: Authoritative driver, admin & customer notifications (Cross-Device Ready)
             try {
                 createAuthoritativeNotification(
                     $pdo,
@@ -5127,6 +5234,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'Driver Job #' . $bookingId . ' Accepted',
                     "Driver " . $driver['name'] . " accepted Transport Job #{$bookingId}.",
                     'driver_job',
+                    $bookingId
+                );
+                // Multi-Desktop Cross-Device: Authoritative Customer Notification
+                $bPhone = preg_replace('/\D/', '', $booking['phone'] ?? '');
+                $last10 = strlen($bPhone) >= 10 ? substr($bPhone, -10) : $bPhone;
+                $custRecipient = !empty($last10) ? ('c_' . $last10) : ($booking['customer_id'] ?? $bPhone);
+                createAuthoritativeNotification(
+                    $pdo,
+                    $custRecipient,
+                    'customer',
+                    'driver_job_accepted',
+                    'Driver Assigned & Accepted #' . $bookingId,
+                    "Driver {$driver['name']} ({$driver['phone']}) has accepted your transport booking #{$bookingId}.",
+                    'booking',
                     $bookingId
                 );
             } catch (Exception $dne) {}
@@ -5179,13 +5300,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmtA->execute([$status, $now, $notes, $notes, $bookingId]);
             } catch (Exception $ae) {}
 
-            // Phase 8: Driver & Admin Notifications on job status change
+            // Phase 8: Driver, Admin & Customer Notifications on job status change (Cross-Device Ready)
             try {
-                $stmtFetchB = $pdo->prepare("SELECT assigned_driver_id, driver_earning, name, item_name FROM bookings WHERE id = ?");
+                $stmtFetchB = $pdo->prepare("SELECT assigned_driver_id, driver_earning, name, item_name, phone, customer_id FROM bookings WHERE id = ?");
                 $stmtFetchB->execute([$bookingId]);
                 $bRowInfo = $stmtFetchB->fetch(PDO::FETCH_ASSOC);
                 $dId = $bRowInfo['assigned_driver_id'] ?? $driverId;
                 $earning = intval($bRowInfo['driver_earning'] ?: 800);
+
+                $bPhone = preg_replace('/\D/', '', $bRowInfo['phone'] ?? '');
+                $last10 = strlen($bPhone) >= 10 ? substr($bPhone, -10) : $bPhone;
+                $custRecipient = !empty($last10) ? ('c_' . $last10) : ($bRowInfo['customer_id'] ?? $bPhone);
 
                 if (strtolower($status) === 'completed') {
                     createAuthoritativeNotification(
@@ -5196,6 +5321,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'Job Completed - Payment Payable',
                         "Job #{$bookingId} completed! Payout of ₹{$earning} is now payable.",
                         'driver_job',
+                        $bookingId
+                    );
+                    createAuthoritativeNotification(
+                        $pdo,
+                        $custRecipient,
+                        'customer',
+                        'driver_job_completed',
+                        "Trip Completed (#{$bookingId})",
+                        "Your transport trip for booking #{$bookingId} has been marked as Completed.",
+                        'booking',
                         $bookingId
                     );
                     createAuthoritativeNotification(
@@ -5217,6 +5352,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         "Job #{$bookingId} Status: {$status}",
                         "Job #{$bookingId} status updated to {$status}.",
                         'driver_job',
+                        $bookingId
+                    );
+                    createAuthoritativeNotification(
+                        $pdo,
+                        $custRecipient,
+                        'customer',
+                        'driver_job_status',
+                        "Trip Status: {$status} (#{$bookingId})",
+                        "Your driver has updated trip status to: {$status}.",
+                        'booking',
                         $bookingId
                     );
                 }
@@ -7280,19 +7425,74 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $pdo->prepare("DELETE FROM coupons WHERE id = ?");
             $stmt->execute([$payload['id']]);
             echo json_encode(["success" => true]);
-            exit;} elseif ($action === 'create_add_on') {
-            $stmt = $pdo->prepare("INSERT INTO add_ons (title, type, location, price, duration, description, image_url) VALUES (?, ?, ?, ?, ?, ?, ?)");
-            $stmt->execute([
-                $payload['title'],
-                $payload['type'],
-                $payload['location'],
-                $payload['price'],
-                $payload['duration'],
-                $payload['description'],
-                $payload['image_url']
-            ]);
-            echo json_encode(["success" => true, "id" => $pdo->lastInsertId()]);
-            exit;} elseif ($action === 'delete_add_on') {
+            exit;} elseif ($action === 'create_add_on' || $action === 'create_activity') {
+            $existingCols = array_map(function($c) { return strtolower($c['name']); }, $pdo->query("PRAGMA table_info(add_ons)")->fetchAll(PDO::FETCH_ASSOC));
+            $title = $payload['title'] ?? ($payload['name'] ?? 'Activity');
+            $type = $payload['type'] ?? ($payload['category'] ?? 'Activity');
+            $location = $payload['location'] ?? 'Goa';
+            $price = intval($payload['price'] ?? 0);
+            $duration = $payload['duration'] ?? '2-3 Hours';
+            $description = $payload['description'] ?? '';
+            $imageUrl = $payload['image_url'] ?? ($payload['image'] ?? '');
+            $isActive = isset($payload['is_active']) ? intval($payload['is_active']) : 1;
+            $actId = !empty($payload['id']) ? $payload['id'] : ('act-' . rand(10000, 99999));
+
+            $insertData = [];
+            if (in_array('id', $existingCols)) $insertData['id'] = $actId;
+            if (in_array('title', $existingCols)) $insertData['title'] = $title;
+            if (in_array('name', $existingCols)) $insertData['name'] = $title;
+            if (in_array('type', $existingCols)) $insertData['type'] = $type;
+            if (in_array('category', $existingCols)) $insertData['category'] = $type;
+            if (in_array('location', $existingCols)) $insertData['location'] = $location;
+            if (in_array('price', $existingCols)) $insertData['price'] = $price;
+            if (in_array('duration', $existingCols)) $insertData['duration'] = $duration;
+            if (in_array('description', $existingCols)) $insertData['description'] = $description;
+            if (in_array('image_url', $existingCols)) $insertData['image_url'] = $imageUrl;
+            if (in_array('image', $existingCols)) $insertData['image'] = $imageUrl;
+            if (in_array('is_active', $existingCols)) $insertData['is_active'] = $isActive;
+
+            $colsStr = implode(', ', array_keys($insertData));
+            $placeholders = implode(', ', array_fill(0, count($insertData), '?'));
+            $stmt = $pdo->prepare("INSERT INTO add_ons ($colsStr) VALUES ($placeholders)");
+            $stmt->execute(array_values($insertData));
+            echo json_encode(["success" => true, "id" => $actId]);
+            exit;} elseif ($action === 'update_add_on' || $action === 'update_activity') {
+            $existingCols = array_map(function($c) { return strtolower($c['name']); }, $pdo->query("PRAGMA table_info(add_ons)")->fetchAll(PDO::FETCH_ASSOC));
+            $actId = $payload['id'] ?? '';
+            if (empty($actId)) {
+                echo json_encode(["success" => false, "error" => "ID is required"]);
+                exit;
+            }
+            $title = $payload['title'] ?? ($payload['name'] ?? null);
+            $type = $payload['type'] ?? ($payload['category'] ?? null);
+            $location = $payload['location'] ?? null;
+            $price = isset($payload['price']) ? intval($payload['price']) : null;
+            $duration = $payload['duration'] ?? null;
+            $description = $payload['description'] ?? null;
+            $imageUrl = $payload['image_url'] ?? ($payload['image'] ?? null);
+            $isActive = isset($payload['is_active']) ? intval($payload['is_active']) : null;
+
+            $updates = [];
+            $vals = [];
+            if ($title !== null && in_array('title', $existingCols)) { $updates[] = "title = ?"; $vals[] = $title; }
+            if ($title !== null && in_array('name', $existingCols)) { $updates[] = "name = ?"; $vals[] = $title; }
+            if ($type !== null && in_array('type', $existingCols)) { $updates[] = "type = ?"; $vals[] = $type; }
+            if ($type !== null && in_array('category', $existingCols)) { $updates[] = "category = ?"; $vals[] = $type; }
+            if ($location !== null && in_array('location', $existingCols)) { $updates[] = "location = ?"; $vals[] = $location; }
+            if ($price !== null && in_array('price', $existingCols)) { $updates[] = "price = ?"; $vals[] = $price; }
+            if ($duration !== null && in_array('duration', $existingCols)) { $updates[] = "duration = ?"; $vals[] = $duration; }
+            if ($description !== null && in_array('description', $existingCols)) { $updates[] = "description = ?"; $vals[] = $description; }
+            if ($imageUrl !== null && in_array('image_url', $existingCols)) { $updates[] = "image_url = ?"; $vals[] = $imageUrl; }
+            if ($imageUrl !== null && in_array('image', $existingCols)) { $updates[] = "image = ?"; $vals[] = $imageUrl; }
+            if ($isActive !== null && in_array('is_active', $existingCols)) { $updates[] = "is_active = ?"; $vals[] = $isActive; }
+
+            if (!empty($updates)) {
+                $vals[] = $actId;
+                $stmt = $pdo->prepare("UPDATE add_ons SET " . implode(', ', $updates) . " WHERE id = ?");
+                $stmt->execute($vals);
+            }
+            echo json_encode(["success" => true]);
+            exit;} elseif ($action === 'delete_add_on' || $action === 'delete_activity') {
             $stmt = $pdo->prepare("DELETE FROM add_ons WHERE id = ?");
             $stmt->execute([$payload['id']]);
             echo json_encode(["success" => true]);
@@ -7547,14 +7747,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $unread = count(array_filter($notifs, fn($n) => !$n['is_read']));
             echo json_encode(["success" => true, "notifications" => $notifs, "unread_count" => $unread]);
             exit;} elseif ($action === 'pms_mark_notification_read') {
+            $vId = $payload['vendor_id'] ?? ($payload['vendorId'] ?? 'u-5');
             if ($payload['all'] ?? false) {
-                $stmt = $pdo->prepare("UPDATE hotel_notifications SET is_read=1 WHERE vendor_id=?");
-                $stmt->execute([$payload['vendor_id']]);
+                $stmt = $pdo->prepare("UPDATE hotel_notifications SET is_read=1 WHERE vendor_id=? OR (? IN ('u-5', 'vendor-3') AND vendor_id IN ('u-5', 'vendor-3'))");
+                $stmt->execute([$vId, $vId]);
+                try {
+                    $stmtAuth = $pdo->prepare("UPDATE notifications SET is_read=1 WHERE user_id=? OR role='hotel_vendor' OR role='vendor'");
+                    $stmtAuth->execute([$vId]);
+                } catch (Exception $e) {}
             } else {
                 $stmt = $pdo->prepare("UPDATE hotel_notifications SET is_read=1 WHERE id=?");
                 $stmt->execute([$payload['id']]);
+                try {
+                    $stmtAuth = $pdo->prepare("UPDATE notifications SET is_read=1 WHERE id=?");
+                    $stmtAuth->execute([$payload['id']]);
+                } catch (Exception $e) {}
             }
-            echo json_encode(["success" => true]);
+            echo json_encode(["success" => true, "message" => "Notifications marked as read."]);
+            exit;} elseif ($action === 'pms_delete_notification') {
+            $vId = $payload['vendor_id'] ?? ($payload['vendorId'] ?? 'u-5');
+            if ($payload['all'] ?? false) {
+                $stmt = $pdo->prepare("DELETE FROM hotel_notifications WHERE vendor_id=? OR (? IN ('u-5', 'vendor-3') AND vendor_id IN ('u-5', 'vendor-3'))");
+                $stmt->execute([$vId, $vId]);
+                try {
+                    $stmtAuth = $pdo->prepare("DELETE FROM notifications WHERE user_id=? OR role='hotel_vendor' OR role='vendor'");
+                    $stmtAuth->execute([$vId]);
+                } catch (Exception $e) {}
+            } else {
+                $stmt = $pdo->prepare("DELETE FROM hotel_notifications WHERE id=?");
+                $stmt->execute([$payload['id']]);
+                try {
+                    $stmtAuth = $pdo->prepare("DELETE FROM notifications WHERE id=?");
+                    $stmtAuth->execute([$payload['id']]);
+                } catch (Exception $e) {}
+            }
+            echo json_encode(["success" => true, "message" => "Notification(s) deleted."]);
             exit;} elseif ($action === 'pms_create_notification') {
             $id = 'notif_' . uniqid();
             $stmt = $pdo->prepare("INSERT INTO hotel_notifications (id, vendor_id, type, title, message, related_id, related_type) VALUES (?,?,?,?,?,?,?)");
