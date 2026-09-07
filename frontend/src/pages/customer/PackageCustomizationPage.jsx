@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import { ArrowLeft, Plane, Car, Hotel, MapPin, X, Info, Tag, ExternalLink, CheckCircle, Sparkles, Clock, Utensils, Sunrise, Sun, Sunset, Moon, Compass, Calendar, ChevronRight, Shield } from 'lucide-react';
 import * as api from '../../services/api';
 import PackageCheckoutStep2 from './PackageCheckoutStep2';
@@ -54,6 +54,9 @@ export default function PackageCustomizationPage({
 
   // Booking Flow State
   const [currentStep, setCurrentStep] = useState(1); // 1 = Customize, 2 = Travellers, 3 = Review & Pay
+  const flowContainerRef = useRef(null);
+  const savedStepScrollRef = useRef(null);
+  const [preservedMinHeight, setPreservedMinHeight] = useState('800px');
   
   // Traveller Details State
   const [numAdults, setNumAdults] = useState(2);
@@ -400,8 +403,12 @@ export default function PackageCustomizationPage({
 
   const handleProceedToTravellers = (e) => {
     if (e && e.preventDefault) e.preventDefault();
+    if (flowContainerRef.current) {
+      const h = flowContainerRef.current.offsetHeight;
+      if (h > 0) setPreservedMinHeight(`${Math.max(h, 800)}px`);
+    }
+    savedStepScrollRef.current = window.scrollY;
     setCurrentStep(2);
-    setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);
   };
 
   const handleProceedToReview = (e) => {
@@ -417,6 +424,12 @@ export default function PackageCustomizationPage({
       return;
     }
 
+    if (flowContainerRef.current) {
+      const h = flowContainerRef.current.offsetHeight;
+      if (h > 0) setPreservedMinHeight(`${Math.max(h, 800)}px`);
+    }
+    savedStepScrollRef.current = window.scrollY;
+
     const priceRes = {
       base_price: pkg.price,
       total_price: totalPrice,
@@ -426,11 +439,15 @@ export default function PackageCustomizationPage({
     };
     setServerPriceData(priceRes);
     setCurrentStep(3);
-    setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);
   };
 
   const handleCheckout = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
+    if (flowContainerRef.current) {
+      const h = flowContainerRef.current.offsetHeight;
+      if (h > 0) setPreservedMinHeight(`${Math.max(h, 800)}px`);
+    }
+    savedStepScrollRef.current = window.scrollY;
     setIsSubmitting(true);
 
     const priceData = serverPriceData || {
@@ -515,7 +532,6 @@ export default function PackageCustomizationPage({
         onConfirmBooking(createdRecord, customizations, actualTotal);
       }
       setCurrentStep(4);
-      setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);
     } catch (err) {
       console.error("Booking error:", err);
       const fallbackRecord = { ...bookingPayload, id: `TG-${Math.floor(100000 + Math.random() * 900000)}` };
@@ -528,11 +544,25 @@ export default function PackageCustomizationPage({
         onConfirmBooking(fallbackRecord, customizations, actualTotal);
       }
       setCurrentStep(4);
-      setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  useLayoutEffect(() => {
+    if (savedStepScrollRef.current !== null) {
+      const targetY = savedStepScrollRef.current;
+      if (Math.abs(window.scrollY - targetY) > 1) {
+        window.scrollTo({ top: targetY, left: 0, behavior: 'instant' });
+      }
+      const frameId = requestAnimationFrame(() => {
+        if (savedStepScrollRef.current !== null && Math.abs(window.scrollY - targetY) > 1) {
+          window.scrollTo({ top: targetY, left: 0, behavior: 'instant' });
+        }
+      });
+      return () => cancelAnimationFrame(frameId);
+    }
+  }, [currentStep]);
 
   if (!pkg) return null;
 
@@ -541,72 +571,17 @@ export default function PackageCustomizationPage({
   const activeDepDate = pkg?.departureDate || pkg?.pickup_date || pkg?.pickupDate || pickupDate || new Date().toISOString().slice(0, 10);
   const activeRetDate = pkg?.returnDate || pkg?.drop_date || pkg?.dropDate || dropDate || new Date(Date.now() + 86400000 * activeNights).toISOString().slice(0, 10);
 
-  if (currentStep === 2) {
-    return (
-      <PackageCheckoutStep2 
-          pkg={pkg} 
-          isSelfDrivePackage={cabType === 'self-drive'}
-          travellers={travellers} 
-          setTravellers={setTravellers} 
-          numAdults={numAdults} 
-          setNumAdults={setNumAdults} 
-          numChildren={numChildren} 
-          setNumChildren={setNumChildren}
-          contactEmail={contactEmail}
-          setContactEmail={setContactEmail}
-          contactPhone={contactPhone}
-          setContactPhone={setContactPhone}
-          drivingLicense={drivingLicense}
-          setDrivingLicense={setDrivingLicense}
-          vehiclePickupLoc={vehiclePickupLoc}
-          setVehiclePickupLoc={setVehiclePickupLoc}
-          vehicleDropLoc={vehicleDropLoc}
-          setVehicleDropLoc={setVehicleDropLoc}
-          onBack={() => setCurrentStep(1)}
-          onProceed={handleProceedToReview}
-      />
-    );
-  }
-
-  if (currentStep === 3) {
-      return (
-          <PackageCheckoutStep3 
-              pkg={pkg} 
-              serverPriceData={serverPriceData || { total_price: totalPrice, advance_percentage: 25, advance_amount: Math.round(totalPrice * 0.25) }} 
-              paymentMode={paymentMode} 
-              setPaymentMode={setPaymentMode} 
-              onBack={() => setCurrentStep(2)} 
-              onCheckout={handleCheckout} 
-          />
-      );
-  }
-
-  if (currentStep === 4) {
-      return (
-          <PackageCheckoutStep4 
-              pkg={pkg}
-              bookingRecord={confirmedBooking}
-              serverPriceData={serverPriceData || { total_price: totalPrice, advance_percentage: 25, advance_amount: Math.round(totalPrice * 0.25) }}
-              paymentMode={paymentMode}
-              travellers={travellers}
-              contactEmail={contactEmail}
-              contactPhone={contactPhone}
-              pickupDate={activeDepDate}
-              dropDate={activeRetDate}
-              onDone={onBack}
-          />
-      );
-  }
-
   return (
-    <div className="container py-4" style={{ fontFamily: "'Inter', sans-serif" }}>
-      <button onClick={onBack} className="btn btn-link text-dark text-decoration-none p-0 mb-4 d-flex align-items-center gap-2 fw-bold">
-        <ArrowLeft size={18} /> Back
-      </button>
+    <div ref={flowContainerRef} className="package-customization-flow" style={{ minHeight: preservedMinHeight }}>
+      {currentStep === 1 && (
+        <div className="container py-4" style={{ fontFamily: "'Inter', sans-serif" }}>
+          <button type="button" onClick={onBack} className="btn btn-link text-dark text-decoration-none p-0 mb-4 d-flex align-items-center gap-2 fw-bold">
+            <ArrowLeft size={18} /> Back
+          </button>
 
-      {/* Package Header */}
-      <div className="mb-4">
-        <h2 className="fw-extrabold text-dark mb-2">{pkg.name}</h2>
+          {/* Package Header */}
+          <div className="mb-4">
+            <h2 className="fw-extrabold text-dark mb-2">{pkg.name}</h2>
         <div className="d-flex flex-wrap gap-2 align-items-center text-muted small fw-bold">
           <span className="border rounded-pill px-3 py-1 bg-light text-dark d-flex align-items-center gap-1">
             <Plane size={14} className="text-primary" /> {withFlight ? 'With Flight' : 'Without Flight'}
@@ -1057,6 +1032,7 @@ export default function PackageCustomizationPage({
               <span className="text-muted text-xxs d-block">Excluding applicable taxes</span>
               
               <button 
+                type="button"
                 className="btn btn-primary w-100 py-3 rounded fw-bold text-white shadow-sm mt-4 text-uppercase tracking-wider"
                 onClick={handleProceedToTravellers}
                 disabled={isSelfDrivePackage && cabType === 'self-drive' && !selectedSelfDriveVehicle}
@@ -1109,6 +1085,73 @@ export default function PackageCustomizationPage({
           </div>
         </div>
       </div>
+      </div>
+      )}
+
+      {currentStep === 2 && (
+        <PackageCheckoutStep2 
+          pkg={pkg} 
+          isSelfDrivePackage={cabType === 'self-drive'}
+          travellers={travellers} 
+          setTravellers={setTravellers} 
+          numAdults={numAdults} 
+          setNumAdults={setNumAdults} 
+          numChildren={numChildren} 
+          setNumChildren={setNumChildren}
+          contactEmail={contactEmail}
+          setContactEmail={setContactEmail}
+          contactPhone={contactPhone}
+          setContactPhone={setContactPhone}
+          drivingLicense={drivingLicense}
+          setDrivingLicense={setDrivingLicense}
+          vehiclePickupLoc={vehiclePickupLoc}
+          setVehiclePickupLoc={setVehiclePickupLoc}
+          vehicleDropLoc={vehicleDropLoc}
+          setVehicleDropLoc={setVehicleDropLoc}
+          onBack={() => {
+            if (flowContainerRef.current) {
+              const h = flowContainerRef.current.offsetHeight;
+              if (h > 0) setPreservedMinHeight(`${Math.max(h, 800)}px`);
+            }
+            savedStepScrollRef.current = window.scrollY;
+            setCurrentStep(1);
+          }}
+          onProceed={handleProceedToReview}
+        />
+      )}
+
+      {currentStep === 3 && (
+        <PackageCheckoutStep3 
+          pkg={pkg} 
+          serverPriceData={serverPriceData || { total_price: totalPrice, advance_percentage: 25, advance_amount: Math.round(totalPrice * 0.25) }} 
+          paymentMode={paymentMode} 
+          setPaymentMode={setPaymentMode} 
+          onBack={() => {
+            if (flowContainerRef.current) {
+              const h = flowContainerRef.current.offsetHeight;
+              if (h > 0) setPreservedMinHeight(`${Math.max(h, 800)}px`);
+            }
+            savedStepScrollRef.current = window.scrollY;
+            setCurrentStep(2);
+          }} 
+          onCheckout={handleCheckout} 
+        />
+      )}
+
+      {currentStep === 4 && (
+        <PackageCheckoutStep4 
+          pkg={pkg}
+          bookingRecord={confirmedBooking}
+          serverPriceData={serverPriceData || { total_price: totalPrice, advance_percentage: 25, advance_amount: Math.round(totalPrice * 0.25) }}
+          paymentMode={paymentMode}
+          travellers={travellers}
+          contactEmail={contactEmail}
+          contactPhone={contactPhone}
+          pickupDate={activeDepDate}
+          dropDate={activeRetDate}
+          onDone={onBack}
+        />
+      )}
 
       {/* SIGHTSEEING MODAL */}
       {selectedSightseeing && (

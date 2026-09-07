@@ -4,6 +4,7 @@ import {
   Eye, FileText, Download, Building2, User, Phone, MapPin, Printer, X
 } from 'lucide-react';
 import * as api from '../../services/api';
+import BookingVoucher from '../../components/common/BookingVoucher';
 
 export default function B2BBookingsTab({ partnerUser, forcedMode = null }) {
   // If forcedMode is passed ('COMMISSION' or 'NON_COMMISSION'), it locks strictly to that mode
@@ -306,179 +307,13 @@ export default function B2BBookingsTab({ partnerUser, forcedMode = null }) {
 
       {/* Booking Voucher Modal */}
       {selectedBooking && (
-        <div 
-          className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center p-3"
-          style={{ background: 'rgba(13, 27, 46, 0.75)', zIndex: 1050, backdropFilter: 'blur(4px)' }}
-        >
-          <div 
-            className="card border-0 shadow-2xl rounded-4 overflow-hidden animate-fade-in"
-            style={{ maxWidth: '580px', width: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', background: '#ffffff' }}
-          >
-            {/* Voucher Header */}
-            <div className="p-3.5 text-white d-flex align-items-center justify-content-between" style={{ background: '#0D1B2E' }}>
-              <div>
-                <span className="badge bg-warning text-dark text-xxs fw-bold px-2 py-0.5 rounded-pill mb-1">
-                  OFFICIAL B2B CONFIRMATION VOUCHER
-                </span>
-                <h5 className="fw-bold mb-0 text-white font-heading">Booking #{selectedBooking.id}</h5>
-              </div>
-              <button 
-                className="btn btn-link text-white-50 p-0 border-0" 
-                onClick={() => setSelectedBooking(null)}
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Voucher Body */}
-            <div className="p-4 overflow-y-auto flex-grow-1" id="printable-voucher">
-              <div className="d-flex justify-content-between align-items-start border-bottom pb-3 mb-3">
-                <div>
-                  <h6 className="fw-bold text-dark mb-0 font-heading">WOW GOA B2B CHANNEL</h6>
-                  <span className="text-muted text-xxs">Partner: {partnerUser?.company_name || 'Agency'}</span>
-                </div>
-                <div className="text-end">
-                  <span className="badge bg-dark text-white text-xxs px-2 py-1">
-                    {selectedBooking.b2b_mode || activeMode}
-                  </span>
-                  <span className="d-block text-muted text-xxs mt-1">
-                    {new Date(selectedBooking.created_at || Date.now()).toLocaleString()}
-                  </span>
-                </div>
-              </div>
-
-              {/* Service Details */}
-              <div className="p-3 bg-light rounded-3 border mb-3">
-                <span className="text-xxs text-muted text-uppercase fw-bold d-block mb-1">Reserved Service</span>
-                <h6 className="fw-bold text-dark mb-1 font-heading">{selectedBooking.item_name}</h6>
-                <div className="text-xs text-muted">
-                  Schedule: <strong>{selectedBooking.pickup_date || selectedBooking.departure_date}</strong>
-                  {selectedBooking.drop_date && ` → ${selectedBooking.drop_date}`}
-                </div>
-                {selectedBooking.pickup_location && (
-                  <div className="text-xs text-muted mt-1">
-                    Pickup: {selectedBooking.pickup_location}
-                  </div>
-                )}
-              </div>
-
-              {/* Chauffeur / Driver Details */}
-              {(selectedBooking.driver_service_type || selectedBooking.driver_required == 1) && (
-                <div className="p-3 bg-light rounded-3 border mb-3">
-                  <div className="d-flex align-items-center justify-content-between mb-2">
-                    <span className="text-xxs text-muted text-uppercase fw-bold">Chauffeur Service</span>
-                    <span className="badge bg-warning text-dark text-xxs fw-bold px-2 py-0.5 rounded-pill">
-                      🚗 {selectedBooking.driver_service_type || 'FULL'}
-                    </span>
-                  </div>
-                  {selectedBooking.assigned_driver_name ? (
-                    <div className="row g-2 text-xs">
-                      <div className="col-6">
-                        <span className="text-muted d-block text-xxs">Driver Name:</span>
-                        <strong className="text-success">{selectedBooking.assigned_driver_name}</strong>
-                      </div>
-                      <div className="col-6">
-                        <span className="text-muted d-block text-xxs">Driver Mobile:</span>
-                        <strong className="text-dark">{selectedBooking.assigned_driver_phone || '—'}</strong>
-                      </div>
-                      {selectedBooking.assigned_driver_vehicle && (
-                        <div className="col-12">
-                          <span className="text-muted d-block text-xxs">Vehicle Details:</span>
-                          <strong className="text-dark">{selectedBooking.assigned_driver_vehicle}</strong>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="text-xs text-muted">
-                      <span className="badge bg-warning-subtle text-dark border border-warning-subtle text-xxs px-2 py-0.5 rounded-pill mb-1">
-                        ⏳ Driver Not Assigned
-                      </span>
-                      <div className="text-xxs">Dispatch is currently open for driver acceptance. Details will appear once accepted.</div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Guest Details */}
-              <div className="p-3 bg-light rounded-3 border mb-3">
-                <span className="text-xxs text-muted text-uppercase fw-bold d-block mb-1">Guest Information</span>
-                <div className="row g-2 text-xs">
-                  <div className="col-6">
-                    <span className="text-muted d-block text-xxs">Name:</span>
-                    <strong className="text-dark">{selectedBooking.name}</strong>
-                  </div>
-                  <div className="col-6">
-                    <span className="text-muted d-block text-xxs">Phone:</span>
-                    <strong className="text-dark">{selectedBooking.phone}</strong>
-                  </div>
-                  {selectedBooking.email && (
-                    <div className="col-12">
-                      <span className="text-muted d-block text-xxs">Email:</span>
-                      <strong className="text-dark">{selectedBooking.email}</strong>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Financial Snapshot */}
-              <div className="p-3 rounded-3 border mb-3">
-                <span className="text-xxs text-muted text-uppercase fw-bold d-block mb-2">Financial Breakdown</span>
-                <div className="text-xs">
-                  <div className="d-flex justify-content-between py-1 text-muted">
-                    <span>Selling Retail Price:</span>
-                    <span>₹{parseFloat(selectedBooking.total_amount || 0).toLocaleString()}</span>
-                  </div>
-
-                  {selectedBooking.b2b_mode === 'COMMISSION' || activeMode === 'COMMISSION' ? (
-                    <>
-                      <div className="d-flex justify-content-between py-1 text-success fw-semibold">
-                        <span>Agent Commission Earned:</span>
-                        <span>+₹{parseFloat(selectedBooking.b2b_commission_amount || 0).toLocaleString()}</span>
-                      </div>
-                      <div className="d-flex justify-content-between py-1.5 border-top fw-bold text-dark fs-6 mt-1">
-                        <span>Payout to WOW Goa:</span>
-                        <span>₹{(parseFloat(selectedBooking.total_amount || 0) - parseFloat(selectedBooking.b2b_commission_amount || 0)).toLocaleString()}</span>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="d-flex justify-content-between py-1 text-primary fw-semibold">
-                        <span>B2B Net Discount:</span>
-                        <span>{selectedBooking.b2b_net_discount_percentage || 10}% OFF</span>
-                      </div>
-                      <div className="d-flex justify-content-between py-1.5 border-top fw-bold text-primary fs-6 mt-1">
-                        <span>Total Net Rate Paid:</span>
-                        <span>₹{parseFloat(selectedBooking.b2b_net_price || selectedBooking.total_amount || 0).toLocaleString()}</span>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              <div className="text-center text-muted text-xxs">
-                <span>Verified WOW GOA B2B Reservation • 24/7 Agent Support Available</span>
-              </div>
-            </div>
-
-            {/* Voucher Footer */}
-            <div className="p-3 border-top bg-light d-flex justify-content-end gap-2">
-              <button
-                type="button"
-                className="btn btn-outline-dark btn-sm rounded-pill px-3 d-flex align-items-center gap-1 text-xs"
-                onClick={() => window.print()}
-              >
-                <Printer size={13} /> Print Voucher
-              </button>
-              <button
-                type="button"
-                className="btn btn-dark btn-sm rounded-pill px-3 text-xs"
-                onClick={() => setSelectedBooking(null)}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
+        <BookingVoucher
+          booking={selectedBooking}
+          partnerUser={partnerUser}
+          currentUser={partnerUser}
+          onClose={() => setSelectedBooking(null)}
+          isModal={true}
+        />
       )}
     </div>
   );

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import './App.css';
 import { useSiteConfig } from './context/SiteConfigContext';
 import { unlockAudio } from './utils/notificationSound';
@@ -345,20 +345,9 @@ export default function App() {
     } else if (['selfdrive', 'packages', 'cars', 'home'].includes(normalizedTab)) {
       setSearchTriggered(false);
     }
-
-    // Slide and show directly that section
-    setTimeout(() => {
-      const el = document.getElementById('results-section');
-      if (el) {
-        const navbarHeight = 72;
-        const targetPos = el.getBoundingClientRect().top + window.pageYOffset - navbarHeight;
-        window.scrollTo({
-          top: Math.max(0, targetPos),
-          behavior: 'smooth'
-        });
-      }
-    }, 40);
   };
+
+  const savedBookingScrollRef = useRef(null);
 
   const handleOpenBooking = (item, isCustomization = false) => {
     if (item.pickupDate) setPickupDate(item.pickupDate);
@@ -366,15 +355,31 @@ export default function App() {
     if (item.departureDate) setPickupDate(item.departureDate);
     if (item.returnDate) setDropDate(item.returnDate);
 
+    savedBookingScrollRef.current = window.scrollY;
+
     if (item.package_type || item.duration || isCustomization) {
       setSelectedBookingItem(item);
       setActiveTab('customize');
-      window.scrollTo(0, 0);
     } else {
       setSelectedBookingItem(item);
       setBookingDays(2);
     }
   };
+
+  useLayoutEffect(() => {
+    if (savedBookingScrollRef.current !== null && activeTab === 'customize') {
+      const targetY = savedBookingScrollRef.current;
+      if (Math.abs(window.scrollY - targetY) > 1) {
+        window.scrollTo({ top: targetY, left: 0, behavior: 'instant' });
+      }
+      const frameId = requestAnimationFrame(() => {
+        if (savedBookingScrollRef.current !== null && Math.abs(window.scrollY - targetY) > 1) {
+          window.scrollTo({ top: targetY, left: 0, behavior: 'instant' });
+        }
+      });
+      return () => cancelAnimationFrame(frameId);
+    }
+  }, [activeTab, selectedBookingItem]);
 
   const handleOpenHotelBooking = (hotel) => {
     setSelectedBookingItem(hotel);
@@ -1121,9 +1126,9 @@ export default function App() {
       />
 
       {/* Dynamic Results & Content Section */}
-      <main className="py-5" id="results-section" style={{ scrollMarginTop: '80px' }}>
+      <main className="py-5" id="results-section" style={{ scrollMarginTop: '80px', minHeight: '80vh' }}>
         <div className="container">
-          <div key={activeTab} className="tab-slide-enter">
+          <div className="tab-slide-enter">
           
           {activeTab === 'packages' && (
             <>
