@@ -104,18 +104,8 @@ export function unlockAudio() {
     }
   } catch (e) {}
 
-  // Prime cached HTML5 audio element
-  try {
-    if (cachedAudio && typeof cachedAudio.play === 'function') {
-      const p = cachedAudio.play();
-      if (p !== undefined) {
-        p.then(() => {
-          cachedAudio.pause();
-          cachedAudio.currentTime = 0;
-        }).catch(() => {});
-      }
-    }
-  } catch (e) {}
+  // Mark audio unlocked for the session
+  isAudioUnlocked = true;
 }
 
 // Automatically register interaction listeners to unlock audio seamlessly on HTTPS

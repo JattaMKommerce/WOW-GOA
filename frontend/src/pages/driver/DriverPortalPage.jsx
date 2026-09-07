@@ -50,6 +50,8 @@ export default function DriverPortalPage({ currentUser, onLogout, onNavigateHome
     }
   });
 
+  const [driverToasts, setDriverToasts] = useState([]);
+
   const driverId = driverProfile.id || driverUser.id || 'drv-1';
 
   const isInitialLoadRef = React.useRef(true);
@@ -84,7 +86,14 @@ export default function DriverPortalPage({ currentUser, onLogout, onNavigateHome
           registerSeenNotifications(notifsRes.notifications);
           isInitialLoadRef.current = false;
         } else {
-          handleIncomingNotifications(notifsRes.notifications, { isInitialLoad: false });
+          const newlyReceived = handleIncomingNotifications(notifsRes.notifications, { isInitialLoad: false });
+          if (Array.isArray(newlyReceived) && newlyReceived.length > 0) {
+            const freshToasts = newlyReceived.map(item => ({
+              ...item,
+              toastId: `dtoast-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`
+            }));
+            setDriverToasts(prev => [...prev.slice(-4), ...freshToasts]);
+          }
         }
       }
     } catch (e) {
@@ -94,12 +103,21 @@ export default function DriverPortalPage({ currentUser, onLogout, onNavigateHome
     }
   };
 
+  // Auto-dismiss driver toasts after 6s
+  useEffect(() => {
+    if (driverToasts.length === 0) return;
+    const timer = setTimeout(() => {
+      setDriverToasts(prev => prev.slice(1));
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, [driverToasts]);
+
   useEffect(() => {
     loadDriverData();
-    // 5-second real-time periodic background polling
+    // 3.5-second real-time periodic background polling
     const interval = setInterval(() => {
       loadDriverData(true);
-    }, 5000);
+    }, 3500);
 
     const handleSync = () => {
       loadDriverData(true);
@@ -142,6 +160,17 @@ export default function DriverPortalPage({ currentUser, onLogout, onNavigateHome
       setSuccessMsg(res.message || `Congratulations! You have successfully accepted Job #${bookingId}.`);
       setTimeout(() => setSuccessMsg(''), 4500);
       setActiveTab('accepted');
+
+      window.dispatchEvent(new CustomEvent('tripgalileo-booking-sync', { detail: { bookingId, status: 'Accepted' } }));
+      window.dispatchEvent(new CustomEvent('booking-status-updated', { detail: { bookingId, status: 'Accepted' } }));
+      try {
+        if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+          const bc = new BroadcastChannel('tripgalileo_bookings_sync');
+          bc.postMessage({ type: 'BOOKING_UPDATED', bookingId, status: 'Accepted', timestamp: Date.now() });
+          bc.close();
+        }
+      } catch (e) {}
+
       await loadDriverData();
     } catch (e) {
       // If another driver clicked first, show the exact message and refresh immediately
@@ -160,6 +189,17 @@ export default function DriverPortalPage({ currentUser, onLogout, onNavigateHome
       await api.updateDriverJobStatus(bookingId, driverId, newStatus, notes);
       setSuccessMsg(`Trip status successfully updated to "${newStatus}"!`);
       setTimeout(() => setSuccessMsg(''), 4000);
+
+      window.dispatchEvent(new CustomEvent('tripgalileo-booking-sync', { detail: { bookingId, status: newStatus } }));
+      window.dispatchEvent(new CustomEvent('booking-status-updated', { detail: { bookingId, status: newStatus } }));
+      try {
+        if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+          const bc = new BroadcastChannel('tripgalileo_bookings_sync');
+          bc.postMessage({ type: 'BOOKING_UPDATED', bookingId, status: newStatus, timestamp: Date.now() });
+          bc.close();
+        }
+      } catch (e) {}
+
       await loadDriverData();
     } catch (e) {
       setErrorMsg(e.message || 'Failed to update trip status.');
@@ -984,6 +1024,65 @@ export default function DriverPortalPage({ currentUser, onLogout, onNavigateHome
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Floating Driver Notifications Toasts */}
+      {driverToasts.length > 0 && (
+        <div 
+          className="position-fixed d-flex flex-column gap-2"
+          style={{ bottom: '24px', right: '24px', zIndex: 99999, maxWidth: '380px', pointerEvents: 'auto' }}
+        >
+          {driverToasts.map(toast => {
+            const { cleanTitle, status, badgeStyle } = parseNotificationTitleAndStatus(toast.title, toast.message);
+            return (
+              <div
+                key={toast.toastId}
+                className="card shadow-lg border rounded-4 p-3 d-flex flex-row align-items-start gap-3 animate__animated animate__fadeInUp"
+                style={{
+                  background: 'linear-gradient(135deg, #0B1727 0%, #152438 100%)',
+                  borderColor: 'rgba(56, 189, 248, 0.4)',
+                  color: '#fff',
+                  boxShadow: '0 12px 36px rgba(0, 0, 0, 0.45)',
+                  minWidth: '320px'
+                }}
+              >
+                <div 
+                  className="rounded-circle p-2 flex-shrink-0 d-flex align-items-center justify-content-center"
+                  style={{ background: 'rgba(56, 189, 248, 0.2)', color: '#38bdf8' }}
+                >
+                  <Bell size={18} />
+                </div>
+                <div className="flex-grow-1 overflow-hidden">
+                  <div className="d-flex align-items-center justify-content-between gap-1 mb-1">
+                    <span className="fw-bold text-truncate" style={{ fontSize: '0.84rem', color: '#fff' }}>
+                      {cleanTitle}
+                    </span>
+                    {badgeStyle && (
+                      <span 
+                        className="badge px-1.5 py-0.5 rounded-pill font-monospace"
+                        style={{ ...badgeStyle, fontSize: '0.62rem' }}
+                      >
+                        {status}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-white-50 mb-0" style={{ fontSize: '0.74rem', lineHeight: 1.35 }}>
+                    {toast.message}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDriverToasts(prev => prev.filter(t => t.toastId !== toast.toastId))}
+                  className="btn btn-sm p-0 text-white-50 hover-text-white border-0"
+                  style={{ background: 'transparent' }}
+                  title="Close"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

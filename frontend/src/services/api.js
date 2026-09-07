@@ -2482,7 +2482,7 @@ export async function deleteBike(id) {
   return data;
 }
 
-// ─── COUPONS MANAGEMENT ──────────────────────────────────────────
+// ─── ADD-ONS & SIGHTSEEING / ACTIVITIES MANAGEMENT ──────────────
 export async function getAddOns() {
   try {
     const res = await apiFetch(`${API_BASE}?resource=add_ons`);
@@ -2507,6 +2507,17 @@ export async function createAddOn(data) {
   return json;
 }
 
+export async function updateAddOn(id, data) {
+  const res = await apiFetch(`${API_BASE}?action=update_add_on`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'update_add_on', id, ...data })
+  });
+  const json = await res.json();
+  if (!res.ok || !json.success) throw new Error(json.error || 'Failed to update add_on');
+  return json;
+}
+
 export async function deleteAddOn(id) {
   const res = await apiFetch(`${API_BASE}?action=delete_add_on`, {
     method: 'POST',
@@ -2517,6 +2528,13 @@ export async function deleteAddOn(id) {
   if (!res.ok || !json.success) throw new Error(json.error || 'Failed to delete add_on');
   return json;
 }
+
+// Canonical Activity Service aliases
+export const getActivities = getAddOns;
+export const createActivity = createAddOn;
+export const updateActivity = updateAddOn;
+export const deleteActivity = deleteAddOn;
+
 
 export async function fetchPaymentSettings() {
   try {

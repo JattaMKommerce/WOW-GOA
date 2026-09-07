@@ -13,8 +13,48 @@ export default function VendorNotificationBell({
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [toasts, setToasts] = useState([]);
   const dropdownRef = useRef(null);
   const isInitialLoadRef = useRef(true);
+  const bcNotifsRef = useRef(null);
+
+  const storagePrefix = `vendor_notifs_${vendorType}_${currentUser?.id || 'vendor'}`;
+  const readStorageKey = `${storagePrefix}_read`;
+  const clearedStorageKey = `${storagePrefix}_cleared`;
+
+  const [readNotifIds, setReadNotifIds] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(readStorageKey) || '[]');
+    } catch {
+      return [];
+    }
+  });
+
+  const [clearedNotifIds, setClearedNotifIds] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(clearedStorageKey) || '[]');
+    } catch {
+      return [];
+    }
+  });
+
+  const readNotifIdsRef = useRef(readNotifIds);
+  readNotifIdsRef.current = readNotifIds;
+
+  const clearedNotifIdsRef = useRef(clearedNotifIds);
+  clearedNotifIdsRef.current = clearedNotifIds;
+
+  // Re-sync storage keys if user or vendorType changes
+  useEffect(() => {
+    try {
+      const savedRead = JSON.parse(localStorage.getItem(readStorageKey) || '[]');
+      const savedCleared = JSON.parse(localStorage.getItem(clearedStorageKey) || '[]');
+      setReadNotifIds(savedRead);
+      readNotifIdsRef.current = savedRead;
+      setClearedNotifIds(savedCleared);
+      clearedNotifIdsRef.current = savedCleared;
+    } catch (_) {}
+  }, [readStorageKey, clearedStorageKey]);
 
   // Fetch real-time notifications strictly scoped to this portal type
   const refreshNotifications = async () => {
@@ -48,15 +88,18 @@ export default function VendorNotificationBell({
         const cust = b.customer_name || b.guest_name || b.name || 'Customer';
         const item = b.item_name || b.hotel_name || b.vehicle_name || (isHotel ? 'Deluxe Room' : 'Car/Bike');
         const status = b.status || 'Confirmed';
+        const rawId = `bk-${b.id || b.booking_id}`;
+
+        const isMarkedRead = readNotifIdsRef.current.includes(rawId) || (b.status === 'Completed');
 
         return {
-          id: `bk-${b.id || b.booking_id}`,
+          id: rawId,
           isBookingItem: true,
           bookingData: b,
           type: vendorType,
           title: `${typeLabel} ${code}`,
           message: `${cust} — ${item} (${status} • ₹${Number(price).toLocaleString('en-IN')})`,
-          is_read: b.status === 'Completed' ? 1 : 0,
+          is_read: isMarkedRead ? 1 : 0,
           created_at: b.created_at || b.date || 'Recent'
         };
       });
@@ -110,18 +153,35 @@ export default function VendorNotificationBell({
         ];
       }
 
-      setNotifications(finalItems);
-      const unread = finalItems.filter(x => !x.is_read).length;
+      // 1. Exclude any notifications that have been cleared
+      const activeItems = finalItems.filter(item => !clearedNotifIdsRef.current.includes(String(item.id)));
+
+      // 2. Normalize read status based on database is_read or local readNotifIds
+      const normalizedItems = activeItems.map(item => {
+        const isRead = (item.is_read || readNotifIdsRef.current.includes(String(item.id))) ? 1 : 0;
+        return {
+          ...item,
+          is_read: isRead
+        };
+      });
+
+      setNotifications(normalizedItems);
+      const unread = normalizedItems.filter(x => !x.is_read).length;
       setUnreadCount(unread);
 
       // Trigger notification sound only for genuinely new unread notifications
       if (isInitialLoadRef.current) {
-        registerSeenNotifications(finalItems);
+        registerSeenNotifications(normalizedItems);
         isInitialLoadRef.current = false;
       } else {
-        const newlyReceived = handleIncomingNotifications(finalItems, { isInitialLoad: false });
+        const newlyReceived = handleIncomingNotifications(normalizedItems, { isInitialLoad: false });
         if (Array.isArray(newlyReceived) && newlyReceived.length > 0) {
           window.dispatchEvent(new CustomEvent('tripgalileo-booking-sync'));
+          const freshToasts = newlyReceived.map(item => ({
+            ...item,
+            toastId: `vtoast-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`
+          }));
+          setToasts(prev => [...prev.slice(-4), ...freshToasts]);
         }
       }
     } catch (e) {
@@ -129,14 +189,36 @@ export default function VendorNotificationBell({
     }
   };
 
+  // Auto-dismiss toasts after 6s
+  useEffect(() => {
+    if (toasts.length === 0) return;
+    const timer = setTimeout(() => {
+      setToasts(prev => prev.slice(1));
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, [toasts]);
+
   useEffect(() => {
     refreshNotifications();
-    const timer = setInterval(refreshNotifications, 5000);
-    window.addEventListener('pms-notification-updated', refreshNotifications);
+    const timer = setInterval(refreshNotifications, 3500);
+
+    const handleSync = () => {
+      try {
+        const savedRead = JSON.parse(localStorage.getItem(readStorageKey) || '[]');
+        const savedCleared = JSON.parse(localStorage.getItem(clearedStorageKey) || '[]');
+        setReadNotifIds(savedRead);
+        readNotifIdsRef.current = savedRead;
+        setClearedNotifIds(savedCleared);
+        clearedNotifIdsRef.current = savedCleared;
+      } catch (_) {}
+      refreshNotifications();
+    };
+
+    window.addEventListener('pms-notification-updated', handleSync);
     window.addEventListener('new-booking-created', refreshNotifications);
     window.addEventListener('booking-status-updated', refreshNotifications);
     window.addEventListener('booking-updated', refreshNotifications);
-    window.addEventListener('tripgalileo-notification-sync', refreshNotifications);
+    window.addEventListener('tripgalileo-notification-sync', handleSync);
     window.addEventListener('tripgalileo-booking-sync', refreshNotifications);
 
     let bcBookings;
@@ -146,22 +228,23 @@ export default function VendorNotificationBell({
         bcBookings = new BroadcastChannel('tripgalileo_bookings_sync');
         bcBookings.onmessage = refreshNotifications;
         bcNotifs = new BroadcastChannel('tripgalileo_notifications_sync');
-        bcNotifs.onmessage = refreshNotifications;
+        bcNotifs.onmessage = handleSync;
+        bcNotifsRef.current = bcNotifs;
       }
     } catch (e) {}
 
     return () => {
       clearInterval(timer);
-      window.removeEventListener('pms-notification-updated', refreshNotifications);
+      window.removeEventListener('pms-notification-updated', handleSync);
       window.removeEventListener('new-booking-created', refreshNotifications);
       window.removeEventListener('booking-status-updated', refreshNotifications);
       window.removeEventListener('booking-updated', refreshNotifications);
-      window.removeEventListener('tripgalileo-notification-sync', refreshNotifications);
+      window.removeEventListener('tripgalileo-notification-sync', handleSync);
       window.removeEventListener('tripgalileo-booking-sync', refreshNotifications);
       if (bcBookings) bcBookings.close();
       if (bcNotifs) bcNotifs.close();
     };
-  }, [currentUser?.id, bookings?.length, vendorType]);
+  }, [currentUser?.id, bookings?.length, vendorType, readStorageKey, clearedStorageKey]);
 
   // Click outside listener
   useEffect(() => {
@@ -177,50 +260,127 @@ export default function VendorNotificationBell({
   }, [isOpen]);
 
   const handleMarkAllRead = async (e) => {
-    e.stopPropagation();
+    if (e) e.stopPropagation();
+    const currentIds = notifications.map(n => String(n.id));
+    const updatedRead = Array.from(new Set([...readNotifIdsRef.current, ...currentIds]));
+    setReadNotifIds(updatedRead);
+    readNotifIdsRef.current = updatedRead;
     try {
-      await api.pmsMarkNotificationRead(null, currentUser.id, true);
-      setNotifications(prev => prev.map(n => ({ ...n, is_read: 1 })));
-      setUnreadCount(0);
-      window.dispatchEvent(new CustomEvent('pms-notification-updated'));
+      localStorage.setItem(readStorageKey, JSON.stringify(updatedRead));
+    } catch (err) {}
+
+    // Immediate UI feedback
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: 1 })));
+    setUnreadCount(0);
+
+    // Call backend endpoints asynchronously
+    try {
+      await Promise.allSettled([
+        api.pmsMarkNotificationRead(null, currentUser?.id || 'u-5', true),
+        api.markNotificationRead(null, { role: vendorType === 'hotel' ? 'hotel_vendor' : 'vendor', userId: currentUser?.id || 'u-5', all: true })
+      ]);
     } catch (err) {
       console.error(err);
     }
+
+    try {
+      if (bcNotifsRef.current) {
+        bcNotifsRef.current.postMessage({ type: 'vendor_read_sync', vendorId: currentUser?.id, vendorType });
+      }
+    } catch (_) {}
+    window.dispatchEvent(new CustomEvent('tripgalileo-notification-sync'));
   };
 
   const handleClearAll = async (e) => {
-    e.stopPropagation();
+    if (e) e.stopPropagation();
+    const currentIds = notifications.map(n => String(n.id));
+    const updatedCleared = Array.from(new Set([...clearedNotifIdsRef.current, ...currentIds]));
+    setClearedNotifIds(updatedCleared);
+    clearedNotifIdsRef.current = updatedCleared;
     try {
-      await api.pmsDeleteNotification(null, currentUser.id, true);
-      setNotifications([]);
-      setUnreadCount(0);
-      window.dispatchEvent(new CustomEvent('pms-notification-updated'));
+      localStorage.setItem(clearedStorageKey, JSON.stringify(updatedCleared));
+    } catch (err) {}
+
+    // Immediate UI clear
+    setNotifications([]);
+    setUnreadCount(0);
+
+    // Call backend endpoints asynchronously
+    try {
+      await Promise.allSettled([
+        api.pmsDeleteNotification(null, currentUser?.id || 'u-5', true),
+        api.clearNotifications({ role: vendorType === 'hotel' ? 'hotel_vendor' : 'vendor', userId: currentUser?.id || 'u-5' })
+      ]);
     } catch (err) {
       console.error(err);
     }
+
+    try {
+      if (bcNotifsRef.current) {
+        bcNotifsRef.current.postMessage({ type: 'vendor_clear_sync', vendorId: currentUser?.id, vendorType });
+      }
+    } catch (_) {}
+    window.dispatchEvent(new CustomEvent('tripgalileo-notification-sync'));
   };
 
   const handleRemoveSingle = async (id, e) => {
-    e.stopPropagation();
+    if (e) e.stopPropagation();
+    const strId = String(id);
+    const updatedCleared = Array.from(new Set([...clearedNotifIdsRef.current, strId]));
+    setClearedNotifIds(updatedCleared);
+    clearedNotifIdsRef.current = updatedCleared;
     try {
-      await api.pmsDeleteNotification(id, currentUser.id);
-      setNotifications(prev => prev.filter(n => n.id !== id));
+      localStorage.setItem(clearedStorageKey, JSON.stringify(updatedCleared));
+    } catch (err) {}
+
+    const targetItem = notifications.find(n => String(n.id) === strId);
+    setNotifications(prev => prev.filter(n => String(n.id) !== strId));
+    if (targetItem && !targetItem.is_read) {
       setUnreadCount(prev => Math.max(0, prev - 1));
-      window.dispatchEvent(new CustomEvent('pms-notification-updated'));
+    }
+
+    try {
+      await Promise.allSettled([
+        api.pmsDeleteNotification(strId, currentUser?.id || 'u-5'),
+        api.clearNotifications({ role: vendorType === 'hotel' ? 'hotel_vendor' : 'vendor', userId: currentUser?.id || 'u-5' })
+      ]);
     } catch (err) {
       console.error(err);
     }
+
+    try {
+      if (bcNotifsRef.current) {
+        bcNotifsRef.current.postMessage({ type: 'vendor_clear_sync', vendorId: currentUser?.id, vendorType });
+      }
+    } catch (_) {}
   };
 
   const handleItemClick = async (n) => {
     setIsOpen(false);
-    if (!n.is_read) {
+    const strId = String(n.id);
+    if (!n.is_read || !readNotifIdsRef.current.includes(strId)) {
+      const updatedRead = Array.from(new Set([...readNotifIdsRef.current, strId]));
+      setReadNotifIds(updatedRead);
+      readNotifIdsRef.current = updatedRead;
       try {
-        await api.pmsMarkNotificationRead(n.id, currentUser.id);
-        setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, is_read: 1 } : x));
-        setUnreadCount(prev => Math.max(0, prev - 1));
-        window.dispatchEvent(new CustomEvent('pms-notification-updated'));
+        localStorage.setItem(readStorageKey, JSON.stringify(updatedRead));
       } catch (err) {}
+
+      setNotifications(prev => prev.map(x => String(x.id) === strId ? { ...x, is_read: 1 } : x));
+      setUnreadCount(prev => Math.max(0, prev - 1));
+
+      try {
+        await Promise.allSettled([
+          api.pmsMarkNotificationRead(strId, currentUser?.id || 'u-5'),
+          api.markNotificationRead(strId, { role: vendorType === 'hotel' ? 'hotel_vendor' : 'vendor', userId: currentUser?.id || 'u-5' })
+        ]);
+      } catch (err) {}
+
+      try {
+        if (bcNotifsRef.current) {
+          bcNotifsRef.current.postMessage({ type: 'vendor_read_sync', vendorId: currentUser?.id, vendorType });
+        }
+      } catch (_) {}
     }
 
     if (onNavigate) {
@@ -503,6 +663,65 @@ export default function VendorNotificationBell({
               View All Bookings ({totalBookingsCount}) &rarr;
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Floating Real-Time Toasts Container (Multi-Desktop / Cross-Device Ready) */}
+      {toasts.length > 0 && (
+        <div 
+          className="position-fixed d-flex flex-column gap-2"
+          style={{ bottom: '24px', right: '24px', zIndex: 99999, maxWidth: '380px', pointerEvents: 'auto' }}
+        >
+          {toasts.map(toast => {
+            const { cleanTitle, status, badgeStyle } = parseNotificationTitleAndStatus(toast.title, toast.message);
+            return (
+              <div
+                key={toast.toastId}
+                className="card shadow-lg border rounded-4 p-3 d-flex flex-row align-items-start gap-3 animate__animated animate__fadeInUp"
+                style={{
+                  background: 'linear-gradient(135deg, #0D1B2E 0%, #172a45 100%)',
+                  borderColor: 'rgba(255, 184, 0, 0.4)',
+                  color: '#fff',
+                  boxShadow: '0 12px 36px rgba(0, 0, 0, 0.45)',
+                  minWidth: '320px'
+                }}
+              >
+                <div 
+                  className="rounded-circle p-2 flex-shrink-0 d-flex align-items-center justify-content-center"
+                  style={{ background: 'rgba(255, 184, 0, 0.15)', color: '#FFB800' }}
+                >
+                  <Bell size={18} />
+                </div>
+                <div className="flex-grow-1 overflow-hidden">
+                  <div className="d-flex align-items-center justify-content-between gap-1 mb-1">
+                    <span className="fw-bold text-truncate" style={{ fontSize: '0.84rem', color: '#fff' }}>
+                      {cleanTitle}
+                    </span>
+                    {badgeStyle && (
+                      <span 
+                        className="badge px-1.5 py-0.5 rounded-pill font-monospace"
+                        style={{ ...badgeStyle, fontSize: '0.62rem' }}
+                      >
+                        {status}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-white-50 mb-0" style={{ fontSize: '0.74rem', lineHeight: 1.35 }}>
+                    {toast.message}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setToasts(prev => prev.filter(t => t.toastId !== toast.toastId))}
+                  className="btn btn-sm p-0 text-white-50 hover-text-white border-0"
+                  style={{ background: 'transparent' }}
+                  title="Close"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

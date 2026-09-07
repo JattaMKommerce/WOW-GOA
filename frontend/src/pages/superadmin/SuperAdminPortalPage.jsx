@@ -3,7 +3,7 @@ import {
   Compass, LogOut, Users, Settings, Shield, LayoutDashboard,
   Building, Car, Hotel, Plane, CalendarDays, Wallet, CreditCard,
   Percent, BarChart2, Globe, ChevronDown, ChevronRight,
-  Bell, Menu, X, UserCog, CheckCircle
+  Bell, Menu, X, UserCog, CheckCircle, Map as MapIcon
 } from 'lucide-react';
 import SuperAdminDashboard from './SuperAdminDashboard';
 import * as api from '../../services/api';
@@ -43,6 +43,7 @@ const SIDEBAR_GROUPS = [
       { id: 'hotel_bookings', label: 'Hotel Booking', icon: <Hotel size={15} /> },
       { id: 'trip_bookings', label: 'Trip Booking', icon: <CalendarDays size={15} /> },
       { id: 'vehicle_bookings', label: 'Vehicle Booking', icon: <Car size={15} /> },
+      { id: 'activity_bookings', label: 'Manage Sightseeing & Activity Booking', icon: <MapIcon size={15} /> },
     ]
   },
   {
@@ -79,6 +80,7 @@ const PAGE_TITLES = {
   hotel_bookings: 'Hotel Booking',
   trip_bookings: 'Trip Booking',
   vehicle_bookings: 'Vehicle Booking',
+  activity_bookings: 'Manage Sightseeing & Activity Booking',
   wallet: 'Wallet & Approvals',
   payment_gateway: 'Payment Gateways',
   subscription_plans: 'Subscription Plans',
@@ -97,6 +99,94 @@ function SidebarGroup({ group, activeTab, onSelect, defaultOpen }) {
     }
   }, [activeTab, group.items]);
 
+  const storageKey = 'superadmin_sidebar_order_' + group.label.toLowerCase().replace(/[^a-z0-9]/g, '_');
+
+  const [orderedItems, setOrderedItems] = useState(() => {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        const orderIds = JSON.parse(saved);
+        if (Array.isArray(orderIds)) {
+          const itemMap = new Map(group.items.map(it => [it.id, it]));
+          const reordered = [];
+          for (const id of orderIds) {
+            if (itemMap.has(id)) {
+              reordered.push(itemMap.get(id));
+              itemMap.delete(id);
+            }
+          }
+          for (const remaining of itemMap.values()) {
+            reordered.push(remaining);
+          }
+          return reordered;
+        }
+      }
+    } catch (e) {}
+    return group.items;
+  });
+
+  useEffect(() => {
+    setOrderedItems(prev => {
+      const itemMap = new Map(group.items.map(it => [it.id, it]));
+      const next = [];
+      for (const it of prev) {
+        if (itemMap.has(it.id)) {
+          next.push(itemMap.get(it.id));
+          itemMap.delete(it.id);
+        }
+      }
+      for (const remaining of itemMap.values()) {
+        next.push(remaining);
+      }
+      return next;
+    });
+  }, [group.items]);
+
+  const [draggedItemId, setDraggedItemId] = useState(null);
+  const [dragOverItemId, setDragOverItemId] = useState(null);
+
+  const handleDragStart = (e, id) => {
+    e.dataTransfer.setData('text/plain', id);
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggedItemId(id);
+  };
+
+  const handleDragOver = (e, id) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (id !== dragOverItemId) {
+      setDragOverItemId(id);
+    }
+  };
+
+  const handleDrop = (e, targetId) => {
+    e.preventDefault();
+    const sourceId = e.dataTransfer.getData('text/plain') || draggedItemId;
+    if (!sourceId || sourceId === targetId) {
+      setDraggedItemId(null);
+      setDragOverItemId(null);
+      return;
+    }
+    const sourceIdx = orderedItems.findIndex(it => it.id === sourceId);
+    const targetIdx = orderedItems.findIndex(it => it.id === targetId);
+    if (sourceIdx !== -1 && targetIdx !== -1) {
+      const newItems = [...orderedItems];
+      const [moved] = newItems.splice(sourceIdx, 1);
+      newItems.splice(targetIdx, 0, moved);
+      setOrderedItems(newItems);
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(newItems.map(it => it.id)));
+      } catch (err) {}
+    }
+    setDraggedItemId(null);
+    setDragOverItemId(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedItemId(null);
+    setDragOverItemId(null);
+  };
+
   return (
     <div className="mb-1">
       <button
@@ -109,21 +199,30 @@ function SidebarGroup({ group, activeTab, onSelect, defaultOpen }) {
       </button>
       {open && (
         <div className="d-flex flex-column gap-0 px-1">
-          {group.items.map(item => (
+          {orderedItems.map(item => (
             <button
               key={item.id}
+              draggable={true}
+              onDragStart={(e) => handleDragStart(e, item.id)}
+              onDragOver={(e) => handleDragOver(e, item.id)}
+              onDrop={(e) => handleDrop(e, item.id)}
+              onDragEnd={handleDragEnd}
               onClick={() => onSelect(item.id)}
               className="btn w-100 text-start d-flex align-items-center gap-2 py-2 px-3 border-0 rounded-3 mb-1"
               style={{
                 fontSize: '0.83rem',
-                background: activeTab === item.id ? 'linear-gradient(90deg, #FF6333, #FF8A00)' : 'transparent',
+                background: activeTab === item.id ? 'linear-gradient(90deg, #FF6333, #FF8A00)' : (dragOverItemId === item.id ? 'rgba(255,255,255,0.08)' : 'transparent'),
                 color: activeTab === item.id ? '#fff' : 'rgba(255,255,255,0.65)',
                 boxShadow: activeTab === item.id ? '0 4px 12px rgba(255,99,51,0.3)' : 'none',
                 fontWeight: activeTab === item.id ? 700 : 400,
+                opacity: draggedItemId === item.id ? 0.4 : 1,
+                cursor: 'grab',
+                border: dragOverItemId === item.id ? '1px dashed #FF8A00' : 'none',
+                transition: 'all 0.15s ease'
               }}
             >
               <span style={{ color: activeTab === item.id ? '#fff' : '#00B8D9', flexShrink: 0 }}>{item.icon}</span>
-              <span>{item.label}</span>
+              <span className="flex-grow-1">{item.label}</span>
             </button>
           ))}
         </div>
@@ -190,6 +289,7 @@ export default function SuperAdminPortalPage({
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [showNotificationDropdown, setShowNotificationDropdown] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [superToasts, setSuperToasts] = useState([]);
   const [liveUsers, setLiveUsers] = useState(usersList?.length ? usersList : defaultUsers);
   const [liveBookings, setLiveBookings] = useState(bookings?.length ? bookings : defaultBookings);
   const [liveVendors, setLiveVendors] = useState(vendors?.length ? vendors : defaultVendors);
@@ -221,28 +321,34 @@ export default function SuperAdminPortalPage({
 
   const isInitialLoadRef = React.useRef(true);
 
-  // Fetch real leads, custom enquiries, bookings, vendors, and users in real-time
+  // Fetch real leads, custom enquiries, bookings, vendors, users, and authoritative notifications in real-time
   const loadAllPortalData = async () => {
     try {
-      const [leadsData, enquiriesData, bookingsData, vendorsData, freshUsers] = await Promise.all([
+      const [leadsData, enquiriesData, bookingsData, vendorsData, freshUsers, authNotifsRes] = await Promise.all([
         api.fetchAiLeads(),
         api.fetchCustomEnquiries(),
         api.fetchBookings(),
         api.fetchVendors(),
-        api.fetchUsers()
+        api.fetchUsers(),
+        api.fetchNotifications({ role: 'superadmin' }).catch(() => ({ notifications: [] }))
       ]);
       if (leadsData && leadsData.length) setAiLeads(leadsData);
       if (enquiriesData && enquiriesData.length) setCustomEnquiries(enquiriesData);
       if (bookingsData && bookingsData.length) {
         setLiveBookings(bookingsData);
-        const rawNotifs = bookingsData.map(b => ({
-          id: `b-${b.id}`,
-          is_read: b.status === 'Completed' ? 1 : 0
-        }));
+      }
+      if (authNotifsRes && Array.isArray(authNotifsRes.notifications)) {
         if (isInitialLoadRef.current) {
-          registerSeenNotifications(rawNotifs);
+          registerSeenNotifications(authNotifsRes.notifications);
         } else {
-          handleIncomingNotifications(rawNotifs, { isInitialLoad: false });
+          const newlyReceived = handleIncomingNotifications(authNotifsRes.notifications, { isInitialLoad: false });
+          if (Array.isArray(newlyReceived) && newlyReceived.length > 0) {
+            const freshToasts = newlyReceived.map(item => ({
+              ...item,
+              toastId: `stoast-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`
+            }));
+            setSuperToasts(prev => [...prev.slice(-4), ...freshToasts]);
+          }
         }
       }
       isInitialLoadRef.current = false;
@@ -263,6 +369,15 @@ export default function SuperAdminPortalPage({
       console.warn('Portal real-time refresh:', e);
     }
   };
+
+  // Auto-dismiss superadmin toasts after 6s
+  useEffect(() => {
+    if (superToasts.length === 0) return;
+    const timer = setTimeout(() => {
+      setSuperToasts(prev => prev.slice(1));
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, [superToasts]);
 
   const handlePortalAddUser = async (newUser) => {
     // 1. Instant optimistic update to local state so administrator shows immediately
@@ -357,7 +472,7 @@ export default function SuperAdminPortalPage({
 
   useEffect(() => {
     loadAllPortalData();
-    const interval = setInterval(loadAllPortalData, 6000); // 6s real-time periodic polling
+    const interval = setInterval(loadAllPortalData, 3500); // 3.5s real-time periodic polling
     
     const handleNewBooking = (e) => {
       if (e.detail) {
@@ -451,6 +566,12 @@ export default function SuperAdminPortalPage({
         itemId.startsWith('car-') || itemId.startsWith('bike-') || itemId.startsWith('veh-') || 
         itemName.includes('thar') || itemName.includes('swift') || itemName.includes('creta') || itemName.includes('scooter') || itemName.includes('activa')) {
       return { tab: 'vehicle_bookings', type: 'Vehicle Rental Booking', color: '#ea580c' };
+    }
+
+    // 4. Standalone Sightseeing & Activity
+    if (type === 'activity' || type === 'sightseeing' || pkgType === 'activity' || pkgType === 'sightseeing' ||
+        itemId.startsWith('act-') || itemId.startsWith('activity-') || itemId.startsWith('sight-') || itemId.startsWith('act_')) {
+      return { tab: 'activity_bookings', type: 'Sightseeing & Activity Booking', color: '#10b981' };
     }
 
     return { tab: 'trip_bookings', type: 'Package / Holiday Booking', color: '#f97316' };
@@ -872,6 +993,65 @@ export default function SuperAdminPortalPage({
           />
         </div>
       </div>
+
+      {/* Floating SuperAdmin Live Toasts */}
+      {superToasts.length > 0 && (
+        <div 
+          className="position-fixed d-flex flex-column gap-2"
+          style={{ bottom: '24px', right: '24px', zIndex: 99999, maxWidth: '380px', pointerEvents: 'auto' }}
+        >
+          {superToasts.map(toast => {
+            const { cleanTitle, status, badgeStyle } = parseNotificationTitleAndStatus(toast.title, toast.message);
+            return (
+              <div
+                key={toast.toastId}
+                className="card shadow-lg border rounded-4 p-3 d-flex flex-row align-items-start gap-3 animate__animated animate__fadeInUp"
+                style={{
+                  background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+                  borderColor: 'rgba(234, 179, 8, 0.4)',
+                  color: '#fff',
+                  boxShadow: '0 12px 36px rgba(0, 0, 0, 0.45)',
+                  minWidth: '320px'
+                }}
+              >
+                <div 
+                  className="rounded-circle p-2 flex-shrink-0 d-flex align-items-center justify-content-center"
+                  style={{ background: 'rgba(234, 179, 8, 0.2)', color: '#facc15' }}
+                >
+                  <Bell size={18} />
+                </div>
+                <div className="flex-grow-1 overflow-hidden">
+                  <div className="d-flex align-items-center justify-content-between gap-1 mb-1">
+                    <span className="fw-bold text-truncate" style={{ fontSize: '0.84rem', color: '#fff' }}>
+                      {cleanTitle}
+                    </span>
+                    {badgeStyle && (
+                      <span 
+                        className="badge px-1.5 py-0.5 rounded-pill font-monospace"
+                        style={{ ...badgeStyle, fontSize: '0.62rem' }}
+                      >
+                        {status}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-white-50 mb-0" style={{ fontSize: '0.74rem', lineHeight: 1.35 }}>
+                    {toast.message}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSuperToasts(prev => prev.filter(t => t.toastId !== toast.toastId))}
+                  className="btn btn-sm p-0 text-white-50 hover-text-white border-0"
+                  style={{ background: 'transparent' }}
+                  title="Close"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

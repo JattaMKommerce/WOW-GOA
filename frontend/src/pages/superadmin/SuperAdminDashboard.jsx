@@ -1176,15 +1176,31 @@ export const isVehicleBookingItem = (b) => {
          name.includes('innova') || name.includes('scorpio');
 };
 
+export const isActivityBookingItem = (b) => {
+  if (!b) return false;
+  const type = String(b.type || b.item_type || '').trim().toLowerCase();
+  const pkgType = String(b.package_type || '').trim().toLowerCase();
+  const itemId = String(b.item_id || '').trim().toLowerCase();
+
+  if (type === 'activity' || type === 'sightseeing' || pkgType === 'activity' || pkgType === 'sightseeing') {
+    return true;
+  }
+  if (itemId.startsWith('act-') || itemId.startsWith('activity-') || itemId.startsWith('sight-') || itemId.startsWith('act_')) {
+    return true;
+  }
+  return false;
+};
+
 export const isTripPackageBookingItem = (b) => {
   if (!b) return false;
   if (isFlightBookingItem(b)) return false;
+  if (isActivityBookingItem(b)) return false;
   if (isHotelBookingItem(b)) return false;
   if (isVehicleBookingItem(b)) return false;
   return true;
 };
 
-// ─── BOOKINGS TAB (Hotel, Vehicle & Flight Bookings) ──────────────────────────
+// ─── BOOKINGS TAB (Hotel, Vehicle, Activity & Flight Bookings) ───────────────
 function BookingsTab({ bookings = [], type, vendors = [], onRefresh }) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -1198,6 +1214,8 @@ function BookingsTab({ bookings = [], type, vendors = [], onRefresh }) {
       matchType = isVehicleBookingItem(b);
     } else if (type === 'flight') {
       matchType = isFlightBookingItem(b);
+    } else if (type === 'activity') {
+      matchType = isActivityBookingItem(b);
     }
 
     const matchStatus = statusFilter === 'all' || b.status?.toLowerCase() === statusFilter?.toLowerCase();
@@ -1236,8 +1254,8 @@ function BookingsTab({ bookings = [], type, vendors = [], onRefresh }) {
     }
   };
 
-  const typeLabel = type === 'hotel' ? 'Hotel' : type === 'vehicle' ? 'Vehicle' : 'Flight';
-  const itemHeader = type === 'hotel' ? 'Hotel & Room' : type === 'vehicle' ? 'Vehicle & Specs' : 'Flight Route & Airline';
+  const typeLabel = type === 'hotel' ? 'Hotel' : type === 'vehicle' ? 'Vehicle' : type === 'activity' ? 'Sightseeing & Activity' : 'Flight';
+  const itemHeader = type === 'hotel' ? 'Hotel & Room' : type === 'vehicle' ? 'Vehicle & Specs' : type === 'activity' ? 'Activity & Location' : 'Flight Route & Airline';
 
   return (
     <Section
@@ -2102,6 +2120,9 @@ function NotificationsTab({ bookings = [], vendors = [], usersList = [], aiLeads
     if (itemId.startsWith('car-') || itemId.startsWith('bike-') || itemId.startsWith('veh-') || itemName.includes('thar') || itemName.includes('scooter') || itemName.includes('activa')) {
       return { tab: 'vehicle_bookings', type: 'Vehicle Rental Booking', color: '#ea580c' };
     }
+    if (isActivityBookingItem(b)) {
+      return { tab: 'activity_bookings', type: 'Sightseeing & Activity Booking', color: '#10b981' };
+    }
     return { tab: 'trip_bookings', type: 'Package / Holiday Booking', color: '#f97316' };
   };
 
@@ -2222,6 +2243,8 @@ export default function SuperAdminDashboard({
       return <BookingsTab bookings={bookings} type="hotel" vendors={vendors} onRefresh={onRefreshLeads} />;
     case 'vehicle_bookings':
       return <BookingsTab bookings={bookings} type="vehicle" vendors={vendors} onRefresh={onRefreshLeads} />;
+    case 'activity_bookings':
+      return <BookingsTab bookings={bookings} type="activity" vendors={vendors} onRefresh={onRefreshLeads} />;
     case 'flight_bookings':
       return <BookingsTab bookings={bookings} type="flight" vendors={vendors} onRefresh={onRefreshLeads} />;
     case 'trip_bookings':

@@ -145,7 +145,11 @@ export default function B2BBookingModal({
               <div className="rounded-circle mx-auto mb-3 p-3 bg-success text-white d-inline-flex align-items-center justify-content-center" style={{ width: '64px', height: '64px' }}>
                 <CheckCircle2 size={36} />
               </div>
-              <h4 className="fw-bold text-dark font-heading mb-1">Booking Confirmed Successfully!</h4>
+              <h4 className="fw-bold text-dark font-heading mb-1">
+                {(confirmedBooking.status || 'Confirmed').toLowerCase() === 'pending'
+                  ? 'Booking Received (Pending Confirmation)'
+                  : `Booking ${confirmedBooking.status || 'Confirmed'} Successfully!`}
+              </h4>
               <p className="text-muted text-xs mb-3">
                 B2B Reservation Reference: <strong className="text-primary font-monospace">{confirmedBooking.booking_id}</strong>
               </p>
@@ -169,6 +173,12 @@ export default function B2BBookingModal({
                   <span>{pickupDate} to {dropDate}</span>
                 </div>
                 <div className="d-flex justify-content-between border-top pt-2 mb-2">
+                  <span className="text-muted">Fulfillment Status:</span>
+                  <span className={`badge ${(confirmedBooking.status || 'Confirmed').toLowerCase() === 'pending' ? 'bg-warning text-dark' : 'bg-success text-white'}`}>
+                    {confirmedBooking.status || 'Confirmed'}
+                  </span>
+                </div>
+                <div className="d-flex justify-content-between mb-2">
                   <span className="text-muted">B2B Mode:</span>
                   <span className="badge bg-dark text-warning">{b2bMode}</span>
                 </div>

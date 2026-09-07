@@ -128,6 +128,7 @@ export default function CustomerPortalPage({
   // Live authoritative bookings loaded directly from database for the customer
   const [liveCustomerBookings, setLiveCustomerBookings] = useState([]);
   const [customerNotifs, setCustomerNotifs] = useState([]);
+  const [customerToasts, setCustomerToasts] = useState([]);
   const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
   const [readNotifIds, setReadNotifIds] = useState(() => {
     try {
@@ -151,6 +152,16 @@ export default function CustomerPortalPage({
 
       if (Array.isArray(freshBookings) && freshBookings.length > 0) {
         setLiveCustomerBookings(freshBookings);
+        try {
+          const local = JSON.parse(localStorage.getItem('local_bookings') || '[]');
+          if (Array.isArray(local) && local.length > 0) {
+            const updated = local.map(lb => {
+              const match = freshBookings.find(fb => String(fb.id || fb.booking_id) === String(lb.id || lb.booking_id));
+              return match ? { ...lb, ...match } : lb;
+            });
+            localStorage.setItem('local_bookings', JSON.stringify(updated));
+          }
+        } catch (e) {}
       }
       if (freshNotifs && Array.isArray(freshNotifs.notifications)) {
         setCustomerNotifs(freshNotifs.notifications);
@@ -158,7 +169,14 @@ export default function CustomerPortalPage({
           registerSeenNotifications(freshNotifs.notifications);
           isInitialLoadRef.current = false;
         } else {
-          handleIncomingNotifications(freshNotifs.notifications, { isInitialLoad: false });
+          const newlyReceived = handleIncomingNotifications(freshNotifs.notifications, { isInitialLoad: false });
+          if (Array.isArray(newlyReceived) && newlyReceived.length > 0) {
+            const freshToasts = newlyReceived.map(item => ({
+              ...item,
+              toastId: `ctoast-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`
+            }));
+            setCustomerToasts(prev => [...prev.slice(-4), ...freshToasts]);
+          }
         }
       }
     } catch (err) {
@@ -166,15 +184,24 @@ export default function CustomerPortalPage({
     }
   }, [customerUser, loginPhone]);
 
+  // Auto-dismiss customer toasts after 6s
+  useEffect(() => {
+    if (customerToasts.length === 0) return;
+    const timer = setTimeout(() => {
+      setCustomerToasts(prev => prev.slice(1));
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, [customerToasts]);
+
   const refreshCustomerBookings = refreshCustomerData;
 
-  // Periodic polling (every 5s) and immediate cross-channel sync
+  // Periodic polling (every 3.5s) and immediate cross-channel sync
   useEffect(() => {
     if (customerUser) {
       refreshCustomerData();
       const interval = setInterval(() => {
         refreshCustomerData();
-      }, 5000);
+      }, 3500);
 
       const handleSync = () => {
         refreshCustomerData();
@@ -1945,6 +1972,65 @@ export default function CustomerPortalPage({
           allCars={cars}
           allBikes={bikes}
         />
+      )}
+
+      {/* ─── Floating Live Notification Toasts (Multi-Desktop / Cross-Device Ready) ─── */}
+      {customerToasts.length > 0 && (
+        <div 
+          className="position-fixed d-flex flex-column gap-2"
+          style={{ bottom: '24px', right: '24px', zIndex: 99999, maxWidth: '380px', pointerEvents: 'auto' }}
+        >
+          {customerToasts.map(toast => {
+            const { cleanTitle, status, badgeStyle } = parseNotificationTitleAndStatus(toast.title, toast.message);
+            return (
+              <div
+                key={toast.toastId}
+                className="card shadow-lg border rounded-4 p-3 d-flex flex-row align-items-start gap-3 animate__animated animate__fadeInUp"
+                style={{
+                  background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+                  borderColor: 'rgba(59, 130, 246, 0.4)',
+                  color: '#fff',
+                  boxShadow: '0 12px 36px rgba(0, 0, 0, 0.45)',
+                  minWidth: '320px'
+                }}
+              >
+                <div 
+                  className="rounded-circle p-2 flex-shrink-0 d-flex align-items-center justify-content-center"
+                  style={{ background: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa' }}
+                >
+                  <Bell size={18} />
+                </div>
+                <div className="flex-grow-1 overflow-hidden">
+                  <div className="d-flex align-items-center justify-content-between gap-1 mb-1">
+                    <span className="fw-bold text-truncate" style={{ fontSize: '0.84rem', color: '#fff' }}>
+                      {cleanTitle}
+                    </span>
+                    {badgeStyle && (
+                      <span 
+                        className="badge px-1.5 py-0.5 rounded-pill font-monospace"
+                        style={{ ...badgeStyle, fontSize: '0.62rem' }}
+                      >
+                        {status}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-white-50 mb-0" style={{ fontSize: '0.74rem', lineHeight: 1.35 }}>
+                    {toast.message}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCustomerToasts(prev => prev.filter(t => t.toastId !== toast.toastId))}
+                  className="btn btn-sm p-0 text-white-50 hover-text-white border-0"
+                  style={{ background: 'transparent' }}
+                  title="Close"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
       )}
 
     </div>
