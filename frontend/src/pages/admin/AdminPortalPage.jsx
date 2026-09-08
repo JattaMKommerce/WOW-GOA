@@ -3,7 +3,7 @@ import {
   Compass, LogOut, Box, Building, MessageSquare, CreditCard, Calendar,
   Plane, Hotel, Shield, LayoutDashboard, Globe, Users, Tag, BarChart2,
   ChevronDown, ChevronRight, Menu, Bell, Layers, FileText, Star, PlusCircle, Settings, X, UserPlus,
-  Briefcase, Gift, Clock, AlertCircle, Wallet, CheckCircle2
+  Briefcase, Gift, Clock, AlertCircle, Wallet, CheckCircle2, Map as MapIcon
 } from 'lucide-react';
 import * as api from '../../services/api';
 import AdminDashboard from './AdminDashboard';
@@ -13,6 +13,7 @@ import AdminB2BPortal from './b2b/AdminB2BPortal';
 import AdminCMS from './AdminCMS';
 import AdminCustomerManagement from './AdminCustomerManagement';
 import AdminBookingManagement from './AdminBookingManagement';
+import AdminActivitiesManagement from './AdminActivitiesManagement';
 import AdminPromotions from './AdminPromotions';
 import AdminAnalytics from './AdminAnalytics';
 import AnalyticsView from '../../components/shared/AnalyticsView';
@@ -56,6 +57,7 @@ const SIDEBAR_GROUPS = [
       { id: 'packages', label: 'Manage Packages', icon: <Compass size={15} /> },
       { id: 'admin_hotels', label: 'Manage Hotel', icon: <Hotel size={15} /> },
       { id: 'admin_vehicles', label: 'Manage Vehicle', icon: <Shield size={15} /> },
+      { id: 'admin_activities', label: 'Manage Sightseeing & Activity', icon: <MapIcon size={15} /> },
       { id: 'availability', label: 'Availability Calendar', icon: <Calendar size={15} /> },
     ]
   },
@@ -109,6 +111,95 @@ const SIDEBAR_GROUPS = [
 
 function SidebarGroup({ group, activeTab, onSelect, defaultOpen }) {
   const [open, setOpen] = useState(group.label === 'Customers' || group.label === 'Overview' || group.label === 'B2B Distribution' || defaultOpen || group.items.some(i => i.id === activeTab));
+  
+  const storageKey = 'admin_sidebar_order_' + group.label.toLowerCase().replace(/[^a-z0-9]/g, '_');
+
+  const [orderedItems, setOrderedItems] = useState(() => {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        const orderIds = JSON.parse(saved);
+        if (Array.isArray(orderIds)) {
+          const itemMap = new Map(group.items.map(it => [it.id, it]));
+          const reordered = [];
+          for (const id of orderIds) {
+            if (itemMap.has(id)) {
+              reordered.push(itemMap.get(id));
+              itemMap.delete(id);
+            }
+          }
+          for (const remaining of itemMap.values()) {
+            reordered.push(remaining);
+          }
+          return reordered;
+        }
+      }
+    } catch (e) {}
+    return group.items;
+  });
+
+  useEffect(() => {
+    setOrderedItems(prev => {
+      const itemMap = new Map(group.items.map(it => [it.id, it]));
+      const next = [];
+      for (const it of prev) {
+        if (itemMap.has(it.id)) {
+          next.push(itemMap.get(it.id));
+          itemMap.delete(it.id);
+        }
+      }
+      for (const remaining of itemMap.values()) {
+        next.push(remaining);
+      }
+      return next;
+    });
+  }, [group.items]);
+
+  const [draggedItemId, setDraggedItemId] = useState(null);
+  const [dragOverItemId, setDragOverItemId] = useState(null);
+
+  const handleDragStart = (e, id) => {
+    e.dataTransfer.setData('text/plain', id);
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggedItemId(id);
+  };
+
+  const handleDragOver = (e, id) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (id !== dragOverItemId) {
+      setDragOverItemId(id);
+    }
+  };
+
+  const handleDrop = (e, targetId) => {
+    e.preventDefault();
+    const sourceId = e.dataTransfer.getData('text/plain') || draggedItemId;
+    if (!sourceId || sourceId === targetId) {
+      setDraggedItemId(null);
+      setDragOverItemId(null);
+      return;
+    }
+    const sourceIdx = orderedItems.findIndex(it => it.id === sourceId);
+    const targetIdx = orderedItems.findIndex(it => it.id === targetId);
+    if (sourceIdx !== -1 && targetIdx !== -1) {
+      const newItems = [...orderedItems];
+      const [moved] = newItems.splice(sourceIdx, 1);
+      newItems.splice(targetIdx, 0, moved);
+      setOrderedItems(newItems);
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(newItems.map(it => it.id)));
+      } catch (err) {}
+    }
+    setDraggedItemId(null);
+    setDragOverItemId(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedItemId(null);
+    setDragOverItemId(null);
+  };
+
   return (
     <div className="mb-1">
       <button onClick={() => setOpen(!open)} className="btn w-100 d-flex align-items-center justify-content-between px-3 py-1 border-0" style={{ background: 'transparent', fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', color: 'rgba(255,255,255,0.3)' }}>
@@ -117,10 +208,30 @@ function SidebarGroup({ group, activeTab, onSelect, defaultOpen }) {
       </button>
       {open && (
         <div className="d-flex flex-column gap-0 px-1">
-          {group.items.map(item => (
-            <button key={item.id} onClick={() => onSelect(item.id)} className="btn w-100 text-start d-flex align-items-center gap-2 py-2 px-3 border-0 rounded-3 mb-1" style={{ fontSize: '0.83rem', background: activeTab === item.id ? 'linear-gradient(90deg,#FF6333,#FF8A00)' : 'transparent', color: activeTab === item.id ? '#fff' : 'rgba(255,255,255,0.65)', boxShadow: activeTab === item.id ? '0 4px 12px rgba(255,99,51,0.3)' : 'none', fontWeight: activeTab === item.id ? 700 : 400 }}>
+          {orderedItems.map(item => (
+            <button
+              key={item.id}
+              draggable={true}
+              onDragStart={(e) => handleDragStart(e, item.id)}
+              onDragOver={(e) => handleDragOver(e, item.id)}
+              onDrop={(e) => handleDrop(e, item.id)}
+              onDragEnd={handleDragEnd}
+              onClick={() => onSelect(item.id)}
+              className="btn w-100 text-start d-flex align-items-center gap-2 py-2 px-3 border-0 rounded-3 mb-1"
+              style={{
+                fontSize: '0.83rem',
+                background: activeTab === item.id ? 'linear-gradient(90deg,#FF6333,#FF8A00)' : (dragOverItemId === item.id ? 'rgba(255,255,255,0.08)' : 'transparent'),
+                color: activeTab === item.id ? '#fff' : 'rgba(255,255,255,0.65)',
+                boxShadow: activeTab === item.id ? '0 4px 12px rgba(255,99,51,0.3)' : 'none',
+                fontWeight: activeTab === item.id ? 700 : 400,
+                opacity: draggedItemId === item.id ? 0.4 : 1,
+                cursor: 'grab',
+                border: dragOverItemId === item.id ? '1px dashed #FF8A00' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+            >
               <span style={{ color: activeTab === item.id ? '#fff' : '#00B8D9', flexShrink: 0 }}>{item.icon}</span>
-              <span>{item.label}</span>
+              <span className="flex-grow-1">{item.label}</span>
             </button>
           ))}
         </div>
@@ -197,6 +308,7 @@ export default function AdminPortalPage({
     if (currentPath === '/admin/add-users') return 'add_users';
     if (currentPath === '/admin/bookings') return 'bookings';
     if (currentPath === '/admin/drivers') return 'drivers';
+    if (currentPath === '/admin/activities' || currentPath === '/admin/sightseeing') return 'admin_activities';
     return localStorage.getItem('adminActiveTab') || 'overview';
   });
 
@@ -294,7 +406,7 @@ export default function AdminPortalPage({
 
   useEffect(() => {
     fetchAdminNotifications();
-    const interval = setInterval(fetchAdminNotifications, 5000);
+    const interval = setInterval(fetchAdminNotifications, 3500);
 
     const handleSync = () => {
       fetchAdminNotifications();
@@ -493,6 +605,8 @@ export default function AdminPortalPage({
         const VendorDashboard = React.lazy(() => import('../vendor/VendorDashboard'));
         return <div className="p-4"><div className="rounded-3 shadow-sm border" style={{ background: '#fff' }}><React.Suspense fallback={<div className="p-4 text-muted">Loading...</div>}><VendorDashboard activeTab={adminVehiclesInnerTab} setActiveTab={setAdminVehiclesInnerTab} vendors={vendors} cars={cars} bikes={bikes} onAddCar={onAddCar} onUpdateCar={onUpdateCar} onDeleteCar={onDeleteCar} onAddBike={onAddBike} onUpdateBike={onUpdateBike} onDeleteBike={onDeleteBike} bookings={bookings} currentUser={currentUser} /></React.Suspense></div></div>;
       }
+      case 'admin_activities':
+        return <AdminActivitiesManagement currentUser={currentUser} />;
       case 'availability': {
         const PMSAvailabilityCalendar = React.lazy(() => import('../vendor/pms/PMSAvailabilityCalendar'));
         return <div className="p-4"><div className="rounded-3 shadow-sm border" style={{ background: '#fff' }}><React.Suspense fallback={<div className="p-4 text-muted">Loading...</div>}><PMSAvailabilityCalendar currentUser={currentUser} vendorHotels={hotels} /></React.Suspense></div></div>;

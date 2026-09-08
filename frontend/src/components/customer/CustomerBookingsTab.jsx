@@ -73,8 +73,15 @@ export default function CustomerBookingsTab({
     );
   };
 
+  const isActivityBooking = (b) => {
+    if (!b) return false;
+    const type = String(b.package_type || b.type || '').toLowerCase();
+    const itemId = String(b.item_id || '').toLowerCase();
+    return type === 'activity' || type === 'sightseeing' || itemId.startsWith('act-') || itemId.startsWith('activity-') || itemId.startsWith('sight-') || itemId.startsWith('act_');
+  };
+
   const isPackageBooking = (b) => {
-    if (!b || isCraftBooking(b) || isFlightBooking(b)) return false;
+    if (!b || isCraftBooking(b) || isFlightBooking(b) || isActivityBooking(b)) return false;
     const type = String(b.package_type || b.type || '').toLowerCase();
     const itemName = String(b.item_name || b.package_name || '').toLowerCase();
     const itemId = String(b.item_id || '').toLowerCase();

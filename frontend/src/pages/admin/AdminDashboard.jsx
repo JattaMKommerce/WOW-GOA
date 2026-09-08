@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Building, Compass, Sparkles, Shield, Plus, Calendar, Settings, Plane, Hotel, Map, MapPin, X, MessageSquare, CreditCard, Box, MessageCircle, Search, Clock, Edit3, Trash2, Star } from 'lucide-react';
+import { Building, Compass, Sparkles, Shield, Plus, Calendar, Settings, Plane, Hotel, Map as MapIcon, MapPin, X, MessageSquare, CreditCard, Box, MessageCircle, Search, Clock, Edit3, Trash2, Star } from 'lucide-react';
 import * as api from '../../services/api';
 import AdminWalletSettlements from '../../components/admin/AdminWalletSettlements';
+import AdminActivitiesManagement from './AdminActivitiesManagement';
 import { getTodayDateStr, getNextDayDateStr, validateBookingDates } from '../../utils/dateUtils';
 
 const LocationSuggestions = ({ index, dayWiseItinerary, setDayWiseItinerary }) => {
@@ -1238,7 +1239,7 @@ export default function AdminDashboard({
                   
                   <div className="d-flex align-items-center gap-3 mb-3 text-muted fw-medium small">
                     <span className="d-flex align-items-center gap-1"><Clock size={16} color="#FFC107" /> {pkg.duration}</span>
-                    <span className="d-flex align-items-center gap-1"><Map size={16} color="#00B8D9" /> Multiple Locations</span>
+                    <span className="d-flex align-items-center gap-1"><MapIcon size={16} color="#00B8D9" /> Multiple Locations</span>
                   </div>
 
                   <div className="d-flex flex-wrap gap-2">
@@ -2534,7 +2535,9 @@ export default function AdminDashboard({
       case 'vendors': return renderVendorsTab();
       case 'bookings': return renderBookingsTab();
       case 'ai-leads': return renderAiLeadsTab();
-      case 'sightseeing': return <Stub title="Sightseeing Inventory" icon={<Map size={48} className="text-warning" />} desc="Add or remove popular Goan attractions for packages." />;
+      case 'sightseeing':
+      case 'admin_activities':
+        return <AdminActivitiesManagement currentUser={currentUser} />;
       case 'payment': return renderPaymentManagementTab();
       case 'flight': return renderFlightTab();
       case 'flight-master': return renderFlightMasterTab();

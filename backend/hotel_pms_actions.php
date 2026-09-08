@@ -620,9 +620,15 @@ if ($action === 'add_master_hotel' || $action === 'add_hotel' || $action === 'cr
     $all = !empty($payload['all']);
 
     if ($all) {
-        $pdo->prepare("UPDATE hotel_notifications SET is_read = 1 WHERE vendor_id = ?")->execute([$vendor_id]);
+        $pdo->prepare("UPDATE hotel_notifications SET is_read = 1 WHERE vendor_id = ? OR (? IN ('u-5', 'vendor-3') AND vendor_id IN ('u-5', 'vendor-3'))")->execute([$vendor_id, $vendor_id]);
+        try {
+            $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ? OR role = 'hotel_vendor' OR role = 'vendor'")->execute([$vendor_id]);
+        } catch (Exception $e) {}
     } elseif ($id) {
         $pdo->prepare("UPDATE hotel_notifications SET is_read = 1 WHERE id = ?")->execute([$id]);
+        try {
+            $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE id = ?")->execute([$id]);
+        } catch (Exception $e) {}
     }
     echo json_encode(["success" => true, "message" => "Notifications updated."]);
     exit();
@@ -632,9 +638,15 @@ if ($action === 'add_master_hotel' || $action === 'add_hotel' || $action === 'cr
     $all = !empty($payload['all']);
 
     if ($all) {
-        $pdo->prepare("DELETE FROM hotel_notifications WHERE vendor_id = ?")->execute([$vendor_id]);
+        $pdo->prepare("DELETE FROM hotel_notifications WHERE vendor_id = ? OR (? IN ('u-5', 'vendor-3') AND vendor_id IN ('u-5', 'vendor-3'))")->execute([$vendor_id, $vendor_id]);
+        try {
+            $pdo->prepare("DELETE FROM notifications WHERE user_id = ? OR role = 'hotel_vendor' OR role = 'vendor'")->execute([$vendor_id]);
+        } catch (Exception $e) {}
     } elseif ($id) {
         $pdo->prepare("DELETE FROM hotel_notifications WHERE id = ?")->execute([$id]);
+        try {
+            $pdo->prepare("DELETE FROM notifications WHERE id = ?")->execute([$id]);
+        } catch (Exception $e) {}
     }
     echo json_encode(["success" => true, "message" => "Notification(s) deleted."]);
     exit();

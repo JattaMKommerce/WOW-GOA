@@ -1,9 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Shield, Lock, User, LogOut, MessageSquare, CheckCircle, AlertCircle, Sparkles, 
-  Phone, Mail, MessageCircle, PhoneCall, RefreshCw, Send, X, Users, Tag, Building, Car, Calendar, Search, Filter, ArrowUpRight
+  Phone, Mail, MessageCircle, PhoneCall, RefreshCw, Send, X, Users, Tag, Building, Car, Calendar, Search, Filter, ArrowUpRight,
+  Bell, CheckCheck, Trash2
 } from 'lucide-react';
 import LeadManagement from '../../components/shared/LeadManagement';
+import NotificationSoundToggle from '../../components/common/NotificationSoundToggle';
+import { handleIncomingNotifications, registerSeenNotifications, getRelativeTimeString, parseNotificationTitleAndStatus } from '../../utils/notificationSound';
 import * as api from '../../services/api';
 
 export default function SubAdminPortalPage({ currentUser: propCurrentUser, onLogout, onLoginSuccess, usersList = [] }) {
@@ -37,6 +40,89 @@ export default function SubAdminPortalPage({ currentUser: propCurrentUser, onLog
 
   // Assigned leads counter for badge
   const [assignedCount, setAssignedCount] = useState(0);
+
+  // Sub-Admin Notifications & Live Toasts
+  const [subNotifs, setSubNotifs] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
+  const [subToasts, setSubToasts] = useState([]);
+  const isInitialLoadRef = useRef(true);
+  const notifDropdownRef = useRef(null);
+
+  // Close notification dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (notifDropdownRef.current && !notifDropdownRef.current.contains(e.target)) {
+        setNotifDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Fetch subadmin notifications
+  const fetchSubNotifications = useCallback(async () => {
+    if (!localUser) return;
+    try {
+      const res = await api.fetchNotifications({ role: 'subadmin', userId: localUser.id || localUser.username });
+      if (res && Array.isArray(res.notifications)) {
+        setSubNotifs(res.notifications);
+        setUnreadCount(Number(res.unread_count) || res.notifications.filter(n => !n.is_read).length);
+        if (isInitialLoadRef.current) {
+          registerSeenNotifications(res.notifications);
+          isInitialLoadRef.current = false;
+        } else {
+          const newlyReceived = handleIncomingNotifications(res.notifications, { isInitialLoad: false });
+          if (Array.isArray(newlyReceived) && newlyReceived.length > 0) {
+            const freshToasts = newlyReceived.map(item => ({
+              ...item,
+              toastId: `stoast-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`
+            }));
+            setSubToasts(prev => [...prev.slice(-4), ...freshToasts]);
+          }
+        }
+      }
+    } catch (e) {}
+  }, [localUser]);
+
+  // Auto-dismiss subadmin toasts after 6s
+  useEffect(() => {
+    if (subToasts.length === 0) return;
+    const timer = setTimeout(() => {
+      setSubToasts(prev => prev.slice(1));
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, [subToasts]);
+
+  // Periodic polling for subadmin notifications (3.5s)
+  useEffect(() => {
+    if (localUser) {
+      fetchSubNotifications();
+      const interval = setInterval(fetchSubNotifications, 3500);
+      return () => clearInterval(interval);
+    }
+  }, [localUser, fetchSubNotifications]);
+
+  const handleMarkRead = async (id, all = false) => {
+    try {
+      await api.markNotificationRead(id, { role: 'subadmin', userId: localUser.id || localUser.username, all });
+      if (all) {
+        setSubNotifs(prev => prev.map(n => ({ ...n, is_read: 1 })));
+        setUnreadCount(0);
+      } else {
+        setSubNotifs(prev => prev.map(n => n.id === id ? { ...n, is_read: 1 } : n));
+        setUnreadCount(prev => Math.max(0, prev - 1));
+      }
+    } catch (e) {}
+  };
+
+  const handleClearAll = async () => {
+    try {
+      await api.clearNotifications({ role: 'subadmin', userId: localUser.id || localUser.username });
+      setSubNotifs([]);
+      setUnreadCount(0);
+    } catch (e) {}
+  };
 
   // Send online heartbeat when Sub-Admin is logged in
   useEffect(() => {
@@ -350,7 +436,118 @@ export default function SubAdminPortalPage({ currentUser: propCurrentUser, onLog
             </span>
           </div>
 
-          <div className="d-flex align-items-center gap-2">
+          <div className="d-flex align-items-center gap-3">
+            {/* Sound Toggle */}
+            <NotificationSoundToggle />
+
+            {/* Notification Bell Dropdown */}
+            <div className="position-relative" ref={notifDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setNotifDropdownOpen(prev => !prev)}
+                className="btn btn-light rounded-circle p-2 d-flex align-items-center justify-content-center position-relative border shadow-sm"
+                style={{ width: '40px', height: '40px' }}
+                title="Notifications"
+              >
+                <Bell size={18} className="text-secondary" />
+                {unreadCount > 0 && (
+                  <span
+                    className="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger text-white border border-white"
+                    style={{ fontSize: '0.65rem' }}
+                  >
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {notifDropdownOpen && (
+                <div
+                  className="position-absolute end-0 mt-2 card shadow-lg border rounded-4 overflow-hidden"
+                  style={{ width: '360px', zIndex: 1050, background: '#fff' }}
+                >
+                  <div className="p-3 border-bottom d-flex align-items-center justify-content-between bg-light">
+                    <div className="d-flex align-items-center gap-2">
+                      <Bell size={16} className="text-primary" />
+                      <span className="fw-bold text-dark" style={{ fontSize: '0.88rem' }}>Sub-Admin Alerts</span>
+                      {unreadCount > 0 && (
+                        <span className="badge bg-danger rounded-pill px-1.5 py-0.5" style={{ fontSize: '0.65rem' }}>
+                          {unreadCount} new
+                        </span>
+                      )}
+                    </div>
+                    <div className="d-flex align-items-center gap-1">
+                      {unreadCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => handleMarkRead(null, true)}
+                          className="btn btn-sm btn-link text-primary p-0 text-decoration-none fw-semibold d-flex align-items-center gap-1"
+                          style={{ fontSize: '0.72rem' }}
+                        >
+                          <CheckCheck size={13} /> Mark all read
+                        </button>
+                      )}
+                      {subNotifs.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleClearAll}
+                          className="btn btn-sm btn-link text-danger p-0 text-decoration-none fw-semibold ms-2 d-flex align-items-center gap-1"
+                          style={{ fontSize: '0.72rem' }}
+                        >
+                          <Trash2 size={13} /> Clear
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={{ maxHeight: '340px', overflowY: 'auto' }}>
+                    {subNotifs.length === 0 ? (
+                      <div className="text-center py-4 text-muted" style={{ fontSize: '0.8rem' }}>
+                        No notifications yet.
+                      </div>
+                    ) : (
+                      subNotifs.map(n => {
+                        const { cleanTitle, status, badgeStyle } = parseNotificationTitleAndStatus(n.title, n.message);
+                        return (
+                          <div
+                            key={n.id}
+                            className={`p-3 border-bottom d-flex align-items-start gap-2 transition-all ${
+                              !n.is_read ? 'bg-primary-subtle bg-opacity-25' : 'hover-bg-light'
+                            }`}
+                            style={{ cursor: 'pointer' }}
+                            onClick={() => {
+                              if (!n.is_read) handleMarkRead(n.id);
+                            }}
+                          >
+                            <div className="flex-grow-1">
+                              <div className="d-flex align-items-center justify-content-between mb-1">
+                                <span className={`text-dark ${!n.is_read ? 'fw-bold' : 'fw-semibold'}`} style={{ fontSize: '0.82rem' }}>
+                                  {cleanTitle}
+                                </span>
+                                {badgeStyle && (
+                                  <span className="badge px-1.5 py-0.5 rounded-pill font-monospace" style={{ ...badgeStyle, fontSize: '0.62rem' }}>
+                                    {status}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="mb-1 text-muted" style={{ fontSize: '0.75rem', lineHeight: 1.35 }}>
+                                {n.message}
+                              </p>
+                              <span className="text-muted opacity-75" style={{ fontSize: '0.68rem' }}>
+                                {getRelativeTimeString(n.created_at)}
+                              </span>
+                            </div>
+                            {!n.is_read && (
+                              <span className="rounded-circle bg-primary mt-1" style={{ width: '8px', height: '8px', flexShrink: 0 }} />
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="px-3 py-1.5 rounded-pill border bg-light d-flex align-items-center gap-2" style={{ fontSize: '0.8rem' }}>
               <User size={14} className="text-primary" />
               <span className="fw-bold text-dark">{localUser.name || localUser.username}</span>
@@ -401,6 +598,65 @@ export default function SubAdminPortalPage({ currentUser: propCurrentUser, onLog
           )}
         </main>
       </div>
+
+      {/* Floating SubAdmin Real-Time Toasts */}
+      {subToasts.length > 0 && (
+        <div 
+          className="position-fixed d-flex flex-column gap-2"
+          style={{ bottom: '24px', right: '24px', zIndex: 99999, maxWidth: '380px', pointerEvents: 'auto' }}
+        >
+          {subToasts.map(toast => {
+            const { cleanTitle, status, badgeStyle } = parseNotificationTitleAndStatus(toast.title, toast.message);
+            return (
+              <div
+                key={toast.toastId}
+                className="card shadow-lg border rounded-4 p-3 d-flex flex-row align-items-start gap-3 animate__animated animate__fadeInUp"
+                style={{
+                  background: 'linear-gradient(135deg, #0D1B2E 0%, #1e293b 100%)',
+                  borderColor: 'rgba(255, 99, 51, 0.4)',
+                  color: '#fff',
+                  boxShadow: '0 12px 36px rgba(0, 0, 0, 0.45)',
+                  minWidth: '320px'
+                }}
+              >
+                <div 
+                  className="rounded-circle p-2 flex-shrink-0 d-flex align-items-center justify-content-center"
+                  style={{ background: 'rgba(255, 99, 51, 0.2)', color: '#FF6333' }}
+                >
+                  <Bell size={18} />
+                </div>
+                <div className="flex-grow-1 overflow-hidden">
+                  <div className="d-flex align-items-center justify-content-between gap-1 mb-1">
+                    <span className="fw-bold text-truncate" style={{ fontSize: '0.84rem', color: '#fff' }}>
+                      {cleanTitle}
+                    </span>
+                    {badgeStyle && (
+                      <span 
+                        className="badge px-1.5 py-0.5 rounded-pill font-monospace"
+                        style={{ ...badgeStyle, fontSize: '0.62rem' }}
+                      >
+                        {status}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-white-50 mb-0" style={{ fontSize: '0.74rem', lineHeight: 1.35 }}>
+                    {toast.message}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSubToasts(prev => prev.filter(t => t.toastId !== toast.toastId))}
+                  className="btn btn-sm p-0 text-white-50 hover-text-white border-0"
+                  style={{ background: 'transparent' }}
+                  title="Close"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
