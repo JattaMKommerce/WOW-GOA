@@ -251,7 +251,12 @@ export default function BikesPage({
                           <button 
                             type="button" 
                             className="btn btn-outline-secondary btn-sm rounded-pill px-3"
-                            onClick={() => onViewDetails(bike)}
+                            onClick={() => {
+                              if (document.activeElement && typeof document.activeElement.blur === 'function') {
+                                document.activeElement.blur();
+                              }
+                              onViewDetails(bike);
+                            }}
                           >
                             Details
                           </button>
@@ -260,7 +265,12 @@ export default function BikesPage({
                           type="button" 
                           className="btn btn-primary btn-sm rounded-pill px-3 fw-bold"
                           style={{ background: '#FF6333', borderColor: '#FF6333' }}
-                          onClick={() => handleOpenBooking(bike)}
+                          onClick={() => {
+                            if (document.activeElement && typeof document.activeElement.blur === 'function') {
+                              document.activeElement.blur();
+                            }
+                            handleOpenBooking(bike);
+                          }}
                         >
                           Book Now
                         </button>

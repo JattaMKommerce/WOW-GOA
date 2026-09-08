@@ -67,12 +67,12 @@ export default function VehicleDetailsPage({ vehicle, type, onBack, onBook }) {
       {/* Top Navbar */}
       <div className="bg-white border-bottom sticky-top shadow-sm px-4 py-3 d-flex align-items-center justify-content-between">
         <div className="d-flex align-items-center gap-3">
-          <button onClick={onBack} className="btn btn-light rounded-circle p-2 d-flex align-items-center justify-content-center">
+          <button onClick={() => { if (document.activeElement?.blur) document.activeElement.blur(); onBack(); }} className="btn btn-light rounded-circle p-2 d-flex align-items-center justify-content-center">
             <ArrowLeft size={20} />
           </button>
           <h4 className="mb-0 fw-bold">{vehicle.name}</h4>
         </div>
-        <button onClick={onBack} className="btn btn-outline-secondary d-flex align-items-center gap-2 rounded-pill px-3 py-1">
+        <button onClick={() => { if (document.activeElement?.blur) document.activeElement.blur(); onBack(); }} className="btn btn-outline-secondary d-flex align-items-center gap-2 rounded-pill px-3 py-1">
           Back
         </button>
       </div>
@@ -194,7 +194,12 @@ export default function VehicleDetailsPage({ vehicle, type, onBack, onBook }) {
                 </div>
 
                 <button 
-                  onClick={() => onBook && onBook(vehicle)} 
+                  onClick={() => {
+                    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+                      document.activeElement.blur();
+                    }
+                    if (onBook) onBook(vehicle);
+                  }} 
                   className="btn btn-primary btn-lg w-100 rounded-pill fw-bold shadow-sm d-flex align-items-center justify-content-center gap-2"
                 >
                   Book Now <ChevronRight size={18} />

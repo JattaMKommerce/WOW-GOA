@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import * as api from '../../services/api';
 import B2BSelfDriveFlow from './B2BSelfDriveFlow';
+import B2BCraftMyTripFlow from './B2BCraftMyTripFlow';
 import ImageCarousel from '../../components/common/ImageCarousel';
 import { resolveItemImages } from '../../utils/bookingImageHelper';
 
@@ -114,9 +115,9 @@ export default function B2BInventoryTab({
     }
   }, [initialService]);
 
-  // Load Inventory for non-selfdrive services
+  // Load Inventory for non-selfdrive and non-craft services
   useEffect(() => {
-    if (activeService === 'selfdrive') {
+    if (activeService === 'selfdrive' || activeService === 'craft') {
       setItems([]);
       setLoading(false);
       return;
@@ -133,10 +134,6 @@ export default function B2BInventoryTab({
           resData = await api.fetchPackages();
         } else if (activeService === 'flights') {
           resData = await api.fetchFlights();
-        } else if (activeService === 'craft') {
-          // Packages with custom flag or all packages as custom template
-          const pkgs = await api.fetchPackages();
-          resData = Array.isArray(pkgs) ? pkgs.map(p => ({ ...p, is_custom: true })) : [];
         }
         if (isMounted) {
           setItems(Array.isArray(resData) ? resData : []);
@@ -359,7 +356,7 @@ export default function B2BInventoryTab({
         </div>
 
         {/* Search Bar for listed services */}
-        {activeService !== 'selfdrive' && (
+        {activeService !== 'selfdrive' && activeService !== 'craft' && (
           <div className="mt-3 pt-3 border-top">
             <div className="input-group input-group-sm">
               <span className="input-group-text bg-light border-end-0 text-muted">
@@ -387,6 +384,14 @@ export default function B2BInventoryTab({
         <B2BSelfDriveFlow 
           partner={partnerUser} 
           activeMode={mode} 
+          onBookingSuccess={(res) => {
+            if (onInitiateBooking) onInitiateBooking(res);
+          }}
+        />
+      ) : activeService === 'craft' ? (
+        <B2BCraftMyTripFlow
+          partner={partnerUser}
+          activeMode={mode}
           onBookingSuccess={(res) => {
             if (onInitiateBooking) onInitiateBooking(res);
           }}

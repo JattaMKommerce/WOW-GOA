@@ -306,7 +306,12 @@ export default function CarsPage({
                           <button 
                             type="button" 
                             className="btn btn-outline-secondary btn-sm rounded-pill px-3"
-                            onClick={() => onViewDetails(car)}
+                            onClick={() => {
+                              if (document.activeElement && typeof document.activeElement.blur === 'function') {
+                                document.activeElement.blur();
+                              }
+                              onViewDetails(car);
+                            }}
                           >
                             Details
                           </button>
@@ -315,7 +320,12 @@ export default function CarsPage({
                           type="button" 
                           className="btn btn-primary btn-sm rounded-pill px-3 fw-bold"
                           style={{ background: '#FF6333', borderColor: '#FF6333' }}
-                          onClick={() => handleOpenBooking(car)}
+                          onClick={() => {
+                            if (document.activeElement && typeof document.activeElement.blur === 'function') {
+                              document.activeElement.blur();
+                            }
+                            handleOpenBooking(car);
+                          }}
                         >
                           Book Now
                         </button>

@@ -85,6 +85,9 @@ export default function PackageCheckoutStep2({
       alert("Please enter a valid 10-digit mobile phone number for trip updates.");
       return;
     }
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+      document.activeElement.blur();
+    }
     onProceed(e);
   };
 
@@ -92,7 +95,12 @@ export default function PackageCheckoutStep2({
     <div className="container py-4" style={{ fontFamily: "'Inter', sans-serif" }}>
       <button 
         type="button" 
-        onClick={onBack} 
+        onClick={(e) => {
+          if (document.activeElement && typeof document.activeElement.blur === 'function') {
+            document.activeElement.blur();
+          }
+          onBack(e);
+        }} 
         className="btn btn-link text-dark text-decoration-none p-0 mb-4 d-flex align-items-center gap-2 fw-bold"
       >
         <ArrowLeft size={18} /> Back to Itinerary

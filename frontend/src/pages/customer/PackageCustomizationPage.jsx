@@ -55,8 +55,6 @@ export default function PackageCustomizationPage({
   // Booking Flow State
   const [currentStep, setCurrentStep] = useState(1); // 1 = Customize, 2 = Travellers, 3 = Review & Pay
   const flowContainerRef = useRef(null);
-  const savedStepScrollRef = useRef(null);
-  const [preservedMinHeight, setPreservedMinHeight] = useState('800px');
   
   // Traveller Details State
   const [numAdults, setNumAdults] = useState(2);
@@ -403,11 +401,13 @@ export default function PackageCustomizationPage({
 
   const handleProceedToTravellers = (e) => {
     if (e && e.preventDefault) e.preventDefault();
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+      document.activeElement.blur();
+    }
     if (flowContainerRef.current) {
       const h = flowContainerRef.current.offsetHeight;
-      if (h > 0) setPreservedMinHeight(`${Math.max(h, 800)}px`);
+      if (h > 0) flowContainerRef.current.style.minHeight = `${h}px`;
     }
-    savedStepScrollRef.current = window.scrollY;
     setCurrentStep(2);
   };
 
@@ -424,11 +424,13 @@ export default function PackageCustomizationPage({
       return;
     }
 
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+      document.activeElement.blur();
+    }
     if (flowContainerRef.current) {
       const h = flowContainerRef.current.offsetHeight;
-      if (h > 0) setPreservedMinHeight(`${Math.max(h, 800)}px`);
+      if (h > 0) flowContainerRef.current.style.minHeight = `${h}px`;
     }
-    savedStepScrollRef.current = window.scrollY;
 
     const priceRes = {
       base_price: pkg.price,
@@ -443,11 +445,13 @@ export default function PackageCustomizationPage({
 
   const handleCheckout = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+      document.activeElement.blur();
+    }
     if (flowContainerRef.current) {
       const h = flowContainerRef.current.offsetHeight;
-      if (h > 0) setPreservedMinHeight(`${Math.max(h, 800)}px`);
+      if (h > 0) flowContainerRef.current.style.minHeight = `${h}px`;
     }
-    savedStepScrollRef.current = window.scrollY;
     setIsSubmitting(true);
 
     const priceData = serverPriceData || {
@@ -550,18 +554,15 @@ export default function PackageCustomizationPage({
   };
 
   useLayoutEffect(() => {
-    if (savedStepScrollRef.current !== null) {
-      const targetY = savedStepScrollRef.current;
-      if (Math.abs(window.scrollY - targetY) > 1) {
-        window.scrollTo({ top: targetY, left: 0, behavior: 'instant' });
-      }
-      const frameId = requestAnimationFrame(() => {
-        if (savedStepScrollRef.current !== null && Math.abs(window.scrollY - targetY) > 1) {
-          window.scrollTo({ top: targetY, left: 0, behavior: 'instant' });
+    const frameId1 = requestAnimationFrame(() => {
+      const frameId2 = requestAnimationFrame(() => {
+        if (flowContainerRef.current) {
+          flowContainerRef.current.style.minHeight = '';
         }
       });
-      return () => cancelAnimationFrame(frameId);
-    }
+      return () => cancelAnimationFrame(frameId2);
+    });
+    return () => cancelAnimationFrame(frameId1);
   }, [currentStep]);
 
   if (!pkg) return null;
@@ -572,10 +573,19 @@ export default function PackageCustomizationPage({
   const activeRetDate = pkg?.returnDate || pkg?.drop_date || pkg?.dropDate || dropDate || new Date(Date.now() + 86400000 * activeNights).toISOString().slice(0, 10);
 
   return (
-    <div ref={flowContainerRef} className="package-customization-flow" style={{ minHeight: preservedMinHeight }}>
+    <div ref={flowContainerRef} className="package-customization-flow">
       {currentStep === 1 && (
         <div className="container py-4" style={{ fontFamily: "'Inter', sans-serif" }}>
-          <button type="button" onClick={onBack} className="btn btn-link text-dark text-decoration-none p-0 mb-4 d-flex align-items-center gap-2 fw-bold">
+          <button 
+            type="button" 
+            onClick={(e) => {
+              if (document.activeElement && typeof document.activeElement.blur === 'function') {
+                document.activeElement.blur();
+              }
+              if (onBack) onBack(e);
+            }} 
+            className="btn btn-link text-dark text-decoration-none p-0 mb-4 d-flex align-items-center gap-2 fw-bold"
+          >
             <ArrowLeft size={18} /> Back
           </button>
 
@@ -1109,11 +1119,13 @@ export default function PackageCustomizationPage({
           vehicleDropLoc={vehicleDropLoc}
           setVehicleDropLoc={setVehicleDropLoc}
           onBack={() => {
+            if (document.activeElement && typeof document.activeElement.blur === 'function') {
+              document.activeElement.blur();
+            }
             if (flowContainerRef.current) {
               const h = flowContainerRef.current.offsetHeight;
-              if (h > 0) setPreservedMinHeight(`${Math.max(h, 800)}px`);
+              if (h > 0) flowContainerRef.current.style.minHeight = `${h}px`;
             }
-            savedStepScrollRef.current = window.scrollY;
             setCurrentStep(1);
           }}
           onProceed={handleProceedToReview}
@@ -1127,11 +1139,13 @@ export default function PackageCustomizationPage({
           paymentMode={paymentMode} 
           setPaymentMode={setPaymentMode} 
           onBack={() => {
+            if (document.activeElement && typeof document.activeElement.blur === 'function') {
+              document.activeElement.blur();
+            }
             if (flowContainerRef.current) {
               const h = flowContainerRef.current.offsetHeight;
-              if (h > 0) setPreservedMinHeight(`${Math.max(h, 800)}px`);
+              if (h > 0) flowContainerRef.current.style.minHeight = `${h}px`;
             }
-            savedStepScrollRef.current = window.scrollY;
             setCurrentStep(2);
           }} 
           onCheckout={handleCheckout} 

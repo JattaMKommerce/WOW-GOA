@@ -400,7 +400,12 @@ export default function HotelsPage({
                     <button 
                       type="button" 
                       className="mmt-btn-book d-flex align-items-center justify-content-center"
-                      onClick={() => onViewDetails(hotel)}
+                      onClick={() => {
+                        if (document.activeElement && typeof document.activeElement.blur === 'function') {
+                          document.activeElement.blur();
+                        }
+                        onViewDetails(hotel);
+                      }}
                     >
                       View Details <ChevronRight size={18} className="ms-1" />
                     </button>

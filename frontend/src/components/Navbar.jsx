@@ -39,6 +39,9 @@ export default function Navbar({ activeTab, setActiveTab, currentUser, triggerOp
                     onClick={(e) => {
                       e.preventDefault();
                       setActiveTab(link.id);
+                      setTimeout(() => {
+                        document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+                      }, 50);
                     }}
                   >
                     {link.label}
@@ -66,7 +69,12 @@ export default function Navbar({ activeTab, setActiveTab, currentUser, triggerOp
               <button 
                 type="button" 
                 className="btn btn-enquire-nav" 
-                onClick={() => setActiveTab('custom-trip')}
+                onClick={() => {
+                  setActiveTab('custom-trip');
+                  setTimeout(() => {
+                    document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+                  }, 50);
+                }}
               >
                 Enquire Your Own Package
               </button>

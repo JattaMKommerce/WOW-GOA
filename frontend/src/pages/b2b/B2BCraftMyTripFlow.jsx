@@ -1,0 +1,1035 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  Car, Hotel, Plane, Wand2, Check, CheckCircle2, Star, Users, Calendar, 
+  MapPin, Fuel, Gauge, ArrowRight, ArrowLeft, X, Wallet, ShieldCheck, Clock, 
+  Sparkles, Tag, Gift, ChevronRight, AlertCircle, Phone, Mail, User, CheckCircle
+} from 'lucide-react';
+import * as api from '../../services/api';
+import ImageCarousel from '../../components/common/ImageCarousel';
+
+const GOA_LOCATIONS = [
+  'Manohar International Airport (Mopa - GOX)',
+  'Dabolim Airport (GOI - South Goa)',
+  'Calangute / Baga Beach Hub',
+  'Candolim / Sinquerim',
+  'Anjuna / Vagator',
+  'Panaji City Center',
+  'Madgaon Railway Station (MAO)',
+  'Hotel / Resort Doorstep Delivery'
+];
+
+const FLIGHT_ORIGINS = [
+  'Mumbai (BOM)', 'New Delhi (DEL)', 'Bengaluru (BLR)', 
+  'Hyderabad (HYD)', 'Chennai (MAA)', 'Pune (PNQ)', 
+  'Ahmedabad (AMD)', 'Kolkata (CCU)'
+];
+
+export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSuccess }) {
+  const mode = activeMode || (partner?.allow_commission ? 'COMMISSION' : 'NON_COMMISSION');
+  const commRate = parseFloat(partner?.default_commission_rate || 10.00);
+  const netDiscountRate = parseFloat(partner?.default_net_discount_rate || 10.00);
+
+  // Wizard Step
+  const [step, setStep] = useState(1);
+
+  // Default Dates: Tomorrow to 4 days later
+  const tomorrowStr = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  }, []);
+
+  const defaultDropStr = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 4);
+    return d.toISOString().split('T')[0];
+  }, []);
+
+  const [pickupDate, setPickupDate] = useState(tomorrowStr);
+  const [dropDate, setDropDate] = useState(defaultDropStr);
+  const [location, setLocation] = useState(GOA_LOCATIONS[0]);
+  const [memberCount, setMemberCount] = useState(2);
+
+  // Duration in nights and days
+  const nights = useMemo(() => {
+    if (!pickupDate || !dropDate) return 3;
+    const s = new Date(pickupDate);
+    const e = new Date(dropDate);
+    const diff = Math.round((e - s) / (1000 * 3600 * 24));
+    return Math.max(1, diff);
+  }, [pickupDate, dropDate]);
+
+  const days = nights + 1;
+
+  // Inventory Data
+  const [cars, setCars] = useState([]);
+  const [bikes, setBikes] = useState([]);
+  const [hotels, setHotels] = useState([]);
+  const [loadingData, setLoadingData] = useState(true);
+
+  // Step 1: Vehicle Selection
+  const [vehicleTab, setVehicleTab] = useState('cars'); // 'cars', 'bikes', 'skip'
+  const [selectedVehicle, setSelectedVehicle] = useState(null);
+
+  // Step 2: Hotel Selection
+  const [skipHotel, setSkipHotel] = useState(false);
+  const [selectedHotel, setSelectedHotel] = useState(null);
+  const [hotelRooms, setHotelRooms] = useState(1);
+  const [hotelFilterStars, setHotelFilterStars] = useState('All');
+
+  // Step 3: Flight Selection
+  const [includeFlight, setIncludeFlight] = useState(false);
+  const [flightOrigin, setFlightOrigin] = useState(FLIGHT_ORIGINS[0]);
+  const [flightAirline, setFlightAirline] = useState('IndiGo Premium');
+  const [flightClass, setFlightClass] = useState('Economy');
+  const [flightPricePerPerson, setFlightPricePerPerson] = useState(4800);
+
+  // Step 4: Guest Details & Booking State
+  const [guestDetails, setGuestDetails] = useState({
+    name: '',
+    phone: '',
+    email: '',
+    special_requests: '',
+    payment_method: 'Prepaid Agent Wallet'
+  });
+  const [bookingLoading, setBookingLoading] = useState(false);
+  const [bookingError, setBookingError] = useState('');
+  const [bookingSuccess, setBookingSuccess] = useState(null);
+
+  // Load live cars, bikes, hotels
+  useEffect(() => {
+    let isMounted = true;
+    const load = async () => {
+      setLoadingData(true);
+      try {
+        const [cList, bList, hList] = await Promise.all([
+          api.fetchCars().catch(() => []),
+          api.fetchBikes().catch(() => []),
+          api.fetchHotels().catch(() => [])
+        ]);
+        if (isMounted) {
+          setCars(Array.isArray(cList) ? cList : []);
+          setBikes(Array.isArray(bList) ? bList : []);
+          setHotels(Array.isArray(hList) ? hList : []);
+        }
+      } catch (err) {
+        console.warn('Error loading craft inventory:', err);
+      } finally {
+        if (isMounted) setLoadingData(false);
+      }
+    };
+    load();
+    return () => { isMounted = false; };
+  }, []);
+
+  // Pricing Calculation
+  const vehicleCost = useMemo(() => {
+    if (vehicleTab === 'skip' || !selectedVehicle) return 0;
+    const pricePerDay = parseFloat(selectedVehicle.price || 0);
+    return Math.round(pricePerDay * nights);
+  }, [vehicleTab, selectedVehicle, nights]);
+
+  const hotelCost = useMemo(() => {
+    if (skipHotel || !selectedHotel) return 0;
+    const pricePerNight = parseFloat(selectedHotel.price || selectedHotel.price_per_night || 3000);
+    return Math.round(pricePerNight * nights * hotelRooms);
+  }, [skipHotel, selectedHotel, nights, hotelRooms]);
+
+  const flightCost = useMemo(() => {
+    if (!includeFlight) return 0;
+    return Math.round(flightPricePerPerson * memberCount);
+  }, [includeFlight, flightPricePerPerson, memberCount]);
+
+  const retailSellingPrice = vehicleCost + hotelCost + flightCost;
+
+  const financialSnapshot = useMemo(() => {
+    if (mode === 'COMMISSION') {
+      const commAmount = Math.round(retailSellingPrice * (commRate / 100));
+      const netPayable = retailSellingPrice - commAmount;
+      return {
+        retailPrice: retailSellingPrice,
+        commPercent: commRate,
+        commAmount,
+        netPayable,
+        walletBalance: parseFloat(partner?.wallet_balance || 0),
+        mode: 'COMMISSION'
+      };
+    } else {
+      const discountAmount = Math.round(retailSellingPrice * (netDiscountRate / 100));
+      const netPrice = retailSellingPrice - discountAmount;
+      return {
+        retailPrice: retailSellingPrice,
+        netDiscountPercent: netDiscountRate,
+        discountAmount,
+        netPrice,
+        netPayable: netPrice,
+        walletBalance: parseFloat(partner?.wallet_balance || 0),
+        mode: 'NON_COMMISSION'
+      };
+    }
+  }, [retailSellingPrice, mode, commRate, netDiscountRate, partner?.wallet_balance]);
+
+  // Submit Booking
+  const handleConfirmB2BBooking = async (e) => {
+    e.preventDefault();
+    if (!guestDetails.name.trim() || !guestDetails.phone.trim()) {
+      setBookingError('Primary guest name and contact phone are required.');
+      return;
+    }
+    if (retailSellingPrice <= 0) {
+      setBookingError('Please select at least one service (Vehicle, Hotel, or Flight) to craft your trip.');
+      return;
+    }
+
+    setBookingLoading(true);
+    setBookingError('');
+
+    const tripTitle = [
+      selectedVehicle ? selectedVehicle.name : null,
+      selectedHotel ? selectedHotel.name : null,
+      includeFlight ? `${flightAirline} (${flightOrigin} → GOA)` : null
+    ].filter(Boolean).join(' + ') || 'Bespoke Goa Holiday Package';
+
+    const payload = {
+      b2b_partner_id: partner?.id,
+      b2b_mode: mode,
+      service_type: 'craft',
+      item_id: `craft-${Date.now()}`,
+      item_name: `Craft My Trip: ${tripTitle}`,
+      days: nights,
+      qty: memberCount,
+      pickup_date: pickupDate,
+      drop_date: dropDate,
+      guest_name: guestDetails.name.trim(),
+      guest_phone: guestDetails.phone.trim(),
+      guest_email: guestDetails.email.trim(),
+      payment_method: 'Prepaid Agent Wallet',
+      extra_details: {
+        total_amount: retailSellingPrice,
+        final_payable_amount: financialSnapshot.netPayable,
+        special_requests: guestDetails.special_requests,
+        vehicle: selectedVehicle ? { id: selectedVehicle.id, name: selectedVehicle.name, cost: vehicleCost } : null,
+        hotel: selectedHotel ? { id: selectedHotel.id, name: selectedHotel.name, cost: hotelCost, rooms: hotelRooms } : null,
+        flight: includeFlight ? { airline: flightAirline, origin: flightOrigin, cost: flightCost, pax: memberCount } : null,
+        pax: memberCount,
+        duration: `${nights}N / ${days}D`
+      }
+    };
+
+    try {
+      const res = await api.b2bBook(payload);
+      if (res && res.success) {
+        setBookingSuccess(res);
+        if (onBookingSuccess) onBookingSuccess(res);
+      } else {
+        setBookingError(res.error || 'Failed to submit custom B2B trip.');
+      }
+    } catch (err) {
+      setBookingError(err.message || 'Error processing reservation.');
+    } finally {
+      setBookingLoading(false);
+    }
+  };
+
+  const filteredHotels = useMemo(() => {
+    if (hotelFilterStars === 'All') return hotels;
+    return hotels.filter(h => String(h.stars || h.rating) === String(hotelFilterStars));
+  }, [hotels, hotelFilterStars]);
+
+  // If booking succeeded, show confirmation voucher
+  if (bookingSuccess) {
+    const bookingId = bookingSuccess.booking_id || bookingSuccess.id || `CMT-${Date.now().toString().slice(-6)}`;
+    return (
+      <div className="card border-0 shadow-sm rounded-4 p-4 p-md-5 bg-white text-center animate-fade-in my-3">
+        <div className="d-inline-flex p-3 rounded-circle bg-success bg-opacity-10 text-success mb-3">
+          <CheckCircle2 size={48} />
+        </div>
+        <h3 className="fw-bold text-dark font-heading mb-1">Bespoke Trip Confirmed!</h3>
+        <p className="text-muted small mb-4">
+          The custom holiday package for <strong>{guestDetails.name}</strong> has been confirmed and registered in your B2B ledger.
+        </p>
+
+        <div className="bg-light p-3.5 rounded-4 border text-start mx-auto mb-4" style={{ maxWidth: '560px' }}>
+          <div className="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
+            <span className="text-muted text-xs">Reference ID:</span>
+            <span className="fw-bold font-monospace text-dark text-xs">{bookingId}</span>
+          </div>
+          <div className="d-flex justify-content-between align-items-center mb-2">
+            <span className="text-muted text-xs">Guest Name:</span>
+            <span className="fw-semibold text-dark text-xs">{guestDetails.name} ({guestDetails.phone})</span>
+          </div>
+          <div className="d-flex justify-content-between align-items-center mb-2">
+            <span className="text-muted text-xs">Travel Dates:</span>
+            <span className="fw-semibold text-dark text-xs">{pickupDate} to {dropDate} ({nights}N / {days}D)</span>
+          </div>
+          {selectedVehicle && (
+            <div className="d-flex justify-content-between align-items-center mb-2">
+              <span className="text-muted text-xs">🚗 Vehicle:</span>
+              <span className="fw-semibold text-dark text-xs">{selectedVehicle.name}</span>
+            </div>
+          )}
+          {selectedHotel && (
+            <div className="d-flex justify-content-between align-items-center mb-2">
+              <span className="text-muted text-xs">🏨 Resort:</span>
+              <span className="fw-semibold text-dark text-xs">{selectedHotel.name} ({hotelRooms} Room)</span>
+            </div>
+          )}
+          {includeFlight && (
+            <div className="d-flex justify-content-between align-items-center mb-2">
+              <span className="text-muted text-xs">✈️ Flight:</span>
+              <span className="fw-semibold text-dark text-xs">{flightAirline} ({flightOrigin} → GOA)</span>
+            </div>
+          )}
+          <hr className="my-2" />
+          <div className="d-flex justify-content-between align-items-center text-sm fw-bold">
+            <span className="text-dark">Amount Debited from Wallet:</span>
+            <span className="text-primary font-monospace">₹{financialSnapshot.netPayable.toLocaleString()}</span>
+          </div>
+          {mode === 'COMMISSION' && (
+            <div className="d-flex justify-content-between align-items-center text-xs text-success mt-1">
+              <span>Agent Commission Kept:</span>
+              <span>+₹{financialSnapshot.commAmount.toLocaleString()} ({financialSnapshot.commPercent}%)</span>
+            </div>
+          )}
+        </div>
+
+        <div className="d-flex gap-2 justify-content-center">
+          <button 
+            type="button" 
+            className="btn btn-outline-secondary rounded-pill px-4 py-2 text-xs fw-semibold"
+            onClick={() => window.print()}
+          >
+            Print B2B Voucher
+          </button>
+          <button 
+            type="button" 
+            className="btn btn-warning rounded-pill px-4 py-2 text-xs fw-bold text-dark"
+            onClick={() => {
+              setBookingSuccess(null);
+              setStep(1);
+              setSelectedVehicle(null);
+              setSelectedHotel(null);
+              setIncludeFlight(false);
+              setGuestDetails({ name: '', phone: '', email: '', special_requests: '', payment_method: 'Prepaid Agent Wallet' });
+            }}
+          >
+            Craft Another Trip
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="b2b-craft-flow animate-fade-in">
+      {/* ─── Hero Header & Information ────────────────────────────────────────── */}
+      <div className="card border-0 shadow-sm rounded-4 p-4 mb-4 bg-white">
+        <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 pb-3 border-bottom">
+          <div>
+            <div className="d-flex align-items-center gap-2 mb-1">
+              <span className="badge bg-warning text-dark text-xxs fw-bold px-2.5 py-1 rounded-pill d-flex align-items-center gap-1">
+                <Wand2 size={12} /> TAILOR-MADE BESPOKE ITINERARY
+              </span>
+              <span className="badge bg-light text-muted border text-xxs px-2 py-1 rounded-pill">
+                Multi-Service B2B Builder
+              </span>
+            </div>
+            <h4 className="fw-black text-dark font-heading mb-1">Craft My Trip (Custom Itinerary Builder)</h4>
+            <p className="text-muted text-xs mb-0">
+              Build custom packages for your agency guests by combining verified vehicles, resort stays, and flights into one single B2B booking.
+            </p>
+          </div>
+
+          {/* Quick Dates & Guests Bar */}
+          <div className="d-flex align-items-center gap-2 flex-wrap bg-light p-2 rounded-3 border">
+            <div className="d-flex align-items-center gap-1 text-xs">
+              <Calendar size={14} className="text-primary" />
+              <input 
+                type="date" 
+                className="form-control form-control-sm py-1 px-2 border-0 bg-transparent fw-bold text-xs" 
+                value={pickupDate}
+                min={tomorrowStr}
+                onChange={e => setPickupDate(e.target.value)}
+              />
+              <span className="text-muted text-xxs">to</span>
+              <input 
+                type="date" 
+                className="form-control form-control-sm py-1 px-2 border-0 bg-transparent fw-bold text-xs" 
+                value={dropDate}
+                min={pickupDate}
+                onChange={e => setDropDate(e.target.value)}
+              />
+            </div>
+            <span className="badge bg-white text-dark border text-xxs fw-bold px-2 py-1 rounded-pill">
+              {nights}N / {days}D
+            </span>
+          </div>
+        </div>
+
+        {/* ─── 4-Step Progress Navigation ────────────────────────────────────── */}
+        <div className="d-flex align-items-center justify-content-between pt-3 flex-wrap gap-2">
+          {[
+            { num: 1, label: '1. Choose Ride', icon: Car, active: step === 1, done: step > 1, summary: selectedVehicle ? selectedVehicle.name : (vehicleTab === 'skip' ? 'No Ride' : 'Pending') },
+            { num: 2, label: '2. Pick Resort', icon: Hotel, active: step === 2, done: step > 2, summary: selectedHotel ? selectedHotel.name : (skipHotel ? 'No Stay' : 'Pending') },
+            { num: 3, label: '3. Add Flight', icon: Plane, active: step === 3, done: step > 3, summary: includeFlight ? `${flightAirline}` : 'No Flight' },
+            { num: 4, label: '4. Guest & Confirm', icon: ShieldCheck, active: step === 4, done: false, summary: `₹${financialSnapshot.netPayable.toLocaleString()} Net` }
+          ].map((s) => {
+            const Icon = s.icon;
+            return (
+              <div 
+                key={s.num} 
+                onClick={() => setStep(s.num)}
+                className={`d-flex align-items-center gap-2.5 p-2 rounded-3 cursor-pointer transition-all flex-grow-1 ${
+                  s.active ? 'bg-warning bg-opacity-10 border border-warning' : s.done ? 'bg-light border' : 'bg-transparent text-muted'
+                }`}
+                style={{ cursor: 'pointer', minWidth: '150px' }}
+              >
+                <div className={`rounded-circle p-1.5 d-flex align-items-center justify-content-center ${
+                  s.active ? 'bg-warning text-dark' : s.done ? 'bg-success text-white' : 'bg-secondary text-white opacity-50'
+                }`} style={{ width: '28px', height: '28px' }}>
+                  {s.done ? <Check size={14} /> : <Icon size={14} />}
+                </div>
+                <div>
+                  <div className={`text-xs fw-bold ${s.active ? 'text-dark' : 'text-muted'}`}>{s.label}</div>
+                  <div className="text-3xs text-truncate text-muted" style={{ maxWidth: '120px' }}>{s.summary}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ─── STEP 1: CHOOSE RIDE ──────────────────────────────────────────────── */}
+      {step === 1 && (
+        <div className="card border-0 shadow-sm rounded-4 p-4 bg-white mb-4 animate-fade-in">
+          <div className="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom flex-wrap gap-2">
+            <div>
+              <h5 className="fw-bold mb-0 text-dark font-heading d-flex align-items-center gap-2">
+                <Car size={18} className="text-primary" /> Step 1: Select Self-Drive Ride (Car or Bike)
+              </h5>
+              <p className="text-muted text-xs mb-0">Select sanitized verified vehicle for the duration of the trip ({nights} Days).</p>
+            </div>
+
+            <div className="d-flex gap-1.5 bg-light p-1 rounded-pill border">
+              <button 
+                type="button" 
+                onClick={() => setVehicleTab('cars')} 
+                className={`btn btn-xs rounded-pill px-3 py-1 fw-bold text-xs ${vehicleTab === 'cars' ? 'btn-dark text-white shadow-xs' : 'btn-light text-muted'}`}
+              >
+                🚗 Rental Cars ({cars.length})
+              </button>
+              <button 
+                type="button" 
+                onClick={() => setVehicleTab('bikes')} 
+                className={`btn btn-xs rounded-pill px-3 py-1 fw-bold text-xs ${vehicleTab === 'bikes' ? 'btn-dark text-white shadow-xs' : 'btn-light text-muted'}`}
+              >
+                🏍️ Bikes / Scooters ({bikes.length})
+              </button>
+              <button 
+                type="button" 
+                onClick={() => { setVehicleTab('skip'); setSelectedVehicle(null); }} 
+                className={`btn btn-xs rounded-pill px-3 py-1 fw-bold text-xs ${vehicleTab === 'skip' ? 'btn-dark text-white shadow-xs' : 'btn-light text-muted'}`}
+              >
+                ⏭️ Skip Vehicle
+              </button>
+            </div>
+          </div>
+
+          {vehicleTab === 'skip' ? (
+            <div className="p-4 rounded-4 bg-light text-center my-3 border">
+              <Car size={32} className="text-muted mb-2 mx-auto" />
+              <h6 className="fw-bold text-dark">No Vehicle Selected</h6>
+              <p className="text-muted text-xs mb-3">This custom package will not include a self-drive rental.</p>
+              <button 
+                type="button" 
+                className="btn btn-primary rounded-pill px-4 py-2 text-xs fw-bold"
+                onClick={() => setStep(2)}
+              >
+                Continue to Pick Resort →
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* Vehicle Location Selector */}
+              <div className="row g-2 mb-3 align-items-center">
+                <div className="col-12 col-md-6">
+                  <label className="form-label text-xxs fw-bold text-muted mb-1 d-flex align-items-center gap-1">
+                    <MapPin size={12} className="text-warning" /> Handover Location
+                  </label>
+                  <select 
+                    className="form-select form-select-sm text-xs" 
+                    value={location} 
+                    onChange={e => setLocation(e.target.value)}
+                  >
+                    {GOA_LOCATIONS.map(loc => <option key={loc} value={loc}>{loc}</option>)}
+                  </select>
+                </div>
+                <div className="col-12 col-md-6">
+                  <label className="form-label text-xxs fw-bold text-muted mb-1 d-flex align-items-center gap-1">
+                    <Users size={12} className="text-info" /> Total Traveling Guests
+                  </label>
+                  <select 
+                    className="form-select form-select-sm text-xs" 
+                    value={memberCount} 
+                    onChange={e => setMemberCount(parseInt(e.target.value) || 2)}
+                  >
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => <option key={n} value={n}>{n} Guests</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* Vehicle Cards Grid */}
+              <div className="row g-3">
+                {(vehicleTab === 'cars' ? cars : bikes).map((v) => {
+                  const isSelected = selectedVehicle?.id === v.id;
+                  const pricePerDay = parseFloat(v.price || 0);
+                  const totalVehCost = Math.round(pricePerDay * nights);
+
+                  return (
+                    <div key={v.id} className="col-12 col-sm-6 col-lg-4 col-xl-3">
+                      <div 
+                        onClick={() => setSelectedVehicle(v)}
+                        className={`card h-100 rounded-4 overflow-hidden cursor-pointer transition-all border ${
+                          isSelected ? 'border-2 border-warning shadow-md' : 'border-light-subtle hover-shadow-sm'
+                        }`}
+                        style={{ cursor: 'pointer', background: isSelected ? '#fffdf7' : '#ffffff' }}
+                      >
+                        <div className="position-relative" style={{ height: '140px', background: '#f1f5f9' }}>
+                          <img 
+                            src={v.image || (v.images_json ? JSON.parse(v.images_json)[0] : '') || 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=400'} 
+                            alt={v.name}
+                            className="w-100 h-100 object-fit-cover"
+                            onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=400'; }}
+                          />
+                          {isSelected && (
+                            <span className="badge bg-warning text-dark position-absolute top-0 end-0 m-2 text-xxs fw-bold px-2 py-1 rounded-pill shadow-sm d-flex align-items-center gap-1">
+                              <Check size={12} /> Selected
+                            </span>
+                          )}
+                          <span className="badge bg-dark bg-opacity-75 text-white position-absolute bottom-0 start-0 m-2 text-3xs px-2 py-0.5 rounded-pill">
+                            {v.category || (vehicleTab === 'cars' ? 'Car' : 'Bike')}
+                          </span>
+                        </div>
+
+                        <div className="p-3 d-flex flex-column justify-content-between flex-grow-1">
+                          <div>
+                            <h6 className="fw-bold text-dark text-xs mb-1 text-truncate">{v.name}</h6>
+                            <div className="d-flex align-items-center gap-2 text-3xs text-muted mb-2">
+                              {v.seating && <span>👥 {v.seating}</span>}
+                              {v.fuel && <span>⛽ {v.fuel}</span>}
+                              {v.transmission && <span>⚙️ {v.transmission}</span>}
+                            </div>
+                          </div>
+
+                          <div className="pt-2 border-top d-flex align-items-center justify-content-between">
+                            <div>
+                              <div className="text-3xs text-muted">₹{pricePerDay.toLocaleString()} / day</div>
+                              <div className="text-xs fw-black text-dark font-monospace">₹{totalVehCost.toLocaleString()} total</div>
+                            </div>
+                            <button 
+                              type="button" 
+                              className={`btn btn-xs rounded-pill px-2.5 py-1 fw-bold ${
+                                isSelected ? 'btn-warning text-dark' : 'btn-outline-secondary'
+                              }`}
+                            >
+                              {isSelected ? 'Selected' : 'Select'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Bottom Actions */}
+              <div className="d-flex justify-content-between align-items-center mt-4 pt-3 border-top">
+                <div className="text-xs text-muted">
+                  {selectedVehicle ? (
+                    <span>Selected: <strong className="text-dark">{selectedVehicle.name}</strong> (₹{vehicleCost.toLocaleString()} for {nights} days)</span>
+                  ) : (
+                    <span>No vehicle selected yet</span>
+                  )}
+                </div>
+                <button 
+                  type="button" 
+                  className="btn btn-primary rounded-pill px-4 py-2 text-xs fw-bold d-flex align-items-center gap-1"
+                  onClick={() => setStep(2)}
+                >
+                  <span>Continue to Pick Resort</span>
+                  <ArrowRight size={14} />
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ─── STEP 2: PICK RESORT ──────────────────────────────────────────────── */}
+      {step === 2 && (
+        <div className="card border-0 shadow-sm rounded-4 p-4 bg-white mb-4 animate-fade-in">
+          <div className="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom flex-wrap gap-2">
+            <div>
+              <h5 className="fw-bold mb-0 text-dark font-heading d-flex align-items-center gap-2">
+                <Hotel size={18} className="text-primary" /> Step 2: Select Hotel / Resort Stay
+              </h5>
+              <p className="text-muted text-xs mb-0">Handpicked beachfront resorts and boutique stays in prime Goa areas ({nights} Nights).</p>
+            </div>
+
+            <div className="d-flex gap-2 align-items-center">
+              <button 
+                type="button" 
+                onClick={() => { setSkipHotel(!skipHotel); if (!skipHotel) setSelectedHotel(null); }} 
+                className={`btn btn-xs rounded-pill px-3 py-1 fw-bold text-xs ${skipHotel ? 'btn-dark text-white shadow-xs' : 'btn-outline-secondary'}`}
+              >
+                {skipHotel ? '✓ Resort Skipped' : '⏭️ Skip Resort'}
+              </button>
+            </div>
+          </div>
+
+          {skipHotel ? (
+            <div className="p-4 rounded-4 bg-light text-center my-3 border">
+              <Hotel size={32} className="text-muted mb-2 mx-auto" />
+              <h6 className="fw-bold text-dark">No Resort Selected</h6>
+              <p className="text-muted text-xs mb-3">This custom package will not include hotel accommodations.</p>
+              <div className="d-flex gap-2 justify-content-center">
+                <button type="button" className="btn btn-outline-secondary rounded-pill px-3 py-1.5 text-xs" onClick={() => setStep(1)}>
+                  ← Back to Ride
+                </button>
+                <button type="button" className="btn btn-primary rounded-pill px-4 py-1.5 text-xs fw-bold" onClick={() => setStep(3)}>
+                  Continue to Flight →
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Hotel Controls: Star filter & Rooms count */}
+              <div className="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+                <div className="d-flex gap-1 bg-light p-1 rounded-pill border">
+                  {['All', '3', '4', '5'].map(star => (
+                    <button 
+                      key={star}
+                      type="button" 
+                      onClick={() => setHotelFilterStars(star)} 
+                      className={`btn btn-xs rounded-pill px-2.5 py-0.5 text-3xs fw-bold ${hotelFilterStars === star ? 'btn-dark text-white' : 'btn-light text-muted'}`}
+                    >
+                      {star === 'All' ? 'All Ratings' : `${star}★ Star`}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="d-flex align-items-center gap-2">
+                  <span className="text-xxs text-muted fw-bold">Rooms Required:</span>
+                  <div className="input-group input-group-sm" style={{ width: '100px' }}>
+                    <button type="button" className="btn btn-outline-secondary btn-xs" onClick={() => setHotelRooms(Math.max(1, hotelRooms - 1))}>−</button>
+                    <span className="form-control form-control-sm text-center fw-bold py-0 text-xs">{hotelRooms}</span>
+                    <button type="button" className="btn btn-outline-secondary btn-xs" onClick={() => setHotelRooms(hotelRooms + 1)}>+</button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Hotels Grid */}
+              <div className="row g-3">
+                {filteredHotels.map((h) => {
+                  const isSelected = selectedHotel?.id === h.id;
+                  const pricePerNight = parseFloat(h.price || h.price_per_night || 3000);
+                  const totalHotelCost = Math.round(pricePerNight * nights * hotelRooms);
+
+                  return (
+                    <div key={h.id} className="col-12 col-sm-6 col-lg-4 col-xl-3">
+                      <div 
+                        onClick={() => setSelectedHotel(h)}
+                        className={`card h-100 rounded-4 overflow-hidden cursor-pointer transition-all border ${
+                          isSelected ? 'border-2 border-warning shadow-md' : 'border-light-subtle hover-shadow-sm'
+                        }`}
+                        style={{ cursor: 'pointer', background: isSelected ? '#fffdf7' : '#ffffff' }}
+                      >
+                        <div className="position-relative" style={{ height: '140px', background: '#f1f5f9' }}>
+                          <img 
+                            src={h.image || (h.images_json ? JSON.parse(h.images_json)[0] : '') || 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400'} 
+                            alt={h.name}
+                            className="w-100 h-100 object-fit-cover"
+                            onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400'; }}
+                          />
+                          {isSelected && (
+                            <span className="badge bg-warning text-dark position-absolute top-0 end-0 m-2 text-xxs fw-bold px-2 py-1 rounded-pill shadow-sm d-flex align-items-center gap-1">
+                              <Check size={12} /> Selected
+                            </span>
+                          )}
+                          <span className="badge bg-dark bg-opacity-75 text-warning position-absolute bottom-0 start-0 m-2 text-3xs px-2 py-0.5 rounded-pill d-flex align-items-center gap-1">
+                            <Star size={10} fill="#FFC107" /> {h.stars || h.rating || 4}★
+                          </span>
+                        </div>
+
+                        <div className="p-3 d-flex flex-column justify-content-between flex-grow-1">
+                          <div>
+                            <h6 className="fw-bold text-dark text-xs mb-1 text-truncate">{h.name}</h6>
+                            <div className="d-flex align-items-center gap-1 text-3xs text-muted mb-2 text-truncate">
+                              <MapPin size={10} className="text-warning flex-shrink-0" />
+                              <span>{h.location || h.area || 'Goa Beachfront'}</span>
+                            </div>
+                          </div>
+
+                          <div className="pt-2 border-top d-flex align-items-center justify-content-between">
+                            <div>
+                              <div className="text-3xs text-muted">₹{pricePerNight.toLocaleString()} / night</div>
+                              <div className="text-xs fw-black text-dark font-monospace">₹{totalHotelCost.toLocaleString()} ({hotelRooms}R × {nights}N)</div>
+                            </div>
+                            <button 
+                              type="button" 
+                              className={`btn btn-xs rounded-pill px-2.5 py-1 fw-bold ${
+                                isSelected ? 'btn-warning text-dark' : 'btn-outline-secondary'
+                              }`}
+                            >
+                              {isSelected ? 'Selected' : 'Select'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Bottom Actions */}
+              <div className="d-flex justify-content-between align-items-center mt-4 pt-3 border-top">
+                <button type="button" className="btn btn-outline-secondary rounded-pill px-3 py-1.5 text-xs" onClick={() => setStep(1)}>
+                  ← Back to Ride
+                </button>
+                <button 
+                  type="button" 
+                  className="btn btn-primary rounded-pill px-4 py-2 text-xs fw-bold d-flex align-items-center gap-1"
+                  onClick={() => setStep(3)}
+                >
+                  <span>Continue to Flights</span>
+                  <ArrowRight size={14} />
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ─── STEP 3: OPTIONAL FLIGHT ─────────────────────────────────────────── */}
+      {step === 3 && (
+        <div className="card border-0 shadow-sm rounded-4 p-4 bg-white mb-4 animate-fade-in">
+          <div className="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom flex-wrap gap-2">
+            <div>
+              <h5 className="fw-bold mb-0 text-dark font-heading d-flex align-items-center gap-2">
+                <Plane size={18} className="text-primary" /> Step 3: Optional Flights Addition
+              </h5>
+              <p className="text-muted text-xs mb-0">Add domestic / international flights for your guest or skip if self-arranged.</p>
+            </div>
+
+            <div className="form-check form-switch cursor-pointer">
+              <input 
+                className="form-check-input cursor-pointer" 
+                type="checkbox" 
+                role="switch" 
+                id="flightSwitch"
+                checked={includeFlight}
+                onChange={e => setIncludeFlight(e.target.checked)}
+              />
+              <label className="form-check-label text-xs fw-bold text-dark cursor-pointer ms-1" htmlFor="flightSwitch">
+                {includeFlight ? '✈️ Flights Included' : 'Flights Optional'}
+              </label>
+            </div>
+          </div>
+
+          {!includeFlight ? (
+            <div className="p-4 rounded-4 bg-light text-center my-3 border">
+              <Plane size={32} className="text-muted mb-2 mx-auto" />
+              <h6 className="fw-bold text-dark">No Flights Added</h6>
+              <p className="text-muted text-xs mb-3">Guest will arrange their own flights to Goa. Only ground services will be booked.</p>
+              <button 
+                type="button" 
+                className="btn btn-primary rounded-pill px-4 py-2 text-xs fw-bold"
+                onClick={() => setStep(4)}
+              >
+                Continue to Final Confirmation →
+              </button>
+            </div>
+          ) : (
+            <div className="p-3 bg-light rounded-4 border mb-3">
+              <div className="row g-3">
+                <div className="col-12 col-md-4">
+                  <label className="form-label text-xxs fw-bold text-muted mb-1">Departure City</label>
+                  <select 
+                    className="form-select form-select-sm text-xs"
+                    value={flightOrigin}
+                    onChange={e => setFlightOrigin(e.target.value)}
+                  >
+                    {FLIGHT_ORIGINS.map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+                <div className="col-12 col-md-4">
+                  <label className="form-label text-xxs fw-bold text-muted mb-1">Preferred Airline</label>
+                  <select 
+                    className="form-select form-select-sm text-xs"
+                    value={flightAirline}
+                    onChange={e => setFlightAirline(e.target.value)}
+                  >
+                    <option value="IndiGo Premium">IndiGo Premium</option>
+                    <option value="Air India">Air India</option>
+                    <option value="Vistara">Vistara</option>
+                    <option value="Akasa Air">Akasa Air</option>
+                  </select>
+                </div>
+                <div className="col-12 col-md-4">
+                  <label className="form-label text-xxs fw-bold text-muted mb-1">Cabin Class</label>
+                  <select 
+                    className="form-select form-select-sm text-xs"
+                    value={flightClass}
+                    onChange={e => setFlightClass(e.target.value)}
+                  >
+                    <option value="Economy">Economy Class</option>
+                    <option value="Premium Economy">Premium Economy</option>
+                    <option value="Business">Business Class</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="mt-3 p-3 bg-white rounded-3 border d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <div>
+                  <span className="badge bg-primary bg-opacity-10 text-primary text-3xs fw-bold px-2 py-0.5 rounded-pill mb-1">
+                    RETURN AIRFARE INCLUDED
+                  </span>
+                  <div className="fw-bold text-dark text-xs">{flightAirline} • {flightOrigin} ⇄ GOA</div>
+                  <div className="text-3xs text-muted">{memberCount} Passenger(s) • Standard Luggage Included</div>
+                </div>
+                <div className="text-end">
+                  <div className="text-xs text-muted">₹{flightPricePerPerson.toLocaleString()} / person</div>
+                  <div className="text-sm fw-black text-dark font-monospace">₹{flightCost.toLocaleString()} Total</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="d-flex justify-content-between align-items-center mt-4 pt-3 border-top">
+            <button type="button" className="btn btn-outline-secondary rounded-pill px-3 py-1.5 text-xs" onClick={() => setStep(2)}>
+              ← Back to Resort
+            </button>
+            <button 
+              type="button" 
+              className="btn btn-primary rounded-pill px-4 py-2 text-xs fw-bold d-flex align-items-center gap-1"
+              onClick={() => setStep(4)}
+            >
+              <span>Review & Confirm B2B Reservation</span>
+              <ArrowRight size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ─── STEP 4: GUEST DETAILS & CONFIRMATION ────────────────────────────── */}
+      {step === 4 && (
+        <form onSubmit={handleConfirmB2BBooking} className="animate-fade-in">
+          <div className="row g-4 mb-4">
+            {/* Left: Guest Details Form */}
+            <div className="col-12 col-lg-7">
+              <div className="card border-0 shadow-sm rounded-4 p-4 bg-white h-100">
+                <h5 className="fw-bold text-dark font-heading mb-3 pb-2 border-bottom d-flex align-items-center gap-2">
+                  <User size={18} className="text-primary" /> Primary Guest Information
+                </h5>
+
+                {bookingError && (
+                  <div className="alert alert-danger p-2.5 rounded-3 text-xs mb-3 d-flex align-items-center gap-2">
+                    <AlertCircle size={16} className="flex-shrink-0" />
+                    <span>{bookingError}</span>
+                  </div>
+                )}
+
+                <div className="row g-3 mb-3">
+                  <div className="col-12 col-sm-6">
+                    <label className="form-label text-xxs fw-bold text-muted mb-1">
+                      Lead Guest Full Name <span className="text-danger">*</span>
+                    </label>
+                    <input 
+                      type="text" 
+                      className="form-control form-control-sm text-xs"
+                      placeholder="e.g. Ramesh Kulkarni"
+                      value={guestDetails.name}
+                      onChange={e => setGuestDetails(prev => ({ ...prev, name: e.target.value }))}
+                      required
+                    />
+                  </div>
+                  <div className="col-12 col-sm-6">
+                    <label className="form-label text-xxs fw-bold text-muted mb-1">
+                      Contact Mobile Number <span className="text-danger">*</span>
+                    </label>
+                    <div className="input-group input-group-sm">
+                      <span className="input-group-text text-xs bg-light">+91</span>
+                      <input 
+                        type="tel" 
+                        className="form-control text-xs"
+                        placeholder="10-digit phone number"
+                        value={guestDetails.phone}
+                        onChange={e => setGuestDetails(prev => ({ ...prev, phone: e.target.value }))}
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="col-12 col-sm-6">
+                    <label className="form-label text-xxs fw-bold text-muted mb-1">Email ID (For Voucher Dispatch)</label>
+                    <input 
+                      type="email" 
+                      className="form-control form-control-sm text-xs"
+                      placeholder="guest@example.com"
+                      value={guestDetails.email}
+                      onChange={e => setGuestDetails(prev => ({ ...prev, email: e.target.value }))}
+                    />
+                  </div>
+                  <div className="col-12 col-sm-6">
+                    <label className="form-label text-xxs fw-bold text-muted mb-1">Travel Handover Point</label>
+                    <input 
+                      type="text" 
+                      className="form-control form-control-sm text-xs bg-light"
+                      value={location}
+                      readOnly
+                    />
+                  </div>
+                </div>
+
+                <div className="mb-3">
+                  <label className="form-label text-xxs fw-bold text-muted mb-1">Special Guest Instructions / Preferences</label>
+                  <textarea 
+                    className="form-control form-control-sm text-xs"
+                    rows="3"
+                    placeholder="Enter special requests, child seats, late check-in, dietary preferences, or flight timings..."
+                    value={guestDetails.special_requests}
+                    onChange={e => setGuestDetails(prev => ({ ...prev, special_requests: e.target.value }))}
+                  />
+                </div>
+
+                {/* Wallet Balance Info */}
+                <div className="p-3 rounded-3 bg-light border mt-auto">
+                  <div className="d-flex align-items-center justify-content-between">
+                    <div className="d-flex align-items-center gap-2">
+                      <div className="p-2 rounded-circle bg-warning text-dark">
+                        <Wallet size={16} />
+                      </div>
+                      <div>
+                        <div className="fw-bold text-dark text-xs">Payment via Prepaid Agent Wallet</div>
+                        <div className="text-muted text-3xs">Available Balance: ₹{financialSnapshot.walletBalance.toLocaleString('en-IN')}</div>
+                      </div>
+                    </div>
+                    <span className="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 text-3xs px-2.5 py-1 rounded-pill">
+                      Instant Wallet Debit
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right: Package Summary & Financial Snapshot */}
+            <div className="col-12 col-lg-5">
+              <div className="card border-0 shadow-sm rounded-4 p-4 bg-white h-100 d-flex flex-column justify-content-between">
+                <div>
+                  <h5 className="fw-bold text-dark font-heading mb-3 pb-2 border-bottom d-flex align-items-center justify-content-between">
+                    <span>Bespoke Package Summary</span>
+                    <span className="badge bg-dark text-white text-3xs px-2 py-0.5 rounded-pill">
+                      {nights}N / {days}D
+                    </span>
+                  </h5>
+
+                  {/* Components List */}
+                  <div className="d-flex flex-column gap-2 mb-3">
+                    {/* Vehicle */}
+                    <div className="p-2.5 rounded-3 bg-light border d-flex justify-content-between align-items-center">
+                      <div className="d-flex align-items-center gap-2">
+                        <Car size={16} className="text-primary flex-shrink-0" />
+                        <div>
+                          <div className="fw-bold text-dark text-xs">{selectedVehicle ? selectedVehicle.name : 'No Vehicle Included'}</div>
+                          <div className="text-3xs text-muted">{selectedVehicle ? `${nights} rental days` : 'Skipped'}</div>
+                        </div>
+                      </div>
+                      <span className="text-xs fw-bold text-dark">₹{vehicleCost.toLocaleString()}</span>
+                    </div>
+
+                    {/* Hotel */}
+                    <div className="p-2.5 rounded-3 bg-light border d-flex justify-content-between align-items-center">
+                      <div className="d-flex align-items-center gap-2">
+                        <Hotel size={16} className="text-primary flex-shrink-0" />
+                        <div>
+                          <div className="fw-bold text-dark text-xs">{selectedHotel ? selectedHotel.name : 'No Hotel Included'}</div>
+                          <div className="text-3xs text-muted">{selectedHotel ? `${hotelRooms} room(s) × ${nights} nights` : 'Skipped'}</div>
+                        </div>
+                      </div>
+                      <span className="text-xs fw-bold text-dark">₹{hotelCost.toLocaleString()}</span>
+                    </div>
+
+                    {/* Flight */}
+                    <div className="p-2.5 rounded-3 bg-light border d-flex justify-content-between align-items-center">
+                      <div className="d-flex align-items-center gap-2">
+                        <Plane size={16} className="text-primary flex-shrink-0" />
+                        <div>
+                          <div className="fw-bold text-dark text-xs">{includeFlight ? `${flightAirline} Flight` : 'No Flight Included'}</div>
+                          <div className="text-3xs text-muted">{includeFlight ? `${flightOrigin} ⇄ GOA • ${memberCount} pax` : 'Skipped'}</div>
+                        </div>
+                      </div>
+                      <span className="text-xs fw-bold text-dark">₹{flightCost.toLocaleString()}</span>
+                    </div>
+                  </div>
+
+                  {/* Pricing Breakdown Box */}
+                  <div className="p-3 rounded-4 bg-warning bg-opacity-10 border border-warning border-opacity-25 mb-3">
+                    <div className="d-flex justify-content-between text-xs text-muted mb-1.5">
+                      <span>Customer Retail Selling Price:</span>
+                      <span className="fw-bold text-dark">₹{retailSellingPrice.toLocaleString()}</span>
+                    </div>
+
+                    {mode === 'COMMISSION' ? (
+                      <>
+                        <div className="d-flex justify-content-between text-xs text-success fw-semibold mb-2 pb-2 border-bottom border-warning border-opacity-25">
+                          <span>Agent Commission ({financialSnapshot.commPercent}%):</span>
+                          <span className="fw-bold">+₹{financialSnapshot.commAmount.toLocaleString()}</span>
+                        </div>
+                        <div className="d-flex justify-content-between align-items-center text-sm fw-black text-dark">
+                          <span>Net Payout to WOW Goa:</span>
+                          <span className="fs-6 font-monospace">₹{financialSnapshot.netPayable.toLocaleString()}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="d-flex justify-content-between text-xs text-primary fw-semibold mb-2 pb-2 border-bottom border-warning border-opacity-25">
+                          <span>B2B Net Wholesale Discount ({financialSnapshot.netDiscountPercent}%):</span>
+                          <span className="fw-bold">-₹{financialSnapshot.discountAmount.toLocaleString()}</span>
+                        </div>
+                        <div className="d-flex justify-content-between align-items-center text-sm fw-black text-primary">
+                          <span>B2B Net Rate Payable:</span>
+                          <span className="fs-6 font-monospace">₹{financialSnapshot.netPrice.toLocaleString()}</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <button 
+                    type="submit" 
+                    disabled={bookingLoading || retailSellingPrice <= 0}
+                    className="btn btn-warning w-100 py-2.5 rounded-pill fw-black text-dark text-sm font-heading shadow-sm"
+                  >
+                    {bookingLoading ? (
+                      <span className="spinner-border spinner-border-sm me-2" role="status" />
+                    ) : (
+                      <CheckCircle size={16} className="me-1.5" />
+                    )}
+                    Confirm B2B Bespoke Booking Now
+                  </button>
+                  <button 
+                    type="button" 
+                    className="btn btn-link text-muted text-xxs w-100 text-decoration-none mt-2"
+                    onClick={() => setStep(3)}
+                  >
+                    ← Back to Modify Flight / Dates
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
