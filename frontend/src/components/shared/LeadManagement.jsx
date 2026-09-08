@@ -3,7 +3,7 @@ import {
   Users, Search, Filter, Download, Plus, Phone, Mail, MessageSquare, 
   Building, Car, CheckCircle, XCircle, Clock, Trash2, Eye, Edit3, 
   Shield, Tag, Calendar, MapPin, X, ArrowUpRight, PhoneCall, AlertCircle, 
-  RefreshCw, Sparkles, UserCheck, Activity, Radio, Save, Send, UserPlus, CornerDownRight, Check
+  RefreshCw, Sparkles, UserCheck, Activity, Radio, Save, Send, UserPlus, CornerDownRight, Check, ExternalLink
 } from 'lucide-react';
 import * as api from '../../services/api';
 
@@ -592,6 +592,15 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                 style={{ background: 'linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)', fontSize: '0.82rem', border: 'none' }}
               >
                 <UserPlus size={16} /> + Create Sub-Admin
+              </button>
+
+              <button 
+                onClick={() => window.open('/sub-admin', '_blank')}
+                className="btn px-3 py-2 rounded-3 fw-bold d-flex align-items-center gap-2 shadow-sm" 
+                style={{ background: '#f5f3ff', color: '#7c3aed', fontSize: '0.82rem', border: '1px solid #ddd6fe' }}
+                title="Open Sub-Admin Desk (/sub-admin) in a new tab"
+              >
+                <ExternalLink size={15} /> Open Sub-Admin Desk
               </button>
 
               <button 

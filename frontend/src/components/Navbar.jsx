@@ -39,6 +39,9 @@ export default function Navbar({ activeTab, setActiveTab, currentUser, triggerOp
                     onClick={(e) => {
                       e.preventDefault();
                       setActiveTab(link.id);
+                      setTimeout(() => {
+                        document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+                      }, 50);
                     }}
                   >
                     {link.label}
@@ -66,7 +69,12 @@ export default function Navbar({ activeTab, setActiveTab, currentUser, triggerOp
               <button 
                 type="button" 
                 className="btn btn-enquire-nav" 
-                onClick={() => setActiveTab('custom-trip')}
+                onClick={() => {
+                  setActiveTab('custom-trip');
+                  setTimeout(() => {
+                    document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+                  }, 50);
+                }}
               >
                 Enquire Your Own Package
               </button>
@@ -82,9 +90,95 @@ export default function Navbar({ activeTab, setActiveTab, currentUser, triggerOp
                 </a>
                 <ul className="dropdown-menu dropdown-menu-end shadow border-0 mt-2" aria-labelledby="profileDropdown">
                   <li className="px-3 py-2 border-bottom mb-2 bg-light">
-                    <div className="fw-bold text-dark mb-1" style={{ fontSize: '13px' }}>{currentUser.username}</div>
+                    <div className="fw-bold text-dark mb-1" style={{ fontSize: '13px' }}>{currentUser.username || currentUser.name}</div>
                     <span className="badge bg-primary text-uppercase" style={{ fontSize: '9px' }}>{currentUser.role}</span>
                   </li>
+                  {(currentUser.role === 'subadmin' || currentUser.role === 'sub_admin') && (
+                    <li>
+                      <a 
+                        className="dropdown-item d-flex align-items-center gap-2 py-2 fw-bold text-purple" 
+                        style={{ fontSize: '13px', color: '#7c3aed' }}
+                        href="/sub-admin"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setActiveTab('portal');
+                          window.history.pushState(null, '', '/sub-admin');
+                          window.dispatchEvent(new PopStateEvent('popstate'));
+                        }}
+                      >
+                        <span>🛡️ Sub-Admin Portal</span>
+                      </a>
+                    </li>
+                  )}
+                  {['admin', 'superadmin'].includes(currentUser.role) && (
+                    <>
+                      <li>
+                        <a 
+                          className="dropdown-item d-flex align-items-center gap-2 py-2 fw-semibold text-dark" 
+                          style={{ fontSize: '13px' }}
+                          href="/admin"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setActiveTab('portal');
+                            window.history.pushState(null, '', '/admin');
+                            window.dispatchEvent(new PopStateEvent('popstate'));
+                          }}
+                        >
+                          <span>⚙️ Admin Panel</span>
+                        </a>
+                      </li>
+                      <li>
+                        <a 
+                          className="dropdown-item d-flex align-items-center gap-2 py-1.5 text-muted" 
+                          style={{ fontSize: '12px' }}
+                          href="/sub-admin"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setActiveTab('portal');
+                            window.history.pushState(null, '', '/sub-admin');
+                            window.dispatchEvent(new PopStateEvent('popstate'));
+                          }}
+                        >
+                          <span>🛡️ View Sub-Admin Desk</span>
+                        </a>
+                      </li>
+                    </>
+                  )}
+                  {currentUser.role === 'b2b' && (
+                    <li>
+                      <a 
+                        className="dropdown-item d-flex align-items-center gap-2 py-2 fw-bold text-primary" 
+                        style={{ fontSize: '13px' }}
+                        href="/b2b"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setActiveTab('b2b');
+                          window.history.pushState(null, '', '/b2b');
+                          window.dispatchEvent(new PopStateEvent('popstate'));
+                        }}
+                      >
+                        <span>💼 B2B Partner Hub</span>
+                      </a>
+                    </li>
+                  )}
+                  {currentUser.role === 'driver' && (
+                    <li>
+                      <a 
+                        className="dropdown-item d-flex align-items-center gap-2 py-2 fw-bold text-warning" 
+                        style={{ fontSize: '13px' }}
+                        href="/driver"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setActiveTab('driver');
+                          window.history.pushState(null, '', '/driver');
+                          window.dispatchEvent(new PopStateEvent('popstate'));
+                        }}
+                      >
+                        <span>🚗 Driver Portal</span>
+                      </a>
+                    </li>
+                  )}
+                  <li><hr className="dropdown-divider my-1" /></li>
                   <li>
                     <button 
                       className="dropdown-item text-danger d-flex align-items-center gap-2 py-2 fw-bold" 

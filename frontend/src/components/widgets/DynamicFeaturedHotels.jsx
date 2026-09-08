@@ -5,6 +5,9 @@ export default function DynamicFeaturedHotels({ config, hotels = [], onBook, onB
   if (config && !config.visible) return null;
 
   const handleAction = (hotel) => {
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+      document.activeElement.blur();
+    }
     if (onViewHotel) onViewHotel(hotel);
     else if (onViewDetails) onViewDetails(hotel);
     else if (onBookHotel) onBookHotel(hotel);

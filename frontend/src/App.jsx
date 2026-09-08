@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import './App.css';
 import { useSiteConfig } from './context/SiteConfigContext';
 import { unlockAudio } from './utils/notificationSound';
@@ -345,22 +345,23 @@ export default function App() {
     } else if (['selfdrive', 'packages', 'cars', 'home'].includes(normalizedTab)) {
       setSearchTriggered(false);
     }
-
-    // Slide and show directly that section
-    setTimeout(() => {
-      const el = document.getElementById('results-section');
-      if (el) {
-        const navbarHeight = 72;
-        const targetPos = el.getBoundingClientRect().top + window.pageYOffset - navbarHeight;
-        window.scrollTo({
-          top: Math.max(0, targetPos),
-          behavior: 'smooth'
-        });
-      }
-    }, 40);
   };
 
   const handleOpenBooking = (item, isCustomization = false) => {
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+      document.activeElement.blur();
+    }
+
+    const sec = document.getElementById('results-section');
+    if (sec && sec.offsetHeight > 0) {
+      sec.style.minHeight = `${sec.offsetHeight}px`;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (sec) sec.style.minHeight = '';
+        });
+      });
+    }
+
     if (item.pickupDate) setPickupDate(item.pickupDate);
     if (item.dropDate) setDropDate(item.dropDate);
     if (item.departureDate) setPickupDate(item.departureDate);
@@ -369,7 +370,6 @@ export default function App() {
     if (item.package_type || item.duration || isCustomization) {
       setSelectedBookingItem(item);
       setActiveTab('customize');
-      window.scrollTo(0, 0);
     } else {
       setSelectedBookingItem(item);
       setBookingDays(2);
@@ -377,11 +377,36 @@ export default function App() {
   };
 
   const handleOpenHotelBooking = (hotel) => {
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+      document.activeElement.blur();
+    }
+    const sec = document.getElementById('results-section');
+    if (sec && sec.offsetHeight > 0) {
+      sec.style.minHeight = `${sec.offsetHeight}px`;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (sec) sec.style.minHeight = '';
+        });
+      });
+    }
     setSelectedBookingItem(hotel);
     setBookingDays(2);
   };
 
   const handleOpenDetails = (item, type = 'hotel') => {
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+      document.activeElement.blur();
+    }
+    const sec = document.getElementById('results-section');
+    if (sec && sec.offsetHeight > 0) {
+      sec.style.minHeight = `${sec.offsetHeight}px`;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (sec) sec.style.minHeight = '';
+        });
+      });
+    }
+
     if (type === 'package') {
       setSelectedPackageModal(item);
     } else {
@@ -389,7 +414,9 @@ export default function App() {
       setSearchTriggered(true);
       if (type === 'hotel') setActiveTab('hotel-details');
       else if (type === 'vehicle') setActiveTab('vehicle-details');
-      window.scrollTo(0, 0);
+      setTimeout(() => {
+        document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+      }, 50);
     }
   };
 
@@ -414,6 +441,10 @@ export default function App() {
         window.history.pushState(null, '', '/b2b');
       } else if (user.role === 'customer' || user.role === 'user') {
         setActiveTab('dashboard');
+      } else if (user.role === 'subadmin' || user.role === 'sub_admin') {
+        setActiveTab('portal');
+        window.history.pushState(null, '', '/sub-admin');
+        setCurrentPath('/sub-admin');
       } else {
         setActiveTab('portal');
       }
@@ -460,6 +491,10 @@ export default function App() {
           window.history.pushState(null, '', '/b2b');
         } else if (user.role === 'customer' || user.role === 'user') {
           setActiveTab('dashboard');
+        } else if (user.role === 'subadmin' || user.role === 'sub_admin') {
+          setActiveTab('portal');
+          window.history.pushState(null, '', '/sub-admin');
+          setCurrentPath('/sub-admin');
         } else {
           setActiveTab('portal');
         }
@@ -661,7 +696,7 @@ export default function App() {
     handleTabChange(targetTab);
     setTimeout(() => {
       document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
-    }, 100);
+    }, 50);
   };
 
   const handleConfirmBooking = async (e, paymentMethodId, extraDetails = {}) => {
@@ -863,7 +898,7 @@ export default function App() {
   }
 
   // ─── ADMIN / SUPERADMIN / VENDOR / SUBADMIN PORTALS ───────────────────────
-  if (activeTab === 'portal' || path.startsWith('/admin') || path === '/portal' || path.startsWith('/sub-admin') || path.startsWith('/subadmin') || path.startsWith('/superadmin') || path.startsWith('/super-admin') || path === '/vendor' || path === '/hotel-vendor' || path === '/flight-vendor') {
+  if (activeTab === 'portal' || path.startsWith('/admin') || path === '/portal' || path.startsWith('/sub-admin') || path.startsWith('/subadmin') || path.startsWith('/superadmin') || path.startsWith('/super-admin') || path === '/vendor' || path === '/hotel-vendor' || path === '/flight-vendor' || currentUser?.role === 'subadmin' || currentUser?.role === 'sub_admin') {
     // Superadmin route guard
     if (path.startsWith('/superadmin') || path.startsWith('/super-admin') || currentUser?.role === 'superadmin') {
       if (!currentUser || currentUser.role !== 'superadmin') {
@@ -894,19 +929,16 @@ export default function App() {
       );
     }
     // SubAdmin route guard
-    if (path.startsWith('/sub-admin') || path.startsWith('/subadmin') || currentUser?.role === 'subadmin') {
-      if (!currentUser || !['subadmin', 'sub_admin'].includes(currentUser.role)) {
-        return (
-          <>
-            <LoginModal isOpen={true} onClose={() => { setShowLoginModal(false); handleTabChange('selfdrive'); }} onLogin={handleLogin} />
-          </>
-        );
-      }
+    if (path.startsWith('/sub-admin') || path.startsWith('/subadmin') || currentUser?.role === 'subadmin' || currentUser?.role === 'sub_admin') {
       return (
         <>
           <SubAdminPortalPage
             currentUser={currentUser}
             onLogout={handleLogout}
+            onLoginSuccess={(u) => {
+              setCurrentUser(u);
+              try { localStorage.setItem('currentUser', JSON.stringify(u)); } catch (e) {}
+            }}
             usersList={usersList}
           />
           <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLogin={handleLogin} />
@@ -1121,9 +1153,9 @@ export default function App() {
       />
 
       {/* Dynamic Results & Content Section */}
-      <main className="py-5" id="results-section" style={{ scrollMarginTop: '80px' }}>
+      <main className="py-5" id="results-section" style={{ scrollMarginTop: '80px', minHeight: '80vh' }}>
         <div className="container">
-          <div key={activeTab} className="tab-slide-enter">
+          <div className="tab-slide-enter">
           
           {activeTab === 'packages' && (
             <>
@@ -1254,6 +1286,18 @@ export default function App() {
               dropDate={dropDate}
               bookings={bookings}
               onBack={() => {
+                if (document.activeElement && typeof document.activeElement.blur === 'function') {
+                  document.activeElement.blur();
+                }
+                const sec = document.getElementById('results-section');
+                if (sec && sec.offsetHeight > 0) {
+                  sec.style.minHeight = `${sec.offsetHeight}px`;
+                  requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                      if (sec) sec.style.minHeight = '';
+                    });
+                  });
+                }
                 if (selectedBookingItem?.package_type === 'Self Drive Package') {
                   setActiveTab('selfdrive');
                 } else {
@@ -1295,8 +1339,23 @@ export default function App() {
             <HotelDetailsPage
               hotel={selectedDetailItem}
               onBack={() => {
+                if (document.activeElement && typeof document.activeElement.blur === 'function') {
+                  document.activeElement.blur();
+                }
+                const sec = document.getElementById('results-section');
+                if (sec && sec.offsetHeight > 0) {
+                  sec.style.minHeight = `${sec.offsetHeight}px`;
+                  requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                      if (sec) sec.style.minHeight = '';
+                    });
+                  });
+                }
                 setSelectedDetailItem(null);
                 setActiveTab('hotels');
+                setTimeout(() => {
+                  document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+                }, 50);
               }}
               onBook={handleOpenBooking}
             />
@@ -1307,8 +1366,24 @@ export default function App() {
               vehicle={selectedDetailItem}
               type={selectedDetailItem.seating ? 'car' : 'bike'}
               onBack={() => {
+                if (document.activeElement && typeof document.activeElement.blur === 'function') {
+                  document.activeElement.blur();
+                }
+                const sec = document.getElementById('results-section');
+                if (sec && sec.offsetHeight > 0) {
+                  sec.style.minHeight = `${sec.offsetHeight}px`;
+                  requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                      if (sec) sec.style.minHeight = '';
+                    });
+                  });
+                }
+                const returnTab = selectedDetailItem.seating ? 'cars' : 'bikes';
                 setSelectedDetailItem(null);
-                setActiveTab(selectedDetailItem.seating ? 'cars' : 'bikes');
+                setActiveTab(returnTab);
+                setTimeout(() => {
+                  document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+                }, 50);
               }}
               onBook={handleOpenBooking}
             />
@@ -1318,8 +1393,24 @@ export default function App() {
             <PackageDetailsPage
               pkg={selectedDetailItem}
               onBack={() => {
+                if (document.activeElement && typeof document.activeElement.blur === 'function') {
+                  document.activeElement.blur();
+                }
+                const sec = document.getElementById('results-section');
+                if (sec && sec.offsetHeight > 0) {
+                  sec.style.minHeight = `${sec.offsetHeight}px`;
+                  requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                      if (sec) sec.style.minHeight = '';
+                    });
+                  });
+                }
+                const returnTab = selectedDetailItem.package_type === 'Self Drive Package' ? 'selfdrive' : 'packages';
                 setSelectedDetailItem(null);
-                setActiveTab(selectedDetailItem.package_type === 'Self Drive Package' ? 'selfdrive' : 'packages');
+                setActiveTab(returnTab);
+                setTimeout(() => {
+                  document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+                }, 50);
               }}
               onBook={handleOpenBooking}
             />

@@ -351,10 +351,9 @@ export default function SearchWidget({
       handleSearchSubmit(activeTab);
     }
 
-    // Auto-scroll to results
     setTimeout(() => {
       document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
-    }, 100);
+    }, 50);
   };
 
   // Date displays
@@ -431,7 +430,7 @@ export default function SearchWidget({
     setActiveDropdown(null);
     setTimeout(() => {
       document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
-    }, 100);
+    }, 50);
   };
 
   const totalPassengers = (flightAdults || 1) + (flightChildren || 0) + (flightInfants || 0);
@@ -447,7 +446,14 @@ export default function SearchWidget({
             role="tab"
             aria-selected={activeTab === 'selfdrive'}
             className={`widget-tab-btn ${activeTab === 'selfdrive' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('selfdrive'); setActiveDropdown(null); setValidationError(''); }}
+            onClick={() => { 
+              setActiveTab('selfdrive'); 
+              setActiveDropdown(null); 
+              setValidationError(''); 
+              setTimeout(() => {
+                document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+              }, 50);
+            }}
           >
             <Car />
             <span>Self Drive Holidays</span>
@@ -457,7 +463,14 @@ export default function SearchWidget({
             role="tab"
             aria-selected={activeTab === 'packages'}
             className={`widget-tab-btn ${activeTab === 'packages' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('packages'); setActiveDropdown(null); setValidationError(''); }}
+            onClick={() => { 
+              setActiveTab('packages'); 
+              setActiveDropdown(null); 
+              setValidationError(''); 
+              setTimeout(() => {
+                document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+              }, 50);
+            }}
           >
             <Compass />
             <span>Trip Packages</span>
@@ -467,7 +480,14 @@ export default function SearchWidget({
             role="tab"
             aria-selected={activeTab === 'hotels'}
             className={`widget-tab-btn ${activeTab === 'hotels' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('hotels'); setActiveDropdown(null); setValidationError(''); }}
+            onClick={() => { 
+              setActiveTab('hotels'); 
+              setActiveDropdown(null); 
+              setValidationError(''); 
+              setTimeout(() => {
+                document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+              }, 50);
+            }}
           >
             <Hotel />
             <span>Hotels</span>
@@ -477,7 +497,14 @@ export default function SearchWidget({
             role="tab"
             aria-selected={activeTab === 'flights'}
             className={`widget-tab-btn ${activeTab === 'flights' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('flights'); setActiveDropdown(null); setValidationError(''); }}
+            onClick={() => { 
+              setActiveTab('flights'); 
+              setActiveDropdown(null); 
+              setValidationError(''); 
+              setTimeout(() => {
+                document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+              }, 50);
+            }}
           >
             <Plane />
             <span>Flights</span>
@@ -487,7 +514,13 @@ export default function SearchWidget({
             role="tab"
             aria-selected={activeTab === 'craftmytrip'}
             className={`widget-tab-btn craft-tab ${activeTab === 'craftmytrip' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('craftmytrip'); setSearchTriggered(true); }}
+            onClick={() => { 
+              setActiveTab('craftmytrip'); 
+              setSearchTriggered(true); 
+              setTimeout(() => {
+                document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+              }, 50);
+            }}
           >
             <Wand2 />
             <span>Craft My Trip ✨</span>

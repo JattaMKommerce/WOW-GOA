@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import BookingVoucher from '../common/BookingVoucher';
 import {
   Calendar, Car, Hotel, Compass, Plane, Package, Search,
   Filter, Download, Eye, CheckCircle2, Clock, XCircle,
@@ -589,57 +590,15 @@ export default function CustomerBookingsTab({
         </div>
       </div>
 
-      {/* ─── Printable Voucher Modal ─── */}
+      {/* ─── Professional Corporate A4 Booking Voucher Modal ─── */}
       {selectedVoucherBooking && (
-        <div className="modal-backdrop-custom d-flex align-items-center justify-content-center" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(11, 25, 44, 0.6)', backdropFilter: 'blur(6px)', zIndex: 1060 }}>
-          <div className="card border-0 shadow-lg rounded-4 overflow-hidden" style={{ width: '92%', maxWidth: '580px' }}>
-            <div className="card-header bg-dark text-white p-4 d-flex justify-content-between align-items-center">
-              <div className="d-flex align-items-center gap-2">
-                <Compass size={22} className="text-warning" />
-                <h5 className="fw-black mb-0 text-white font-heading">WOW GOA Booking Voucher</h5>
-              </div>
-              <button onClick={() => setSelectedVoucherBooking(null)} className="btn btn-sm text-white-50 hover-text-white border-0">
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="card-body p-4">
-              <div className="p-3 rounded-3 bg-light border mb-3">
-                <div className="d-flex justify-content-between align-items-center mb-2">
-                  <span className="text-xs text-muted">Voucher ID</span>
-                  <span className="fw-black text-dark font-heading">#{selectedVoucherBooking.id || 'WOW-101'}</span>
-                </div>
-                <div className="d-flex justify-content-between align-items-center mb-2">
-                  <span className="text-xs text-muted">Service Name</span>
-                  <span className="fw-bold text-dark">{selectedVoucherBooking.item_name || selectedVoucherBooking.package_name}</span>
-                </div>
-                <div className="d-flex justify-content-between align-items-center mb-2">
-                  <span className="text-xs text-muted">Customer Name</span>
-                  <span className="fw-bold text-dark">{selectedVoucherBooking.customer_name || selectedVoucherBooking.name || currentUser?.name || 'Customer'}</span>
-                </div>
-                <div className="d-flex justify-content-between align-items-center">
-                  <span className="text-xs text-muted">Travel Date</span>
-                  <span className="fw-bold text-dark">{selectedVoucherBooking.pickup_date || selectedVoucherBooking.travel_date || 'Scheduled'}</span>
-                </div>
-              </div>
-
-              <div className="text-center p-3 rounded-3 bg-success bg-opacity-10 border border-success border-opacity-25 mb-3">
-                <div className="text-xs text-success fw-bold mb-1">✓ BOOKING STATUS: CONFIRMED</div>
-                <div className="text-xxs text-muted">Please present this digital confirmation or your Booking ID at pickup.</div>
-              </div>
-            </div>
-
-            <div className="card-footer bg-light p-3 d-flex justify-content-between">
-              <button onClick={() => window.print()} className="btn btn-dark btn-sm rounded-pill px-4 fw-bold d-flex align-items-center gap-1.5">
-                <Download size={14} />
-                <span>Print / Save PDF</span>
-              </button>
-              <button onClick={() => setSelectedVoucherBooking(null)} className="btn btn-secondary btn-sm rounded-pill px-4 fw-bold">
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
+        <BookingVoucher
+          booking={selectedVoucherBooking}
+          customerUser={currentUser}
+          currentUser={currentUser}
+          onClose={() => setSelectedVoucherBooking(null)}
+          isModal={true}
+        />
       )}
 
     </div>

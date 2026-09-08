@@ -50,12 +50,12 @@ export default function HotelDetailsPage({ hotel, nights = 1, onBack, onBook }) 
       {/* Top Navbar */}
       <div className="bg-white border-bottom sticky-top shadow-sm px-4 py-3 d-flex align-items-center justify-content-between">
         <div className="d-flex align-items-center gap-3">
-          <button onClick={viewMode === 'gallery' ? () => setViewMode('details') : onBack} className="btn btn-light rounded-circle p-2 d-flex align-items-center justify-content-center">
+          <button onClick={() => { if (document.activeElement?.blur) document.activeElement.blur(); viewMode === 'gallery' ? setViewMode('details') : onBack(); }} className="btn btn-light rounded-circle p-2 d-flex align-items-center justify-content-center">
             <ArrowLeft size={20} />
           </button>
           <h4 className="mb-0 fw-bold">{hotel.name}</h4>
         </div>
-        <button onClick={onBack} className="btn btn-outline-secondary d-flex align-items-center gap-2 rounded-pill px-3 py-1">
+        <button onClick={() => { if (document.activeElement?.blur) document.activeElement.blur(); onBack(); }} className="btn btn-outline-secondary d-flex align-items-center gap-2 rounded-pill px-3 py-1">
           <X size={18} /> Close
         </button>
       </div>
@@ -141,7 +141,7 @@ export default function HotelDetailsPage({ hotel, nights = 1, onBack, onBook }) 
                     </div>
                   </div>
 
-                  <button className="btn btn-primary w-100 py-3 rounded-pill fw-bold fs-6 d-flex align-items-center justify-content-center gap-2" onClick={() => onBook(hotel)}>
+                  <button className="btn btn-primary w-100 py-3 rounded-pill fw-bold fs-6 d-flex align-items-center justify-content-center gap-2" onClick={() => { if (document.activeElement?.blur) document.activeElement.blur(); onBook(hotel); }}>
                     Select Room <ChevronRight size={20} />
                   </button>
                 </div>

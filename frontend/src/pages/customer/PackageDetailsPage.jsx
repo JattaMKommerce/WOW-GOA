@@ -156,7 +156,12 @@ export default function PackageDetailsPage({ pkg, onBack, onBook }) {
         <div className="d-flex align-items-center gap-3">
           <button 
             type="button"
-            onClick={onBack} 
+            onClick={() => {
+              if (document.activeElement && typeof document.activeElement.blur === 'function') {
+                document.activeElement.blur();
+              }
+              onBack();
+            }} 
             className="btn btn-light rounded-circle p-2 d-flex align-items-center justify-content-center shadow-sm"
             title="Back to Packages"
           >
@@ -541,18 +546,23 @@ export default function PackageDetailsPage({ pkg, onBack, onBook }) {
               <div className="d-flex flex-column gap-2">
                 <button 
                   type="button" 
-                  onClick={() => onBook({
-                    ...pkg,
-                    departureDate,
-                    returnDate,
-                    pickupDate: departureDate,
-                    dropDate: returnDate,
-                    pickup_date: departureDate,
-                    drop_date: returnDate,
-                    duration: `${nights} Nights / ${days} Days`,
-                    duration_nights: nights,
-                    duration_days: days
-                  })}
+                  onClick={() => {
+                    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+                      document.activeElement.blur();
+                    }
+                    onBook({
+                      ...pkg,
+                      departureDate,
+                      returnDate,
+                      pickupDate: departureDate,
+                      dropDate: returnDate,
+                      pickup_date: departureDate,
+                      drop_date: returnDate,
+                      duration: `${nights} Nights / ${days} Days`,
+                      duration_nights: nights,
+                      duration_days: days
+                    });
+                  }}
                   className="btn btn-primary w-100 py-3 rounded-pill fw-bold shadow-sm d-flex align-items-center justify-content-center gap-2"
                   style={{ background: '#FF6333', borderColor: '#FF6333', fontSize: '1rem' }}
                 >

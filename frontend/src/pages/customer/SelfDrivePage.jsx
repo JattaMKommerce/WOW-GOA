@@ -619,7 +619,12 @@ export default function SelfDrivePage({
                             type="button" 
                             className="btn btn-primary btn-sm px-4 rounded-pill fw-bold"
                             style={{ background: '#FF6333', borderColor: '#FF6333' }}
-                            onClick={() => handleOpenBooking(pkg)}
+                            onClick={(e) => {
+                              if (document.activeElement && typeof document.activeElement.blur === 'function') {
+                                document.activeElement.blur();
+                              }
+                              handleOpenBooking(pkg);
+                            }}
                           >
                             Book Package
                           </button>

@@ -484,14 +484,15 @@ foreach ($alterColumns as $q) {
 echo "2. Seeding default data...\n";
 
 // Users
-$stmt = $pdo->prepare("INSERT OR REPLACE INTO users (id, username, email, password_hash, role, billing_price, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))");
-$stmt->execute(['u-1', 'superadmin', 'superadmin@gmail.com', '$2y$10$M/Z.TqUvH8r8V4h7pCq8e.f6n1u0w8y4p0q2m47H1oB11z19M1A1o', 'superadmin', 0, 'active']);
-$stmt->execute(['u-2', 'admin', 'admin@gmail.com', '$2y$10$F6B0yJvE1t19m1B11w12X.mGj7uXg4vY6.2m47H1oB11z19M1A1oK', 'admin', 5000, 'active']);
-$stmt->execute(['u-3', 'goa_operations', 'operations@wowgoa.com', '$2y$10$F6B0yJvE1t19m1B11w12X.mGj7uXg4vY6.2m47H1oB11z19M1A1oK', 'admin', 4500, 'active']);
-$stmt->execute(['u-4', 'vendor', 'vendor@tripgalileo.com', '$2y$10$F6B0yJvE1t19m1B11w12X.mGj7uXg4vY6.2m47H1oB11z19M1A1oK', 'vendor', 2500, 'active']);
-$stmt->execute(['u-5', 'hotel_vendor', 'hotel_vendor@tripgalileo.com', '$2y$10$F6B0yJvE1t19m1B11w12X.mGj7uXg4vY6.2m47H1oB11z19M1A1oK', 'hotel_vendor', 3500, 'active']);
-$stmt->execute(['u-6', 'flight_vendor', 'flight_vendor@tripgalileo.com', '$2y$10$F6B0yJvE1t19m1B11w12X.mGj7uXg4vY6.2m47H1oB11z19M1A1oK', 'flight_vendor', 4000, 'active']);
-$stmt->execute(['u-drv-1', 'driver', 'driver@wowgoa.com', '$2y$10$F6B0yJvE1t19m1B11w12X.mGj7uXg4vY6.2m47H1oB11z19M1A1oK', 'driver', 0, 'active']);
+$stmt = $pdo->prepare("INSERT OR REPLACE INTO users (id, username, email, password_hash, plain_password, role, billing_price, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))");
+$stmt->execute(['u-1', 'superadmin', 'superadmin@gmail.com', password_hash('superadmin', PASSWORD_DEFAULT), 'superadmin', 'superadmin', 0, 'active']);
+$stmt->execute(['u-2', 'admin', 'admin@gmail.com', password_hash('admin@2026', PASSWORD_DEFAULT), 'admin@2026', 'admin', 5000, 'active']);
+$stmt->execute(['u-3', 'goa_operations', 'operations@wowgoa.com', password_hash('Ops@Goa2026', PASSWORD_DEFAULT), 'Ops@Goa2026', 'admin', 4500, 'active']);
+$stmt->execute(['u-4', 'vendor', 'vendor@tripgalileo.com', password_hash('admin@2026', PASSWORD_DEFAULT), 'Vendor@Fleet26', 'vendor', 2500, 'active']);
+$stmt->execute(['u-5', 'hotel_vendor', 'hotel_vendor@tripgalileo.com', password_hash('admin@2026', PASSWORD_DEFAULT), 'Hotel@Goa2026', 'hotel_vendor', 3500, 'active']);
+$stmt->execute(['u-6', 'flight_vendor', 'flight_vendor@tripgalileo.com', password_hash('admin@2026', PASSWORD_DEFAULT), 'Flight@Goa2026', 'flight_vendor', 4000, 'active']);
+$stmt->execute(['u-sub-1', 'rahul_subadmin', 'subadmin@tripgalileo.com', password_hash('admin@2026', PASSWORD_DEFAULT), 'admin@2026', 'subadmin', 3000, 'active']);
+$stmt->execute(['u-drv-1', 'driver', 'driver@wowgoa.com', password_hash('Driver@123', PASSWORD_DEFAULT), 'Driver@123', 'driver', 0, 'active']);
 
 // Drivers
 $stmt = $pdo->prepare("INSERT OR REPLACE INTO drivers (id, name, phone, email, password_hash, plain_password, address, profile_photo, aadhaar_card, pan_card, license_number, license_card, experience_years, vehicle_details, status, admin_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
