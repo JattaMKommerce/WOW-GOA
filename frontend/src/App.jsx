@@ -441,6 +441,10 @@ export default function App() {
         window.history.pushState(null, '', '/b2b');
       } else if (user.role === 'customer' || user.role === 'user') {
         setActiveTab('dashboard');
+      } else if (user.role === 'subadmin' || user.role === 'sub_admin') {
+        setActiveTab('portal');
+        window.history.pushState(null, '', '/sub-admin');
+        setCurrentPath('/sub-admin');
       } else {
         setActiveTab('portal');
       }
@@ -487,6 +491,10 @@ export default function App() {
           window.history.pushState(null, '', '/b2b');
         } else if (user.role === 'customer' || user.role === 'user') {
           setActiveTab('dashboard');
+        } else if (user.role === 'subadmin' || user.role === 'sub_admin') {
+          setActiveTab('portal');
+          window.history.pushState(null, '', '/sub-admin');
+          setCurrentPath('/sub-admin');
         } else {
           setActiveTab('portal');
         }
@@ -890,7 +898,7 @@ export default function App() {
   }
 
   // ─── ADMIN / SUPERADMIN / VENDOR / SUBADMIN PORTALS ───────────────────────
-  if (activeTab === 'portal' || path.startsWith('/admin') || path === '/portal' || path.startsWith('/sub-admin') || path.startsWith('/subadmin') || path.startsWith('/superadmin') || path.startsWith('/super-admin') || path === '/vendor' || path === '/hotel-vendor' || path === '/flight-vendor') {
+  if (activeTab === 'portal' || path.startsWith('/admin') || path === '/portal' || path.startsWith('/sub-admin') || path.startsWith('/subadmin') || path.startsWith('/superadmin') || path.startsWith('/super-admin') || path === '/vendor' || path === '/hotel-vendor' || path === '/flight-vendor' || currentUser?.role === 'subadmin' || currentUser?.role === 'sub_admin') {
     // Superadmin route guard
     if (path.startsWith('/superadmin') || path.startsWith('/super-admin') || currentUser?.role === 'superadmin') {
       if (!currentUser || currentUser.role !== 'superadmin') {
@@ -921,19 +929,16 @@ export default function App() {
       );
     }
     // SubAdmin route guard
-    if (path.startsWith('/sub-admin') || path.startsWith('/subadmin') || currentUser?.role === 'subadmin') {
-      if (!currentUser || !['subadmin', 'sub_admin'].includes(currentUser.role)) {
-        return (
-          <>
-            <LoginModal isOpen={true} onClose={() => { setShowLoginModal(false); handleTabChange('selfdrive'); }} onLogin={handleLogin} />
-          </>
-        );
-      }
+    if (path.startsWith('/sub-admin') || path.startsWith('/subadmin') || currentUser?.role === 'subadmin' || currentUser?.role === 'sub_admin') {
       return (
         <>
           <SubAdminPortalPage
             currentUser={currentUser}
             onLogout={handleLogout}
+            onLoginSuccess={(u) => {
+              setCurrentUser(u);
+              try { localStorage.setItem('currentUser', JSON.stringify(u)); } catch (e) {}
+            }}
             usersList={usersList}
           />
           <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLogin={handleLogin} />

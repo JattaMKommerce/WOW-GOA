@@ -6,19 +6,25 @@ import {
 import LeadManagement from '../../components/shared/LeadManagement';
 import * as api from '../../services/api';
 
-export default function SubAdminPortalPage({ currentUser: propCurrentUser, onLogout, usersList = [] }) {
+export default function SubAdminPortalPage({ currentUser: propCurrentUser, onLogout, onLoginSuccess, usersList = [] }) {
   const [localUser, setLocalUser] = useState(() => {
-    if (propCurrentUser && ['subadmin', 'sub_admin', 'agent'].includes(propCurrentUser.role)) {
+    if (propCurrentUser && ['subadmin', 'sub_admin', 'agent', 'admin', 'superadmin'].includes(propCurrentUser.role)) {
       return propCurrentUser;
     }
     try {
       const saved = JSON.parse(localStorage.getItem('currentUser') || 'null');
-      if (saved && ['subadmin', 'sub_admin', 'agent'].includes(saved.role)) {
+      if (saved && ['subadmin', 'sub_admin', 'agent', 'admin', 'superadmin'].includes(saved.role)) {
         return saved;
       }
     } catch (e) {}
     return null;
   });
+
+  useEffect(() => {
+    if (propCurrentUser && ['subadmin', 'sub_admin', 'agent', 'admin', 'superadmin'].includes(propCurrentUser.role)) {
+      setLocalUser(propCurrentUser);
+    }
+  }, [propCurrentUser]);
 
   const [activeSidebarTab, setActiveSidebarTab] = useState('assigned_leads');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -103,6 +109,7 @@ export default function SubAdminPortalPage({ currentUser: propCurrentUser, onLog
         const activeSubUser = { ...user, role: user.role === 'admin' ? 'subadmin' : user.role };
         localStorage.setItem('currentUser', JSON.stringify(activeSubUser));
         setLocalUser(activeSubUser);
+        if (onLoginSuccess) onLoginSuccess(activeSubUser);
 
         // Update online status in database immediately
         await api.updateOnlineStatus(activeSubUser.id || activeSubUser.username, 1);
@@ -202,15 +209,30 @@ export default function SubAdminPortalPage({ currentUser: propCurrentUser, onLog
               <button
                 type="submit"
                 disabled={loading}
-                className="btn w-100 py-2.5 rounded-3 fw-bold text-white shadow-sm d-flex align-items-center justify-content-center gap-2"
+                className="btn w-100 py-2.5 rounded-3 fw-bold text-white shadow-sm d-flex align-items-center justify-content-center gap-2 mb-2"
                 style={{ background: 'linear-gradient(135deg, #FF6333 0%, #FF8A00 100%)', border: 'none' }}
               >
                 {loading ? 'Authenticating...' : 'Login to Sub-Admin Portal'}
               </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setUsername('rahul_subadmin');
+                  setPassword('admin@2026');
+                }}
+                className="btn btn-sm btn-outline-secondary w-100 py-1.5 rounded-3 d-flex align-items-center justify-content-center gap-2"
+                style={{ fontSize: '0.78rem', background: '#f8fafc' }}
+              >
+                <span>⚡ Fill Demo: <b>rahul_subadmin</b> / <b>admin@2026</b></span>
+              </button>
             </form>
 
-            <div className="text-center mt-3 pt-3 border-top" style={{ fontSize: '0.75rem', color: '#64748b' }}>
-              Your online status will be broadcast live to the Admin Panel upon login.
+            <div className="text-center mt-3 pt-3 border-top d-flex justify-content-between align-items-center" style={{ fontSize: '0.75rem', color: '#64748b' }}>
+              <span>Live status broadcasting</span>
+              <a href="/" className="text-primary text-decoration-none fw-semibold" onClick={(e) => { e.preventDefault(); window.location.href = '/'; }}>
+                Return to Home →
+              </a>
             </div>
           </div>
         </div>
