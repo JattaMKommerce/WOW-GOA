@@ -50,6 +50,7 @@ import {
 } from './pages';
 import CustomTripEnquiryPage from './pages/customer/CustomTripEnquiryPage';
 import B2BPortalPage from './pages/b2b/B2BPortalPage';
+import CustomerActivitiesTab from './components/customer/CustomerActivitiesTab';
 
 // Import Mock Data & API Service
 import { 
@@ -136,6 +137,7 @@ export default function App() {
   const [bookings, setBookingsList] = useState(defaultBookings);
   const [flights, setFlights] = useState([]);
   const [markups, setMarkups] = useState([]);
+  const [activities, setActivities] = useState([]);
   const [dataLoaded, setDataLoaded] = useState(false);
 
   // Load backend data on mount
@@ -162,10 +164,11 @@ export default function App() {
           api.fetchBikes(),
           api.fetchBookings(),
           api.fetchFlights(),
-          api.fetchMarkups()
+          api.fetchMarkups(),
+          api.fetchActivities()
         ]);
         
-        const [hRes, dRes, pRes, vRes, uRes, cRes, bRes, bkRes, fRes, mRes] = results;
+        const [hRes, dRes, pRes, vRes, uRes, cRes, bRes, bkRes, fRes, mRes, actRes] = results;
         if (hRes.status === 'fulfilled' && Array.isArray(hRes.value) && hRes.value.length > 0) setHotels(hRes.value);
         if (dRes.status === 'fulfilled' && Array.isArray(dRes.value) && dRes.value.length > 0) setDestinations(dRes.value);
         if (pRes.status === 'fulfilled' && Array.isArray(pRes.value) && pRes.value.length > 0) setPackages(pRes.value);
@@ -176,6 +179,7 @@ export default function App() {
         if (bkRes.status === 'fulfilled' && Array.isArray(bkRes.value) && bkRes.value.length > 0) setBookingsList(bkRes.value);
         if (fRes.status === 'fulfilled' && fRes.value) setFlights(fRes.value);
         if (mRes.status === 'fulfilled' && mRes.value) setMarkups(mRes.value);
+        if (actRes.status === 'fulfilled' && Array.isArray(actRes.value)) setActivities(actRes.value);
       } catch (err) {
         console.warn("Using fallback inventory data:", err);
       } finally {
@@ -215,9 +219,25 @@ export default function App() {
       }).catch(console.error);
     };
 
+    const handleActivitiesSync = () => {
+      api.fetchActivities().then(fresh => {
+        if (Array.isArray(fresh)) setActivities(fresh);
+      }).catch(console.error);
+    };
+
     const refreshBookingsFast = () => {
       api.fetchBookings().then(fresh => {
-        if (Array.isArray(fresh) && fresh.length > 0) setBookingsList(fresh);
+        if (Array.isArray(fresh) && fresh.length > 0) {
+          setBookingsList(prev => {
+            if (
+              prev.length === fresh.length &&
+              prev.every((b, idx) => b.id === fresh[idx].id && b.status === fresh[idx].status && b.payment_status === fresh[idx].payment_status && b.updated_at === fresh[idx].updated_at)
+            ) {
+              return prev;
+            }
+            return fresh;
+          });
+        }
       }).catch(() => {});
     };
 
@@ -231,6 +251,8 @@ export default function App() {
     window.addEventListener('tripgalileo-booking-sync', refreshBookingsFast);
     window.addEventListener('tripPackagesUpdated', handlePackagesSync);
     window.addEventListener('hotelsUpdated', handleHotelsSync);
+    window.addEventListener('activitiesUpdated', handleActivitiesSync);
+    window.addEventListener('tripgalileo-activities-sync', handleActivitiesSync);
 
     let bc;
     let bcHotels;
@@ -367,12 +389,20 @@ export default function App() {
     if (item.departureDate) setPickupDate(item.departureDate);
     if (item.returnDate) setDropDate(item.returnDate);
 
+    const effPickup = item.pickupDate || item.departureDate || pickupDate;
+    const effDrop = item.dropDate || item.returnDate || dropDate;
+    let days = 2;
+    if (effPickup && effDrop) {
+      const diff = Math.round((new Date(effDrop) - new Date(effPickup)) / (1000 * 60 * 60 * 24));
+      if (diff > 0) days = diff;
+    }
+
     if (item.package_type || item.duration || isCustomization) {
       setSelectedBookingItem(item);
       setActiveTab('customize');
     } else {
       setSelectedBookingItem(item);
-      setBookingDays(2);
+      setBookingDays(days);
     }
   };
 
@@ -390,7 +420,12 @@ export default function App() {
       });
     }
     setSelectedBookingItem(hotel);
-    setBookingDays(2);
+    let days = 2;
+    if (pickupDate && dropDate) {
+      const diff = Math.round((new Date(dropDate) - new Date(pickupDate)) / (1000 * 60 * 60 * 24));
+      if (diff > 0) days = diff;
+    }
+    setBookingDays(days);
   };
 
   const handleOpenDetails = (item, type = 'hotel') => {
@@ -550,8 +585,9 @@ export default function App() {
     setHotels(fresh);
   };
 
-  const handleUpdateHotel = async (hotelData) => {
-    await api.updateHotel(hotelData);
+  const handleUpdateHotel = async (hotelData, extraData) => {
+    const payload = (extraData && typeof extraData === 'object') ? { ...extraData, id: hotelData } : hotelData;
+    await api.updateHotel(payload);
     const fresh = await api.fetchHotels();
     setHotels(fresh);
   };
@@ -776,8 +812,11 @@ export default function App() {
         booking_days: days,
         duration: (isTripPkg || isSelfDrivePkg) ? (selectedBookingItem.duration || `${days} Days / ${Math.max(1, days - 1)} Nights`) : `${days} Days`,
         total_amount: totalCost,
-        amount_paid: totalCost,
+        amount_paid: typeof extraDetails.amount_paid === 'number' ? extraDetails.amount_paid : totalCost,
         total_paid: totalCost,
+        date_of_birth: extraDetails.date_of_birth || '',
+        wallet_amount_used: extraDetails.wallet_amount_used || 0,
+        payment_method: paymentMethodId || 'Cash / Online',
         driver_required: extraDetails.driver_required ? 1 : 0,
         driver_service_type: extraDetails.driver_service_type || null,
         driver_charge: typeof extraDetails.driver_charge === 'number' ? extraDetails.driver_charge : 0,
@@ -843,6 +882,7 @@ export default function App() {
   if (path.startsWith('/b2b') || activeTab === 'b2b') {
     return (
       <B2BPortalPage
+        activities={activities}
         onNavigateHome={() => {
           handleTabChange('selfdrive');
         }}
@@ -890,6 +930,7 @@ export default function App() {
         bikes={bikes}
         hotels={hotels}
         flights={flights}
+        activities={activities}
         onNavigateHome={() => {
           handleTabChange('selfdrive');
         }}
@@ -1230,6 +1271,7 @@ export default function App() {
               allCars={cars}
               allBikes={bikes}
               allHotels={hotels}
+              allActivities={activities}
               pickupDate={pickupDate}
               dropDate={dropDate}
               bookings={bookings}
@@ -1338,6 +1380,11 @@ export default function App() {
           {activeTab === 'hotel-details' && selectedDetailItem && (
             <HotelDetailsPage
               hotel={selectedDetailItem}
+              nights={
+                (pickupDate && dropDate)
+                  ? Math.max(1, Math.round((new Date(dropDate) - new Date(pickupDate)) / (1000 * 60 * 60 * 24)))
+                  : (bookingDays || 1)
+              }
               onBack={() => {
                 if (document.activeElement && typeof document.activeElement.blur === 'function') {
                   document.activeElement.blur();
@@ -1357,7 +1404,7 @@ export default function App() {
                   document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
                 }, 50);
               }}
-              onBook={handleOpenBooking}
+              onBook={handleOpenHotelBooking}
             />
           )}
 
@@ -1460,6 +1507,28 @@ export default function App() {
             <AIPlannerPage onNavigate={(t) => setActiveTab(t)} />
           )}
 
+          {activeTab === 'activities' && (
+            <div>
+              {/* ── Sightseeing & Activities Public Storefront ── */}
+              <div className="d-flex align-items-center gap-3 mb-4">
+                <div className="rounded-3 p-2 text-white d-flex align-items-center justify-content-center fs-4" style={{ background: 'linear-gradient(135deg, #0D1B2E 0%, #1E3E62 100%)', width: 44, height: 44 }}>
+                  🎯
+                </div>
+                <div>
+                  <h2 className="fw-black text-dark mb-0 font-heading" style={{ fontSize: '26px' }}>Sightseeing & Activities</h2>
+                  <p className="text-muted text-xs mb-0">Curated experiences — heritage trails, water sports &amp; adventure in Goa</p>
+                </div>
+              </div>
+              <CustomerActivitiesTab
+                activities={activities}
+                bookings={bookings}
+                currentUser={currentUser}
+                onOpenBookingDetails={() => {}}
+                onNavigateTab={handleTabChange}
+              />
+            </div>
+          )}
+
           </div>
         </div>
       </main>
@@ -1469,7 +1538,7 @@ export default function App() {
 
       {/* Booking Checkout Modal */}
       {activeTab !== 'customize' && selectedBookingItem && (
-        (String(selectedBookingItem?.id).startsWith('hotel-') || selectedBookingItem.property_type || selectedBookingItem.stars) ? (
+        (String(selectedBookingItem?.id).startsWith('hotel-') || selectedBookingItem.property_type || selectedBookingItem.stars || selectedBookingItem.type === 'hotel' || activeTab === 'hotels' || activeTab === 'hotel-details') ? (
           <HotelBookingModal
             selectedBookingItem={selectedBookingItem}
             setSelectedBookingItem={setSelectedBookingItem}

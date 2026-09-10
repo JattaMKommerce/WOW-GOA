@@ -44,7 +44,8 @@ class BookingService {
      * @return array Standardized booking response
      * @throws BookingServiceException
      */
-    public static function createBooking(PDO $pdo, array $payload, ?array $actor = null, string $channel = 'D2C'): array {
+    public static function createBooking(PDO $pdo, array $payload, $actor = null, string $channel = 'D2C'): array {
+        $actor = is_array($actor) ? $actor : null;
         $channel = strtoupper(trim($channel ?: 'D2C'));
         $isB2B = ($channel === 'B2B');
 
@@ -153,6 +154,8 @@ class BookingService {
                     }
                 } elseif ($serviceType === 'flight') {
                     $authoritativeVendorId = 'vendor-4';
+                } elseif ($serviceType === 'activity' || $serviceType === 'sightseeing') {
+                    $authoritativeVendorId = 'vendor-1';
                 }
             }
 
@@ -238,6 +241,14 @@ class BookingService {
                         $stmtImgH = $pdo->prepare("SELECT image FROM hotels WHERE id = ?");
                         $stmtImgH->execute([$itemId]);
                         $imgRow = $stmtImgH->fetch(PDO::FETCH_ASSOC);
+                    }
+                    if (!$imgRow) {
+                        $stmtImgA = $pdo->prepare("SELECT image_url, image FROM add_ons WHERE id = ?");
+                        $stmtImgA->execute([$itemId]);
+                        $actRow = $stmtImgA->fetch(PDO::FETCH_ASSOC);
+                        if ($actRow) {
+                            $imgRow = ['image' => !empty($actRow['image_url']) ? $actRow['image_url'] : ($actRow['image'] ?? '')];
+                        }
                     }
                     if ($imgRow && !empty($imgRow['image'])) {
                         $imageVal = $imgRow['image'];
@@ -536,7 +547,7 @@ class BookingService {
                 $pdo->rollBack();
             }
             throw $bse;
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }

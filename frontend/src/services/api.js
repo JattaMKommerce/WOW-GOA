@@ -1855,17 +1855,21 @@ export async function createBooking(bookingData) {
     const data = await res.json();
     if (data && data.success) {
       createdBookingId = data.booking_id;
+    } else {
+      throw new Error(data?.error || data?.message || 'Server rejected booking request.');
     }
   } else {
     let errMsg = 'Failed to submit booking on server.';
     try {
       const rawText = await res.text();
       console.warn('Booking rejected by server (HTTP ' + res.status + '):', rawText);
-      try {
-        const errData = JSON.parse(rawText);
-        errMsg = errData.error || errData.message || rawText || errMsg;
-      } catch (parseErr) {
-        errMsg = rawText || errMsg;
+      if (rawText && rawText.trim()) {
+        try {
+          const errData = JSON.parse(rawText);
+          errMsg = errData.error || errData.message || rawText.trim();
+        } catch (parseErr) {
+          errMsg = rawText.trim();
+        }
       }
     } catch (readErr) {
       console.error('Failed to read server error response:', readErr);
@@ -2531,6 +2535,7 @@ export async function deleteAddOn(id) {
 
 // Canonical Activity Service aliases
 export const getActivities = getAddOns;
+export const fetchActivities = getAddOns;
 export const createActivity = createAddOn;
 export const updateActivity = updateAddOn;
 export const deleteActivity = deleteAddOn;

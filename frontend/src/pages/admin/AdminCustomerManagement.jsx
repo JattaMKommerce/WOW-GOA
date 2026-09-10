@@ -67,6 +67,7 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
   const [statusFilter, setStatusFilter] = useState('all');
   const [selected, setSelected] = useState(null);
   const [drawerTab, setDrawerTab] = useState('overview');
+  const [liveBookings, setLiveBookings] = useState(bookings);
 
   // Birthday Management State
   const [todayBirthdays, setTodayBirthdays] = useState([]);
@@ -319,6 +320,88 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
   useEffect(() => {
     loadBirthdaysData();
     loadOffersData();
+    loadLiveUsers();
+  }, []);
+
+  // Synchronize liveBookings with prop updates
+  useEffect(() => {
+    if (Array.isArray(bookings)) {
+      setLiveBookings(prev => {
+        const idMap = new Map();
+        prev.forEach(b => { if (b?.id) idMap.set(String(b.id), b); });
+        bookings.forEach(b => { if (b?.id) idMap.set(String(b.id), b); });
+        return Array.from(idMap.values());
+      });
+    }
+  }, [bookings]);
+
+  // Real-time booking synchronization & cross-tab sync
+  useEffect(() => {
+    const fetchFresh = async () => {
+      try {
+        const freshBookings = await api.fetchBookings();
+        if (Array.isArray(freshBookings) && freshBookings.length > 0) {
+          setLiveBookings(prev => {
+            if (
+              prev.length === freshBookings.length &&
+              prev.every((b, idx) => b.id === freshBookings[idx].id && b.status === freshBookings[idx].status && b.payment_status === freshBookings[idx].payment_status)
+            ) {
+              return prev;
+            }
+            return freshBookings;
+          });
+        }
+        const freshUsers = await api.fetchUsers();
+        if (Array.isArray(freshUsers) && freshUsers.length > 0) {
+          setAllUsers(prev => {
+            if (
+              prev.length === freshUsers.length &&
+              prev.every((u, idx) => u.id === freshUsers[idx].id && u.role === freshUsers[idx].role && u.name === freshUsers[idx].name)
+            ) {
+              return prev;
+            }
+            return freshUsers;
+          });
+        }
+      } catch (e) {}
+    };
+
+    const handleNewBooking = (e) => {
+      if (e?.detail) {
+        setLiveBookings(prev => {
+          const id = String(e.detail.id);
+          const exists = prev.some(b => String(b.id) === id);
+          return exists ? prev.map(b => String(b.id) === id ? { ...b, ...e.detail } : b) : [e.detail, ...prev];
+        });
+      }
+      fetchFresh();
+    };
+
+    window.addEventListener('new-booking-created', handleNewBooking);
+    window.addEventListener('booking-updated', handleNewBooking);
+    window.addEventListener('booking-status-updated', handleNewBooking);
+    window.addEventListener('booking-deleted', fetchFresh);
+    window.addEventListener('tripgalileo-booking-sync', handleNewBooking);
+
+    let bc = null;
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        bc = new BroadcastChannel('tripgalileo_bookings_sync');
+        bc.onmessage = () => fetchFresh();
+      }
+    } catch (e) {}
+
+    const interval = setInterval(fetchFresh, 4000);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('new-booking-created', handleNewBooking);
+      window.removeEventListener('booking-updated', handleNewBooking);
+      window.removeEventListener('booking-status-updated', handleNewBooking);
+      window.removeEventListener('booking-deleted', fetchFresh);
+      window.removeEventListener('tripgalileo-booking-sync', handleNewBooking);
+      if (bc) bc.close();
+    };
   }, []);
 
   useEffect(() => {
@@ -454,6 +537,7 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
   // 1. Registered customer users from DB
   (allUsers.length > 0 ? allUsers : usersList).filter(u => u.role === 'customer' || !u.role).forEach(u => {
     const key = (u.phone || u.email || u.username || String(u.id)).toLowerCase();
+    const uTime = u.created_at ? new Date(String(u.created_at).replace(' ', 'T')).getTime() || 0 : 0;
     customerMap.set(key, {
       id: u.id,
       name: u.name || u.username || 'Customer',
@@ -467,19 +551,26 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
       spent: 0,
       wallet: 0,
       kyc: u.kyc_status || 'verified',
+      latest_timestamp: uTime,
       rawBookings: []
     });
   });
 
   // 2. Customers with active bookings from DB
-  (bookings || []).forEach(b => {
+  (liveBookings || []).forEach(b => {
     const key = (b.phone || b.email || b.name || '').toLowerCase();
     if (!key) return;
     const bAmt = Number(b.total_amount || b.total_paid || b.amount_paid || 0) || 0;
+    const bDateStr = b.created_at || b.pickup_date || '';
+    const bTime = bDateStr ? new Date(bDateStr.replace(' ', 'T')).getTime() || 0 : 0;
+
     if (customerMap.has(key)) {
       const existing = customerMap.get(key);
       existing.bookings += 1;
       existing.spent += bAmt;
+      if (bTime >= (existing.latest_timestamp || 0)) {
+        existing.latest_timestamp = bTime;
+      }
       if (!existing.phone || existing.phone === '—') existing.phone = b.phone || '—';
       if (!existing.email && b.email) existing.email = b.email;
       if (!existing.date_of_birth && b.date_of_birth) existing.date_of_birth = b.date_of_birth;
@@ -498,13 +589,17 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
         spent: bAmt,
         wallet: 0,
         kyc: 'verified',
+        latest_timestamp: bTime,
         rawBookings: [b]
       });
     }
   });
 
-  // Compute Loyalty Tiers for each customer
+  // Compute Loyalty Tiers for each customer and sort latest to previous
   const allCustomers = Array.from(customerMap.values()).map(c => {
+    if (Array.isArray(c.rawBookings)) {
+      c.rawBookings.sort((a, b) => new Date(b.created_at || b.pickup_date || 0) - new Date(a.created_at || a.pickup_date || 0));
+    }
     const tiers = calculateLoyaltyTiers(c.rawBookings);
     return {
       ...c,
@@ -514,6 +609,10 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
       tripTier: tiers.trip,
       highestTier: tiers.highest_tier
     };
+  }).sort((a, b) => {
+    const timeA = a.latest_timestamp || new Date(a.joined || 0).getTime() || 0;
+    const timeB = b.latest_timestamp || new Date(b.joined || 0).getTime() || 0;
+    return timeB - timeA;
   });
 
   const filtered = allCustomers.filter(c => {
@@ -525,7 +624,7 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
     return matchStatus && matchSearch;
   });
 
-  const customerBookings = selected ? (bookings || []).filter(b => b.name === selected.name || b.phone === selected.phone || b.customer_id === selected.id) : [];
+  const customerBookings = selected ? (liveBookings || []).filter(b => b.name === selected.name || b.phone === selected.phone || b.customer_id === selected.id) : [];
 
   const handleExportCSV = () => {
     if (!filtered || filtered.length === 0) {

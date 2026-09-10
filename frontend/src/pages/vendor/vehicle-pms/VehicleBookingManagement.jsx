@@ -57,11 +57,17 @@ function WorkflowBadge({ status }) {
   );
 }
 
-export default function VehicleBookingManagement({ bookings = [], cars = [], bikes = [], setBookingsList, currentUser }) {
+export default function VehicleBookingManagement({ bookings = [], cars = [], bikes = [], initialStatus, setBookingsList, currentUser }) {
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState(initialStatus || 'all');
   const [selected, setSelected] = useState(null);
   const [localBookings, setLocalBookings] = useState(bookings || []);
+
+  useEffect(() => {
+    if (initialStatus) {
+      setStatusFilter(initialStatus);
+    }
+  }, [initialStatus]);
 
   // Modal states
   const [showCreateModal, setShowCreateModal] = useState(false);

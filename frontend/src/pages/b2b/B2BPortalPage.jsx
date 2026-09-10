@@ -16,7 +16,15 @@ import B2BProfileTab from './B2BProfileTab';
 import B2BWalletTab from './B2BWalletTab';
 import B2BNotificationBell from '../../components/b2b/B2BNotificationBell';
 
-export default function B2BPortalPage({ onNavigateHome }) {
+export default function B2BPortalPage({
+  onNavigateHome,
+  activities = [],
+  cars = [],
+  bikes = [],
+  hotels = [],
+  flights = [],
+  bookings = []
+}) {
   const [partnerUser, setPartnerUser] = useState(() => {
     try {
       const stored = localStorage.getItem('b2b_partner_user');
@@ -495,6 +503,7 @@ export default function B2BPortalPage({ onNavigateHome }) {
               mode="COMMISSION"
               partnerUser={partnerUser}
               initialService={activeServiceTab}
+              initialActivities={activities}
               onInitiateBooking={() => loadDashboard()}
             />
           )}
@@ -505,6 +514,7 @@ export default function B2BPortalPage({ onNavigateHome }) {
               mode="NON_COMMISSION"
               partnerUser={partnerUser}
               initialService={activeServiceTab}
+              initialActivities={activities}
               onInitiateBooking={() => loadDashboard()}
             />
           )}

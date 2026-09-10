@@ -127,7 +127,7 @@ export default function HotelDetailsPage({ hotel, nights = 1, onBack, onBook }) 
 
                   <div className="bg-light p-3 rounded-3 mb-4">
                     <div className="d-flex justify-content-between mb-2">
-                      <span>Total for {nights} night(s)</span>
+                      <span>Total for {nights} {nights === 1 ? 'Night' : 'Nights'} ({nights}N)</span>
                       <strong>₹ {totalPrice.toLocaleString('en-IN')}</strong>
                     </div>
                     <div className="d-flex justify-content-between mb-2 text-muted small">

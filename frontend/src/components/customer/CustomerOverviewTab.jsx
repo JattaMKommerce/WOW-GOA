@@ -18,6 +18,7 @@ export default function CustomerOverviewTab({
   bikes = [],
   hotels = [],
   flights = [],
+  activities = [],
   onNavigateTab,
   onSelectBooking,
   onDirectBook,
@@ -92,6 +93,7 @@ export default function CustomerOverviewTab({
   const hotelsList = (Array.isArray(hotels) && hotels.length > 0) ? hotels : [];
   const carsList = (Array.isArray(cars) && cars.length > 0) ? cars : [];
   const flightsList = (Array.isArray(flights) && flights.length > 0) ? flights : [];
+  const activitiesList = (Array.isArray(activities) && activities.length > 0) ? activities : [];
 
   // Handle direct booking from card
   const handleTriggerBooking = (item) => {
@@ -964,6 +966,23 @@ export default function CustomerOverviewTab({
             <Plane size={16} />
             <span>✈️ Flights & Transfers</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setExploreCategory('activities')}
+            className={`btn btn-sm rounded-pill px-3.5 py-2 text-xs fw-bold d-flex align-items-center gap-2 transition-all ${
+              exploreCategory === 'activities'
+                ? 'text-white shadow-sm border-0'
+                : 'btn-light text-dark border'
+            }`}
+            style={{
+              fontWeight: 700,
+              background: exploreCategory === 'activities' ? 'linear-gradient(135deg, #0D1B2E 0%, #1E3E62 100%)' : undefined
+            }}
+          >
+            <MapPin size={16} />
+            <span>🎯 Sightseeing & Activities ({activitiesList.length})</span>
+          </button>
         </div>
 
         {/* ─── 1. Self Drive Multi-Tier Horizontal Sliding Showcase (Two Wheelers, Four Wheelers, Luxury Cars) ─── */}
@@ -1337,6 +1356,79 @@ export default function CustomerOverviewTab({
               </div>
             </div>
           ))}
+
+          {/* 6. Sightseeing & Activities Cards */}
+          {exploreCategory === 'activities' && (
+            activitiesList.length === 0 ? (
+              <div className="col-12 text-center py-5">
+                <div className="rounded-circle p-3 bg-light d-inline-flex mx-auto mb-3 text-warning">
+                  <MapPin size={32} />
+                </div>
+                <h6 className="fw-bold text-dark mb-1">No Activities Yet</h6>
+                <p className="text-muted text-xs mb-3">Sightseeing spots and adventure activities will appear here.</p>
+              </div>
+            ) : (
+              activitiesList.map((item, idx) => {
+                const imgSrc = item.image_url || item.image || 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=600&q=80';
+                const isSightseeing = (item.type || '').toLowerCase() === 'sightseeing';
+                return (
+                  <div key={item.id || idx} className="col-md-6 col-xl-4">
+                    <div className="card border-0 shadow-sm rounded-4 h-100 overflow-hidden bg-white hover-shadow transition-all d-flex flex-column" style={{ border: '1px solid #eef2f6' }}>
+                      <div className="position-relative" style={{ height: '170px' }}>
+                        <img
+                          src={imgSrc}
+                          alt={item.title || item.name}
+                          className="w-100 h-100 object-fit-cover"
+                          onError={(e) => { e.target.onerror = null; e.target.src = 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=600&q=80'; }}
+                        />
+                        <span className={`position-absolute top-0 start-0 m-2 badge text-white text-xxs px-2.5 py-1 rounded-pill fw-black shadow-sm ${isSightseeing ? 'bg-success' : 'bg-warning text-dark'}`}>
+                          {isSightseeing ? '🏛️ Sightseeing' : '🎯 Activity'}
+                        </span>
+                        {item.duration && (
+                          <span className="position-absolute bottom-0 end-0 m-2 badge bg-dark bg-opacity-75 text-white text-xxs px-2 py-1 rounded-pill">
+                            ⏱️ {item.duration}
+                          </span>
+                        )}
+                      </div>
+                      <div className="card-body p-3 d-flex flex-column justify-content-between flex-grow-1">
+                        <div>
+                          <h6 className="fw-black text-dark mb-0.5 font-heading text-truncate" title={item.title || item.name}>
+                            {item.title || item.name}
+                          </h6>
+                          {item.location && (
+                            <div className="text-muted text-xxs mb-1.5">📍 {item.location}</div>
+                          )}
+                          {item.category && (
+                            <span className="badge bg-light text-dark border text-xxs px-2 py-0.5 mb-1.5 d-inline-block">{item.category}</span>
+                          )}
+                          <p className="text-muted text-xxs mb-2 line-clamp-2" style={{ minHeight: '32px' }}>
+                            {item.description || 'An unforgettable Goa experience.'}
+                          </p>
+                        </div>
+                        <div className="pt-2 border-top">
+                          <div className="d-flex align-items-center justify-content-between mb-2">
+                            <div>
+                              <span className="text-xxs text-muted">Per Person From</span>
+                              <div className="fs-5 fw-black text-dark font-heading">
+                                ₹{Number(item.price || 999).toLocaleString('en-IN')}
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => onNavigateTab && onNavigateTab('activities')}
+                            className="btn btn-sm btn-warning text-dark rounded-pill w-100 py-1.5 text-xs fw-bold shadow-sm d-flex align-items-center justify-content-center gap-1"
+                          >
+                            <span>Book Now →</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )
+          )}
 
         </div>
       </div>

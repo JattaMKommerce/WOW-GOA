@@ -17,7 +17,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Plane,
-  AlertCircle
+  AlertCircle,
+  Binoculars
 } from 'lucide-react';
 import { getTodayDateStr, getNextDayDateStr, validateBookingDates } from '../utils/dateUtils';
 import UnifiedFilterPopover, { countActiveTabFilters } from './common/UnifiedFilterPopover';
@@ -508,6 +509,23 @@ export default function SearchWidget({
           >
             <Plane />
             <span>Flights</span>
+          </button>
+          <button 
+            type="button" 
+            role="tab"
+            aria-selected={activeTab === 'activities'}
+            className={`widget-tab-btn ${activeTab === 'activities' ? 'active' : ''}`}
+            onClick={() => { 
+              setActiveTab('activities'); 
+              setActiveDropdown(null); 
+              setValidationError(''); 
+              setTimeout(() => {
+                document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+              }, 50);
+            }}
+          >
+            <MapPin />
+            <span>Sightseeing & Activities</span>
           </button>
           <button 
             type="button" 

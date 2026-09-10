@@ -39,6 +39,7 @@ export const DEFAULT_CONFIG = {
       { id: 'packages', label: 'Trip Packages', href: '/packages', children: [] },
       { id: 'hotels', label: 'Hotels', href: '/hotels', children: [] },
       { id: 'flights', label: 'Flights', href: '/flights', children: [] },
+      { id: 'activities', label: 'Sightseeing & Activities', href: '/activities', children: [] },
       { id: 'craftmytrip', label: 'Craft My Trip', href: '/craft', children: [] }
     ],
     footer: [

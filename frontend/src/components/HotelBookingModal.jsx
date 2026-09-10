@@ -4,6 +4,7 @@ import * as api from '../services/api';
 import { validateBookingDates, getTodayDateStr, addDays, formatDisplayDate } from '../utils/dateUtils';
 import ImageCarousel from './common/ImageCarousel';
 import UnifiedGalleryViewer from './UnifiedGalleryViewer';
+import DobPicker from './common/DobPicker';
 
 const TIME_SLOTS = [
   '06:00 AM', '07:00 AM', '08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM',
@@ -32,8 +33,12 @@ export default function HotelBookingModal({
 
   useEffect(() => {
     if (pickupDate) setModalCheckInDate(pickupDate);
-    if (dropDate) setModalCheckOutDate(dropDate);
-  }, [pickupDate, dropDate]);
+    if (dropDate) {
+      setModalCheckOutDate(dropDate);
+    } else if (pickupDate && bookingDays) {
+      setModalCheckOutDate(addDays(pickupDate, bookingDays));
+    }
+  }, [pickupDate, dropDate, bookingDays]);
 
   const nights = useMemo(() => {
     if (!modalCheckInDate || !modalCheckOutDate) return Math.max(1, parseInt(bookingDays) || 1);
@@ -638,15 +643,12 @@ export default function HotelBookingModal({
                     <span className="d-flex align-items-center gap-1">
                       <Cake size={14} className="text-warning" /> Date of Birth <span className="text-danger">*</span>
                     </span>
-                    <span className="text-muted" style={{ fontSize: '11px' }}>[ DD / MM / YYYY ]</span>
+                    <span className="text-muted" style={{ fontSize: '11px' }}>[ Day / Month / Year ]</span>
                   </label>
-                  <input 
-                    type="date" 
-                    className="form-control" 
+                  <DobPicker 
                     value={guestDob}
-                    onChange={e => setGuestDob(e.target.value)}
-                    required 
-                    max={new Date().toISOString().split('T')[0]}
+                    onChange={val => setGuestDob(val)}
+                    required={true}
                   />
                   <small className="text-muted d-block mt-1" style={{ fontSize: '11px', color: '#64748b' }}>
                     Date of Birth is required to provide birthday benefits and special offers from WOW GOA.
@@ -957,7 +959,7 @@ export default function HotelBookingModal({
             <div className="d-flex justify-content-between mb-2">
                 <span className="text-muted small">Stay Schedule</span>
                 <span className="fw-bold text-end small">
-                  {modalCheckInDate} ({checkInTime}) to {modalCheckOutDate} ({checkOutTime})
+                  {modalCheckInDate} ({checkInTime}) to {modalCheckOutDate} ({checkOutTime}) • {nights} {nights === 1 ? 'Night' : 'Nights'} ({nights}N)
                 </span>
             </div>
             <div className="d-flex justify-content-between mb-2">
@@ -1143,10 +1145,10 @@ export default function HotelBookingModal({
                             </div>
                             <div className="d-flex justify-content-between mb-2">
                                 <span>Duration:</span>
-                                <span>{bookingDays} Nights</span>
+                                <span className="fw-bold text-dark">{nights} {nights === 1 ? 'Night' : 'Nights'} ({nights}N)</span>
                             </div>
                             <div className="d-flex justify-content-between border-top pt-2 mb-2 fw-semibold">
-                                <span>Room Total:</span>
+                                <span>Room Total ({nights}N):</span>
                                 <span>₹{roomTotal.toLocaleString('en-IN')}</span>
                             </div>
                             <div className="d-flex justify-content-between mb-2 text-muted">

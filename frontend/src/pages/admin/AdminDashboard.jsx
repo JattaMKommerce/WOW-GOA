@@ -1188,7 +1188,7 @@ export default function AdminDashboard({
           </div>
         </div>
 
-        <div className="d-flex flex-column gap-4 overflow-auto pb-4" style={{ maxHeight: 'calc(100vh - 280px)', paddingRight: '10px' }}>
+        <div className="d-flex flex-column gap-4 pb-4">
           {allPackages && allPackages.filter(pkg => pkg.name.toLowerCase().includes(packageSearchTerm.toLowerCase())).map(pkg => (
             <div 
               key={pkg.id} 
@@ -1393,7 +1393,7 @@ export default function AdminDashboard({
           </div>
         </div>
 
-          <div className="d-flex flex-column gap-3 overflow-auto" style={{ maxHeight: '520px' }}>
+          <div className="d-flex flex-column gap-3 pb-4">
             {filteredVendors.length === 0 ? (
               <p className="text-muted text-center py-5">No matching operators found.</p>
             ) : (

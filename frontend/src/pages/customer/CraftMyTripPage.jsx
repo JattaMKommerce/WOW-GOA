@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Car, Bike, Hotel, Plane, Users, CheckCircle, ArrowLeft, ArrowRight,
   Search, Star, MapPin, Zap, X, CreditCard, Shield, PlaneTakeoff, PlaneLanding, Calendar, User,
-  Wand2, AlertCircle, BadgeCheck, Check, Loader2, Compass
+  Wand2, AlertCircle, BadgeCheck, Check, Loader2, Compass, Clock
 } from 'lucide-react';
 import * as api from '../../services/api';
 import HotelImageGallery from '../../components/HotelImageGallery';
@@ -27,8 +27,9 @@ function StepIndicator({ currentStep }) {
   const steps = [
     { num: 1, label: 'Choose Ride', icon: Car },
     { num: 2, label: 'Pick Hotel', icon: Hotel },
-    { num: 3, label: 'Add Flight', icon: Plane },
-    { num: 4, label: 'Review & Pay', icon: CreditCard },
+    { num: 3, label: 'Sightseeing & Activities', icon: Compass },
+    { num: 4, label: 'Add Flight', icon: Plane },
+    { num: 5, label: 'Review & Pay', icon: CreditCard },
   ];
 
   return (
@@ -540,8 +541,288 @@ function Step2Hotel({ allHotels = [], pickupDate, dropDate, selectedHotel, setSe
   );
 }
 
-// ─── Step 3: Add Flight (Optional) ──────────────────────────────────────────
-function Step3Flight({ selectedFlight, setSelectedFlight, withFlight, setWithFlight, pickupDate, memberCount, onNext, onBack }) {
+// ─── Step 3: Sightseeing & Activities ──────────────────────────────────────
+function Step3Activities({ allActivities = [], selectedActivities = [], setSelectedActivities, memberCount, onNext, onBack }) {
+  const [filterType, setFilterType] = useState('all'); // 'all', 'sightseeing', 'activity'
+  const [searchQuery, setSearchQuery] = useState('');
+  const [liveActivities, setLiveActivities] = useState(allActivities || []);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (allActivities && allActivities.length > 0) {
+      setLiveActivities(allActivities);
+    } else {
+      setLoading(true);
+      api.getActivities()
+        .then(data => {
+          if (Array.isArray(data) && data.length > 0) {
+            setLiveActivities(data);
+          }
+        })
+        .catch(err => console.error('Failed to load activities:', err))
+        .finally(() => setLoading(false));
+    }
+  }, [allActivities]);
+
+  const toggleActivity = (act) => {
+    const isSelected = selectedActivities.some(a => String(a.id) === String(act.id));
+    if (isSelected) {
+      setSelectedActivities(selectedActivities.filter(a => String(a.id) !== String(act.id)));
+    } else {
+      setSelectedActivities([...selectedActivities, act]);
+    }
+  };
+
+  const filtered = liveActivities.filter(act => {
+    const type = String(act.type || act.item_type || '').toLowerCase();
+    const cat = String(act.category || '').toLowerCase();
+    const name = String(act.title || act.name || '').toLowerCase();
+    const loc = String(act.location || '').toLowerCase();
+
+    // Type filter
+    if (filterType === 'sightseeing') {
+      const isSight = type === 'sightseeing' || cat.includes('sight') || cat.includes('tour') || cat.includes('heritage');
+      if (!isSight) return false;
+    } else if (filterType === 'activity') {
+      const isAct = type === 'activity' || cat.includes('water') || cat.includes('adventure') || cat.includes('sport') || cat.includes('cruise') || type !== 'sightseeing';
+      if (!isAct) return false;
+    }
+
+    // Search query
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      return name.includes(q) || loc.includes(q) || cat.includes(q);
+    }
+    return true;
+  });
+
+  const totalActivitiesCost = selectedActivities.reduce((sum, a) => sum + (parseFloat(a.price) || 0) * memberCount, 0);
+
+  return (
+    <div className="cmt-step-body animate-fade-in-up">
+      <div className="cmt-step-header">
+        <div className="cmt-step-icon-wrap" style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
+          <Compass size={28} color="#fff" />
+        </div>
+        <div>
+          <h2 className="cmt-step-title">Sightseeing & Activities</h2>
+          <p className="cmt-step-sub">
+            Add iconic Goan heritage tours and thrilling adventure activities · Select multiple or skip to next step
+          </p>
+        </div>
+      </div>
+
+      {/* Selected Items Banner */}
+      {selectedActivities.length > 0 && (
+        <div className="alert alert-success d-flex align-items-center justify-content-between p-3 rounded-4 border-0 mb-4 shadow-sm" style={{ background: '#ecfdf5', borderLeft: '4px solid #10b981' }}>
+          <div className="d-flex align-items-center gap-2">
+            <CheckCircle size={20} className="text-success flex-shrink-0" />
+            <div>
+              <strong className="text-dark">{selectedActivities.length} Experience{selectedActivities.length > 1 ? 's' : ''} Selected</strong>
+              <div className="text-muted small">
+                {selectedActivities.map(a => a.title || a.name).join(' · ')}
+              </div>
+            </div>
+          </div>
+          <div className="text-end">
+            <span className="badge bg-success text-white px-3 py-1.5 rounded-pill fs-6 fw-bold">
+              +₹{totalActivitiesCost.toLocaleString('en-IN')}
+            </span>
+            <div className="text-muted small" style={{ fontSize: '0.72rem' }}>for {memberCount} guest{memberCount > 1 ? 's' : ''}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Filter and Search Bar */}
+      <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+        <div className="d-flex gap-2 flex-wrap">
+          <button
+            type="button"
+            className={`btn btn-sm rounded-pill px-3 py-1.5 fw-bold text-xs ${filterType === 'all' ? 'btn-dark text-white' : 'btn-light text-secondary border'}`}
+            onClick={() => setFilterType('all')}
+          >
+            All Experiences ({liveActivities.length})
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm rounded-pill px-3 py-1.5 fw-bold text-xs ${filterType === 'sightseeing' ? 'btn-dark text-white' : 'btn-light text-secondary border'}`}
+            onClick={() => setFilterType('sightseeing')}
+          >
+            🏛️ Sightseeing Packages
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm rounded-pill px-3 py-1.5 fw-bold text-xs ${filterType === 'activity' ? 'btn-dark text-white' : 'btn-light text-secondary border'}`}
+            onClick={() => setFilterType('activity')}
+          >
+            🪂 Activities & Adventures
+          </button>
+        </div>
+
+        <div className="input-group input-group-sm" style={{ maxWidth: '280px' }}>
+          <span className="input-group-text bg-white border-end-0 text-muted"><Search size={14} /></span>
+          <input
+            type="text"
+            className="form-control border-start-0 text-xs"
+            placeholder="Search activities & tours..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
+        </div>
+      </div>
+
+      {/* Activities Grid */}
+      {loading ? (
+        <div className="text-center py-5">
+          <Loader2 className="spinner-border text-primary mb-2" />
+          <p className="text-muted small">Loading available sightseeing & activities...</p>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-5 bg-white rounded-4 border p-4">
+          <Compass size={40} className="text-muted opacity-50 mb-2 mx-auto" />
+          <h6 className="fw-bold text-dark mb-1">No Experiences Found</h6>
+          <p className="text-muted small mb-0">Try clearing your search filter or view all experiences.</p>
+        </div>
+      ) : (
+        <div className="row g-3">
+          {filtered.map(act => {
+            const isSelected = selectedActivities.some(a => String(a.id) === String(act.id));
+            const isSight = String(act.type || act.item_type || '').toLowerCase() === 'sightseeing' ||
+                            String(act.category || '').toLowerCase().includes('sight') ||
+                            String(act.category || '').toLowerCase().includes('heritage');
+            const unitPrice = parseFloat(act.price) || 0;
+            const itemTotal = unitPrice * memberCount;
+
+            return (
+              <div key={act.id} className="col-12 col-md-6">
+                <div
+                  onClick={() => toggleActivity(act)}
+                  className={`card h-100 border rounded-4 overflow-hidden shadow-xs cursor-pointer transition-all ${
+                    isSelected ? 'border-success border-2 shadow-sm' : 'border-light-subtle hover-shadow-md'
+                  }`}
+                  style={{
+                    cursor: 'pointer',
+                    background: isSelected ? '#f0fdf4' : '#ffffff',
+                    transform: isSelected ? 'scale(1.01)' : 'none'
+                  }}
+                >
+                  <div className="row g-0 h-100">
+                    <div className="col-4 position-relative">
+                      <img
+                        src={act.image_url || act.image || 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=800&auto=format&fit=crop&q=60'}
+                        alt={act.title || act.name}
+                        className="w-100 h-100 object-fit-cover"
+                        style={{ minHeight: '140px' }}
+                      />
+                      <span
+                        className="badge position-absolute top-2 start-2 text-xxs fw-bold px-2 py-1 rounded-pill"
+                        style={{
+                          background: isSight ? '#0f172a' : '#0284c7',
+                          color: '#fff'
+                        }}
+                      >
+                        {isSight ? '🏛️ Sightseeing' : '🎯 Activity'}
+                      </span>
+                    </div>
+                    <div className="col-8 p-3 d-flex flex-column justify-content-between">
+                      <div>
+                        <div className="d-flex align-items-center justify-content-between mb-1">
+                          <span className="badge bg-light text-muted border text-3xs px-2 py-0.5 rounded-pill">
+                            {act.category || (isSight ? 'Sightseeing' : 'Activity')}
+                          </span>
+                          {isSelected ? (
+                            <span className="badge bg-success text-white d-flex align-items-center gap-1 text-3xs px-2 py-0.5 rounded-pill">
+                              <Check size={11} /> Added
+                            </span>
+                          ) : (
+                            <span className="text-muted small" style={{ fontSize: '0.7rem' }}>Click to add</span>
+                          )}
+                        </div>
+                        <h6 className="fw-bold text-dark mb-1 font-heading" style={{ fontSize: '0.92rem' }}>
+                          {act.title || act.name}
+                        </h6>
+                        <p className="text-muted text-xxs mb-2 line-clamp-2 leading-relaxed" style={{ fontSize: '0.74rem' }}>
+                          {act.description}
+                        </p>
+                      </div>
+
+                      <div>
+                        <div className="d-flex align-items-center gap-3 text-muted text-xxs mb-2">
+                          <span className="d-flex align-items-center gap-1">
+                            <MapPin size={12} className="text-danger flex-shrink-0" />
+                            <span className="text-truncate" style={{ maxWidth: '120px' }}>{act.location || 'Goa'}</span>
+                          </span>
+                          <span className="d-flex align-items-center gap-1">
+                            <Clock size={12} className="text-primary flex-shrink-0" />
+                            <span>{act.duration || 'Flexible'}</span>
+                          </span>
+                        </div>
+
+                        <div className="d-flex align-items-center justify-content-between pt-1 border-top">
+                          <div>
+                            <span className="fw-extrabold text-success" style={{ fontSize: '0.95rem' }}>
+                              ₹{unitPrice.toLocaleString('en-IN')}
+                            </span>
+                            <span className="text-muted" style={{ fontSize: '0.68rem' }}> / person</span>
+                            {memberCount > 1 && (
+                              <div className="text-muted" style={{ fontSize: '0.68rem' }}>
+                                (₹{itemTotal.toLocaleString('en-IN')} for {memberCount})
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            className={`btn btn-xs rounded-pill px-3 py-1 fw-bold ${
+                              isSelected ? 'btn-success text-white' : 'btn-outline-primary'
+                            }`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleActivity(act);
+                            }}
+                          >
+                            {isSelected ? '✓ Added' : '+ Add to Trip'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Navigation Buttons */}
+      <div className="cmt-nav-row mt-4 pt-3 border-top d-flex justify-content-between align-items-center">
+        <button type="button" className="cmt-btn-secondary" onClick={onBack}>
+          <ArrowLeft size={16} /> Back to Hotel
+        </button>
+        <div className="d-flex gap-2">
+          {selectedActivities.length === 0 ? (
+            <button type="button" className="btn btn-outline-secondary rounded-pill px-3 py-2 text-xs fw-semibold" onClick={onNext}>
+              Skip Experiences
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-outline-danger rounded-pill px-3 py-2 text-xs"
+              onClick={() => setSelectedActivities([])}
+            >
+              Clear Selected
+            </button>
+          )}
+          <button type="button" className="cmt-btn-primary" onClick={onNext}>
+            {selectedActivities.length > 0 ? `Continue with ${selectedActivities.length} Experience${selectedActivities.length > 1 ? 's' : ''}` : 'Continue to Flight'} <ArrowRight size={16} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Step 4: Add Flight (Optional) ──────────────────────────────────────────
+function Step4Flight({ selectedFlight, setSelectedFlight, withFlight, setWithFlight, pickupDate, memberCount, onNext, onBack }) {
   const [fromAirport, setFromAirport] = useState('DEL');
   const [toAirport, setToAirport] = useState('GOI');
   const [flightDate, setFlightDate] = useState(pickupDate || getTodayDateStr());
@@ -705,7 +986,7 @@ function Step3Flight({ selectedFlight, setSelectedFlight, withFlight, setWithFli
                         <div className="fw-bold text-dark fs-5">₹{price.toLocaleString('en-IN')}</div>
                         <div className="small text-muted mb-2">Total: ₹{totalFlightPrice}</div>
                         <button type="button" className={`btn btn-sm ${isSelected ? 'btn-primary' : 'btn-outline-primary'} rounded-pill px-3`}>
-                          {isSelected ? 'Selected ✓' : 'Select'}
+                          {isSelected ? 'Selected' : 'Select'}
                         </button>
                       </div>
                     </div>
@@ -717,18 +998,30 @@ function Step3Flight({ selectedFlight, setSelectedFlight, withFlight, setWithFli
         </>
       )}
 
-      <div className="cmt-nav-row">
-        <button type="button" className="cmt-btn-secondary" onClick={onBack}><ArrowLeft size={16} /> Back</button>
-        <button type="button" className="cmt-btn-primary" onClick={handleNext}>
-          Next: Review & Pay <ArrowRight size={16} />
+      {/* Navigation Footer */}
+      <div className="cmt-nav-actions mt-4 pt-3 border-top">
+        <button className="btn btn-outline-secondary d-flex align-items-center gap-2" onClick={onBack}>
+          <ChevronLeft size={16} /> Back: Activities
+        </button>
+        <button
+          className="btn btn-primary d-flex align-items-center gap-2"
+          onClick={() => {
+            if (withFlight && !selectedFlight) {
+              setError('Please choose a flight or toggle flight off.');
+              return;
+            }
+            onNext();
+          }}
+        >
+          Review Trip <ChevronRight size={16} />
         </button>
       </div>
     </div>
   );
 }
 
-// ─── Step 4: Review & Pay ────────────────────────────────────────────────────
-function Step4ReviewPay({ selectedVehicle, selectedHotel, selectedFlight, withFlight, memberCount, pickupDate, dropDate, onBack, onConfirm }) {
+// ─── Step 5: Review & Pay ────────────────────────────────────────────────────
+function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [], selectedFlight, withFlight, memberCount, pickupDate, dropDate, onBack, onConfirm }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
@@ -745,8 +1038,9 @@ function Step4ReviewPay({ selectedVehicle, selectedHotel, selectedFlight, withFl
   const vehiclePrice = selectedVehicle ? (parseFloat(selectedVehicle.price) || 0) * nights : 0;
   const hotelPrice = selectedHotel ? (selectedHotel._totalPrice || (parseFloat(selectedHotel.price_per_night || selectedHotel.price || 2500) * nights)) : 0;
   const flightPrice = withFlight && selectedFlight ? (parseFloat(selectedFlight.price) || 4500) * memberCount : 0;
+  const activitiesPrice = (selectedActivities || []).reduce((sum, act) => sum + (parseFloat(act.price) || 0) * memberCount, 0);
 
-  const subtotal = vehiclePrice + hotelPrice + flightPrice;
+  const subtotal = vehiclePrice + hotelPrice + flightPrice + activitiesPrice;
   const gst = Math.round(subtotal * 0.18);
   const serviceFee = subtotal > 0 ? 250 : 0;
   const grandTotal = subtotal + gst + serviceFee;
@@ -754,8 +1048,8 @@ function Step4ReviewPay({ selectedVehicle, selectedHotel, selectedFlight, withFl
   const amountDue = paymentMode === 'full' ? grandTotal : advanceAmount;
 
   const handleConfirm = async () => {
-    if (!selectedVehicle && !selectedHotel && (!withFlight || !selectedFlight)) {
-      setError('Please select at least one item (Vehicle, Hotel, or Flight) to book.');
+    if (!selectedVehicle && !selectedHotel && (!withFlight || !selectedFlight) && (!selectedActivities || selectedActivities.length === 0)) {
+      setError('Please select at least one item (Vehicle, Hotel, Sightseeing/Activity, or Flight) to book.');
       return;
     }
     if (!name || !phone) {
@@ -765,9 +1059,11 @@ function Step4ReviewPay({ selectedVehicle, selectedHotel, selectedFlight, withFl
     setError('');
     setBooking(true);
 
+    const actSummary = (selectedActivities || []).map(a => a.title || a.name);
     const itemName = [
       selectedVehicle ? selectedVehicle.name : null,
       selectedHotel ? selectedHotel.name : null,
+      actSummary.length > 0 ? (actSummary.length === 1 ? actSummary[0] : `${actSummary.length} Experiences`) : null,
       withFlight && selectedFlight ? (selectedFlight.airline?.name || selectedFlight.airline || 'Flight') : null
     ].filter(Boolean).join(' + ') || 'Custom Goa Holiday';
 
@@ -790,9 +1086,9 @@ function Step4ReviewPay({ selectedVehicle, selectedHotel, selectedFlight, withFl
       package_name: `Craft My Trip: ${itemName}`,
       package_type: 'Self Drive Package',
       type: 'selfdrive',
-      vehicle_name: selectedVehicle?.name || 'Self Drive Vehicle',
+      vehicle_name: selectedVehicle?.name || (selectedHotel?.name ? '' : (selectedActivities[0]?.title || 'Custom Tour')),
       vehicle_image: selectedVehicle?.image || '',
-      image: selectedVehicle?.image || selectedHotel?.image || '',
+      image: selectedVehicle?.image || selectedHotel?.image || selectedActivities[0]?.image_url || selectedActivities[0]?.image || '',
       hotel_name: selectedHotel?.name || '',
       booking_days: nights,
       duration: `${nights} Nights / ${nights + 1} Days`,
@@ -807,6 +1103,7 @@ function Step4ReviewPay({ selectedVehicle, selectedHotel, selectedFlight, withFl
       customizations: JSON.stringify({
         vehicle: selectedVehicle ? { id: selectedVehicle.id, name: selectedVehicle.name, price: vehiclePrice } : null,
         hotel: selectedHotel ? { id: selectedHotel.id, name: selectedHotel.name, price: hotelPrice } : null,
+        activities: (selectedActivities || []).map(a => ({ id: a.id, title: a.title || a.name, type: a.type, price: a.price, location: a.location, duration: a.duration })),
         flight: withFlight && selectedFlight ? { id: selectedFlight.id, airline: selectedFlight.airline, price: flightPrice } : null,
         members: memberCount,
         payment_mode: paymentMode
@@ -845,6 +1142,9 @@ function Step4ReviewPay({ selectedVehicle, selectedHotel, selectedFlight, withFl
         <div className="cmt-success-summary">
           {selectedVehicle && <div><strong>Vehicle:</strong> {selectedVehicle.name}</div>}
           {selectedHotel && <div><strong>Hotel:</strong> {selectedHotel.name}</div>}
+          {selectedActivities && selectedActivities.length > 0 && (
+            <div><strong>Sightseeing & Activities:</strong> {selectedActivities.map(a => a.title || a.name).join(', ')}</div>
+          )}
           {withFlight && selectedFlight && (
             <div><strong>Flight:</strong> {selectedFlight.airline?.name || selectedFlight.airline}</div>
           )}
@@ -862,7 +1162,7 @@ function Step4ReviewPay({ selectedVehicle, selectedHotel, selectedFlight, withFl
             </h6>
           </div>
           <p className="text-muted text-xs mb-3">
-            Track your custom holiday itinerary, vehicle allocation, hotel stay and payment receipts.
+            Track your custom holiday itinerary, vehicle allocation, hotel stay, activities and payment receipts.
           </p>
           <button 
             type="button" 
@@ -882,7 +1182,7 @@ function Step4ReviewPay({ selectedVehicle, selectedHotel, selectedFlight, withFl
         </div>
 
         <button 
-          type="button"
+          type="button" 
           className="btn btn-link text-muted text-xs text-decoration-none mt-1"
           onClick={() => {
             if (onConfirm) onConfirm();
@@ -950,6 +1250,32 @@ function Step4ReviewPay({ selectedVehicle, selectedHotel, selectedFlight, withFl
                 <div className="d-flex align-items-center gap-2">
                   <Hotel size={18} opacity={0.4} />
                   <span>No hotel selected (Skipped)</span>
+                </div>
+                <span>₹0</span>
+              </div>
+            )}
+
+            {/* Sightseeing & Activities Itemized */}
+            {selectedActivities && selectedActivities.length > 0 ? (
+              selectedActivities.map(act => (
+                <div key={act.id} className="cmt-summary-item">
+                  <div className="d-flex align-items-center gap-2">
+                    <Compass size={18} className="text-success" />
+                    <div>
+                      <div className="fw-bold">{act.title || act.name}</div>
+                      <div className="text-muted small">
+                        ₹{Number(act.price).toLocaleString('en-IN')} × {memberCount} guest{memberCount > 1 ? 's' : ''} · {act.location || 'Goa'}
+                      </div>
+                    </div>
+                  </div>
+                  <span className="fw-bold">₹{(Number(act.price) * memberCount).toLocaleString('en-IN')}</span>
+                </div>
+              ))
+            ) : (
+              <div className="cmt-summary-item text-muted">
+                <div className="d-flex align-items-center gap-2">
+                  <Compass size={18} opacity={0.4} />
+                  <span>No sightseeing & activities selected (Skipped)</span>
                 </div>
                 <span>₹0</span>
               </div>
@@ -1073,15 +1399,16 @@ function Step4ReviewPay({ selectedVehicle, selectedHotel, selectedFlight, withFl
 }
 
 // ─── Main CraftMyTripPage ────────────────────────────────────────────────────
-export default function CraftMyTripPage({ allCars = [], allBikes = [], allHotels = [], pickupDate, dropDate, bookings = [], onBack }) {
+export default function CraftMyTripPage({ allCars = [], allBikes = [], allHotels = [], allActivities = [], pickupDate, dropDate, bookings = [], onBack }) {
   const [step, setStep] = useState(1);
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [memberCount, setMemberCount] = useState(1);
   const [selectedHotel, setSelectedHotel] = useState(null);
+  const [selectedActivities, setSelectedActivities] = useState([]);
   const [withFlight, setWithFlight] = useState(false);
   const [selectedFlight, setSelectedFlight] = useState(null);
 
-  const goNext = () => setStep(s => Math.min(s + 1, 4));
+  const goNext = () => setStep(s => Math.min(s + 1, 5));
   const goBack = () => {
     if (step === 1) { onBack(); return; }
     setStep(s => s - 1);
@@ -1094,11 +1421,13 @@ export default function CraftMyTripPage({ allCars = [], allBikes = [], allHotels
         <div className="cmt-hero-content">
           <div className="cmt-hero-badge"><Wand2 size={16} /> Build From Scratch</div>
           <h1 className="cmt-hero-title">Craft My Trip</h1>
-          <p className="cmt-hero-sub">Design your perfect Goa getaway — choose your ride, stay, and fly your way</p>
+          <p className="cmt-hero-sub">Design your perfect Goa getaway — choose your ride, stay, activities, and fly your way</p>
           <div className="cmt-hero-chips">
             <span>🚗 Self Drive Vehicle</span>
             <span>+</span>
             <span>🏨 Hotel Stay</span>
+            <span>+</span>
+            <span>🎯 Sightseeing & Activities</span>
             <span>+</span>
             <span>✈️ Optional Flight</span>
           </div>
@@ -1136,7 +1465,17 @@ export default function CraftMyTripPage({ allCars = [], allBikes = [], allHotels
           />
         )}
         {step === 3 && (
-          <Step3Flight
+          <Step3Activities
+            allActivities={allActivities}
+            selectedActivities={selectedActivities}
+            setSelectedActivities={setSelectedActivities}
+            memberCount={memberCount}
+            onNext={goNext}
+            onBack={goBack}
+          />
+        )}
+        {step === 4 && (
+          <Step4Flight
             selectedFlight={selectedFlight}
             setSelectedFlight={setSelectedFlight}
             withFlight={withFlight}
@@ -1147,10 +1486,11 @@ export default function CraftMyTripPage({ allCars = [], allBikes = [], allHotels
             onBack={goBack}
           />
         )}
-        {step === 4 && (
-          <Step4ReviewPay
+        {step === 5 && (
+          <Step5ReviewPay
             selectedVehicle={selectedVehicle}
             selectedHotel={selectedHotel}
+            selectedActivities={selectedActivities}
             selectedFlight={selectedFlight}
             withFlight={withFlight}
             memberCount={memberCount}
@@ -1164,3 +1504,4 @@ export default function CraftMyTripPage({ allCars = [], allBikes = [], allHotels
     </div>
   );
 }
+

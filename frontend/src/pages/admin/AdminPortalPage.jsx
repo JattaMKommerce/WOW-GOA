@@ -14,6 +14,11 @@ import AdminCMS from './AdminCMS';
 import AdminCustomerManagement from './AdminCustomerManagement';
 import AdminBookingManagement from './AdminBookingManagement';
 import AdminActivitiesManagement from './AdminActivitiesManagement';
+import HotelVendorDashboard from '../vendor/HotelVendorDashboard';
+import VendorDashboard from '../vendor/VendorDashboard';
+import FlightVendorDashboard from '../vendor/FlightVendorDashboard';
+import PMSPaymentSettings from '../vendor/pms/PMSPaymentSettings';
+import AdminAvailabilityCalendar from './AdminAvailabilityCalendar';
 import AdminPromotions from './AdminPromotions';
 import AdminAnalytics from './AdminAnalytics';
 import AnalyticsView from '../../components/shared/AnalyticsView';
@@ -32,6 +37,8 @@ const SIDEBAR_GROUPS = [
     label: 'Overview',
     items: [
       { id: 'overview', label: 'Dashboard', icon: <LayoutDashboard size={15} /> },
+      { id: 'leads', label: 'Lead Management', icon: <Users size={15} /> },
+      { id: 'customers', label: 'Customer Management', icon: <Users size={15} /> },
     ]
   },
 
@@ -72,9 +79,7 @@ const SIDEBAR_GROUPS = [
   {
     label: 'Customers',
     items: [
-      { id: 'customers', label: 'Customer Management', icon: <Users size={15} /> },
       { id: 'bookings', label: 'Booking Management', icon: <Calendar size={15} /> },
-      { id: 'leads', label: 'Lead Management', icon: <Users size={15} /> },
       { id: 'enquiries', label: 'Custom Enquiries', icon: <FileText size={15} /> },
       { id: 'add_users', label: 'Create Sub-Admin / Add Users', icon: <UserPlus size={15} /> },
     ]
@@ -112,7 +117,7 @@ const SIDEBAR_GROUPS = [
 function SidebarGroup({ group, activeTab, onSelect, defaultOpen }) {
   const [open, setOpen] = useState(group.label === 'Customers' || group.label === 'Overview' || group.label === 'B2B Distribution' || defaultOpen || group.items.some(i => i.id === activeTab));
   
-  const storageKey = 'admin_sidebar_order_' + group.label.toLowerCase().replace(/[^a-z0-9]/g, '_');
+  const storageKey = 'admin_sidebar_order_v3_' + group.label.toLowerCase().replace(/[^a-z0-9]/g, '_');
 
   const [orderedItems, setOrderedItems] = useState(() => {
     try {
@@ -258,7 +263,23 @@ function AdminHotelsView({ hotels, onAddHotel, onUpdateHotel, onDeleteHotel, boo
         </button>
       </div>
       <div className="rounded-3 shadow-sm" style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.07)' }}>
-        <HotelVendorDashboard activeTab={innerTab} hotels={hotels} onAddHotel={async (data) => { await onAddHotel(data); setInnerTab('hotels'); }} onUpdateHotel={async (id, data) => { await onUpdateHotel(id, data); setInnerTab('hotels'); }} onDeleteHotel={onDeleteHotel} bookings={bookings} currentUser={currentUser} onEditRequest={() => setInnerTab('add_hotel')} />
+        <HotelVendorDashboard
+          activeTab={innerTab}
+          hotels={hotels}
+          onAddHotel={async (data) => {
+            await onAddHotel(data);
+            setInnerTab('hotels');
+          }}
+          onUpdateHotel={async (hotelData, extraData) => {
+            const payload = (extraData && typeof extraData === 'object') ? { ...extraData, id: hotelData } : hotelData;
+            await onUpdateHotel(payload);
+            setInnerTab('hotels');
+          }}
+          onDeleteHotel={onDeleteHotel}
+          bookings={bookings}
+          currentUser={currentUser}
+          onEditRequest={() => setInnerTab('add_hotel')}
+        />
       </div>
     </div>
   );
@@ -381,7 +402,15 @@ export default function AdminPortalPage({
     try {
       const res = await api.fetchNotifications({ role: 'admin', userId: currentUser?.id || 'admin' });
       if (res && res.success && Array.isArray(res.notifications)) {
-        setBackendNotifs(res.notifications);
+        setBackendNotifs(prev => {
+          if (
+            prev.length === res.notifications.length &&
+            prev.every((n, idx) => n.id === res.notifications[idx].id && n.is_read === res.notifications[idx].is_read)
+          ) {
+            return prev;
+          }
+          return res.notifications;
+        });
 
         // Detect new unread notifications, trigger sound once and show live toasts
         if (isInitialLoadRef.current) {
@@ -595,30 +624,54 @@ export default function AdminPortalPage({
         return <AdminPromotions />;
       case 'analytics':
         return <AnalyticsView bookings={bookings} hotels={hotels} cars={cars} bikes={bikes} vendors={vendors} allPackages={allPackages} />;
-      case 'admin_flights': {
-        const FlightVendorDashboard = React.lazy(() => import('../vendor/FlightVendorDashboard'));
-        return <div className="p-4"><div className="rounded-3 shadow-sm border" style={{ background: '#fff' }}><React.Suspense fallback={<div className="p-4 text-muted">Loading...</div>}><FlightVendorDashboard activeTab="flights" flights={flights} onAddFlight={onAddFlight} onUpdateFlight={onUpdateFlight} onDeleteFlight={onDeleteFlight} bookings={bookings} currentUser={currentUser} /></React.Suspense></div></div>;
-      }
+      case 'admin_flights':
+        return (
+          <div className="p-4">
+            <div className="rounded-3 shadow-sm border" style={{ background: '#fff' }}>
+              <FlightVendorDashboard activeTab="flights" flights={flights} onAddFlight={onAddFlight} onUpdateFlight={onUpdateFlight} onDeleteFlight={onDeleteFlight} bookings={bookings} currentUser={currentUser} />
+            </div>
+          </div>
+        );
       case 'admin_hotels':
         return <AdminHotelsView hotels={hotels} onAddHotel={onAddHotel} onUpdateHotel={onUpdateHotel} onDeleteHotel={onDeleteHotel} bookings={bookings} currentUser={currentUser} />;
-      case 'admin_vehicles': {
-        const VendorDashboard = React.lazy(() => import('../vendor/VendorDashboard'));
-        return <div className="p-4"><div className="rounded-3 shadow-sm border" style={{ background: '#fff' }}><React.Suspense fallback={<div className="p-4 text-muted">Loading...</div>}><VendorDashboard activeTab={adminVehiclesInnerTab} setActiveTab={setAdminVehiclesInnerTab} vendors={vendors} cars={cars} bikes={bikes} onAddCar={onAddCar} onUpdateCar={onUpdateCar} onDeleteCar={onDeleteCar} onAddBike={onAddBike} onUpdateBike={onUpdateBike} onDeleteBike={onDeleteBike} bookings={bookings} currentUser={currentUser} /></React.Suspense></div></div>;
-      }
+      case 'admin_vehicles':
+        return (
+          <div className="p-4">
+            <div className="rounded-3 shadow-sm border" style={{ background: '#fff' }}>
+              <VendorDashboard activeTab={adminVehiclesInnerTab} setActiveTab={setAdminVehiclesInnerTab} vendors={vendors} cars={cars} bikes={bikes} onAddCar={onAddCar} onUpdateCar={onUpdateCar} onDeleteCar={onDeleteCar} onAddBike={onAddBike} onUpdateBike={onUpdateBike} onDeleteBike={onDeleteBike} bookings={bookings} currentUser={currentUser} />
+            </div>
+          </div>
+        );
       case 'admin_activities':
         return <AdminActivitiesManagement currentUser={currentUser} />;
       case 'availability': {
-        const PMSAvailabilityCalendar = React.lazy(() => import('../vendor/pms/PMSAvailabilityCalendar'));
-        return <div className="p-4"><div className="rounded-3 shadow-sm border" style={{ background: '#fff' }}><React.Suspense fallback={<div className="p-4 text-muted">Loading...</div>}><PMSAvailabilityCalendar currentUser={currentUser} vendorHotels={hotels} /></React.Suspense></div></div>;
+        return (
+          <div className="p-4">
+            <div className="rounded-3 shadow-sm border" style={{ background: '#fff' }}>
+              <AdminAvailabilityCalendar
+                currentUser={currentUser}
+                hotels={hotels}
+                cars={cars}
+                bikes={bikes}
+                packages={allPackages}
+                bookings={bookings}
+              />
+            </div>
+          </div>
+        );
       }
       case 'markup_reports':
         return <div className="p-4"><div className="rounded-3 shadow-sm border" style={{ background: '#fff' }}><AdminMarkupPanel markups={markups} onSaveMarkup={onSaveMarkup} vendors={vendors} bookings={bookings} flights={flights} hotels={hotels} cars={cars} bikes={bikes} packages={allPackages} /></div></div>;
       case 'platform_settings':
         return <AdminPlatformSettings />;
-      case 'payment_settings': {
-        const PMSPaymentSettings = React.lazy(() => import('../vendor/pms/PMSPaymentSettings'));
-        return <div className="p-4"><div className="rounded-3 shadow-sm border" style={{ background: '#fff' }}><React.Suspense fallback={<div className="p-4 text-muted">Loading...</div>}><PMSPaymentSettings currentUser={currentUser} /></React.Suspense></div></div>;
-      }
+      case 'payment_settings':
+        return (
+          <div className="p-4">
+            <div className="rounded-3 shadow-sm border" style={{ background: '#fff' }}>
+              <PMSPaymentSettings currentUser={currentUser} />
+            </div>
+          </div>
+        );
       case 'wallet_recharges':
         return <AdminWalletRecharges vendors={vendors} />;
       case 'payment':

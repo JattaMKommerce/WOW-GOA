@@ -29,7 +29,8 @@ export default function AdminActivitiesManagement({ currentUser }) {
 
   const [formData, setFormData] = useState({
     title: '',
-    type: 'Water Sports',
+    type: 'Activity',
+    category: 'Water Sports',
     location: 'North Goa',
     price: '',
     duration: '2-3 Hours',
@@ -60,7 +61,8 @@ export default function AdminActivitiesManagement({ currentUser }) {
     setEditingItem(null);
     setFormData({
       title: '',
-      type: 'Water Sports',
+      type: 'Activity',
+      category: 'Water Sports',
       location: 'North Goa',
       price: '',
       duration: '2-3 Hours',
@@ -74,9 +76,13 @@ export default function AdminActivitiesManagement({ currentUser }) {
 
   const openEditModal = (item) => {
     setEditingItem(item);
+    const isSight = (item.type || '').toLowerCase() === 'sightseeing' ||
+      (item.category || '').toLowerCase().includes('sight') ||
+      (item.category || '').toLowerCase().includes('tour');
     setFormData({
       title: item.title || item.name || '',
-      type: item.type || item.category || 'Sightseeing & Tours',
+      type: item.type ? (item.type.toLowerCase() === 'sightseeing' ? 'Sightseeing' : 'Activity') : (isSight ? 'Sightseeing' : 'Activity'),
+      category: item.category || (item.type && item.type !== 'Sightseeing' && item.type !== 'Activity' ? item.type : 'Sightseeing & Tours'),
       location: item.location || 'Goa',
       price: item.price || '',
       duration: item.duration || '2-3 Hours',
@@ -105,8 +111,8 @@ export default function AdminActivitiesManagement({ currentUser }) {
       const payload = {
         title: formData.title.trim(),
         name: formData.title.trim(),
-        type: formData.type,
-        category: formData.type,
+        type: formData.type || 'Activity',
+        category: formData.category || formData.type || 'Activity',
         location: formData.location.trim(),
         price: parseInt(formData.price, 10),
         duration: formData.duration.trim(),
@@ -357,9 +363,18 @@ export default function AdminActivitiesManagement({ currentUser }) {
                     </td>
 
                     <td className="py-2.5 px-3">
-                      <span className="badge rounded-pill px-2.5 py-1 fw-bold border border-teal-subtle" style={{ background: '#f0fdf4', color: '#16a34a', fontSize: '0.72rem' }}>
-                        🎯 {item.type || item.category || 'Activity'}
-                      </span>
+                      <div className="d-flex flex-column gap-1">
+                        <span className="badge rounded-pill px-2.5 py-0.5 fw-bold" style={
+                          String(item.type || '').toLowerCase() === 'sightseeing'
+                            ? { background: '#fef3c7', color: '#92400e', fontSize: '0.7rem', width: 'fit-content' }
+                            : { background: '#f0fdf4', color: '#16a34a', fontSize: '0.7rem', width: 'fit-content' }
+                        }>
+                          {String(item.type || '').toLowerCase() === 'sightseeing' ? '🏛️ Sightseeing' : '🎯 Activity'}
+                        </span>
+                        <span className="text-muted" style={{ fontSize: '0.72rem' }}>
+                          {item.category || item.type || 'General'}
+                        </span>
+                      </div>
                     </td>
 
                     <td className="py-2.5 px-3">
@@ -456,7 +471,7 @@ export default function AdminActivitiesManagement({ currentUser }) {
                   )}
 
                   <div className="row g-3">
-                    <div className="col-md-8">
+                    <div className="col-12">
                       <label className="form-label fw-bold small text-secondary">Activity Title *</label>
                       <input
                         type="text"
@@ -468,21 +483,33 @@ export default function AdminActivitiesManagement({ currentUser }) {
                       />
                     </div>
 
-                    <div className="col-md-4">
-                      <label className="form-label fw-bold small text-secondary">Category *</label>
+                    <div className="col-md-6">
+                      <label className="form-label fw-bold small text-secondary">Experience Type *</label>
                       <select
                         className="form-select"
                         value={formData.type}
                         onChange={e => setFormData({ ...formData, type: e.target.value })}
                       >
+                        <option value="Sightseeing">🏛️ Sightseeing Tour</option>
+                        <option value="Activity">🎯 Adventure / Activity</option>
+                      </select>
+                    </div>
+
+                    <div className="col-md-6">
+                      <label className="form-label fw-bold small text-secondary">Sub-Category *</label>
+                      <select
+                        className="form-select"
+                        value={formData.category}
+                        onChange={e => setFormData({ ...formData, category: e.target.value })}
+                      >
+                        <option value="Heritage & Culture">Heritage & Culture</option>
+                        <option value="Sightseeing & Tours">Sightseeing & Tours</option>
                         <option value="Water Sports">Water Sports</option>
                         <option value="Adventure">Adventure</option>
-                        <option value="Sightseeing & Tours">Sightseeing & Tours</option>
                         <option value="Island Trips">Island Trips</option>
-                        <option value="Heritage & Culture">Heritage & Culture</option>
                         <option value="Cruises & Waterways">Cruises & Waterways</option>
                         <option value="Nightlife & Events">Nightlife & Events</option>
-                        <option value="Activity">General Activity</option>
+                        <option value="Experience">General Experience</option>
                       </select>
                     </div>
 

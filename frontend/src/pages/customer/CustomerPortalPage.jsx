@@ -17,6 +17,7 @@ import CustomerPaymentsTab from '../../components/customer/CustomerPaymentsTab';
 import CustomerNotificationsTab from '../../components/customer/CustomerNotificationsTab';
 import CustomerProfileTab from '../../components/customer/CustomerProfileTab';
 import CustomerSupportTab from '../../components/customer/CustomerSupportTab';
+import CustomerActivitiesTab from '../../components/customer/CustomerActivitiesTab';
 import BookingModal from '../../components/BookingModal';
 import BookingVoucher from '../../components/common/BookingVoucher';
 import * as api from '../../services/api';
@@ -36,6 +37,7 @@ const SIDEBAR_GROUPS = [
     items: [
       { id: 'selfdrive', label: 'My Self Drive Holidays', icon: <Compass size={16} />, highlight: true },
       { id: 'driver-trips', label: 'Car + Driver Trips', icon: <Users size={16} /> },
+      { id: 'activities', label: 'Sightseeing & Activities', icon: <Sparkles size={16} /> },
       { id: 'bookings', label: 'All My Bookings', icon: <Calendar size={16} /> },
     ]
   },
@@ -66,6 +68,7 @@ export default function CustomerPortalPage({
   bikes = [],
   hotels = [],
   flights = [],
+  activities = [],
   onNavigateHome
 }) {
   const [activeTab, setActiveTab] = useState('overview');
@@ -630,6 +633,7 @@ export default function CustomerPortalPage({
   const TOP_NAV_ITEMS = [
     { id: 'overview', label: 'Dashboard', icon: <LayoutDashboard size={15} /> },
     { id: 'selfdrive', label: 'My Self Drive Holidays', icon: <Compass size={15} />, highlight: true },
+    { id: 'activities', label: 'Sightseeing & Activities', icon: <Sparkles size={15} /> },
     { id: 'bookings', label: 'My Bookings', icon: <Calendar size={15} /> },
     { id: 'explore', label: 'Explore', icon: <Sparkles size={15} /> },
     { id: 'wallet', label: 'Wallet', icon: <Wallet size={15} /> },
@@ -1350,6 +1354,16 @@ export default function CustomerPortalPage({
                     currentUser={customerUser}
                     bookings={customerBookings}
                     onOpenBookingDetails={handleOpenBookingDetails}
+                  />
+                )}
+
+                {activeTab === 'activities' && (
+                  <CustomerActivitiesTab 
+                    currentUser={customerUser}
+                    activities={activities}
+                    bookings={customerBookings}
+                    onOpenBookingDetails={handleOpenBookingDetails}
+                    onNavigateTab={(tab) => setActiveTab(tab)}
                   />
                 )}
 

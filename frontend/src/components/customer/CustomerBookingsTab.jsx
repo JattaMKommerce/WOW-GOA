@@ -232,20 +232,20 @@ export default function CustomerBookingsTab({
     if (isPackageBooking(item)) return <Package size={15} className="text-primary" />;
     if (isDriverBooking(item)) return <Car size={15} className="text-warning" />;
     if (isSelfDriveBooking(item)) return <Compass size={15} className="text-warning" />;
+    if (isActivityBooking(item)) return <MapPin size={15} className="text-danger" />;
     if (isBikeBooking(item)) return <Car size={15} className="text-info" />;
     if (isCarBooking(item)) return <Car size={15} className="text-primary" />;
     return <Package size={15} className="text-primary" />;
   };
 
-  const getCategoryTitle = (b) => {
+  const getCategoryBadge = (b) => {
     if (isCraftBooking(b)) return '✨ Craft My Trip';
     if (isFlightBooking(b)) return '✈️ Flight Booking';
-    if (isHotelBooking(b)) {
-      return isDriverBooking(b) ? '🏨 Hotel + Chauffeur' : '🏨 Hotel Stay';
-    }
-    if (isPackageBooking(b)) return '🌴 Trip Package';
-    if (isSelfDriveBooking(b)) return '⭐ Self Drive Holiday';
     if (isDriverBooking(b)) return '🚗 Vehicle + Driver';
+    if (isSelfDriveBooking(b)) return '⭐ Self Drive Holiday';
+    if (isActivityBooking(b)) return '🎯 Sightseeing & Activity';
+    if (isHotelBooking(b)) return '🏨 Hotel & Resort';
+    if (isPackageBooking(b)) return '🌴 Trip Package';
     if (isBikeBooking(b)) return '🏍️ Bike Rental';
     if (isCarBooking(b)) return '🚗 Car Rental';
     return b.package_type || (b.type === 'package' ? '🌴 Trip Package' : b.type) || '🌴 Trip Package';
@@ -257,7 +257,7 @@ export default function CustomerBookingsTab({
     if (s === 'upcoming') return <span className="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 px-2.5 py-1 rounded-pill fw-bold">Upcoming</span>;
     if (s === 'ongoing') return <span className="badge bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25 px-2.5 py-1 rounded-pill fw-bold">Ongoing</span>;
     if (s === 'completed') return <span className="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2.5 py-1 rounded-pill fw-bold">Completed</span>;
-    if (s === 'cancelled') return <span className="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25 px-2.5 py-1 rounded-pill fw-bold">Cancelled</span>;
+    if (s === 'cancelled') return <span className="badge bg-danger bg-danger-subtle text-danger border border-danger border-opacity-25 px-2.5 py-1 rounded-pill fw-bold">Cancelled</span>;
     if (s.includes('review')) return <span className="badge bg-warning bg-opacity-10 text-dark border border-warning border-opacity-25 px-2.5 py-1 rounded-pill fw-bold">Under Review</span>;
     return <span className="badge bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25 px-2.5 py-1 rounded-pill fw-bold">Pending Confirmation</span>;
   };
@@ -267,6 +267,7 @@ export default function CustomerBookingsTab({
     all: myBookings.length,
     selfdrive: myBookings.filter(isSelfDriveBooking).length,
     driver: myBookings.filter(isDriverBooking).length,
+    activity: myBookings.filter(isActivityBooking).length,
     package: myBookings.filter(isPackageBooking).length,
     hotel: myBookings.filter(isHotelBooking).length,
     flight: myBookings.filter(isFlightBooking).length,
@@ -318,6 +319,7 @@ export default function CustomerBookingsTab({
               { id: 'hotel', label: `🏨 Hotels (${countByType.hotel})` },
               { id: 'flight', label: `✈️ Flights (${countByType.flight})` },
               { id: 'craftmytrip', label: `✨ Craft My Trip (${countByType.craftmytrip})` },
+              { id: 'activity', label: `🎯 Sightseeing & Activities (${countByType.activity})` },
               { id: 'car', label: `🚗 Cars (${countByType.car})` },
               { id: 'bike', label: `🏍️ Bikes (${countByType.bike})` },
             ].map(cat => (
