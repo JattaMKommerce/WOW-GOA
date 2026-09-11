@@ -27,6 +27,19 @@ const STATUS_LIST = [
   'Closed-Lost'
 ];
 
+const NEXT_ACTION_PRESETS = [
+  'Call customer',
+  'WhatsApp customer',
+  'Confirm travel dates',
+  'Confirm budget',
+  'Send quotation',
+  'Share vehicle/hotel options',
+  'Follow up tomorrow',
+  'Awaiting customer response',
+  'Convert to booking',
+  'Mark as Lost'
+];
+
 function SourceBadge({ source }) {
   const configs = {
     'Hotel Enquiries': { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe', icon: Building },
@@ -64,6 +77,7 @@ export default function LeadManagement({ usersList = [], currentUser }) {
   const [assignModalLead, setAssignModalLead] = useState(null);
   const [selectedAssignee, setSelectedAssignee] = useState('');
   const [assigning, setAssigning] = useState(false);
+  const [showTranscript, setShowTranscript] = useState(false);
 
   // Lead / Itinerary Preview Modal State
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -156,29 +170,36 @@ export default function LeadManagement({ usersList = [], currentUser }) {
     nextAction: ''
   });
 
-  const isSubAdmin = currentUser?.role === 'subadmin' || currentUser?.role === 'sub_admin' || currentUser?.role === 'agent';
-  const currentUserName = currentUser?.name || currentUser?.username || 'Admin';
+  const isSuperAdmin = currentUser?.role === 'superadmin' || currentUser?.role === 'super_admin' || 
+    (typeof window !== 'undefined' && (window.location.pathname.startsWith('/superadmin') || window.location.pathname.startsWith('/super-admin')));
+  const isSubAdmin = currentUser?.role === 'subadmin' || currentUser?.role === 'sub_admin' || currentUser?.role === 'agent' ||
+    (typeof window !== 'undefined' && (window.location.pathname.startsWith('/sub-admin') || window.location.pathname.startsWith('/subadmin')));
+  const isAdmin = !isSuperAdmin && !isSubAdmin;
+  const currentUserName = currentUser?.name || currentUser?.username || (isSuperAdmin ? 'Super Admin' : (isAdmin ? 'Admin' : 'Sub-Admin'));
+  const currentUserRole = currentUser?.role || (isSuperAdmin ? 'superadmin' : (isAdmin ? 'admin' : 'subadmin'));
 
-  // Load assignable team members (Sub-Admins ONLY)
+  // Load assignable team members (Admins + Sub-Admins strictly)
   const loadAssignableUsers = useCallback(async () => {
     try {
       const users = await api.fetchAssignableUsers();
-      const isSubAdminRole = (u) => {
-        const r = (u.role || '').toLowerCase();
-        const n = (u.name || u.username || '').toLowerCase();
-        const excluded = ['admin', 'superadmin', 'super_admin', 'go_operator', 'goa_operator'];
-        return !excluded.includes(r) && !excluded.includes(n) && ['subadmin', 'sub_admin', 'agent'].includes(r);
+      const isAssignable = (u) => {
+        const r = (u.role || '').toLowerCase().trim();
+        const s = (u.status || 'active').toLowerCase().trim();
+        return ['admin', 'subadmin', 'sub_admin', 'agent'].includes(r) && s === 'active';
       };
 
       if (Array.isArray(users) && users.length > 0) {
-        setAssignableUsers(users.filter(isSubAdminRole));
+        setAssignableUsers(users.filter(isAssignable));
       } else if (usersList && usersList.length > 0) {
-        setAssignableUsers(usersList.filter(isSubAdminRole));
+        setAssignableUsers(usersList.filter(isAssignable));
       }
     } catch (e) {
       if (usersList && usersList.length > 0) {
-        const excluded = ['admin', 'superadmin', 'super_admin', 'go_operator', 'goa_operator'];
-        setAssignableUsers(usersList.filter(u => !excluded.includes((u.role || '').toLowerCase()) && ['subadmin', 'sub_admin', 'agent'].includes((u.role || '').toLowerCase())));
+        setAssignableUsers(usersList.filter(u => {
+          const r = (u.role || '').toLowerCase().trim();
+          const s = (u.status || 'active').toLowerCase().trim();
+          return ['admin', 'subadmin', 'sub_admin', 'agent'].includes(r) && s === 'active';
+        }));
       }
     }
   }, [usersList]);
@@ -195,15 +216,38 @@ export default function LeadManagement({ usersList = [], currentUser }) {
     try {
       const data = await api.fetchLeads();
       if (Array.isArray(data)) {
-        // If logged in as Sub-Admin/Agent, ensure client-side filtering as well
-        const visibleLeads = isSubAdmin 
-          ? data.filter(l => {
-              const a = (l.assigned_to || l.assignedTo || '').toLowerCase();
-              const u = (currentUser?.username || '').toLowerCase();
-              const n = (currentUser?.name || '').toLowerCase();
-              return a.includes(u) || a.includes(n) || a === u;
-            })
-          : data;
+        // Exact Flow 2 Lead Scoping
+        let visibleLeads = data;
+        if (isSubAdmin) {
+          // Sub-Admin strictly sees only leads assigned to them
+          visibleLeads = data.filter(l => {
+            const a = (l.assigned_to || l.assignedTo || '').toLowerCase().trim();
+            const u = (currentUser?.username || '').toLowerCase().trim();
+            const n = (currentUser?.name || '').toLowerCase().trim();
+            return (u && (a === u || a.includes(u))) || (n && (a === n || a.includes(n)));
+          });
+        } else if (isAdmin) {
+          // Admin sees leads assigned to Admin, unassigned leads, and leads assigned to Sub-Admins to monitor their work
+          visibleLeads = data.filter(l => {
+            const a = (l.assigned_to || l.assignedTo || '').toLowerCase().trim();
+            const u = (currentUser?.username || '').toLowerCase().trim();
+            const n = (currentUser?.name || '').toLowerCase().trim();
+            const isUnassigned = !a || a === 'unassigned' || a === 'none' || a === 'null';
+            const isAssignedToThisAdmin = a === 'admin' || (u && (a === u || a.includes(u))) || (n && (a === n || a.includes(n)));
+            
+            // Check if assigned to any Sub-Admin / Agent
+            const isAssignedToSubAdmin = assignableUsers.some(sub => {
+              const subR = (sub.role || '').toLowerCase();
+              if (!['subadmin', 'sub_admin', 'agent'].includes(subR)) return false;
+              const subU = (sub.username || '').toLowerCase().trim();
+              const subN = (sub.name || '').toLowerCase().trim();
+              return (subU && a.includes(subU)) || (subN && a.includes(subN));
+            });
+
+            return isUnassigned || isAssignedToThisAdmin || isAssignedToSubAdmin;
+          });
+        }
+        // If isSuperAdmin: sees all leads without filtering
 
         setLeads(visibleLeads);
         setLastSyncedAt(Date.now());
@@ -234,7 +278,7 @@ export default function LeadManagement({ usersList = [], currentUser }) {
         setTimeout(() => setIsSyncing(false), 300);
       }
     }
-  }, [isSubAdmin, currentUser]);
+  }, [isSuperAdmin, isSubAdmin, isAdmin, currentUser, assignableUsers]);
 
   // Fetch comments for selected lead (silent by default to prevent flickering)
   const loadComments = useCallback(async (leadId, showSpinner = false) => {
@@ -250,20 +294,60 @@ export default function LeadManagement({ usersList = [], currentUser }) {
     }
   }, [currentUser]);
 
-  // Initial fetch and event-driven updates (NO continuous auto-refresh polling)
+  // Initial fetch and event-driven updates + periodic multi-device synchronization
   useEffect(() => {
     loadLeads();
     loadAssignableUsers();
 
-    const handleRealtimeLead = () => loadLeads(true);
+    const handleRealtimeLead = () => {
+      loadLeads(true);
+      if (selectedLeadRef.current?.id) {
+        loadComments(selectedLeadRef.current.id);
+      }
+    };
     window.addEventListener('realtime-lead-created', handleRealtimeLead);
     window.addEventListener('new-booking-created', handleRealtimeLead);
+    window.addEventListener('tripgalileo-notification-sync', handleRealtimeLead);
+    window.addEventListener('tripgalileo-booking-sync', handleRealtimeLead);
+
+    // Cross-device / separate computer synchronization (Flow 2 reliable sync)
+    const syncInterval = setInterval(() => {
+      loadLeads(false);
+      if (selectedLeadRef.current?.id) {
+        loadComments(selectedLeadRef.current.id, false);
+      }
+    }, 4000);
+
+    // BroadcastChannel cross-tab synchronization
+    let bcBookings = null;
+    let bcNotif = null;
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        bcBookings = new BroadcastChannel('tripgalileo_bookings_sync');
+        bcBookings.onmessage = (ev) => {
+          if (ev.data?.type && ev.data.type.startsWith('lead')) {
+            handleRealtimeLead();
+          }
+        };
+        bcNotif = new BroadcastChannel('tripgalileo_notifications_sync');
+        bcNotif.onmessage = (ev) => {
+          if (ev.data?.type === 'lead') {
+            handleRealtimeLead();
+          }
+        };
+      }
+    } catch (e) {}
 
     return () => {
+      clearInterval(syncInterval);
       window.removeEventListener('realtime-lead-created', handleRealtimeLead);
       window.removeEventListener('new-booking-created', handleRealtimeLead);
+      window.removeEventListener('tripgalileo-notification-sync', handleRealtimeLead);
+      window.removeEventListener('tripgalileo-booking-sync', handleRealtimeLead);
+      if (bcBookings) bcBookings.close();
+      if (bcNotif) bcNotif.close();
     };
-  }, [loadLeads, loadAssignableUsers]);
+  }, [loadLeads, loadAssignableUsers, loadComments]);
 
   // Load comments when selectedLead ID changes
   const selectedLeadId = selectedLead?.id;
@@ -390,14 +474,13 @@ export default function LeadManagement({ usersList = [], currentUser }) {
     setAssignModalLead(lead);
     setSelectedAssignee(lead.assigned_to || lead.assignedTo || 'Unassigned');
   };
-
   const handleConfirmAssignment = async (e) => {
     if (e) e.preventDefault();
     if (!assignModalLead) return;
 
     setAssigning(true);
     try {
-      const res = await api.assignLead(assignModalLead.id, selectedAssignee, currentUserName);
+      const res = await api.assignLead(assignModalLead.id, selectedAssignee, currentUserName, currentUserRole);
       const nowStr = res.assigned_at || new Date().toISOString().replace('T', ' ').slice(0, 19);
 
       // Optimistic update
@@ -413,7 +496,7 @@ export default function LeadManagement({ usersList = [], currentUser }) {
         setSelectedLead(prev => ({ 
           ...prev, 
           assigned_to: selectedAssignee, 
-          assignedTo: selectedAssignee,
+          assignedTo: selectedAssignee, 
           assigned_by: currentUserName,
           assigned_at: nowStr 
         }));
@@ -435,7 +518,10 @@ export default function LeadManagement({ usersList = [], currentUser }) {
     }
 
     try {
-      await api.updateLeadStatus(leadId, nextStatus);
+      await api.updateLeadStatus(leadId, nextStatus, currentUser || { id: 'admin', name: currentUserName, role: currentUserRole });
+      if (selectedLead && selectedLead.id === leadId) {
+        await loadComments(leadId);
+      }
     } catch (err) {
       console.error("Failed to update status on server:", err);
       loadLeads(false);
@@ -446,10 +532,11 @@ export default function LeadManagement({ usersList = [], currentUser }) {
     if (!selectedLead) return;
     setSavingNextAction(true);
     try {
-      await api.updateNextAction(selectedLead.id, nextActionDraft);
+      await api.updateNextAction(selectedLead.id, nextActionDraft, currentUser || { id: 'admin', name: currentUserName, role: currentUserRole });
       setLeads(prev => prev.map(l => l.id === selectedLead.id ? { ...l, next_action: nextActionDraft, nextAction: nextActionDraft } : l));
       setSelectedLead(prev => ({ ...prev, next_action: nextActionDraft, nextAction: nextActionDraft }));
       setEditingNextAction(false);
+      await loadComments(selectedLead.id);
     } catch (err) {
       alert("Failed to save next action: " + err.message);
     } finally {
@@ -481,7 +568,7 @@ export default function LeadManagement({ usersList = [], currentUser }) {
     setNewCommentText('');
 
     try {
-      const res = await api.addLeadComment(selectedLead.id, draftText, currentUser || { id: 'admin', name: currentUserName, role: 'admin' });
+      const res = await api.addLeadComment(selectedLead.id, draftText, currentUser || { id: 'admin', name: currentUserName, role: currentUserRole });
       if (res.comment) {
         setComments(prev => [...prev, res.comment]);
       } else {
@@ -727,7 +814,7 @@ export default function LeadManagement({ usersList = [], currentUser }) {
           <table className="table align-middle mb-0" style={{ fontSize: '0.83rem' }}>
             <thead style={{ background: '#f8fafc' }}>
               <tr>
-                {['Lead ID', 'Customer Contact', 'Source & Service', 'Assignment State', 'Next Actionable Step', 'Pipeline Status', 'Actions'].map(h => (
+                {['Lead ID', 'Customer Contact', 'Source & Customer Requirement', 'Assignment State', 'Next Actionable Step', 'Pipeline Status', 'Actions'].map(h => (
                   <th key={h} className="px-3 py-3 fw-bold" style={{ color: '#475569', fontSize: '0.68rem', textTransform: 'uppercase', border: 'none', borderBottom: '1px solid rgba(0,0,0,0.07)' }}>
                     {h}
                   </th>
@@ -768,15 +855,34 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                       </div>
                     </td>
 
-                    {/* Lead Source & Service */}
-                    <td className="px-3 py-3" style={{ maxWidth: '240px' }}>
-                      <div className="mb-1"><SourceBadge source={item.source || 'Hotel Enquiries'} /></div>
-                      <div className="fw-semibold text-truncate" title={item.service} style={{ color: '#0D1B2E', fontSize: '0.78rem' }}>
-                        {item.service || 'General Trip Consultation'}
+                    {/* Lead Source & Customer Requirement */}
+                    <td className="px-3 py-3" style={{ maxWidth: '260px' }}>
+                      <div className="d-flex align-items-center gap-1.5 mb-1 flex-wrap">
+                        <SourceBadge source={item.source || 'Hotel Enquiries'} />
+                        {item.pax && (
+                          <span className="badge rounded-pill bg-light text-dark border px-2 py-0.5" style={{ fontSize: '0.67rem' }}>
+                            👥 {item.pax} Pax
+                          </span>
+                        )}
+                        {item.budget && (
+                          <span className="badge rounded-pill bg-success-subtle text-success border border-success-subtle px-2 py-0.5 fw-bold" style={{ fontSize: '0.67rem' }}>
+                            {item.budget}
+                          </span>
+                        )}
                       </div>
-                      {item.budget && (
-                        <div style={{ fontSize: '0.7rem', color: '#16a34a', fontWeight: 600 }}>
-                          Est. Budget: {item.budget}
+                      {/* Prominently display Customer Requirement */}
+                      {item.notes && !item.notes.includes('Inquired via') ? (
+                        <div className="fw-bold text-dark text-truncate" title={item.notes} style={{ fontSize: '0.78rem', color: '#0F172A' }}>
+                          <span className="text-primary me-1">📌</span>{item.notes}
+                        </div>
+                      ) : (
+                        <div className="fw-semibold text-truncate" title={item.service} style={{ color: '#0D1B2E', fontSize: '0.78rem' }}>
+                          {item.service || 'General Trip Consultation'}
+                        </div>
+                      )}
+                      {item.service && item.notes && !item.notes.includes('Inquired via') && (
+                        <div className="text-muted text-truncate mt-0.5" style={{ fontSize: '0.68rem' }}>
+                          {item.service}
                         </div>
                       )}
                     </td>
@@ -789,7 +895,7 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                             <span className="badge rounded-pill px-2 py-1 fw-bold" style={{ background: '#faf5ff', color: '#7c3aed', border: '1px solid #e9d5ff', fontSize: '0.72rem' }}>
                               <UserCheck size={11} className="me-1 inline" /> {assignee}
                             </span>
-                            {!isSubAdmin && (
+                            {isSuperAdmin && (
                               <button 
                                 onClick={() => handleOpenAssignModal(item)}
                                 className="btn btn-sm btn-link p-0 text-decoration-none fw-bold"
@@ -810,7 +916,7 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                           <span className="badge rounded-pill px-2 py-1 fw-bold" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', fontSize: '0.7rem' }}>
                             Unassigned
                           </span>
-                          {!isSubAdmin && (
+                          {isSuperAdmin && (
                             <button 
                               onClick={() => handleOpenAssignModal(item)}
                               className="btn btn-sm px-2 py-0.5 rounded-pill fw-bold text-white shadow-none"
@@ -826,11 +932,9 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                     {/* Next Actionable Step */}
                     <td className="px-3 py-3" style={{ maxWidth: '220px' }}>
                       {nextAct ? (
-                        <div className="d-flex align-items-start gap-1">
-                          <CornerDownRight size={13} className="text-warning flex-shrink-0 mt-0.5" />
-                          <span className="fw-semibold text-dark text-truncate" title={nextAct} style={{ fontSize: '0.76rem' }}>
-                            {nextAct}
-                          </span>
+                        <div className="d-inline-flex align-items-center gap-1.5 px-2.5 py-1 rounded-pill" style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#b45309', fontSize: '0.72rem', fontWeight: 600, maxWidth: '210px' }}>
+                          <Clock size={12} className="flex-shrink-0 text-amber-600" />
+                          <span className="text-truncate" title={nextAct}>{nextAct}</span>
                         </div>
                       ) : (
                         <span className="text-muted fst-italic" style={{ fontSize: '0.72rem' }}>No next action set</span>
@@ -1003,7 +1107,7 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                 <span className="fw-bold text-uppercase" style={{ fontSize: '0.72rem', color: '#7c3aed', letterSpacing: '0.5px' }}>
                   LEAD ASSIGNMENT
                 </span>
-                {!isSubAdmin && (
+                {isSuperAdmin && (
                   <button 
                     onClick={() => handleOpenAssignModal(selectedLead)}
                     className="btn btn-sm btn-link p-0 text-decoration-none fw-bold"
@@ -1031,11 +1135,122 @@ export default function LeadManagement({ usersList = [], currentUser }) {
               )}
             </div>
 
-            {/* 2. NEXT ACTIONABLE STEP SECTION */}
+            {/* 2. CUSTOMER REQUIREMENT / ENQUIRY SECTION */}
+            <div className="p-3 rounded-3 mb-3" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+              <div className="d-flex align-items-center justify-content-between mb-2">
+                <span className="fw-bold text-success text-uppercase d-flex align-items-center gap-1.5" style={{ fontSize: '0.72rem', letterSpacing: '0.5px' }}>
+                  📌 CUSTOMER REQUIREMENT / ENQUIRY
+                </span>
+                {!editingNotes ? (
+                  <button 
+                    onClick={() => { setEditingNotes(true); setNotesDraft(selectedLead.notes || ''); }}
+                    className="btn btn-sm btn-link p-0 text-decoration-none fw-bold"
+                    style={{ fontSize: '0.72rem', color: '#16a34a' }}
+                  >
+                    Edit Requirement
+                  </button>
+                ) : (
+                  <div className="d-flex gap-2">
+                    <button onClick={() => setEditingNotes(false)} className="btn btn-sm btn-link p-0 text-secondary text-decoration-none" style={{ fontSize: '0.72rem' }}>
+                      Cancel
+                    </button>
+                    <button onClick={handleSaveNotes} disabled={savingNotes} className="btn btn-sm btn-success py-0 px-2 fw-bold text-white" style={{ fontSize: '0.72rem' }}>
+                      <Save size={11} className="me-1" /> Save
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {editingNotes ? (
+                <div>
+                  <textarea
+                    rows={2}
+                    className="form-control form-control-sm mb-1.5"
+                    placeholder="e.g. South Goa trip – 3 days, 4 people, Budget ₹20,000"
+                    value={notesDraft}
+                    onChange={e => setNotesDraft(e.target.value)}
+                    style={{ fontSize: '0.8rem' }}
+                  />
+                  <div className="text-muted" style={{ fontSize: '0.67rem' }}>
+                    💡 <em>Refining this requirement permanently protects it from automated overwrite.</em>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <p className="mb-1 text-dark fw-bold" style={{ fontSize: '0.85rem' }}>
+                    {selectedLead.notes || <span className="text-muted fw-normal fst-italic">No requirement recorded yet.</span>}
+                  </p>
+                  <div className="d-flex align-items-center gap-2 flex-wrap mt-1">
+                    {selectedLead.pax && (
+                      <span className="badge rounded-pill bg-white text-dark border px-2 py-0.5" style={{ fontSize: '0.68rem' }}>
+                        👥 {selectedLead.pax} Guests
+                      </span>
+                    )}
+                    {selectedLead.budget && (
+                      <span className="badge rounded-pill bg-white text-success border border-success-subtle px-2 py-0.5 fw-bold" style={{ fontSize: '0.68rem' }}>
+                        💰 Budget: {selectedLead.budget}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Chatbot Transcript Viewer Toggle if chat_history exists */}
+              {selectedLead.chat_history && (
+                <div className="mt-2 pt-2 border-top border-success-subtle">
+                  <button
+                    type="button"
+                    onClick={() => setShowTranscript(prev => !prev)}
+                    className="btn btn-xs btn-outline-success py-0.5 px-2 rounded-pill d-inline-flex align-items-center gap-1.5 fw-semibold"
+                    style={{ fontSize: '0.7rem' }}
+                  >
+                    <Sparkles size={11} /> {showTranscript ? 'Hide AI Chatbot Transcript' : 'View AI Chatbot Transcript'}
+                  </button>
+
+                  {showTranscript && (
+                    <div className="mt-2 p-2.5 rounded-3 bg-white border border-success-subtle d-flex flex-column gap-2" style={{ maxHeight: '220px', overflowY: 'auto' }}>
+                      {(() => {
+                        let msgs = [];
+                        try {
+                          msgs = typeof selectedLead.chat_history === 'string' ? JSON.parse(selectedLead.chat_history) : (selectedLead.chat_history || []);
+                        } catch (e) {
+                          msgs = [];
+                        }
+                        if (!Array.isArray(msgs) || msgs.length === 0) {
+                          return <div className="text-muted small">No transcript messages recorded.</div>;
+                        }
+                        return msgs.map((m, idx) => {
+                          const isUser = m.role === 'user';
+                          return (
+                            <div 
+                              key={idx}
+                              className={`p-2 rounded-3 ${isUser ? 'align-self-end bg-light border text-dark' : 'align-self-start text-white'}`}
+                              style={{ 
+                                maxWidth: '85%', 
+                                fontSize: '0.74rem',
+                                background: isUser ? '#f1f5f9' : '#0D1B2E',
+                                color: isUser ? '#0f172a' : '#fff'
+                              }}
+                            >
+                              <div className="fw-bold mb-0.5" style={{ fontSize: '0.65rem', color: isUser ? '#2563eb' : '#FF8A00' }}>
+                                {isUser ? (selectedLead.name || 'Customer') : 'Sophia AI'}
+                              </div>
+                              <div>{m.content}</div>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 3. NEXT ACTIONABLE STEP SECTION */}
             <div className="p-3 rounded-3 mb-3" style={{ background: '#fffbeb', border: '1px solid #fef3c7' }}>
               <div className="d-flex align-items-center justify-content-between mb-2">
-                <span className="fw-bold text-warning text-uppercase" style={{ fontSize: '0.72rem', letterSpacing: '0.5px' }}>
-                  NEXT ACTIONABLE STEP
+                <span className="fw-bold text-warning text-uppercase d-flex align-items-center gap-1.5" style={{ fontSize: '0.72rem', letterSpacing: '0.5px' }}>
+                  <Clock size={13} className="text-warning" /> NEXT ACTIONABLE STEP
                 </span>
                 {!editingNextAction ? (
                   <button 
@@ -1058,14 +1273,37 @@ export default function LeadManagement({ usersList = [], currentUser }) {
               </div>
 
               {editingNextAction ? (
-                <input
-                  type="text"
-                  className="form-control form-control-sm"
-                  placeholder="e.g. Send hotel quotation tomorrow by 2 PM..."
-                  value={nextActionDraft}
-                  onChange={e => setNextActionDraft(e.target.value)}
-                  style={{ fontSize: '0.8rem' }}
-                />
+                <div>
+                  <input
+                    type="text"
+                    className="form-control form-control-sm mb-2"
+                    placeholder="e.g. Call customer to confirm travel dates..."
+                    value={nextActionDraft}
+                    onChange={e => setNextActionDraft(e.target.value)}
+                    style={{ fontSize: '0.8rem' }}
+                  />
+                  <div className="mb-1" style={{ fontSize: '0.68rem', fontWeight: 600, color: '#92400e' }}>
+                    QUICK PRESETS (Click to select):
+                  </div>
+                  <div className="d-flex flex-wrap gap-1.5">
+                    {NEXT_ACTION_PRESETS.map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setNextActionDraft(preset)}
+                        className="btn btn-xs rounded-pill px-2 py-0.5 border text-start"
+                        style={{
+                          fontSize: '0.68rem',
+                          background: nextActionDraft === preset ? '#f59e0b' : '#fff',
+                          color: nextActionDraft === preset ? '#fff' : '#78350f',
+                          borderColor: nextActionDraft === preset ? '#f59e0b' : '#fde68a'
+                        }}
+                      >
+                        {preset}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               ) : (
                 <p className="mb-0 text-dark fw-semibold" style={{ fontSize: '0.82rem' }}>
                   {selectedLead.next_action || selectedLead.nextAction || <span className="text-muted fw-normal fst-italic">No next action set. Click 'Edit Action' to define next step.</span>}
@@ -1236,15 +1474,31 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                   <span className="text-muted">Customer Name:</span>
                   <span className="fw-bold text-dark">{assignModalLead.name}</span>
                 </div>
-                <div className="d-flex justify-content-between" style={{ fontSize: '0.8rem' }}>
+                <div className="d-flex justify-content-between mb-1" style={{ fontSize: '0.8rem' }}>
                   <span className="text-muted">Service / Item:</span>
                   <span className="fw-semibold text-secondary">{assignModalLead.service || 'Trip Inquiry'}</span>
                 </div>
+                <div className="d-flex justify-content-between mb-1" style={{ fontSize: '0.8rem' }}>
+                  <span className="text-muted">Current Assignee:</span>
+                  <span className="fw-bold text-purple" style={{ color: '#7c3aed' }}>{assignModalLead.assigned_to || assignModalLead.assignedTo || 'Unassigned'}</span>
+                </div>
+                {assignModalLead.assigned_by && (
+                  <div className="d-flex justify-content-between mb-1" style={{ fontSize: '0.76rem' }}>
+                    <span className="text-muted">Assigned By:</span>
+                    <span className="text-secondary">{assignModalLead.assigned_by}</span>
+                  </div>
+                )}
+                {assignModalLead.assigned_at && (
+                  <div className="d-flex justify-content-between" style={{ fontSize: '0.74rem' }}>
+                    <span className="text-muted">Assigned On:</span>
+                    <span className="text-secondary">{String(assignModalLead.assigned_at).slice(0, 16)}</span>
+                  </div>
+                )}
               </div>
 
               <div className="mb-3">
                 <label className="form-label fw-bold" style={{ fontSize: '0.78rem', color: '#475569' }}>
-                  Assign To Sub-Admin / Agent *
+                  Assign Directly To (Admin or Sub-Admin) *
                 </label>
                 <select
                   className="form-select fw-bold"
@@ -1254,21 +1508,35 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                   required
                 >
                   <option value="Unassigned">-- Unassigned --</option>
-                  {assignableUsers
-                    .filter(u => {
-                      const r = (u.role || '').toLowerCase();
-                      const n = (u.name || u.username || '').toLowerCase();
-                      const excluded = ['admin', 'superadmin', 'super_admin', 'go_operator', 'goa_operator'];
-                      return !excluded.includes(r) && !excluded.includes(n);
-                    })
-                    .map(u => (
-                      <option key={u.id || u.username} value={u.name || u.username}>
-                        {u.name || u.username} ({u.role || 'subadmin'}) — {u.status || 'active'}
-                      </option>
-                    ))}
+                  
+                  {/* Administrators */}
+                  {assignableUsers.filter(u => (u.role || '').toLowerCase() === 'admin').length > 0 && (
+                    <optgroup label="── Administrators ──">
+                      {assignableUsers
+                        .filter(u => (u.role || '').toLowerCase() === 'admin')
+                        .map(u => (
+                          <option key={u.id || u.username} value={u.name || u.username}>
+                            {u.name || u.username} (Admin) — {u.email || u.username}
+                          </option>
+                        ))}
+                    </optgroup>
+                  )}
+
+                  {/* Sub-Admins */}
+                  {assignableUsers.filter(u => ['subadmin', 'sub_admin', 'agent'].includes((u.role || '').toLowerCase())).length > 0 && (
+                    <optgroup label="── Sub-Admins / Agents ──">
+                      {assignableUsers
+                        .filter(u => ['subadmin', 'sub_admin', 'agent'].includes((u.role || '').toLowerCase()))
+                        .map(u => (
+                          <option key={u.id || u.username} value={u.name || u.username}>
+                            {u.name || u.username} ({u.role || 'subadmin'}) — {u.status || 'active'}
+                          </option>
+                        ))}
+                    </optgroup>
+                  )}
                 </select>
                 <div className="text-muted mt-1" style={{ fontSize: '0.7rem' }}>
-                  The selected team member will gain visibility in their Sub-Admin portal to contact the guest and manage pipeline progression.
+                  Super Admin Controller: Directly assign to an Administrator or Sub-Admin. The assigned person will work on the lead and record updates in the activity timeline.
                 </div>
               </div>
 
@@ -1594,30 +1862,97 @@ export default function LeadManagement({ usersList = [], currentUser }) {
 
             {/* Modal Body */}
             <div className="flex-grow-1 overflow-auto p-4" style={{ background: '#f8fafc' }}>
-              {/* Top Overview Cards */}
-              <div className="row g-3 mb-4">
-                <div className="col-md-4 col-sm-6">
-                  <div className="p-3 bg-white rounded-3 shadow-xs border h-100">
-                    <span className="d-block text-muted text-uppercase fw-bold" style={{ fontSize: '0.68rem' }}>Requested Service</span>
-                    <h6 className="fw-bold text-primary mb-1 mt-1">{previewLead.service || 'General Inquiry'}</h6>
-                    <span className="text-muted small" style={{ fontSize: '0.75rem' }}>Category: {previewLead.source}</span>
+              {/* Top Overview Cards: Customer Requirement & Next Actionable */}
+              <div className="row g-3 mb-3">
+                <div className="col-md-6 col-sm-12">
+                  <div className="p-3 bg-white rounded-3 shadow-xs border h-100" style={{ borderLeft: '4px solid #16a34a' }}>
+                    <div className="d-flex align-items-center justify-content-between mb-1">
+                      <span className="text-muted text-uppercase fw-bold" style={{ fontSize: '0.68rem', color: '#16a34a' }}>
+                        📌 CUSTOMER REQUIREMENT / ENQUIRY
+                      </span>
+                      {previewLead.pax && (
+                        <span className="badge rounded-pill bg-light text-dark border px-2 py-0.5" style={{ fontSize: '0.66rem' }}>
+                          👥 {previewLead.pax} Guests
+                        </span>
+                      )}
+                    </div>
+                    <h6 className="fw-bold text-dark mb-1 font-heading" style={{ fontSize: '0.92rem' }}>
+                      {previewLead.notes || previewLead.service || 'General Trip Consultation'}
+                    </h6>
+                    <span className="text-muted small" style={{ fontSize: '0.74rem' }}>
+                      Service: {previewLead.service || 'Holiday Planning'} · Category: {previewLead.source}
+                    </span>
                   </div>
                 </div>
-                <div className="col-md-4 col-sm-6">
-                  <div className="p-3 bg-white rounded-3 shadow-xs border h-100">
-                    <span className="d-block text-muted text-uppercase fw-bold" style={{ fontSize: '0.68rem' }}>Estimated Budget</span>
-                    <h6 className="fw-bold text-success mb-1 mt-1">{previewLead.budget || 'Not specified'}</h6>
-                    <span className="text-muted small" style={{ fontSize: '0.75rem' }}>Advance Token: 25% Applicable</span>
-                  </div>
-                </div>
-                <div className="col-md-4 col-sm-12">
-                  <div className="p-3 bg-white rounded-3 shadow-xs border h-100">
-                    <span className="d-block text-muted text-uppercase fw-bold" style={{ fontSize: '0.68rem' }}>Assigned Agent</span>
-                    <h6 className="fw-bold text-dark mb-1 mt-1">{previewLead.assigned_to || previewLead.assignedTo || 'Unassigned'}</h6>
-                    <span className="text-muted small" style={{ fontSize: '0.75rem' }}>By: {previewLead.assigned_by || 'Admin'}</span>
+
+                <div className="col-md-6 col-sm-12">
+                  <div className="p-3 bg-white rounded-3 shadow-xs border h-100" style={{ borderLeft: '4px solid #f59e0b' }}>
+                    <div className="d-flex align-items-center justify-content-between mb-1">
+                      <span className="text-muted text-uppercase fw-bold d-flex align-items-center gap-1" style={{ fontSize: '0.68rem', color: '#b45309' }}>
+                        <Clock size={12} className="text-warning" /> NEXT ACTIONABLE STEP
+                      </span>
+                      {previewLead.budget && (
+                        <span className="badge rounded-pill bg-success-subtle text-success border border-success-subtle px-2 py-0.5 fw-bold" style={{ fontSize: '0.66rem' }}>
+                          Budget: {previewLead.budget}
+                        </span>
+                      )}
+                    </div>
+                    <h6 className="fw-bold text-dark mb-1" style={{ fontSize: '0.92rem', color: '#b45309' }}>
+                      {previewLead.next_action || previewLead.nextAction || <span className="text-muted fw-normal fst-italic">No next action set</span>}
+                    </h6>
+                    <span className="text-muted small" style={{ fontSize: '0.74rem' }}>
+                      Assigned to: <strong className="text-dark">{previewLead.assigned_to || previewLead.assignedTo || 'Unassigned'}</strong>
+                    </span>
                   </div>
                 </div>
               </div>
+
+              {/* Chatbot Transcript in Preview Modal if available */}
+              {previewLead.chat_history && (
+                <div className="p-3 rounded-3 mb-3 bg-white shadow-xs border">
+                  <div className="d-flex align-items-center justify-content-between mb-2 pb-2 border-bottom">
+                    <span className="fw-bold text-dark d-flex align-items-center gap-1.5" style={{ fontSize: '0.78rem' }}>
+                      <Sparkles size={14} style={{ color: '#FF6333' }} /> AI CHATBOT CONVERSATION TRANSCRIPT
+                    </span>
+                    <span className="badge rounded-pill bg-light text-muted border" style={{ fontSize: '0.68rem' }}>
+                      Sophia AI Assistant
+                    </span>
+                  </div>
+                  <div className="d-flex flex-column gap-2" style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                    {(() => {
+                      let msgs = [];
+                      try {
+                        msgs = typeof previewLead.chat_history === 'string' ? JSON.parse(previewLead.chat_history) : (previewLead.chat_history || []);
+                      } catch (e) {
+                        msgs = [];
+                      }
+                      if (!Array.isArray(msgs) || msgs.length === 0) {
+                        return <div className="text-muted small">No conversation messages recorded.</div>;
+                      }
+                      return msgs.map((m, idx) => {
+                        const isUser = m.role === 'user';
+                        return (
+                          <div 
+                            key={idx}
+                            className={`p-2 rounded-3 ${isUser ? 'align-self-end bg-light border' : 'align-self-start text-white'}`}
+                            style={{ 
+                              maxWidth: '85%', 
+                              fontSize: '0.75rem',
+                              background: isUser ? '#f1f5f9' : '#0D1B2E',
+                              color: isUser ? '#0f172a' : '#fff'
+                            }}
+                          >
+                            <div className="fw-bold mb-0.5" style={{ fontSize: '0.66rem', color: isUser ? '#2563eb' : '#FF8A00' }}>
+                              {isUser ? (previewLead.name || 'Customer') : 'Sophia AI'}
+                            </div>
+                            <div>{m.content}</div>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+              )}
 
               {/* Customer Contact & Action Banner */}
               <div className="p-3 rounded-3 mb-4 bg-white shadow-xs border">
@@ -1659,158 +1994,277 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                 </div>
               </div>
 
-              {/* Comprehensive 4-Day Day-Wise Itinerary Schedule */}
-              <div className="bg-white rounded-3 shadow-xs border p-4 mb-3">
-                <div className="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
-                  <div>
-                    <h6 className="fw-bold text-dark mb-0 font-heading">
-                      📍 4-Day Itinerary & Activity Schedule
-                    </h6>
-                    <span className="text-muted small">Customized travel schedule for {previewLead.name}</span>
-                  </div>
-                  <span className="badge rounded-pill bg-light text-dark border px-3 py-1.5 fw-bold" style={{ fontSize: '0.75rem' }}>
-                    4 Days / 3 Nights
-                  </span>
-                </div>
+              {/* Dynamic Lead Schedule: Vehicle Rental Handover vs Tour Package Itinerary */}
+              {(() => {
+                const leadCat = String(previewLead.source || previewLead.category || previewLead.service_type || '').toLowerCase();
+                const leadServ = String(previewLead.service || previewLead.title || previewLead.notes || '').toLowerCase();
+                const isVehicleRental = 
+                  leadCat.includes('vehicle') || 
+                  leadCat.includes('car') || 
+                  leadCat.includes('bike') || 
+                  leadCat.includes('rental') || 
+                  leadServ.includes('vehicle rental') || 
+                  leadServ.includes('car rental') || 
+                  leadServ.includes('bike rental') ||
+                  leadServ.includes('fortuner') || 
+                  leadServ.includes('thar') || 
+                  leadServ.includes('scorpio') || 
+                  leadServ.includes('innova') || 
+                  leadServ.includes('activa') || 
+                  leadServ.includes('self drive');
 
-                <div className="d-flex flex-column gap-3">
-                  {/* DAY 1 */}
-                  <div className="p-3 rounded-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                    <div className="d-flex align-items-center justify-content-between mb-2">
-                      <span className="badge bg-primary text-white fw-bold px-2 py-1" style={{ fontSize: '0.72rem' }}>Day 1</span>
-                      <span className="fw-bold text-dark small">Arrival, Private Transfer & North Goa Beach Sunset</span>
-                    </div>
-                    <div className="row g-2 mt-1">
-                      <div className="col-md-6">
-                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                          <span className="fw-bold text-warning d-block">🌅 Morning (09:00 AM - 12:00 PM)</span>
-                          <span className="text-muted">Airport pickup at Dabolim (GOI) / Mopa (GOX) with vehicle handover & luxury hotel check-in.</span>
-                        </div>
-                      </div>
-                      <div className="col-md-6">
-                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                          <span className="fw-bold text-primary d-block">☀️ Afternoon (01:00 PM - 04:00 PM)</span>
-                          <span className="text-muted">Traditional Goan fish curry lunch at Calangute beach shack followed by relaxed coastal walk.</span>
-                        </div>
-                      </div>
-                      <div className="col-md-6">
-                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                          <span className="fw-bold text-info d-block">🌆 Evening (04:30 PM - 07:30 PM)</span>
-                          <span className="text-muted">Scenic sunset viewing at Fort Aguada lighthouse and Candolim Beach promenade.</span>
-                        </div>
-                      </div>
-                      <div className="col-md-6">
-                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                          <span className="fw-bold text-purple d-block" style={{ color: '#7c3aed' }}>🌙 Night (08:00 PM - 11:00 PM)</span>
-                          <span className="text-muted">Candlelight seaside dinner and exploring vibrant nightlife around Tito's Lane & Baga.</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                if (isVehicleRental) {
+                  const pickupInfo = previewLead.notes?.includes('|') 
+                    ? previewLead.notes.split('|')[1]?.trim() 
+                    : (previewLead.notes || 'Goa Airport (Dabolim / Mopa) / Doorstep Delivery');
 
-                  {/* DAY 2 */}
-                  <div className="p-3 rounded-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                    <div className="d-flex align-items-center justify-content-between mb-2">
-                      <span className="badge bg-primary text-white fw-bold px-2 py-1" style={{ fontSize: '0.72rem' }}>Day 2</span>
-                      <span className="fw-bold text-dark small">Water Sports Adventure, Chapora Fort & Cliffside Dining</span>
-                    </div>
-                    <div className="row g-2 mt-1">
-                      <div className="col-md-6">
-                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                          <span className="fw-bold text-warning d-block">🌅 Morning (09:00 AM - 12:30 PM)</span>
-                          <span className="text-muted">High-speed Jet Ski, Parasailing, Banana Boat Ride & Bumper Tube at Baga Beach.</span>
+                  return (
+                    <div className="bg-white rounded-3 shadow-xs border p-4 mb-3">
+                      <div className="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+                        <div>
+                          <h6 className="fw-bold text-dark mb-0 font-heading d-flex align-items-center gap-2">
+                            <Car size={18} className="text-warning" />
+                            <span>Vehicle Rental &amp; Handover Schedule</span>
+                          </h6>
+                          <span className="text-muted small">Fleet allocation &amp; handover schedule for {previewLead.name}</span>
                         </div>
+                        <span className="badge rounded-pill bg-light text-dark border px-3 py-1.5 fw-bold" style={{ fontSize: '0.75rem' }}>
+                          {previewLead.service || 'Self-Drive Vehicle'}
+                        </span>
                       </div>
-                      <div className="col-md-6">
-                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                          <span className="fw-bold text-primary d-block">☀️ Afternoon (01:00 PM - 04:00 PM)</span>
-                          <span className="text-muted">Cliffside Mediterranean lunch at Vagator overlooking the azure Arabian Sea.</span>
-                        </div>
-                      </div>
-                      <div className="col-md-6">
-                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                          <span className="fw-bold text-info d-block">🌆 Evening (04:30 PM - 07:00 PM)</span>
-                          <span className="text-muted">Panoramic sunset photography at Chapora Fort (Dil Chahta Hai point) & Little Vagator.</span>
-                        </div>
-                      </div>
-                      <div className="col-md-6">
-                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                          <span className="fw-bold text-purple d-block" style={{ color: '#7c3aed' }}>🌙 Night (07:30 PM - 10:30 PM)</span>
-                          <span className="text-muted">Acoustic live music, artisan night market shopping & dinner at Anjuna beach.</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
 
-                  {/* DAY 3 */}
-                  <div className="p-3 rounded-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                    <div className="d-flex align-items-center justify-content-between mb-2">
-                      <span className="badge bg-primary text-white fw-bold px-2 py-1" style={{ fontSize: '0.72rem' }}>Day 3</span>
-                      <span className="fw-bold text-dark small">South Goa Heritage, Fontainhas & Mandovi Sunset Cruise</span>
-                    </div>
-                    <div className="row g-2 mt-1">
-                      <div className="col-md-6">
-                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                          <span className="fw-bold text-warning d-block">🌅 Morning (09:30 AM - 12:30 PM)</span>
-                          <span className="text-muted">UNESCO Heritage tour: Basilica of Bom Jesus, Se Cathedral & historical churches of Old Goa.</span>
+                      <div className="d-flex flex-column gap-3">
+                        {/* Handover & Delivery Schedule */}
+                        <div className="p-3 rounded-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                          <div className="d-flex align-items-center justify-content-between mb-2">
+                            <span className="badge bg-warning text-dark fw-bold px-2 py-1" style={{ fontSize: '0.72rem' }}>Phase 1</span>
+                            <span className="fw-bold text-dark small">Vehicle Delivery, Handover &amp; Digital Inspection</span>
+                          </div>
+                          <div className="row g-2 mt-1">
+                            <div className="col-md-6">
+                              <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                                <span className="fw-bold text-dark d-block">📍 Delivery / Pickup Point</span>
+                                <span className="text-muted">{pickupInfo}</span>
+                              </div>
+                            </div>
+                            <div className="col-md-6">
+                              <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                                <span className="fw-bold text-primary d-block">📋 Digital Checklist &amp; Verification</span>
+                                <span className="text-muted">DL / ID check, 360° pre-handover photo inspection &amp; fuel gauge confirmation.</span>
+                              </div>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                      <div className="col-md-6">
-                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                          <span className="fw-bold text-primary d-block">☀️ Afternoon (01:00 PM - 04:00 PM)</span>
-                          <span className="text-muted">Heritage walk through Fontainhas (Portuguese Latin Quarter) & cafe lunch.</span>
-                        </div>
-                      </div>
-                      <div className="col-md-6">
-                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                          <span className="fw-bold text-info d-block">🌆 Evening (05:00 PM - 07:30 PM)</span>
-                          <span className="text-muted">Sunset Mandovi River Cruise with live Goan folk dance & DJ music.</span>
-                        </div>
-                      </div>
-                      <div className="col-md-6">
-                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                          <span className="fw-bold text-purple d-block" style={{ color: '#7c3aed' }}>🌙 Night (08:00 PM - 10:30 PM)</span>
-                          <span className="text-muted">Fine dining authentic seafood dinner along Miramar Beach coastline.</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
 
-                  {/* DAY 4 */}
-                  <div className="p-3 rounded-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                    <div className="d-flex align-items-center justify-content-between mb-2">
-                      <span className="badge bg-primary text-white fw-bold px-2 py-1" style={{ fontSize: '0.72rem' }}>Day 4</span>
-                      <span className="fw-bold text-dark small">Leisure Souvenirs & Airport Departure Transfer</span>
+                        {/* Standard Rental Assurance & Inclusions */}
+                        <div className="p-3 rounded-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                          <div className="d-flex align-items-center justify-content-between mb-2">
+                            <span className="badge bg-success text-white fw-bold px-2 py-1" style={{ fontSize: '0.72rem' }}>Inclusions</span>
+                            <span className="fw-bold text-dark small">WOW GOA Premium Rental Assurance</span>
+                          </div>
+                          <div className="row g-2 mt-1">
+                            <div className="col-md-4">
+                              <div className="p-2 rounded bg-white border h-100" style={{ fontSize: '0.78rem' }}>
+                                <span className="fw-bold text-success d-block">🛡️ Zero Security Deposit</span>
+                                <span className="text-muted">No hidden hold or security freeze on credit/debit card.</span>
+                              </div>
+                            </div>
+                            <div className="col-md-4">
+                              <div className="p-2 rounded bg-white border h-100" style={{ fontSize: '0.78rem' }}>
+                                <span className="fw-bold text-primary d-block">🛣️ Unlimited Kilometers</span>
+                                <span className="text-muted">Drive freely across all North &amp; South Goa routes with no cap.</span>
+                              </div>
+                            </div>
+                            <div className="col-md-4">
+                              <div className="p-2 rounded bg-white border h-100" style={{ fontSize: '0.78rem' }}>
+                                <span className="fw-bold text-info d-block">📄 Full Insurance &amp; RSA</span>
+                                <span className="text-muted">Comprehensive bumper-to-bumper cover with 24/7 roadside assist.</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Return & Clearance */}
+                        <div className="p-3 rounded-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                          <div className="d-flex align-items-center justify-content-between mb-2">
+                            <span className="badge bg-dark text-white fw-bold px-2 py-1" style={{ fontSize: '0.72rem' }}>Phase 2</span>
+                            <span className="fw-bold text-dark small">Return Drop-Off &amp; Instant Key Handover Clearance</span>
+                          </div>
+                          <div className="row g-2 mt-1">
+                            <div className="col-md-6">
+                              <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                                <span className="fw-bold text-dark d-block">🔄 Flexible Drop-Off Location</span>
+                                <span className="text-muted">Airport terminal departure lane or hotel lobby return with seamless handover.</span>
+                              </div>
+                            </div>
+                            <div className="col-md-6">
+                              <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                                <span className="fw-bold text-success d-block">⚡ Instant Handover Clearance</span>
+                                <span className="text-muted">Quick 2-minute digital check-out with instant clearance confirmation.</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <div className="row g-2 mt-1">
-                      <div className="col-md-6">
-                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                          <span className="fw-bold text-warning d-block">🌅 Morning (09:00 AM - 11:30 AM)</span>
-                          <span className="text-muted">Poolside buffet breakfast, cashew and spice shopping at Panjim/Mapusa market.</span>
+                  );
+                }
+
+                return (
+                  /* Comprehensive 4-Day Day-Wise Itinerary Schedule for Tours & Packages */
+                  <div className="bg-white rounded-3 shadow-xs border p-4 mb-3">
+                    <div className="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+                      <div>
+                        <h6 className="fw-bold text-dark mb-0 font-heading">
+                          📍 4-Day Itinerary &amp; Activity Schedule
+                        </h6>
+                        <span className="text-muted small">Customized travel schedule for {previewLead.name}</span>
+                      </div>
+                      <span className="badge rounded-pill bg-light text-dark border px-3 py-1.5 fw-bold" style={{ fontSize: '0.75rem' }}>
+                        4 Days / 3 Nights
+                      </span>
+                    </div>
+
+                    <div className="d-flex flex-column gap-3">
+                      {/* DAY 1 */}
+                      <div className="p-3 rounded-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                        <div className="d-flex align-items-center justify-content-between mb-2">
+                          <span className="badge bg-primary text-white fw-bold px-2 py-1" style={{ fontSize: '0.72rem' }}>Day 1</span>
+                          <span className="fw-bold text-dark small">Arrival, Private Transfer &amp; North Goa Beach Sunset</span>
+                        </div>
+                        <div className="row g-2 mt-1">
+                          <div className="col-md-6">
+                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                              <span className="fw-bold text-warning d-block">🌅 Morning (09:00 AM - 12:00 PM)</span>
+                              <span className="text-muted">Airport pickup at Dabolim (GOI) / Mopa (GOX) with vehicle handover &amp; luxury hotel check-in.</span>
+                            </div>
+                          </div>
+                          <div className="col-md-6">
+                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                              <span className="fw-bold text-primary d-block">☀️ Afternoon (01:00 PM - 04:00 PM)</span>
+                              <span className="text-muted">Traditional Goan fish curry lunch at Calangute beach shack followed by relaxed coastal walk.</span>
+                            </div>
+                          </div>
+                          <div className="col-md-6">
+                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                              <span className="fw-bold text-info d-block">🌆 Evening (04:30 PM - 07:30 PM)</span>
+                              <span className="text-muted">Scenic sunset viewing at Fort Aguada lighthouse and Candolim Beach promenade.</span>
+                            </div>
+                          </div>
+                          <div className="col-md-6">
+                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                              <span className="fw-bold text-purple d-block" style={{ color: '#7c3aed' }}>🌙 Night (08:00 PM - 11:00 PM)</span>
+                              <span className="text-muted">Candlelight seaside dinner and exploring vibrant nightlife around Tito's Lane &amp; Baga.</span>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                      <div className="col-md-6">
-                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                          <span className="fw-bold text-primary d-block">☀️ Afternoon (12:00 PM - 03:00 PM)</span>
-                          <span className="text-muted">Hotel check-out and scenic drive through coconut groves of South Goa.</span>
+
+                      {/* DAY 2 */}
+                      <div className="p-3 rounded-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                        <div className="d-flex align-items-center justify-content-between mb-2">
+                          <span className="badge bg-primary text-white fw-bold px-2 py-1" style={{ fontSize: '0.72rem' }}>Day 2</span>
+                          <span className="fw-bold text-dark small">Water Sports Adventure, Chapora Fort &amp; Cliffside Dining</span>
+                        </div>
+                        <div className="row g-2 mt-1">
+                          <div className="col-md-6">
+                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                              <span className="fw-bold text-warning d-block">🌅 Morning (09:00 AM - 12:30 PM)</span>
+                              <span className="text-muted">High-speed Jet Ski, Parasailing, Banana Boat Ride &amp; Bumper Tube at Baga Beach.</span>
+                            </div>
+                          </div>
+                          <div className="col-md-6">
+                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                              <span className="fw-bold text-primary d-block">☀️ Afternoon (01:00 PM - 04:00 PM)</span>
+                              <span className="text-muted">Cliffside Mediterranean lunch at Vagator overlooking the azure Arabian Sea.</span>
+                            </div>
+                          </div>
+                          <div className="col-md-6">
+                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                              <span className="fw-bold text-info d-block">🌆 Evening (04:30 PM - 07:00 PM)</span>
+                              <span className="text-muted">Panoramic sunset photography at Chapora Fort (Dil Chahta Hai point) &amp; Little Vagator.</span>
+                            </div>
+                          </div>
+                          <div className="col-md-6">
+                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                              <span className="fw-bold text-purple d-block" style={{ color: '#7c3aed' }}>🌙 Night (07:30 PM - 10:30 PM)</span>
+                              <span className="text-muted">Acoustic live music, artisan night market shopping &amp; dinner at Anjuna beach.</span>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                      <div className="col-md-12">
-                        <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                          <span className="fw-bold text-success d-block">✈️ Evening / Departure (04:00 PM Onwards)</span>
-                          <span className="text-muted">Hassle-free vehicle drop / airport transfer at Dabolim (GOI) or Mopa (GOX) with departure support.</span>
+
+                      {/* DAY 3 */}
+                      <div className="p-3 rounded-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                        <div className="d-flex align-items-center justify-content-between mb-2">
+                          <span className="badge bg-primary text-white fw-bold px-2 py-1" style={{ fontSize: '0.72rem' }}>Day 3</span>
+                          <span className="fw-bold text-dark small">South Goa Heritage, Fontainhas &amp; Mandovi Sunset Cruise</span>
+                        </div>
+                        <div className="row g-2 mt-1">
+                          <div className="col-md-6">
+                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                              <span className="fw-bold text-warning d-block">🌅 Morning (09:30 AM - 12:30 PM)</span>
+                              <span className="text-muted">UNESCO Heritage tour: Basilica of Bom Jesus, Se Cathedral &amp; historical churches of Old Goa.</span>
+                            </div>
+                          </div>
+                          <div className="col-md-6">
+                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                              <span className="fw-bold text-primary d-block">☀️ Afternoon (01:00 PM - 04:00 PM)</span>
+                              <span className="text-muted">Heritage walk through Fontainhas (Portuguese Latin Quarter) &amp; cafe lunch.</span>
+                            </div>
+                          </div>
+                          <div className="col-md-6">
+                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                              <span className="fw-bold text-info d-block">🌆 Evening (05:00 PM - 07:30 PM)</span>
+                              <span className="text-muted">Sunset Mandovi River Cruise with live Goan folk dance &amp; DJ music.</span>
+                            </div>
+                          </div>
+                          <div className="col-md-6">
+                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                              <span className="fw-bold text-purple d-block" style={{ color: '#7c3aed' }}>🌙 Night (08:00 PM - 10:30 PM)</span>
+                              <span className="text-muted">Fine dining authentic seafood dinner along Miramar Beach coastline.</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* DAY 4 */}
+                      <div className="p-3 rounded-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                        <div className="d-flex align-items-center justify-content-between mb-2">
+                          <span className="badge bg-primary text-white fw-bold px-2 py-1" style={{ fontSize: '0.72rem' }}>Day 4</span>
+                          <span className="fw-bold text-dark small">Leisure Souvenirs &amp; Airport Departure Transfer</span>
+                        </div>
+                        <div className="row g-2 mt-1">
+                          <div className="col-md-6">
+                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                              <span className="fw-bold text-warning d-block">🌅 Morning (09:00 AM - 11:30 AM)</span>
+                              <span className="text-muted">Poolside buffet breakfast, cashew and spice shopping at Panjim/Mapusa market.</span>
+                            </div>
+                          </div>
+                          <div className="col-md-6">
+                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                              <span className="fw-bold text-primary d-block">☀️ Afternoon (12:00 PM - 03:00 PM)</span>
+                              <span className="text-muted">Hotel check-out and scenic drive through coconut groves of South Goa.</span>
+                            </div>
+                          </div>
+                          <div className="col-md-12">
+                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                              <span className="fw-bold text-success d-block">✈️ Evening / Departure (04:00 PM Onwards)</span>
+                              <span className="text-muted">Hassle-free vehicle drop / airport transfer at Dabolim (GOI) or Mopa (GOX) with departure support.</span>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              </div>
+                );
+              })()}
             </div>
 
             {/* Modal Footer */}
             <div className="px-4 py-3 bg-white border-top d-flex align-items-center justify-content-between flex-shrink-0">
               <div className="text-muted small" style={{ fontSize: '0.75rem' }}>
-                Trip Galileo CRM Itinerary Engine
+                Trip Galileo CRM Itinerary &amp; Operations Engine
               </div>
               <div className="d-flex gap-2">
                 <button 
@@ -1819,7 +2273,25 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                   style={{ fontSize: '0.8rem' }}
                   onClick={() => window.print()}
                 >
-                  Print Itinerary
+                  {(() => {
+                    const leadCat = String(previewLead.source || previewLead.category || previewLead.service_type || '').toLowerCase();
+                    const leadServ = String(previewLead.service || previewLead.title || previewLead.notes || '').toLowerCase();
+                    const isVehicleRental = 
+                      leadCat.includes('vehicle') || 
+                      leadCat.includes('car') || 
+                      leadCat.includes('bike') || 
+                      leadCat.includes('rental') || 
+                      leadServ.includes('vehicle rental') || 
+                      leadServ.includes('car rental') || 
+                      leadServ.includes('bike rental') ||
+                      leadServ.includes('fortuner') || 
+                      leadServ.includes('thar') || 
+                      leadServ.includes('scorpio') || 
+                      leadServ.includes('innova') || 
+                      leadServ.includes('activa') || 
+                      leadServ.includes('self drive');
+                    return isVehicleRental ? 'Print Rental Summary' : 'Print Itinerary';
+                  })()}
                 </button>
                 <button 
                   type="button" 

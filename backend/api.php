@@ -1563,6 +1563,156 @@ function authenticateRequest($pdo, $required = false) {
 }
 
 /**
+ * Intelligently extract customer enquiry / requirements from AI Chatbot conversation history.
+ * Preserves manually edited requirements by staff.
+ */
+function extractLeadRequirements($chatHistory, $currentNotes = '') {
+    // If current notes were already manually set or customized by staff, keep them
+    $isDefaultNote = empty($currentNotes) || stripos($currentNotes, 'Inquired via') !== false;
+    if (!$isDefaultNote) {
+        return [
+            'requirement' => $currentNotes,
+            'notes' => $currentNotes,
+            'base_req' => $currentNotes,
+            'pax' => null,
+            'budget' => null,
+            'destination' => null,
+            'duration' => null,
+            'is_manual' => true
+        ];
+    }
+
+    if (is_string($chatHistory)) {
+        $chatHistory = json_decode($chatHistory, true) ?: [];
+    }
+    if (!is_array($chatHistory)) {
+        $chatHistory = [];
+    }
+
+    $userTexts = [];
+    foreach ($chatHistory as $msg) {
+        if (($msg['role'] ?? '') === 'user' && !empty($msg['content'])) {
+            $userTexts[] = trim($msg['content']);
+        }
+    }
+
+    if (empty($userTexts)) {
+        return [
+            'notes' => $currentNotes ?: 'Inquired via Sophia AI Assistant',
+            'pax' => null,
+            'budget' => null,
+            'destination' => null,
+            'duration' => null,
+            'is_manual' => false
+        ];
+    }
+
+    $fullText = implode(' ', $userTexts);
+
+    // 1. Destination
+    $dest = null;
+    if (preg_match('/\b(South\s*Goa)\b/i', $fullText)) {
+        $dest = 'South Goa';
+    } elseif (preg_match('/\b(North\s*Goa)\b/i', $fullText)) {
+        $dest = 'North Goa';
+    } elseif (preg_match('/\b(Old\s*Goa)\b/i', $fullText)) {
+        $dest = 'Old Goa';
+    } elseif (preg_match('/\b(Goa|Candolim|Calangute|Baga|Anjuna|Panaji|Panjim|Vagator|Morjim|Palolem|Colva)\b/i', $fullText, $m)) {
+        $dest = ucfirst(strtolower($m[1]));
+    }
+
+    // 2. Duration
+    $duration = null;
+    if (preg_match('/\b(\d+)\s*(?:days?|d)\b/i', $fullText, $m)) {
+        $duration = $m[1] . ' days';
+    } elseif (preg_match('/\b(\d+)\s*(?:nights?|n)\b/i', $fullText, $m)) {
+        $duration = $m[1] . ' nights';
+    } elseif (preg_match('/\bweekend\b/i', $fullText)) {
+        $duration = 'Weekend';
+    }
+
+    // 3. Pax
+    $pax = null;
+    if (preg_match('/\b(\d+)\s*(?:people|persons?|pax|adults?|guests?|members?)\b/i', $fullText, $m)) {
+        $pax = $m[1];
+    } elseif (preg_match('/\b(couple|2\s*adults?)\b/i', $fullText)) {
+        $pax = '2';
+    } elseif (preg_match('/\b(family)\b/i', $fullText)) {
+        $pax = 'Family';
+    }
+
+    // 4. Budget
+    $budget = null;
+    if (preg_match('/(?:budget\s*(?:is|of|around|:)?\s*|₹\s*|inr\s*|rs\.?\s*)([\d,]+)(?:\s*(?:k|thousand))?/i', $fullText, $m)) {
+        $rawNum = (int)str_replace(',', '', $m[1]);
+        if (stripos($m[0], 'k') !== false || stripos($m[0], 'thousand') !== false) {
+            $rawNum *= 1000;
+        }
+        if ($rawNum > 0) {
+            $budget = '₹' . number_format($rawNum);
+        }
+    } elseif (preg_match('/\b([\d,]+)\s*(?:k|thousand)\s*(?:budget)?\b/i', $fullText, $m)) {
+        $rawNum = (int)str_replace(',', '', $m[1]) * 1000;
+        if ($rawNum > 0) {
+            $budget = '₹' . number_format($rawNum);
+        }
+    } elseif (preg_match('/\b(\d{4,6})\b/', $fullText, $m)) {
+        $rawNum = (int)$m[1];
+        if ($rawNum >= 1000) {
+            $budget = '₹' . number_format($rawNum);
+        }
+    }
+
+    // 5. Trip Type / Category
+    $category = 'trip';
+    if (preg_match('/\b(thar|car|scooter|bike|vehicle|rental|cab|taxi)\b/i', $fullText, $m)) {
+        $category = ucfirst(strtolower($m[1])) . ' rental';
+    } elseif (preg_match('/\b(hotel|resort|villa|stay)\b/i', $fullText, $m)) {
+        $category = ucfirst(strtolower($m[1])) . ' stay';
+    } elseif (preg_match('/\b(flight|airline)\b/i', $fullText)) {
+        $category = 'Flight';
+    } elseif (preg_match('/\b(water\s*sports?|scuba|cruise)\b/i', $fullText, $m)) {
+        $category = ucwords(strtolower($m[1]));
+    }
+
+    // 6. Build Requirement summary
+    $parts = [];
+    if ($dest) {
+        $parts[] = "$dest $category";
+    } else {
+        $parts[] = ucfirst($category);
+    }
+
+    if ($duration) {
+        $baseReq = $parts[0] . ' – ' . $duration;
+    } else {
+        $baseReq = $parts[0];
+    }
+
+    $extras = [];
+    if ($pax) {
+        $extras[] = "$pax people";
+    }
+    if ($budget) {
+        $extras[] = "Budget: $budget";
+    }
+
+    // Concise Customer Requirement (e.g. "South Goa trip – 3 days")
+    $requirement = $baseReq;
+
+    return [
+        'requirement' => $requirement,
+        'notes' => $requirement,
+        'base_req' => $baseReq,
+        'pax' => $pax,
+        'budget' => $budget,
+        'destination' => $dest ?: 'Goa',
+        'duration' => $duration,
+        'is_manual' => false
+    ];
+}
+
+/**
  * Authoritative Server-Side Inventory Availability & Anti-Double-Booking Engine.
  * Shared by D2C Storefront, B2B Partner Portal, and Hotel/Vehicle PMS.
  */
@@ -3625,7 +3775,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             }
             exit;} elseif ($resource === 'assignable_users') {
             try {
-                $stmt = $pdo->query("SELECT id, username, name, email, phone, role, status FROM users WHERE status = 'active' AND role IN ('subadmin', 'sub_admin', 'agent') ORDER BY name ASC, username ASC");
+                $stmt = $pdo->query("SELECT id, username, name, email, phone, role, status FROM users WHERE status = 'active' AND role IN ('admin', 'subadmin', 'sub_admin', 'agent') ORDER BY role ASC, name ASC, username ASC");
                 $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 echo json_encode($data ?: []);
             } catch (Exception $e) {
@@ -5904,22 +6054,79 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!isset($payload['name']) || !isset($payload['phone'])) {
                 throw new Exception("Missing name or phone parameter.");
             }
+            $aiLeadId = uniqid('ai-');
             $stmt = $pdo->prepare("INSERT INTO ai_leads (id, name, phone, created_at) VALUES (?, ?, ?, ?)");
             $stmt->execute([
-                uniqid('ai-'),
+                $aiLeadId,
                 $payload['name'],
                 $payload['phone'],
                 date('Y-m-d H:i:s')
             ]);
             
             // Auto-capture into enterprise leads table
+            $leadId = 'LD-' . rand(1000, 9999);
             try {
-                $leadId = 'LD-' . rand(1000, 9999);
                 $leadStmt = $pdo->prepare("INSERT INTO leads (id, name, phone, email, source, service, assigned_to, status, budget, notes, admin_id, created_at, updated_at) VALUES (?, ?, ?, '', 'AI Planner', 'AI Travel Assistant Chat', 'Unassigned', 'New', '', 'Inquired via Sophia AI Assistant', 'admin', ?, ?)");
                 $leadStmt->execute([$leadId, $payload['name'], $payload['phone'], date('Y-m-d H:i:s'), date('Y-m-d H:i:s')]);
             } catch (Exception $leade) {}
             
-            echo json_encode(["success" => true, "message" => "AI Lead captured successfully."]);
+            echo json_encode(["success" => true, "id" => $aiLeadId, "lead_id" => $leadId, "message" => "AI Lead captured successfully."]);
+            exit;
+        } elseif ($action === 'update_ai_lead_chat') {
+            $id = $payload['id'] ?? $payload['lead_id'] ?? null;
+            $aiLeadId = $payload['ai_lead_id'] ?? null;
+            $chatHistory = $payload['chat_history'] ?? null;
+            
+            if ($id && $chatHistory) {
+                // Find matching enterprise lead row in leads table
+                $leadStmt = $pdo->prepare("SELECT * FROM leads WHERE id = ? OR phone = (SELECT phone FROM ai_leads WHERE id = ?) ORDER BY created_at DESC LIMIT 1");
+                $leadStmt->execute([$id, $id]);
+                $leadRow = $leadStmt->fetch(PDO::FETCH_ASSOC);
+
+                // Find matching ai_lead row
+                $aiStmt = $pdo->prepare("SELECT * FROM ai_leads WHERE id = ? OR id = ? OR phone = ? ORDER BY created_at DESC LIMIT 1");
+                $aiStmt->execute([$aiLeadId, $id, $leadRow['phone'] ?? '']);
+                $aiRow = $aiStmt->fetch(PDO::FETCH_ASSOC);
+
+                $extracted = extractLeadRequirements($chatHistory, $leadRow['notes'] ?? '');
+                $chatHistStr = is_string($chatHistory) ? $chatHistory : json_encode($chatHistory);
+
+                // Update enterprise leads table: customer requirement notes, budget, pax, and transcript
+                if ($leadRow) {
+                    $updNotes = $extracted['notes'];
+                    $updBudget = $extracted['budget'] ?: $leadRow['budget'];
+                    $updPax = $extracted['pax'] ?: ($leadRow['pax'] ?? null);
+                    $updLeads = $pdo->prepare("UPDATE leads SET 
+                        notes = COALESCE(?, notes),
+                        budget = COALESCE(?, budget),
+                        pax = COALESCE(?, pax),
+                        chat_history = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?");
+                    $updLeads->execute([$updNotes, $updBudget, $updPax, $chatHistStr, $leadRow['id']]);
+                }
+
+                // Update ai_leads table: destination, dates, budget, pax, transcript
+                if ($aiRow) {
+                    $updAi = $pdo->prepare("UPDATE ai_leads SET 
+                        destination = COALESCE(NULLIF(?, ''), destination),
+                        dates = COALESCE(NULLIF(?, ''), dates),
+                        budget = COALESCE(NULLIF(?, ''), budget),
+                        pax = COALESCE(NULLIF(?, ''), pax),
+                        chat_history = ?,
+                        status = 'Hot Lead'
+                        WHERE id = ?");
+                    $updAi->execute([
+                        $extracted['destination'],
+                        $extracted['duration'],
+                        $extracted['budget'],
+                        $extracted['pax'],
+                        $chatHistStr,
+                        $aiRow['id']
+                    ]);
+                }
+            }
+            echo json_encode(["success" => true, "message" => "Chat and customer requirements updated successfully."]);
             exit;
         } elseif ($action === 'add_vehicle' || $action === 'add_car' || $action === 'add_bike') {
             $bikeCats = ['scooter', 'scooter / moped', 'sports bike', 'cruiser', 'tourer / adventure', 'electric scooter (ev)', 'superbike', 'dirt / off-road', 'cafe racer', 'standard / commuter', 'bike'];
@@ -7616,6 +7823,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (in_array('image_url', $existingCols)) $insertData['image_url'] = $imageUrl;
             if (in_array('image', $existingCols)) $insertData['image'] = $imageUrl;
             if (in_array('is_active', $existingCols)) $insertData['is_active'] = $isActive;
+            $imagesJson = isset($payload['images_json']) ? (is_array($payload['images_json']) ? json_encode($payload['images_json']) : $payload['images_json']) : (!empty($payload['images']) ? json_encode($payload['images']) : null);
+            if ($imagesJson !== null && in_array('images_json', $existingCols)) $insertData['images_json'] = $imagesJson;
 
             $colsStr = implode(', ', array_keys($insertData));
             $placeholders = implode(', ', array_fill(0, count($insertData), '?'));
@@ -7638,6 +7847,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $description = $payload['description'] ?? null;
             $imageUrl = $payload['image_url'] ?? ($payload['image'] ?? null);
             $isActive = isset($payload['is_active']) ? intval($payload['is_active']) : null;
+            $imagesJson = isset($payload['images_json']) ? (is_array($payload['images_json']) ? json_encode($payload['images_json']) : $payload['images_json']) : (!empty($payload['images']) ? json_encode($payload['images']) : null);
 
             $updates = [];
             $vals = [];
@@ -7652,6 +7862,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($imageUrl !== null && in_array('image_url', $existingCols)) { $updates[] = "image_url = ?"; $vals[] = $imageUrl; }
             if ($imageUrl !== null && in_array('image', $existingCols)) { $updates[] = "image = ?"; $vals[] = $imageUrl; }
             if ($isActive !== null && in_array('is_active', $existingCols)) { $updates[] = "is_active = ?"; $vals[] = $isActive; }
+            if ($imagesJson !== null && in_array('images_json', $existingCols)) { $updates[] = "images_json = ?"; $vals[] = $imagesJson; }
 
             if (!empty($updates)) {
                 $vals[] = $actId;
@@ -8338,6 +8549,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $source = $payload['source'] ?? null;
             $service = $payload['service'] ?? null;
             $assigned_to = $payload['assigned_to'] ?? $payload['assignedTo'] ?? null;
+            if ($assigned_to !== null) {
+                $actor = authenticateRequest($pdo, false);
+                $role = strtolower(trim($actor['role'] ?? ($payload['user_role'] ?? ($_SERVER['HTTP_X_USER_ROLE'] ?? ''))));
+                if (!in_array($role, ['superadmin', 'super_admin'])) {
+                    $assigned_to = null; // Strictly forbid non-superadmin from changing assignment in update_lead
+                }
+            }
             $status = $payload['status'] ?? null;
             $budget = $payload['budget'] ?? null;
             $notes = $payload['notes'] ?? null;
@@ -8367,6 +8585,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $stmt = $pdo->prepare("UPDATE leads SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?");
             $stmt->execute([$status, $id]);
+
+            // Save status update to existing lead_comments activity/history
+            $actor = authenticateRequest($pdo, false);
+            $userId = $payload['user_id'] ?? ($actor['id'] ?? ($_SERVER['HTTP_X_USER_ID'] ?? 'user'));
+            $userName = $payload['user_name'] ?? ($actor['name'] ?? ($actor['username'] ?? ($_SERVER['HTTP_X_USER_IDENTIFIER'] ?? 'User')));
+            $userRole = $payload['user_role'] ?? ($actor['role'] ?? ($_SERVER['HTTP_X_USER_ROLE'] ?? 'user'));
+            $now = date('Y-m-d H:i:s');
+            $commentId = 'comm_' . time() . '_' . rand(100, 999);
+            $sysMsg = "Pipeline status updated to \"$status\" by $userName ($userRole).";
+            $stmtComm = $pdo->prepare("INSERT INTO lead_comments (id, lead_id, user_id, user_name, user_role, comment, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmtComm->execute([$commentId, $id, $userId, $userName, $userRole, $sysMsg, $now, $now]);
+
             echo json_encode(["success" => true, "message" => "Lead status updated."]);
             exit;
         } elseif ($action === 'toggle_user_status') {
@@ -8383,14 +8613,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         } elseif ($action === 'assign_lead' || $action === 'update_lead_assignee') {
             $actor = authenticateRequest($pdo, false);
-            if ($actor && in_array($actor['role'], ['subadmin', 'sub_admin', 'agent'])) {
+            // In Flow 2: STRICT RULE - ONLY Super Admin can assign, reassign, or unassign leads
+            $role = strtolower(trim($actor['role'] ?? ($payload['user_role'] ?? ($_SERVER['HTTP_X_USER_ROLE'] ?? ''))));
+            if (!in_array($role, ['superadmin', 'super_admin'])) {
                 http_response_code(403);
-                echo json_encode(["success" => false, "error" => "Forbidden: Sub-Admins cannot assign leads. Only Admin or Super Admin can assign leads."]);
+                echo json_encode(["success" => false, "error" => "Forbidden: Only Super Admin can assign, reassign, or unassign leads in Flow 2."]);
                 exit;
             }
             $id = $payload['id'] ?? $payload['lead_id'] ?? null;
             $assigned_to = trim($payload['assigned_to'] ?? ($payload['assignedTo'] ?? 'Unassigned'));
-            $assigned_by = trim($payload['assigned_by'] ?? ($payload['assignedBy'] ?? ($_SERVER['HTTP_X_USER_IDENTIFIER'] ?? 'Admin')));
+            $assigned_by = trim($payload['assigned_by'] ?? ($payload['assignedBy'] ?? ($actor['name'] ?? ($actor['username'] ?? ($_SERVER['HTTP_X_USER_IDENTIFIER'] ?? 'Super Admin')))));
             $now = date('Y-m-d H:i:s');
             
             if (!$id) {
@@ -8413,13 +8645,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $pdo->prepare("UPDATE leads SET assigned_to = ?, assigned_at = ?, assigned_by = ?, updated_at = ? WHERE id = ?");
             $stmt->execute([$assigned_to, $now, $assigned_by, $now, $id]);
 
-            // Add system timeline comment
+            // Add activity history comment (preserving initial assign vs reassign)
             $commentId = 'comm_' . time() . '_' . rand(100, 999);
-            $sysMsg = $assigned_to === 'Unassigned' 
-                ? "Lead was unassigned by $assigned_by."
-                : "Lead assigned to $assigned_to by $assigned_by.";
+            if ($assigned_to === 'Unassigned') {
+                $sysMsg = "Lead was unassigned by $assigned_by";
+            } elseif (!empty($currentLead['assigned_to']) && $currentLead['assigned_to'] !== 'Unassigned' && $currentLead['assigned_to'] !== $assigned_to) {
+                $sysMsg = "Lead reassigned from {$currentLead['assigned_to']} to $assigned_to by $assigned_by";
+            } else {
+                $sysMsg = "Lead assigned to $assigned_to by $assigned_by";
+            }
             $stmtComm = $pdo->prepare("INSERT INTO lead_comments (id, lead_id, user_id, user_name, user_role, comment, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-            $stmtComm->execute([$commentId, $id, 'system', 'System', 'system', $sysMsg, $now, $now]);
+            $stmtComm->execute([$commentId, $id, 'system', $assigned_by, 'superadmin', $sysMsg, $now, $now]);
 
             echo json_encode([
                 "success" => true,
@@ -8441,6 +8677,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $stmt = $pdo->prepare("UPDATE leads SET next_action = ?, updated_at = ? WHERE id = ?");
             $stmt->execute([$next_action, $now, $id]);
+
+            // Save next action update to existing lead_comments activity/history
+            $actor = authenticateRequest($pdo, false);
+            $userId = $payload['user_id'] ?? ($actor['id'] ?? ($_SERVER['HTTP_X_USER_ID'] ?? 'user'));
+            $userName = $payload['user_name'] ?? ($actor['name'] ?? ($actor['username'] ?? ($_SERVER['HTTP_X_USER_IDENTIFIER'] ?? 'User')));
+            $userRole = $payload['user_role'] ?? ($actor['role'] ?? ($_SERVER['HTTP_X_USER_ROLE'] ?? 'user'));
+            $commentId = 'comm_' . time() . '_' . rand(100, 999);
+            $sysMsg = "Next actionable step updated: \"$next_action\" by $userName ($userRole).";
+            $stmtComm = $pdo->prepare("INSERT INTO lead_comments (id, lead_id, user_id, user_name, user_role, comment, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmtComm->execute([$commentId, $id, $userId, $userName, $userRole, $sysMsg, $now, $now]);
+
             echo json_encode(["success" => true, "message" => "Next action updated.", "next_action" => $next_action]);
             exit;
         } elseif ($action === 'add_lead_comment') {

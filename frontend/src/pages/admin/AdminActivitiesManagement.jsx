@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import {
   Map as MapIcon, Plus, Search, Trash2, Edit2, CheckCircle2,
   XCircle, Clock, MapPin, DollarSign, X, RefreshCw,
-  Compass, Eye, Tag, AlertCircle, Sparkles, Filter
+  Compass, Eye, Tag, AlertCircle, Sparkles, Filter,
+  Upload, Image as ImageIcon, Loader2, Star, Check, Link as LinkIcon
 } from 'lucide-react';
 import * as api from '../../services/api';
 
@@ -27,6 +28,12 @@ export default function AdminActivitiesManagement({ currentUser }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  // Multi-image upload states
+  const [uploadingImages, setUploadingImages] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState('');
+  const [uploadError, setUploadError] = useState('');
+  const [customUrlInput, setCustomUrlInput] = useState('');
+
   const [formData, setFormData] = useState({
     title: '',
     type: 'Activity',
@@ -36,6 +43,7 @@ export default function AdminActivitiesManagement({ currentUser }) {
     duration: '2-3 Hours',
     description: '',
     image_url: '',
+    images: [],
     is_active: 1
   });
 
@@ -68,8 +76,11 @@ export default function AdminActivitiesManagement({ currentUser }) {
       duration: '2-3 Hours',
       description: '',
       image_url: '',
+      images: [],
       is_active: 1
     });
+    setUploadError('');
+    setCustomUrlInput('');
     setError('');
     setShowModal(true);
   };
@@ -79,6 +90,21 @@ export default function AdminActivitiesManagement({ currentUser }) {
     const isSight = (item.type || '').toLowerCase() === 'sightseeing' ||
       (item.category || '').toLowerCase().includes('sight') ||
       (item.category || '').toLowerCase().includes('tour');
+
+    let itemImages = [];
+    if (item.images_json) {
+      try {
+        const parsed = typeof item.images_json === 'string' ? JSON.parse(item.images_json) : item.images_json;
+        if (Array.isArray(parsed)) itemImages = parsed;
+      } catch (e) {}
+    } else if (Array.isArray(item.images)) {
+      itemImages = item.images;
+    }
+    const primary = item.image_url || item.image || '';
+    if (primary && !itemImages.includes(primary)) {
+      itemImages.unshift(primary);
+    }
+
     setFormData({
       title: item.title || item.name || '',
       type: item.type ? (item.type.toLowerCase() === 'sightseeing' ? 'Sightseeing' : 'Activity') : (isSight ? 'Sightseeing' : 'Activity'),
@@ -87,11 +113,94 @@ export default function AdminActivitiesManagement({ currentUser }) {
       price: item.price || '',
       duration: item.duration || '2-3 Hours',
       description: item.description || '',
-      image_url: item.image_url || item.image || '',
+      image_url: primary || (itemImages[0] || ''),
+      images: itemImages,
       is_active: item.is_active !== undefined ? item.is_active : 1
     });
+    setUploadError('');
+    setCustomUrlInput('');
     setError('');
     setShowModal(true);
+  };
+
+  // Localhost multi-image upload handler
+  const handleFilesUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    setUploadingImages(true);
+    setUploadError('');
+    setUploadProgress(`Uploading ${files.length} image${files.length > 1 ? 's' : ''} from localhost...`);
+
+    try {
+      const uploadedUrls = [];
+      for (let i = 0; i < files.length; i++) {
+        setUploadProgress(`Uploading ${i + 1} of ${files.length}...`);
+        const url = await api.uploadImage(files[i]);
+        if (url) uploadedUrls.push(url);
+      }
+
+      if (uploadedUrls.length > 0) {
+        setFormData(prev => {
+          const currentList = Array.isArray(prev.images) ? prev.images : [];
+          const merged = [...currentList, ...uploadedUrls];
+          return {
+            ...prev,
+            images: merged,
+            image_url: prev.image_url || merged[0] || ''
+          };
+        });
+      }
+    } catch (err) {
+      console.error('Localhost image upload failed:', err);
+      setUploadError('Failed to upload image(s): ' + (err.message || 'Check server connection'));
+    } finally {
+      setUploadingImages(false);
+      setUploadProgress('');
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  const handleRemoveImage = (indexToRemove) => {
+    setFormData(prev => {
+      const updated = (prev.images || []).filter((_, idx) => idx !== indexToRemove);
+      return {
+        ...prev,
+        images: updated,
+        image_url: updated[0] || ''
+      };
+    });
+  };
+
+  const handleSetPrimaryImage = (indexToPromote) => {
+    setFormData(prev => {
+      const list = [...(prev.images || [])];
+      if (indexToPromote > 0 && indexToPromote < list.length) {
+        const [promoted] = list.splice(indexToPromote, 1);
+        list.unshift(promoted);
+      }
+      return {
+        ...prev,
+        images: list,
+        image_url: list[0] || ''
+      };
+    });
+  };
+
+  const handleAddCustomUrl = () => {
+    const url = customUrlInput.trim();
+    if (!url) return;
+    setFormData(prev => {
+      const currentList = Array.isArray(prev.images) ? prev.images : [];
+      if (currentList.includes(url)) return prev;
+      const merged = [...currentList, url];
+      return {
+        ...prev,
+        images: merged,
+        image_url: prev.image_url || merged[0] || ''
+      };
+    });
+    setCustomUrlInput('');
   };
 
   const handleFormSubmit = async (e) => {
@@ -108,6 +217,11 @@ export default function AdminActivitiesManagement({ currentUser }) {
     setSaving(true);
     setError('');
     try {
+      const imagesList = (formData.images && formData.images.length > 0)
+        ? formData.images
+        : (formData.image_url ? [formData.image_url] : []);
+      const primaryImage = imagesList[0] || formData.image_url || '';
+
       const payload = {
         title: formData.title.trim(),
         name: formData.title.trim(),
@@ -117,8 +231,10 @@ export default function AdminActivitiesManagement({ currentUser }) {
         price: parseInt(formData.price, 10),
         duration: formData.duration.trim(),
         description: formData.description.trim(),
-        image_url: formData.image_url.trim(),
-        image: formData.image_url.trim(),
+        image_url: primaryImage,
+        image: primaryImage,
+        images: imagesList,
+        images_json: JSON.stringify(imagesList),
         is_active: formData.is_active ? 1 : 0
       };
 
@@ -551,15 +667,190 @@ export default function AdminActivitiesManagement({ currentUser }) {
                       />
                     </div>
 
+                    {/* Multi-Image Upload from Localhost & URL Option */}
                     <div className="col-md-12">
-                      <label className="form-label fw-bold small text-secondary">Image URL</label>
-                      <input
-                        type="url"
-                        className="form-control"
-                        placeholder="https://images.unsplash.com/..."
-                        value={formData.image_url}
-                        onChange={e => setFormData({ ...formData, image_url: e.target.value })}
-                      />
+                      <div className="d-flex align-items-center justify-content-between mb-1.5">
+                        <label className="form-label fw-bold small text-secondary mb-0">
+                          Activity Images ({formData.images?.length || 0} selected)
+                        </label>
+                        {uploadingImages && (
+                          <span className="text-warning fw-bold d-flex align-items-center gap-1" style={{ fontSize: '0.75rem' }}>
+                            <Loader2 size={13} className="spin" /> {uploadProgress}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Dropzone & Localhost Multi-File Selector */}
+                      <div 
+                        className="p-3 rounded-3 text-center mb-3" 
+                        style={{ 
+                          border: '2px dashed #cbd5e1', 
+                          background: '#f8fafc',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease'
+                        }}
+                        onClick={() => document.getElementById('activity-images-file-input')?.click()}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                            handleFilesUpload({ target: { files: e.dataTransfer.files, value: '' } });
+                          }
+                        }}
+                      >
+                        <input
+                          type="file"
+                          id="activity-images-file-input"
+                          multiple
+                          accept="image/*"
+                          className="d-none"
+                          disabled={uploadingImages}
+                          onChange={handleFilesUpload}
+                        />
+                        <div className="d-flex flex-column align-items-center justify-content-center py-2">
+                          <div className="rounded-circle p-2 bg-warning bg-opacity-10 text-warning mb-2">
+                            <Upload size={22} />
+                          </div>
+                          <div className="fw-bold text-dark text-xs mb-1">
+                            Click to Choose or Drag & Drop Multiple Images from Localhost
+                          </div>
+                          <div className="text-muted text-xxs mb-2.5">
+                            Upload photos directly from your local computer (PNG, JPG, WEBP)
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-warning text-dark fw-bold rounded-pill px-3.5 py-1.5 text-xs d-inline-flex align-items-center gap-1.5 shadow-xs"
+                            disabled={uploadingImages}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              document.getElementById('activity-images-file-input')?.click();
+                            }}
+                          >
+                            <Upload size={14} />
+                            <span>{formData.images?.length > 0 ? '+ Add More Images from Localhost' : 'Browse Localhost Images'}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {uploadError && (
+                        <div className="alert alert-danger py-1.5 px-3 mb-3 text-xs d-flex align-items-center gap-1.5">
+                          <AlertCircle size={14} />
+                          <span>{uploadError}</span>
+                        </div>
+                      )}
+
+                      {/* Image Preview Gallery Grid */}
+                      {formData.images && formData.images.length > 0 && (
+                        <div className="mb-3">
+                          <div className="d-flex align-items-center justify-content-between mb-1.5">
+                            <span className="text-muted text-xxs text-uppercase fw-bold">
+                              Selected Images ({formData.images.length}) — Click 'Set Cover' to change primary photo
+                            </span>
+                            <button
+                              type="button"
+                              className="btn btn-link text-danger p-0 text-xxs text-decoration-none fw-bold"
+                              onClick={() => setFormData(prev => ({ ...prev, images: [], image_url: '' }))}
+                            >
+                              Clear All
+                            </button>
+                          </div>
+
+                          <div 
+                            style={{ 
+                              display: 'grid', 
+                              gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', 
+                              gap: '10px' 
+                            }}
+                          >
+                            {formData.images.map((imgUrl, idx) => {
+                              const isCover = idx === 0 || imgUrl === formData.image_url;
+                              return (
+                                <div 
+                                  key={idx} 
+                                  className="position-relative rounded-3 overflow-hidden border shadow-xs" 
+                                  style={{ 
+                                    height: '90px', 
+                                    background: '#f1f5f9',
+                                    borderColor: isCover ? '#FFC107' : '#e2e8f0',
+                                    borderWidth: isCover ? '2px' : '1px'
+                                  }}
+                                >
+                                  <img 
+                                    src={imgUrl} 
+                                    alt={`Activity upload ${idx + 1}`} 
+                                    className="w-100 h-100 object-fit-cover" 
+                                    onError={(e) => {
+                                      e.target.onerror = null;
+                                      e.target.src = 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=600&auto=format&fit=crop&q=60';
+                                    }}
+                                  />
+
+                                  {/* Cover badge */}
+                                  {isCover ? (
+                                    <span 
+                                      className="position-absolute bottom-0 start-0 end-0 py-0.5 text-center bg-dark text-warning fw-black text-xxs"
+                                      style={{ fontSize: '9px', letterSpacing: '0.3px' }}
+                                    >
+                                      ⭐ COVER
+                                    </span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSetPrimaryImage(idx)}
+                                      className="position-absolute bottom-0 start-0 end-0 py-0.5 text-center bg-light bg-opacity-90 text-dark fw-bold text-xxs border-0 hover-bg-warning"
+                                      style={{ fontSize: '9px' }}
+                                      title="Make this the primary cover photo"
+                                    >
+                                      Set Cover
+                                    </button>
+                                  )}
+
+                                  {/* Delete button */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveImage(idx)}
+                                    className="position-absolute top-0 end-0 m-1 btn btn-danger btn-sm p-0 rounded-circle d-flex align-items-center justify-content-center shadow-xs"
+                                    style={{ width: '20px', height: '20px', fontSize: '10px' }}
+                                    title="Remove photo"
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Optional: Add via URL */}
+                      <div className="p-2.5 rounded-3 bg-light border">
+                        <div className="text-xxs text-muted fw-bold mb-1 d-flex align-items-center gap-1">
+                          <LinkIcon size={12} />
+                          <span>Or Add Photo via Web URL</span>
+                        </div>
+                        <div className="input-group input-group-sm">
+                          <input
+                            type="url"
+                            className="form-control text-xs"
+                            placeholder="https://images.unsplash.com/..."
+                            value={customUrlInput}
+                            onChange={e => setCustomUrlInput(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleAddCustomUrl();
+                              }
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="btn btn-outline-secondary fw-bold text-xs"
+                            onClick={handleAddCustomUrl}
+                          >
+                            + Add URL
+                          </button>
+                        </div>
+                      </div>
                     </div>
 
                     <div className="col-md-12">

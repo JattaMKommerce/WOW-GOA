@@ -97,3 +97,77 @@ export function formatDisplayDate(dateStr) {
     year: 'numeric'
   });
 }
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * Consistently formats booking dates and times to "11 Sep 2026 • 10:00 AM" format
+ */
+export function formatBookingDateTime(dateStr, timeStr = '') {
+  if (!dateStr) return 'Scheduled';
+  
+  let datePart = String(dateStr).trim();
+  let timePart = String(timeStr || '').trim();
+
+  if (datePart.includes(' at ')) {
+    const parts = datePart.split(' at ');
+    datePart = parts[0];
+    if (!timePart && parts[1]) timePart = parts[1];
+  } else if (datePart.includes('T')) {
+    const parts = datePart.split('T');
+    datePart = parts[0];
+    if (!timePart && parts[1]) timePart = parts[1].slice(0, 5);
+  }
+
+  let formattedDate = datePart;
+  const ymdMatch = datePart.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (ymdMatch) {
+    const year = parseInt(ymdMatch[1], 10);
+    const month = parseInt(ymdMatch[2], 10) - 1;
+    const day = parseInt(ymdMatch[3], 10);
+    if (month >= 0 && month < 12 && day >= 1 && day <= 31) {
+      formattedDate = `${day} ${MONTH_NAMES[month]} ${year}`;
+    }
+  } else {
+    try {
+      const d = new Date(datePart);
+      if (!isNaN(d.getTime())) {
+        formattedDate = `${d.getDate()} ${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
+      }
+    } catch (e) {
+      formattedDate = datePart;
+    }
+  }
+
+  let formattedTime = '';
+  if (timePart) {
+    timePart = timePart.replace(/^(at|•|@)\s*/i, '').trim();
+    const hmMatch = timePart.match(/^(\d{1,2}):(\d{2})(?::\d{2})?(?:\s*(AM|PM))?/i);
+    if (hmMatch) {
+      let hours = parseInt(hmMatch[1], 10);
+      const minutes = hmMatch[2];
+      const ampm = hmMatch[3];
+      if (ampm) {
+        formattedTime = `${hours}:${minutes} ${ampm.toUpperCase()}`;
+      } else {
+        const period = hours >= 12 ? 'PM' : 'AM';
+        hours = hours % 12;
+        if (hours === 0) hours = 12;
+        formattedTime = `${hours}:${minutes} ${period}`;
+      }
+    } else {
+      formattedTime = timePart;
+    }
+  }
+
+  return formattedTime ? `${formattedDate} • ${formattedTime}` : formattedDate;
+}
+
+/**
+ * Formats a timestamp or date string to "11 Sep 2026"
+ */
+export function formatDateShort(dateStr) {
+  if (!dateStr) return 'Recent';
+  return formatBookingDateTime(dateStr, '');
+}
+

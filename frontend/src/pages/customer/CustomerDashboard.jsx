@@ -402,8 +402,8 @@ export default function CustomerDashboard({ currentUser, triggerOpenLogin, booki
           <a href="/" className="btn w-100 d-flex align-items-center gap-2 py-2 px-3 border-0 rounded-3 mb-2" style={{ background: 'rgba(0,184,217,0.1)', color: '#00B8D9', fontSize: '0.85rem', fontWeight: 600 }}>
             <Compass size={15} /> Go to Homepage
           </a>
-          <button onClick={onLogout} className="btn w-100 d-flex align-items-center gap-2 py-2 px-3 border-0 rounded-3" style={{ background: 'rgba(255,99,51,0.1)', color: '#FF6333', fontSize: '0.85rem', fontWeight: 600 }}>
-            <LogOut size={15} /> Sign Out
+          <button onClick={onLogout} className="btn w-100 d-flex align-items-center gap-2 py-2 px-3 border-0 rounded-3 text-white transition-all shadow-xs" style={{ background: 'rgba(255,255,255,0.12)', fontSize: '0.85rem', fontWeight: 600 }}>
+            <LogOut size={15} className="text-white-50" /> Sign Out
           </button>
         </div>
       </div>

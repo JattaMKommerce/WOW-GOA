@@ -15,6 +15,7 @@ import WalletApprovalCenter from '../../components/superadmin/WalletApprovalCent
 import AnalyticsView from '../../components/shared/AnalyticsView';
 import AdminB2BPortal from '../admin/b2b/AdminB2BPortal';
 import AdminDriverManagement from '../admin/AdminDriverManagement';
+import LeadManagement from '../../components/shared/LeadManagement';
 
 // ─── STAT CARD ───────────────────────────────────────────────────────────────
 function StatCard({ label, value, icon, color, trend, sub, onClick }) {
@@ -2348,7 +2349,7 @@ export default function SuperAdminDashboard({
     case 'vendor_verification':
       return <KYCTab vendors={vendors} />;
     case 'lead_management':
-      return <LeadManagementTab aiLeads={aiLeads} customEnquiries={customEnquiries} onRefresh={onRefreshLeads} usersList={usersList} />;
+      return <LeadManagement usersList={usersList} currentUser={currentUser} />;
     case 'hotel_bookings':
       return <BookingsTab bookings={bookings} type="hotel" vendors={vendors} onRefresh={onRefreshLeads} />;
     case 'vehicle_bookings':

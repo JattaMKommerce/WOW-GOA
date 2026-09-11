@@ -36,7 +36,6 @@ const SIDEBAR_GROUPS = [
     label: 'My Trips',
     items: [
       { id: 'selfdrive', label: 'My Self Drive Holidays', icon: <Compass size={16} />, highlight: true },
-      { id: 'driver-trips', label: 'Car + Driver Trips', icon: <Users size={16} /> },
       { id: 'activities', label: 'Sightseeing & Activities', icon: <Sparkles size={16} /> },
       { id: 'bookings', label: 'All My Bookings', icon: <Calendar size={16} /> },
     ]
@@ -623,8 +622,14 @@ export default function CustomerPortalPage({
     return () => document.removeEventListener('click', handleOutsideClick);
   }, []);
 
-  const handleNavClick = (tabId) => {
+  // Direct category selection state for bookings tab
+  const [bookingsCategoryFilter, setBookingsCategoryFilter] = useState('all');
+
+  const handleNavClick = (tabId, optCategory = 'all') => {
     setActiveTab(tabId);
+    if (optCategory) {
+      setBookingsCategoryFilter(optCategory);
+    }
     setMobileMenuOpen(false);
     setProfileDropdownOpen(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -714,7 +719,7 @@ export default function CustomerPortalPage({
 
             {/* ── CENTER: Desktop Top Navigation Links (lg and up) ── */}
             {customerUser && (
-              <nav className="d-none d-lg-flex align-items-center gap-1.5">
+              <nav className="d-none d-lg-flex align-items-center gap-1 gap-xl-1.5 flex-nowrap">
                 {TOP_NAV_ITEMS.map((item) => {
                   const isActive = (activeTab === item.id) || (item.id === 'explore' && activeTab === 'overview-explore');
                   return (
@@ -722,7 +727,7 @@ export default function CustomerPortalPage({
                       key={item.id}
                       type="button"
                       onClick={() => handleNavClick(item.id === 'explore' ? 'overview' : item.id)}
-                      className={`btn btn-sm rounded-pill px-3 py-2 text-xs fw-bold d-flex align-items-center gap-1.5 transition-all border-0 ${
+                      className={`btn btn-sm rounded-pill px-2.5 px-xl-3 py-1.5 py-xl-2 text-xs fw-bold d-flex align-items-center gap-1.5 transition-all border-0 text-nowrap flex-shrink-0 ${
                         isActive
                           ? 'btn-warning text-dark shadow-xs'
                           : 'btn-light text-secondary hover-text-dark bg-transparent'
@@ -730,12 +735,13 @@ export default function CustomerPortalPage({
                       style={{
                         background: isActive ? '#FFC107' : 'transparent',
                         color: isActive ? '#0f172a' : '#475569',
+                        whiteSpace: 'nowrap',
                       }}
                     >
-                      <span>{item.icon}</span>
-                      <span>{item.label}</span>
+                      <span className="flex-shrink-0">{item.icon}</span>
+                      <span className="text-nowrap" style={{ whiteSpace: 'nowrap' }}>{item.label}</span>
                       {item.highlight && !isActive && (
-                        <span className="badge bg-warning text-dark text-xxs px-1.5 py-0.5 rounded-pill fw-black ms-0.5" style={{ fontSize: '8px' }}>
+                        <span className="badge bg-warning text-dark text-xxs px-1.5 py-0.5 rounded-pill fw-black ms-0.5 text-nowrap" style={{ fontSize: '8px' }}>
                           HOT
                         </span>
                       )}
@@ -963,14 +969,6 @@ export default function CustomerPortalPage({
                             <HelpCircle size={14} className="text-info" />
                             <span>Customer Support</span>
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => handleNavClick('driver-trips')}
-                            className="btn btn-sm btn-light text-start text-xs fw-semibold px-2.5 py-2 rounded-2 border-0 d-flex align-items-center gap-2 text-dark"
-                          >
-                            <Users size={14} className="text-warning" />
-                            <span>Car + Driver Trips</span>
-                          </button>
                           
                           <div className="border-top my-1"></div>
 
@@ -985,9 +983,10 @@ export default function CustomerPortalPage({
                           <button
                             type="button"
                             onClick={handleCustomerLogout}
-                            className="btn btn-sm btn-danger bg-opacity-10 text-danger text-start text-xs fw-bold px-2.5 py-2 rounded-2 border-0 d-flex align-items-center gap-2"
+                            className="btn btn-sm btn-light text-start text-xs fw-bold px-2.5 py-2 rounded-2 border-0 d-flex align-items-center gap-2 text-dark transition-all"
+                            style={{ color: '#0F172A' }}
                           >
-                            <LogOut size={14} />
+                            <LogOut size={14} className="text-secondary" />
                             <span>Sign Out</span>
                           </button>
                         </div>
@@ -1089,17 +1088,6 @@ export default function CustomerPortalPage({
 
               <button
                 type="button"
-                onClick={() => handleNavClick('driver-trips')}
-                className={`btn text-start d-flex align-items-center gap-2.5 px-3 py-2.5 rounded-3 border-0 text-xs fw-bold ${
-                  activeTab === 'driver-trips' ? 'btn-warning text-dark' : 'btn-light text-secondary bg-transparent'
-                }`}
-              >
-                <Users size={15} />
-                <span>Car + Driver Trips</span>
-              </button>
-
-              <button
-                type="button"
                 onClick={() => handleNavClick('notifications')}
                 className={`btn text-start d-flex align-items-center gap-2.5 px-3 py-2.5 rounded-3 border-0 text-xs fw-bold ${
                   activeTab === 'notifications' ? 'btn-warning text-dark' : 'btn-light text-secondary bg-transparent'
@@ -1146,10 +1134,9 @@ export default function CustomerPortalPage({
                 <button 
                   type="button" 
                   onClick={handleCustomerLogout} 
-                  className="btn btn-sm btn-danger bg-opacity-20 text-danger border-0 rounded-pill py-2 text-xs d-flex align-items-center justify-content-center gap-1.5 fw-bold"
+                  className="btn btn-sm btn-dark text-white rounded-pill py-2 text-xs d-flex align-items-center justify-content-center text-nowrap fw-bold shadow-xs transition-all"
                 >
-                  <LogOut size={13} />
-                  <span>Sign Out</span>
+                  Sign Out
                 </button>
               </div>
             </div>
@@ -1323,7 +1310,7 @@ export default function CustomerPortalPage({
                     bikes={bikes}
                     hotels={hotels}
                     flights={flights}
-                    onNavigateTab={(tab) => setActiveTab(tab)}
+                    onNavigateTab={(tab, optCat) => handleNavClick(tab, optCat)}
                     onSelectBooking={handleOpenBookingDetails}
                     onDirectBook={(item) => {
                       setDirectBookingSuccess(false);
@@ -1345,15 +1332,7 @@ export default function CustomerPortalPage({
                     hotels={hotels}
                     flights={flights}
                     onOpenBookingDetails={handleOpenBookingDetails}
-                    onNavigateTab={(tab) => setActiveTab(tab)}
-                  />
-                )}
-
-                {activeTab === 'driver-trips' && (
-                  <CustomerDriverTripsTab 
-                    currentUser={customerUser}
-                    bookings={customerBookings}
-                    onOpenBookingDetails={handleOpenBookingDetails}
+                    onNavigateTab={(tab, optCat) => handleNavClick(tab, optCat)}
                   />
                 )}
 
@@ -1363,7 +1342,7 @@ export default function CustomerPortalPage({
                     activities={activities}
                     bookings={customerBookings}
                     onOpenBookingDetails={handleOpenBookingDetails}
-                    onNavigateTab={(tab) => setActiveTab(tab)}
+                    onNavigateTab={(tab, optCat) => handleNavClick(tab, optCat)}
                   />
                 )}
 
@@ -1372,6 +1351,7 @@ export default function CustomerPortalPage({
                     currentUser={customerUser}
                     bookings={customerBookings}
                     onOpenBookingDetails={handleOpenBookingDetails}
+                    initialCategory={bookingsCategoryFilter}
                   />
                 )}
 

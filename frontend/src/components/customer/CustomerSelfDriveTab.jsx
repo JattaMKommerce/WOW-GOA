@@ -5,7 +5,7 @@ import {
   Users, Key, FileText, ChevronRight, X, Layers
 } from 'lucide-react';
 
-import { getBookingDisplayImage } from '../../utils/bookingImageHelper';
+import { formatBookingDateTime, formatDateShort } from '../../utils/dateUtils';
 
 export default function CustomerSelfDriveTab({
   currentUser,
@@ -20,20 +20,41 @@ export default function CustomerSelfDriveTab({
 }) {
   const [selectedItineraryPkg, setSelectedItineraryPkg] = useState(null);
 
-  // Filter Self Drive Holiday bookings for current user
-  const selfDriveBookings = (bookings || []).filter(b => {
-    const type = String(b.package_type || b.type || b.service_type || '').toLowerCase();
+  // ─── Unified Driver & Self Drive Helpers ───
+  const hasDriverService = (b) => {
+    if (!b) return false;
+    const svcType = String(b.driver_service_type || '').toUpperCase().trim();
+    if (['PICKUP', 'DROP', 'FULL'].includes(svcType)) return true;
+    if (svcType === 'NONE') return false;
+    if (b.driver_required === 1 || b.driver_required === '1' || b.driver_required === true || b.driver_required === 'yes') return true;
+    if (b.assigned_driver_id && String(b.assigned_driver_id).trim() !== '') return true;
+    const pkgType = String(b.package_type || b.type || '').toLowerCase();
     const itemName = String(b.item_name || b.package_name || '').toLowerCase();
-    return (
-      b.package_type === 'Self Drive Package' || 
-      b.type === 'selfdrive' || 
-      type.includes('self drive') ||
-      itemName.includes('self drive') ||
-      b.type === 'package' ||
-      b.type === 'vehicle' ||
-      type === 'car'
-    );
-  });
+    if (pkgType.includes('with driver') || itemName.includes('with driver') || itemName.includes('with chauffeur')) return true;
+    return false;
+  };
+
+  const isSelfDriveHoliday = (b) => {
+    if (!b) return false;
+    // Exclude bookings with driver service
+    if (hasDriverService(b)) return false;
+
+    const type = String(b.package_type || b.type || '').toLowerCase();
+    const itemName = String(b.item_name || b.package_name || '').toLowerCase();
+    const itemId = String(b.item_id || '').toLowerCase();
+
+    // Exclude other distinct service types
+    if (type.includes('craft') || itemName.includes('craft my trip') || itemId.includes('craft')) return false;
+    if (type === 'flight' || type.includes('flight') || itemName.includes('flight')) return false;
+    if (type === 'hotel' || type.includes('hotel') || Boolean(b.hotel_name && !b.vehicle_name && !b.car_included)) return false;
+    if (type === 'activity' || type === 'sightseeing' || itemId.startsWith('act') || itemId.startsWith('sight')) return false;
+
+    // Car, Bike, or Trip Package without driver
+    return true;
+  };
+
+  // Filter Self Drive Holiday bookings for current user
+  const selfDriveBookings = (bookings || []).filter(isSelfDriveHoliday);
 
   const getStatusStepIndex = (status) => {
     const s = (status || 'pending').toLowerCase();
@@ -91,217 +112,280 @@ export default function CustomerSelfDriveTab({
           const pendingAmt = parseFloat(b.pending_amount || (totalAmt > paidAmt ? totalAmt - paidAmt : 0));
 
           return (
-            <div key={b.id || idx} className="card border-0 shadow-sm rounded-4 overflow-hidden bg-white" style={{ border: '1px solid #eef2f6' }}>
+            <div key={b.id || idx} className="card border-0 shadow-sm rounded-4 overflow-hidden bg-white" style={{ border: '1px solid #e2e8f0' }}>
               
-              {/* Card Header Bar */}
-              <div className="card-header bg-light border-0 py-3 px-4 d-flex flex-wrap justify-content-between align-items-center gap-2">
-                <div className="d-flex align-items-center gap-2">
-                  <span className="badge bg-dark text-white text-xs px-3 py-1 rounded-pill fw-bold">
-                    Booking ID: #{b.id || b.booking_id || `WOW-SD-${1000 + idx}`}
-                  </span>
-                  <span className="badge bg-warning bg-opacity-10 text-dark fw-bold text-xxs px-2.5 py-1 rounded">
-                    🌴 Self Drive Holiday
-                  </span>
-                </div>
-
-                <div className="d-flex align-items-center gap-2 text-xs">
-                  <span className="text-muted">Booked on: {b.created_at ? new Date(b.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Recent'}</span>
-                  <span className={`badge px-2.5 py-1 rounded-pill text-uppercase fw-bold ${
-                    b.status === 'Confirmed' ? 'bg-success text-white' : 
-                    b.status === 'Completed' ? 'bg-info text-white' : 
-                    b.status === 'Cancelled' ? 'bg-danger text-white' : 'bg-warning text-dark'
-                  }`}>
-                    {b.status || 'Confirmed'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Status Flow Tracker */}
-              <div className="px-4 pt-3 pb-2 bg-white border-bottom">
-                <div className="d-none d-md-flex align-items-center justify-content-between position-relative my-2">
-                  <div className="position-absolute top-50 start-0 end-0 translate-middle-y bg-light" style={{ height: '3px', zIndex: 1 }} />
-                  <div 
-                    className="position-absolute top-50 start-0 translate-middle-y bg-warning" 
-                    style={{ 
-                      height: '3px', 
-                      width: `${(stepIdx / (STATUS_STEPS.length - 1)) * 100}%`, 
-                      zIndex: 2,
-                      transition: 'width 0.4s ease'
-                    }} 
-                  />
-
-                  {STATUS_STEPS.map((st, sIdx) => {
-                    const isDone = sIdx <= stepIdx;
-                    const isCurrent = sIdx === stepIdx;
-
-                    return (
-                      <div key={st.label} className="d-flex flex-column align-items-center position-relative" style={{ zIndex: 3 }}>
-                        <div 
-                          className={`rounded-circle d-flex align-items-center justify-content-center fw-bold shadow-sm ${
-                            isCurrent ? 'bg-warning text-dark border-2 border-dark' : 
-                            isDone ? 'bg-success text-white' : 'bg-white text-muted border'
-                          }`}
-                          style={{ width: '28px', height: '28px', fontSize: '11px' }}
-                        >
-                          {isDone ? <Check size={14} /> : sIdx + 1}
-                        </div>
-                        <div className={`text-xxs fw-bold mt-1 ${isCurrent ? 'text-dark' : isDone ? 'text-success' : 'text-muted'}`}>
-                          {st.label}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Card Body with Detailed Trip Information */}
-              <div className="card-body p-4">
-                <div className="row g-4">
-                  
-                  {/* Left Column: Vehicle Image & Specs */}
-                  <div className="col-lg-4">
-                    <div className="position-relative rounded-3 overflow-hidden p-3 text-center mb-3" style={{ background: '#f8fafc', border: '1px solid rgba(0,0,0,0.04)' }}>
-                      <img 
-                        src={getBookingDisplayImage(b, cars, bikes, packages, hotels, flights)} 
-                        alt={b.item_name || 'Vehicle'} 
-                        className="w-100 object-fit-contain"
-                        style={{ height: '140px' }}
-                        onError={(e) => {
-                          e.target.onerror = null;
-                          e.target.src = 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=600&q=80';
-                        }}
-                      />
-                      <span className="position-absolute top-0 start-0 m-2 badge bg-success text-white text-xxs px-2 py-1 rounded-pill">
-                        ✓ Sanitized & Verified
+              {/* ── 1. Top Section: Vehicle Name, Booking ID, Status, and Subtle Booked on ── */}
+              <div className="card-header bg-white border-bottom py-3 px-3 px-md-4">
+                <div className="d-flex flex-wrap justify-content-between align-items-center gap-3">
+                  {/* Left: Vehicle Title, Booking ID & Status */}
+                  <div className="d-flex flex-column gap-1.5">
+                    <div className="d-flex flex-wrap align-items-center gap-2">
+                      <h4 className="fw-black text-dark mb-0 font-heading" style={{ fontSize: '18px', letterSpacing: '-0.01em' }}>
+                        {b.vehicle_name || b.item_name || b.package_name || 'Premium Self Drive Vehicle'}
+                      </h4>
+                      <span className="badge bg-dark text-white text-xs px-2.5 py-1 rounded-pill fw-bold">
+                        #{b.id || b.booking_id || `WOW-SD-${1000 + idx}`}
+                      </span>
+                      <span className={`badge px-2.5 py-1 rounded-pill text-uppercase fw-bold text-xs ${
+                        b.status === 'Confirmed' ? 'bg-success text-white' : 
+                        b.status === 'Completed' ? 'bg-info text-white' : 
+                        b.status === 'Cancelled' ? 'bg-danger text-white' : 'bg-warning text-dark'
+                      }`}>
+                        {b.status || 'Confirmed'}
                       </span>
                     </div>
 
-                    <h5 className="fw-black text-dark mb-1 font-heading" style={{ fontSize: '17px' }}>
-                      {b.vehicle_name || b.item_name || 'Premium Self Drive Vehicle'}
-                    </h5>
-                    <div className="text-muted text-xs mb-3">
-                      {b.vehicle_type || 'SUV / 4-Wheeler'} • Unlimited Kilometers
-                    </div>
-
-                    <div className="d-grid grid-cols-2 gap-2 text-xxs text-secondary">
-                      <div className="p-2 bg-light rounded d-flex align-items-center gap-1.5">
-                        <Fuel size={13} className="text-warning" />
-                        <span>{b.fuel_type || 'Petrol / Diesel'}</span>
-                      </div>
-                      <div className="p-2 bg-light rounded d-flex align-items-center gap-1.5">
-                        <Key size={13} className="text-warning" />
-                        <span>Self Drive (Doorstep Delivery)</span>
-                      </div>
-                      <div className="p-2 bg-light rounded d-flex align-items-center gap-1.5">
-                        <Users size={13} className="text-warning" />
-                        <span>{b.seating || '5 Seater'}</span>
-                      </div>
-                      <div className="p-2 bg-light rounded d-flex align-items-center gap-1.5">
-                        <ShieldCheck size={13} className="text-success" />
-                        <span>Full Insurance Included</span>
-                      </div>
+                    {/* Secondary Details: Booked on (visually subtle) + Duration / Package */}
+                    <div className="d-flex flex-wrap align-items-center gap-2 text-muted" style={{ fontSize: '11px' }}>
+                      <span>
+                        Booked on: <span className="text-secondary fw-medium">{formatDateShort(b.created_at)}</span>
+                      </span>
+                      {b.package_name && b.package_name !== b.vehicle_name && (
+                        <>
+                          <span className="text-muted">•</span>
+                          <span>Package: <span className="text-secondary fw-medium">{b.package_name}</span></span>
+                        </>
+                      )}
+                      {b.duration && (
+                        <>
+                          <span className="text-muted">•</span>
+                          <span className="badge bg-warning bg-opacity-10 text-dark fw-bold px-2 py-0.5 rounded text-xxs">
+                            ⏱️ {b.duration}
+                          </span>
+                        </>
+                      )}
                     </div>
                   </div>
 
-                  {/* Middle Column: Package Details & Schedule */}
-                  <div className="col-lg-5">
-                    <div className="d-flex align-items-center gap-2 mb-1">
-                      <span className="badge bg-warning bg-opacity-10 text-dark fw-bold text-xs px-2.5 py-1 rounded">
-                        ⏱️ Duration: {b.duration || '3 Days / 2 Nights'}
-                      </span>
+                  {/* Right: Holiday Price Badge */}
+                  <div className="text-start text-sm-end">
+                    <div className="text-xxs text-muted text-uppercase fw-bold tracking-wider">Total Price</div>
+                    <div className="fs-4 fw-black text-dark font-heading lh-1">
+                      ₹{totalAmt.toLocaleString('en-IN')}
                     </div>
-                    <h4 className="fw-black text-dark mb-2 font-heading" style={{ fontSize: '20px' }}>
-                      {b.package_name || b.item_name || 'Goa Coastal Bliss Self Drive Holiday'}
-                    </h4>
+                    <div className="text-xxs mt-1 text-muted">
+                      <span className="text-success fw-semibold">Paid: ₹{paidAmt.toLocaleString('en-IN')}</span>
+                      {pendingAmt > 0 && (
+                        <span className="text-danger fw-semibold ms-1.5">• Due: ₹{pendingAmt.toLocaleString('en-IN')}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
 
-                    {/* Pickup & Return Location Schedule Box */}
-                    <div className="p-3 rounded-3 mb-3" style={{ background: '#f8fafc', border: '1px solid rgba(0,0,0,0.05)' }}>
-                      <div className="d-flex align-items-start gap-2 mb-2 pb-2 border-bottom">
-                        <MapPin size={15} className="text-danger flex-shrink-0 mt-0.5" />
-                        <div className="w-100">
-                          <div className="text-xxs text-muted text-uppercase fw-bold">Pickup Location & Time</div>
-                          <div className="fw-bold text-dark text-xs">{b.pickup_location || b.pickup || 'Goa Airport (GOI)'}</div>
-                          <div className="text-muted text-xxs">📅 {b.pickup_date || b.travel_date || 'Scheduled'} at {b.pickup_time || '10:00 AM'}</div>
+              {/* ── 2. Main Information & Actions Section (No Image, Compact & Balanced) ── */}
+              <div className="card-body p-3 p-md-4">
+                <div className="row g-3 g-lg-4 align-items-start">
+                  
+                  {/* Left / Middle: Pickup & Return Schedule, Specs, Hotel, Feature Pills */}
+                  <div className="col-lg-8 col-xl-9">
+                    
+                    {/* Pickup & Return Schedule Boxes (Compact side-by-side grid) */}
+                    <div className="row g-2 mb-3">
+                      {/* Pickup Box */}
+                      <div className="col-md-6">
+                        <div className="p-3 rounded-3 h-100" style={{ background: '#f8fafc', border: '1px solid #edf2f7' }}>
+                          <div className="d-flex align-items-center gap-1.5 text-xxs text-uppercase fw-bold text-muted mb-1">
+                            <MapPin size={13} className="text-danger flex-shrink-0" />
+                            <span>Pickup Location & Time</span>
+                          </div>
+                          <div className="fw-bold text-dark text-sm mb-1 text-truncate" title={b.pickup_location || b.pickup || 'Goa Airport (GOI)'}>
+                            {b.pickup_location || b.pickup || 'Goa Airport (GOI)'}
+                          </div>
+                          <div className="text-secondary text-xs d-flex align-items-center gap-1.5">
+                            <Calendar size={13} className="text-primary flex-shrink-0" />
+                            <span className="fw-semibold">
+                              {formatBookingDateTime(b.pickup_date || b.travel_date, b.pickup_time || '10:00 AM')}
+                            </span>
+                          </div>
                         </div>
                       </div>
 
-                      <div className="d-flex align-items-start gap-2">
-                        <MapPin size={15} className="text-success flex-shrink-0 mt-0.5" />
-                        <div className="w-100">
-                          <div className="text-xxs text-muted text-uppercase fw-bold">Return Drop Location & Time</div>
-                          <div className="fw-bold text-dark text-xs">{b.drop_location || b.drop || 'North Goa / Airport'}</div>
-                          <div className="text-muted text-xxs">📅 {b.drop_date || 'Scheduled Return'} at {b.drop_time || '10:00 AM'}</div>
+                      {/* Return Drop Box */}
+                      <div className="col-md-6">
+                        <div className="p-3 rounded-3 h-100" style={{ background: '#f8fafc', border: '1px solid #edf2f7' }}>
+                          <div className="d-flex align-items-center gap-1.5 text-xxs text-uppercase fw-bold text-muted mb-1">
+                            <MapPin size={13} className="text-success flex-shrink-0" />
+                            <span>Return Location & Time</span>
+                          </div>
+                          <div className="fw-bold text-dark text-sm mb-1 text-truncate" title={b.drop_location || b.drop || 'North Goa / Airport'}>
+                            {b.drop_location || b.drop || 'North Goa / Airport'}
+                          </div>
+                          <div className="text-secondary text-xs d-flex align-items-center gap-1.5">
+                            <Calendar size={13} className="text-primary flex-shrink-0" />
+                            <span className="fw-semibold">
+                              {formatBookingDateTime(b.drop_date || b.pickup_date || b.travel_date, b.drop_time || '10:00 AM')}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </div>
 
                     {/* Hotel Details if bundled */}
                     {(b.hotel_name || b.hotel_details) && (
-                      <div className="p-2.5 rounded-3 bg-light d-flex align-items-center gap-2 text-xs mb-3">
+                      <div className="p-2.5 rounded-3 bg-light d-flex align-items-center gap-2.5 text-xs mb-3 border">
                         <Hotel size={16} className="text-primary flex-shrink-0" />
-                        <div>
-                          <div className="fw-bold text-dark">{b.hotel_name || '4★ Beach Resort Stay Included'}</div>
-                          <div className="text-muted text-xxs">Deluxe Room • Daily Breakfast Included</div>
+                        <div className="d-flex flex-wrap align-items-center gap-2">
+                          <span className="fw-bold text-dark">{b.hotel_name || '4★ Beach Resort Stay Included'}</span>
+                          <span className="text-muted text-xxs">• Deluxe Room • Daily Breakfast Included</span>
                         </div>
                       </div>
                     )}
 
-                    {/* Inclusions List */}
-                    <div className="d-flex flex-wrap gap-1.5">
-                      <span className="badge bg-light text-dark border text-xxs px-2 py-1">✓ Zero Security Deposit</span>
-                      <span className="badge bg-light text-dark border text-xxs px-2 py-1">✓ Unlimited Kilometers</span>
-                      <span className="badge bg-light text-dark border text-xxs px-2 py-1">✓ Free Delivery & Pickup</span>
-                      <span className="badge bg-light text-dark border text-xxs px-2 py-1">✓ Goa Toll & Taxes Paid</span>
+                    {/* Vehicle Specs Grid: Compact Row */}
+                    <div className="d-flex flex-wrap gap-2 mb-3 text-xxs text-secondary">
+                      <div className="px-2.5 py-1.5 bg-light rounded-2 d-flex align-items-center gap-1.5 border">
+                        <Fuel size={12} className="text-warning" />
+                        <span>{b.fuel_type || 'Petrol / Diesel'}</span>
+                      </div>
+                      <div className="px-2.5 py-1.5 bg-light rounded-2 d-flex align-items-center gap-1.5 border">
+                        <Users size={12} className="text-warning" />
+                        <span>{b.seating || '5 Seater'}</span>
+                      </div>
+                      <div className="px-2.5 py-1.5 bg-light rounded-2 d-flex align-items-center gap-1.5 border">
+                        <Key size={12} className="text-warning" />
+                        <span>Self Drive (Doorstep Handover)</span>
+                      </div>
+                      <div className="px-2.5 py-1.5 bg-light rounded-2 d-flex align-items-center gap-1.5 border">
+                        <ShieldCheck size={12} className="text-success" />
+                        <span>Full Insurance Included</span>
+                      </div>
                     </div>
+
+                    {/* Feature Section: Feature Pills */}
+                    <div className="d-flex flex-wrap gap-2">
+                      <span className="badge bg-light text-dark border px-3 py-1.5 rounded-pill text-xs fw-semibold d-inline-flex align-items-center gap-1.5 shadow-2xs">
+                        <Check size={12} className="text-success" strokeWidth={2.5} /> Zero Security Deposit
+                      </span>
+                      <span className="badge bg-light text-dark border px-3 py-1.5 rounded-pill text-xs fw-semibold d-inline-flex align-items-center gap-1.5 shadow-2xs">
+                        <Check size={12} className="text-success" strokeWidth={2.5} /> Unlimited Kilometers
+                      </span>
+                      <span className="badge bg-light text-dark border px-3 py-1.5 rounded-pill text-xs fw-semibold d-inline-flex align-items-center gap-1.5 shadow-2xs">
+                        <Check size={12} className="text-success" strokeWidth={2.5} /> Free Delivery & Pickup
+                      </span>
+                      <span className="badge bg-light text-dark border px-3 py-1.5 rounded-pill text-xs fw-semibold d-inline-flex align-items-center gap-1.5 shadow-2xs">
+                        <Check size={12} className="text-success" strokeWidth={2.5} /> Goa Toll & Taxes Paid
+                      </span>
+                    </div>
+
                   </div>
 
-                  {/* Right Column: Pricing & Action Controls */}
-                  <div className="col-lg-3 text-lg-end border-start-lg ps-lg-4 d-flex flex-column justify-content-between">
-                    <div>
-                      <div className="text-xs text-muted mb-1">Total Holiday Price</div>
-                      <div className="fs-3 fw-black text-dark font-heading mb-2">
-                        ₹{totalAmt.toLocaleString('en-IN')}
-                      </div>
-
-                      <div className="p-2.5 rounded-3 bg-light mb-3 text-xs">
-                        <div className="d-flex justify-content-between mb-1">
-                          <span className="text-muted">Amount Paid:</span>
-                          <span className="fw-bold text-success">₹{paidAmt.toLocaleString('en-IN')}</span>
-                        </div>
-                        <div className="d-flex justify-content-between">
-                          <span className="text-muted">Balance Due:</span>
-                          <span className="fw-bold text-danger">₹{pendingAmt.toLocaleString('en-IN')}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="d-grid gap-2">
-                      <button 
-                        onClick={() => setSelectedItineraryPkg(b)}
-                        className="btn btn-warning text-dark fw-bold rounded-pill py-2 shadow-sm d-flex align-items-center justify-content-center gap-1.5"
-                      >
-                        <FileText size={15} />
-                        <span>Day-by-Day Itinerary</span>
-                      </button>
-
+                  {/* Right Column: Compact & Aligned Action Buttons */}
+                  <div className="col-lg-4 col-xl-3 border-start-lg ps-lg-4 pt-2 pt-lg-0">
+                    <div className="d-flex flex-column gap-2">
                       <button 
                         onClick={() => onOpenBookingDetails(b)}
-                        className="btn btn-outline-dark btn-sm rounded-pill fw-bold"
+                        className="btn btn-warning text-dark fw-bold rounded-pill py-2 px-3 text-xs shadow-sm d-flex align-items-center justify-content-center gap-1.5 font-heading"
                       >
-                        View Voucher Details
+                        <Download size={14} />
+                        <span>Print / View Voucher</span>
                       </button>
+
+                      {/* Only display Day-by-Day Itinerary for bundled Holiday Packages / Tours, NOT standalone vehicle rentals */}
+                      {Boolean(
+                        (b.package_name && b.package_name !== b.vehicle_name && !b.package_name.toLowerCase().includes('rental')) ||
+                        (b.package_type && ['package', 'trip package', 'holiday package', 'tour'].includes(String(b.package_type).toLowerCase())) ||
+                        (b.type && ['package', 'holiday', 'tour'].includes(String(b.type).toLowerCase())) ||
+                        (b.hotel_name || b.hotel_details)
+                      ) && (
+                        <button 
+                          onClick={() => setSelectedItineraryPkg(b)}
+                          className="btn btn-outline-dark btn-sm rounded-pill py-2 px-3 fw-bold text-xs d-flex align-items-center justify-content-center gap-1.5"
+                        >
+                          <FileText size={14} />
+                          <span>Day-by-Day Itinerary</span>
+                        </button>
+                      )}
 
                       <a 
                         href="https://wa.me/919876543210?text=Hi%20WOW%20GOA%20Team%2C%20I%20have%20an%20inquiry%20about%20my%20Self%20Drive%20Booking"
                         target="_blank"
                         rel="noreferrer"
-                        className="btn btn-light btn-sm text-dark border rounded-pill fw-bold text-xxs d-flex align-items-center justify-content-center gap-1"
+                        className="btn btn-light btn-sm text-dark border rounded-pill py-2 px-3 fw-semibold text-xxs d-flex align-items-center justify-content-center gap-1.5 hover-bg-light"
                       >
                         <Phone size={12} className="text-success" />
-                        <span>WhatsApp Travel Concierge</span>
+                        <span>WhatsApp Concierge</span>
                       </a>
                     </div>
                   </div>
+
+                </div>
+              </div>
+
+              {/* ── 3. Professional Status Timeline ── */}
+              <div className="card-footer bg-light bg-opacity-60 border-top py-3 px-3 px-md-4">
+                <div className="d-flex align-items-center justify-content-between position-relative" style={{ minHeight: '44px' }}>
+                  
+                  {/* Background track line */}
+                  <div 
+                    className="position-absolute top-50 start-0 end-0 translate-middle-y" 
+                    style={{ height: '3px', background: '#e2e8f0', zIndex: 1, left: '28px', right: '28px' }} 
+                  />
+                  
+                  {/* Active progress track line */}
+                  <div 
+                    className="position-absolute top-50 start-0 translate-middle-y" 
+                    style={{ 
+                      height: '3px', 
+                      width: `${(Math.min(stepIdx, STATUS_STEPS.length - 1) / (STATUS_STEPS.length - 1)) * 100}%`, 
+                      background: '#10b981', 
+                      zIndex: 2,
+                      transition: 'width 0.4s ease',
+                      left: '28px'
+                    }} 
+                  />
+
+                  {STATUS_STEPS.map((st, sIdx) => {
+                    const isPast = sIdx < stepIdx;
+                    const isCurrent = sIdx === stepIdx;
+                    const isFuture = sIdx > stepIdx;
+
+                    return (
+                      <div key={st.label} className="d-flex flex-column align-items-center position-relative text-center" style={{ zIndex: 3 }}>
+                        {/* Indicator Node */}
+                        <div 
+                          className={`rounded-circle d-flex align-items-center justify-content-center transition-all ${
+                            isCurrent 
+                              ? 'bg-warning text-dark border border-2 border-dark shadow-sm' 
+                              : isPast 
+                                ? 'bg-success text-white border border-success' 
+                                : 'bg-white text-muted border'
+                          }`}
+                          style={{ 
+                            width: isCurrent ? '30px' : '26px', 
+                            height: isCurrent ? '30px' : '26px', 
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            boxShadow: isCurrent ? '0 0 0 4px rgba(255, 193, 7, 0.35)' : 'none'
+                          }}
+                        >
+                          {isPast ? (
+                            <Check size={14} strokeWidth={3} />
+                          ) : isCurrent ? (
+                            <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: '#0f172a' }}></span>
+                          ) : (
+                            <span className="text-secondary" style={{ fontSize: '10px' }}>{sIdx + 1}</span>
+                          )}
+                        </div>
+
+                        {/* Label with status symbol */}
+                        <div className="mt-1 d-flex align-items-center gap-1">
+                          <span 
+                            className={`text-nowrap ${
+                              isCurrent 
+                                ? 'fw-black text-dark' 
+                                : isPast 
+                                  ? 'fw-bold text-success' 
+                                  : 'text-muted fw-medium'
+                            }`}
+                            style={{ fontSize: isCurrent ? '12px' : '11px' }}
+                          >
+                            {st.label} {isPast ? '✓' : isCurrent ? '●' : ''}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
 
                 </div>
               </div>

@@ -1528,40 +1528,70 @@ export async function updateLead(leadId, updateData) {
   return data;
 }
 
-export async function updateLeadStatus(leadId, status) {
+export async function updateLeadStatus(leadId, status, user = {}) {
   const res = await apiFetch(API_BASE, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'update_lead_status', id: leadId, status })
+    body: JSON.stringify({ 
+      action: 'update_lead_status', 
+      id: leadId, 
+      status,
+      user_id: user.id || user.username || '',
+      user_name: user.name || user.username || '',
+      user_role: user.role || ''
+    })
   });
   const data = await res.json();
   if (!res.ok || !data.success) throw new Error(data.error || 'Failed to update lead status');
+  broadcastNotificationUpdate({ type: 'lead', title: `Lead #${leadId} Status: ${status}` });
+  broadcastBookingSync({ type: 'lead_status', leadId, status });
   return data;
 }
 
-export async function updateLeadAssignee(leadId, assignedTo, assignedBy = 'Admin') {
+export async function updateLeadAssignee(leadId, assignedTo, assignedBy = 'Super Admin', userRole = 'superadmin') {
   const res = await apiFetch(API_BASE, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'assign_lead', id: leadId, assigned_to: assignedTo, assigned_by: assignedBy })
+    headers: { 
+      'Content-Type': 'application/json',
+      'X-User-Role': userRole,
+      'X-User-Identifier': assignedBy
+    },
+    body: JSON.stringify({ 
+      action: 'assign_lead', 
+      id: leadId, 
+      assigned_to: assignedTo, 
+      assigned_by: assignedBy,
+      user_role: userRole
+    })
   });
   const data = await res.json();
   if (!res.ok || !data.success) throw new Error(data.error || 'Failed to assign lead');
+  broadcastNotificationUpdate({ type: 'lead', title: `Lead #${leadId} Assigned to ${assignedTo}` });
+  broadcastBookingSync({ type: 'lead_assigned', leadId, assignedTo });
   return data;
 }
 
-export async function assignLead(leadId, assignedTo, assignedBy = 'Admin') {
-  return updateLeadAssignee(leadId, assignedTo, assignedBy);
+export async function assignLead(leadId, assignedTo, assignedBy = 'Super Admin', userRole = 'superadmin') {
+  return updateLeadAssignee(leadId, assignedTo, assignedBy, userRole);
 }
 
-export async function updateNextAction(leadId, nextAction) {
+export async function updateNextAction(leadId, nextAction, user = {}) {
   const res = await apiFetch(API_BASE, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'update_next_action', id: leadId, next_action: nextAction })
+    body: JSON.stringify({ 
+      action: 'update_next_action', 
+      id: leadId, 
+      next_action: nextAction,
+      user_id: user.id || user.username || '',
+      user_name: user.name || user.username || '',
+      user_role: user.role || ''
+    })
   });
   const data = await res.json();
   if (!res.ok || !data.success) throw new Error(data.error || 'Failed to update next action');
+  broadcastNotificationUpdate({ type: 'lead', title: `Lead #${leadId} Next Action Updated` });
+  broadcastBookingSync({ type: 'lead_next_action', leadId, nextAction });
   return data;
 }
 
@@ -1572,9 +1602,7 @@ export async function fetchAssignableUsers() {
     const list = Array.isArray(data) ? data : [];
     return list.filter(u => {
       const r = (u.role || '').toLowerCase();
-      const n = (u.name || u.username || '').toLowerCase();
-      const excluded = ['admin', 'superadmin', 'super_admin', 'go_operator', 'goa_operator'];
-      return !excluded.includes(r) && !excluded.includes(n);
+      return !['superadmin', 'super_admin'].includes(r);
     });
   } catch (err) {
     console.warn('[API] fetchAssignableUsers fallback:', err.message);
@@ -1606,6 +1634,8 @@ export async function addLeadComment(leadId, comment, user = {}) {
   });
   const data = await res.json();
   if (!res.ok || !data.success) throw new Error(data.error || 'Failed to add comment');
+  broadcastNotificationUpdate({ type: 'lead', title: `New comment on Lead #${leadId}` });
+  broadcastBookingSync({ type: 'lead_comment', leadId });
   return data;
 }
 
@@ -1654,11 +1684,16 @@ export async function deleteLead(leadId) {
   return data;
 }
 
-export async function updateAiLeadChat(id, chatHistory) {
+export async function updateAiLeadChat(id, chatHistory, aiLeadId = null) {
   const res = await apiFetch(`${API_BASE}?action=update_ai_lead_chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id, chat_history: JSON.stringify(chatHistory) })
+    body: JSON.stringify({ 
+      id, 
+      lead_id: id,
+      ai_lead_id: aiLeadId,
+      chat_history: typeof chatHistory === 'string' ? chatHistory : JSON.stringify(chatHistory) 
+    })
   });
   return res.json();
 }
