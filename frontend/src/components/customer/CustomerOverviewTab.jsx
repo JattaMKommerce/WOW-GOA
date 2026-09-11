@@ -567,33 +567,39 @@ export default function CustomerOverviewTab({
               {(() => {
                 const type = (nextHoliday.package_type || nextHoliday.type || '').toLowerCase();
                 const itemName = (nextHoliday.item_name || nextHoliday.package_name || nextHoliday.vehicle_name || '').toLowerCase();
+                const itemId = String(nextHoliday.item_id || '').toLowerCase();
+                const isActivity = type === 'activity' || type === 'sightseeing' || itemId.startsWith('act') || itemId.startsWith('sight');
                 const isHotel = type === 'hotel' || type.includes('hotel') || itemName.includes('resort') || itemName.includes('hotel') || Boolean(nextHoliday.hotel_name);
                 const isBike = type === 'bike' || type.includes('bike rental') || itemName.includes('bike') || itemName.includes('scooter') || itemName.includes('activa') || itemName.includes('himalayan') || itemName.includes('bullet') || itemName.includes('gt');
                 const isSelfDrivePkg = type.includes('self drive') || type === 'selfdrive' || itemName.includes('self drive') || itemName.includes('craft my trip');
                 const isFlight = type === 'flight' || itemName.includes('flight');
-                const isTourPkg = (type.includes('package') || type.includes('tour')) && !isSelfDrivePkg;
+                const isTourPkg = (type.includes('package') || type.includes('tour')) && !isSelfDrivePkg && !isActivity;
 
-                const categoryBadge = isSelfDrivePkg 
-                  ? '⭐ Self Drive Holiday' 
-                  : isHotel 
-                    ? '🏨 Hotel & Resort Stay' 
-                    : isBike 
-                      ? '🏍️ Bike Rental' 
-                      : isTourPkg 
-                        ? '🌴 Tour Package' 
-                        : isFlight 
-                          ? '✈️ Flight Booking' 
-                          : '🚗 Self Drive Car';
+                const categoryBadge = isActivity
+                  ? '🎯 Sightseeing & Activity'
+                  : isSelfDrivePkg 
+                    ? '⭐ Self Drive Holiday' 
+                    : isHotel 
+                      ? '🏨 Hotel & Resort Stay' 
+                      : isBike 
+                        ? '🏍️ Bike Rental' 
+                        : isTourPkg 
+                          ? '🌴 Tour Package' 
+                          : isFlight 
+                            ? '✈️ Flight Booking' 
+                            : '🚗 Self Drive Car';
 
-                const subtitleText = isHotel
-                  ? 'Luxury Resort Stay • Breakfast & Pool Access Included'
-                  : isBike
-                    ? 'Unlimited KMs • Clean Helmets • Goa Tourist Permit'
-                    : isSelfDrivePkg
-                      ? 'Self Drive Vehicle + Hotel Stay + Unlimited KMs'
-                      : isTourPkg
-                        ? 'Guided Tour Itinerary • Transfers Included'
-                        : 'Unlimited KMs • Comprehensive Insurance • Goa Permit';
+                const subtitleText = isActivity
+                  ? 'Curated Sightseeing & Adventure Experience in Goa'
+                  : isHotel
+                    ? 'Luxury Resort Stay • Breakfast & Pool Access Included'
+                    : isBike
+                      ? 'Unlimited KMs • Clean Helmets • Goa Tourist Permit'
+                      : isSelfDrivePkg
+                        ? 'Self Drive Vehicle + Hotel Stay + Unlimited KMs'
+                        : isTourPkg
+                          ? 'Guided Tour Itinerary • Transfers Included'
+                          : 'Unlimited KMs • Comprehensive Insurance • Goa Permit';
 
                 return (
                   <div className="row g-4 align-items-center">

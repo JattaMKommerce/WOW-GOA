@@ -93,6 +93,39 @@ export default function AdminDriverManagement({ currentUser, bookings = [] }) {
 
   useEffect(() => {
     loadDrivers();
+    const interval = setInterval(loadDrivers, 3500);
+
+    const handleSync = () => {
+      loadDrivers();
+    };
+
+    window.addEventListener('tripgalileo-booking-sync', handleSync);
+    window.addEventListener('tripgalileo-notification-sync', handleSync);
+    window.addEventListener('booking-status-updated', handleSync);
+    window.addEventListener('driver-assigned', handleSync);
+    window.addEventListener('driver-status-updated', handleSync);
+
+    let bcBookings;
+    let bcNotifs;
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        bcBookings = new BroadcastChannel('tripgalileo_bookings_sync');
+        bcBookings.onmessage = handleSync;
+        bcNotifs = new BroadcastChannel('tripgalileo_notifications_sync');
+        bcNotifs.onmessage = handleSync;
+      }
+    } catch (e) {}
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('tripgalileo-booking-sync', handleSync);
+      window.removeEventListener('tripgalileo-notification-sync', handleSync);
+      window.removeEventListener('booking-status-updated', handleSync);
+      window.removeEventListener('driver-assigned', handleSync);
+      window.removeEventListener('driver-status-updated', handleSync);
+      if (bcBookings) bcBookings.close();
+      if (bcNotifs) bcNotifs.close();
+    };
   }, []);
 
   const handleOpenDriverDetails = async (driver) => {

@@ -673,6 +673,8 @@ export async function b2bBook(bookingPayload) {
   if (!res.ok || !data.success) {
     throw new Error(data.error || 'Failed to confirm B2B booking.');
   }
+  broadcastBookingSync({ action: 'created', booking: data.booking || data });
+  broadcastNotificationUpdate({ type: 'b2b', title: 'New B2B Booking' });
   return data;
 }
 
@@ -744,6 +746,7 @@ export async function b2bApprovePartner(partnerId) {
   if (!res.ok || !data.success) {
     throw new Error(data.error || 'Failed to approve B2B partner application.');
   }
+  broadcastNotificationUpdate({ type: 'b2b', title: 'B2B Partner Approved' });
   return data;
 }
 
@@ -757,6 +760,7 @@ export async function b2bRejectPartner(partnerId, reason = '') {
   if (!res.ok || !data.success) {
     throw new Error(data.error || 'Failed to reject B2B partner application.');
   }
+  broadcastNotificationUpdate({ type: 'b2b', title: 'B2B Partner Rejected' });
   return data;
 }
 
@@ -773,6 +777,7 @@ export async function b2bRequestMode(partnerId, requestedMode) {
   if (!res.ok || !data.success) {
     throw new Error(data.error || 'Failed to submit mode request.');
   }
+  broadcastNotificationUpdate({ type: 'b2b', title: 'B2B Mode Change Request' });
   return data;
 }
 
@@ -786,6 +791,7 @@ export async function b2bApproveModeRequest(partnerId) {
   if (!res.ok || !data.success) {
     throw new Error(data.error || 'Failed to approve mode request.');
   }
+  broadcastNotificationUpdate({ type: 'b2b', title: 'B2B Mode Request Approved' });
   return data;
 }
 
@@ -799,6 +805,7 @@ export async function b2bRejectModeRequest(partnerId, reason = '') {
   if (!res.ok || !data.success) {
     throw new Error(data.error || 'Failed to reject mode request.');
   }
+  broadcastNotificationUpdate({ type: 'b2b', title: 'B2B Mode Request Rejected' });
   return data;
 }
 
@@ -1492,7 +1499,9 @@ export async function createAiLead(name, phone) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, phone })
   });
-  return res.json();
+  const data = await res.json();
+  broadcastNotificationUpdate({ type: 'lead', title: `New Sophia AI Lead: ${name}` });
+  return data;
 }
 
 export async function createLead(leadData) {
@@ -1503,6 +1512,7 @@ export async function createLead(leadData) {
   });
   const data = await res.json();
   if (!res.ok || !data.success) throw new Error(data.error || 'Failed to create lead');
+  broadcastNotificationUpdate({ type: 'lead', title: `New Lead: ${leadData.name || 'Customer'}` });
   return data;
 }
 
@@ -1514,6 +1524,7 @@ export async function updateLead(leadId, updateData) {
   });
   const data = await res.json();
   if (!res.ok || !data.success) throw new Error(data.error || 'Failed to update lead');
+  broadcastNotificationUpdate({ type: 'lead', title: `Lead #${leadId} Updated` });
   return data;
 }
 
@@ -1617,6 +1628,7 @@ export async function toggleUserStatus(userId, status) {
   });
   const data = await res.json();
   if (!res.ok || !data.success) throw new Error(data.error || 'Failed to toggle user status');
+  broadcastNotificationUpdate({ type: 'user_status', userId, status });
   return data;
 }
 
@@ -3066,6 +3078,7 @@ export async function updateDriverStatus(driverId, status) {
   if (!res.ok || !data.success) {
     throw new Error(data.error || data.message || 'Failed to update driver status.');
   }
+  broadcastNotificationUpdate({ type: 'driver', title: `Driver Status Updated: ${status}` });
   return data;
 }
 
@@ -3079,6 +3092,8 @@ export async function assignDriver(bookingId, driverId, notes = '') {
   if (!res.ok || !data.success) {
     throw new Error(data.error || data.message || 'Failed to assign driver.');
   }
+  broadcastBookingSync({ action: 'driver_assigned', booking_id: bookingId, driver_id: driverId });
+  broadcastNotificationUpdate({ type: 'driver', title: `Driver Assigned to Booking #${bookingId}` });
   return data;
 }
 
@@ -3092,6 +3107,8 @@ export async function updateDriverJobStatus(bookingId, driverId, status, notes =
   if (!res.ok || !data.success) {
     throw new Error(data.error || data.message || 'Failed to update driver job status.');
   }
+  broadcastBookingSync({ action: 'driver_job_status', booking_id: bookingId, status });
+  broadcastNotificationUpdate({ type: 'driver', title: `Job #${bookingId}: ${status}` });
   return data;
 }
 
@@ -3105,6 +3122,8 @@ export async function deleteDriver(driverId) {
   if (!res.ok || !data.success) {
     throw new Error(data.error || data.message || 'Failed to delete driver.');
   }
+  broadcastBookingSync({ action: 'driver_deleted', driver_id: driverId });
+  broadcastNotificationUpdate({ type: 'driver', title: 'Driver Account Deleted' });
   return data;
 }
 
@@ -3128,6 +3147,8 @@ export async function acceptAvailableJob(bookingId, driverId, notes = '') {
     err.conflict = data.conflict || res.status === 409;
     throw err;
   }
+  broadcastBookingSync({ action: 'driver_job_accepted', booking_id: bookingId, driver_id: driverId });
+  broadcastNotificationUpdate({ type: 'driver', title: `Job #${bookingId} Accepted by Driver` });
   return data;
 }
 

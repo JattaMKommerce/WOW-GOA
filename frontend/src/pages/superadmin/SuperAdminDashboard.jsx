@@ -5,28 +5,57 @@ import {
   Plus, Edit, Trash2, X, Search, Eye, EyeOff, Lock, AlertTriangle, FileText,
   Download, Filter, RefreshCw, ToggleLeft, ToggleRight, DollarSign,
   ArrowUpRight, ArrowDownRight, Activity, Star, MapPin, Clock, ChevronRight,
-  XCircle, ShieldAlert, Key, Check, Compass, CalendarDays, Phone, Mail, MessageCircle
+  XCircle, ShieldAlert, Key, Check, Compass, CalendarDays, Phone, Mail, MessageCircle,
+  Briefcase, Tag, Gift
 } from 'lucide-react';
 import * as api from '../../services/api';
 import SubscriptionPlansManager from '../../components/superadmin/SubscriptionPlansManager';
 import PaymentGatewayManager from '../../components/superadmin/PaymentGatewayManager';
 import WalletApprovalCenter from '../../components/superadmin/WalletApprovalCenter';
 import AnalyticsView from '../../components/shared/AnalyticsView';
+import AdminB2BPortal from '../admin/b2b/AdminB2BPortal';
+import AdminDriverManagement from '../admin/AdminDriverManagement';
 
 // ─── STAT CARD ───────────────────────────────────────────────────────────────
-function StatCard({ label, value, icon, color, trend, sub }) {
+function StatCard({ label, value, icon, color, trend, sub, onClick }) {
   return (
-    <div className="rounded-3 p-3 h-100 shadow-sm" style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.07)' }}>
+    <div
+      onClick={onClick}
+      className={`rounded-3 p-3 h-100 shadow-sm ${onClick ? 'stat-card-clickable' : ''}`}
+      style={{
+        background: '#fff',
+        border: '1px solid rgba(0,0,0,0.07)',
+        cursor: onClick ? 'pointer' : 'default',
+        transition: 'all 0.18s ease-in-out'
+      }}
+      onMouseEnter={e => {
+        if (onClick) {
+          e.currentTarget.style.transform = 'translateY(-3px)';
+          e.currentTarget.style.boxShadow = '0 8px 20px rgba(0,0,0,0.08)';
+          e.currentTarget.style.borderColor = color || '#FF6333';
+        }
+      }}
+      onMouseLeave={e => {
+        if (onClick) {
+          e.currentTarget.style.transform = 'translateY(0)';
+          e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.05)';
+          e.currentTarget.style.borderColor = 'rgba(0,0,0,0.07)';
+        }
+      }}
+    >
       <div className="d-flex align-items-start justify-content-between mb-2">
         <div className="rounded-2 p-2 d-flex align-items-center justify-content-center" style={{ background: `${color}18`, width: '38px', height: '38px' }}>
           <span style={{ color }}>{icon}</span>
         </div>
-        {trend !== undefined && (
-          <span className="d-flex align-items-center gap-1" style={{ fontSize: '0.7rem', color: trend >= 0 ? '#22c55e' : '#ef4444', fontWeight: 700 }}>
-            {trend >= 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
-            {Math.abs(trend)}%
-          </span>
-        )}
+        <div className="d-flex align-items-center gap-1">
+          {trend !== undefined && (
+            <span className="d-flex align-items-center gap-1" style={{ fontSize: '0.7rem', color: trend >= 0 ? '#22c55e' : '#ef4444', fontWeight: 700 }}>
+              {trend >= 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+              {Math.abs(trend)}%
+            </span>
+          )}
+          {onClick && <ChevronRight size={14} className="opacity-40" style={{ color: '#64748b' }} />}
+        </div>
       </div>
       <div className="fw-bold mt-1" style={{ fontSize: '1.4rem', color: '#0D1B2E', lineHeight: 1 }}>{value}</div>
       <div className="mt-1" style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>{label}</div>
@@ -158,8 +187,21 @@ function FormInputField({ label, type = 'text', value, onChange, required, place
   );
 }
 
-// ─── DASHBOARD TAB (Recent Bookings Removed Cleanly) ───────────────────────────
-function DashboardTab({ usersList = [], vendors = [], cars = [], bikes = [], hotels = [], bookings = [] }) {
+// ─── DASHBOARD TAB (Comprehensive Centralized Visibility) ───────────────────────────
+function DashboardTab({
+  usersList = [],
+  vendors = [],
+  cars = [],
+  bikes = [],
+  hotels = [],
+  bookings = [],
+  b2bPartners = [],
+  b2bBookings = [],
+  drivers = [],
+  aiLeads = [],
+  customEnquiries = [],
+  onNavigate
+}) {
   const admins = usersList.filter(u => u.role === 'admin').length;
   const hotelVendors = vendors.filter(v => v.role === 'hotel_vendor').length;
   const vehicleVendors = vendors.filter(v => v.role !== 'hotel_vendor').length;
@@ -168,23 +210,59 @@ function DashboardTab({ usersList = [], vendors = [], cars = [], bikes = [], hot
   const todayStr = new Date().toISOString().slice(0, 10);
   const todayBookings = bookings.filter(b => b.created_at?.slice(0, 10) === todayStr).length;
   const pendingBookings = bookings.filter(b => b.status === 'Pending' || b.status === 'pending').length;
-  const cancelledBookings = bookings.filter(b => b.status === 'Cancelled' || b.status === 'cancelled').length;
   const totalRevenue = bookings.reduce((s, b) => s + parseFloat(b.total_paid || b.amount_paid || 0), 0);
   const customers = usersList.filter(u => u.role === 'customer').length;
 
+  // B2B Metrics
+  const commissionPartners = b2bPartners.filter(p => (p.mode || '').toLowerCase() === 'commission').length;
+  const nonCommissionPartners = b2bPartners.filter(p => (p.mode || '').toLowerCase() !== 'commission').length;
+  const totalB2BWalletBalance = b2bPartners.reduce((acc, p) => acc + (parseFloat(p.wallet_balance || 0)), 0);
+
+  // Driver Metrics
+  const activeDrivers = drivers.filter(d => (d.status || '').toLowerCase() === 'approved' || (d.status || '').toLowerCase() === 'active').length;
+  const pendingDrivers = drivers.filter(d => (d.status || '').toLowerCase() === 'pending').length;
+
+  // Categorized Bookings
+  const vehicleBookingsCount = bookings.filter(b => {
+    const t = String(b.type || b.item_type || '').toLowerCase();
+    const name = String(b.item_name || b.name || '').toLowerCase();
+    return t.includes('car') || t.includes('bike') || t.includes('vehicle') || name.includes('car') || name.includes('bike') || name.includes('scooter') || name.includes('activa') || name.includes('thar') || name.includes('innova') || name.includes('self-drive');
+  }).length;
+
+  const hotelBookingsCount = bookings.filter(b => {
+    const t = String(b.type || b.item_type || '').toLowerCase();
+    const name = String(b.item_name || b.name || '').toLowerCase();
+    return t.includes('hotel') || b.property_type || b.stars || name.includes('hotel') || name.includes('resort') || name.includes('villa');
+  }).length;
+
+  const tripBookingsCount = bookings.filter(b => {
+    const name = String(b.item_name || b.name || '').toLowerCase();
+    return name.includes('craft my trip') || name.includes('custom trip') || name.includes('package') || name.includes('holiday');
+  }).length;
+
+  const activityBookingsCount = bookings.filter(b => {
+    const t = String(b.type || b.item_type || '').toLowerCase();
+    const name = String(b.item_name || b.name || '').toLowerCase();
+    return t.includes('activity') || t.includes('sightseeing') || name.includes('scuba') || name.includes('cruise') || name.includes('safari') || name.includes('water sports') || name.includes('tour');
+  }).length;
+
   const stats = [
-    { label: 'Total Administrators', value: admins, icon: <UserCog size={18} />, color: '#7c3aed', trend: 0 },
-    { label: 'Total Vendors', value: totalVendors, icon: <Building size={18} />, color: '#0369a1', sub: `${hotelVendors} hotel · ${vehicleVendors} vehicle` },
-    { label: 'Total Hotels', value: hotels.length, icon: <Hotel size={18} />, color: '#059669', trend: 5 },
-    { label: 'Total Vehicles', value: (cars.length + bikes.length), icon: <Car size={18} />, color: '#d97706', sub: `${cars.length} cars · ${bikes.length} bikes` },
-    { label: 'Total Bookings', value: totalBookings, icon: <Calendar size={18} />, color: '#2563eb', trend: 12 },
-    { label: "Today's Bookings", value: todayBookings, icon: <Activity size={18} />, color: '#16a34a' },
-    { label: 'Pending Bookings', value: pendingBookings, icon: <Clock size={18} />, color: '#ca8a04' },
-    { label: 'Cancelled Bookings', value: cancelledBookings, icon: <X size={18} />, color: '#dc2626' },
-    { label: 'Total Revenue', value: `₹${(totalRevenue / 1000).toFixed(1)}K`, icon: <DollarSign size={18} />, color: '#0D1B2E', trend: 8 },
-    { label: 'Commission (10%)', value: `₹${(totalRevenue * 0.1 / 1000).toFixed(1)}K`, icon: <Percent size={18} />, color: '#7c3aed', sub: 'Platform commission' },
-    { label: 'Active Customers', value: customers, icon: <Users size={18} />, color: '#0891b2' },
-    { label: 'Pending Verification', value: vendors.filter(v => !v.verified).length, icon: <AlertTriangle size={18} />, color: '#f59e0b' },
+    { label: 'Administrators & Sub-Admins', value: admins, icon: <UserCog size={18} />, color: '#7c3aed', sub: 'Master & Sub-Admin Accounts', onClick: () => onNavigate?.('admin_management') },
+    { label: 'Vendors (Hotels & Fleet)', value: totalVendors, icon: <Building size={18} />, color: '#0369a1', sub: `${hotelVendors} hotel · ${vehicleVendors} vehicle`, onClick: () => onNavigate?.('vendor_management') },
+    { label: 'B2B Partners', value: b2bPartners.length, icon: <Briefcase size={18} />, color: '#8b5cf6', sub: `${commissionPartners} commission · ${nonCommissionPartners} net-rate`, onClick: () => onNavigate?.('b2b_all_partners') },
+    { label: 'Fleet & Drivers', value: drivers.length, icon: <Car size={18} />, color: '#059669', sub: `${activeDrivers} active · ${pendingDrivers} pending approval`, onClick: () => onNavigate?.('drivers') },
+    { label: 'Total Bookings', value: totalBookings, icon: <Calendar size={18} />, color: '#2563eb', trend: 12, sub: `${todayBookings} today · ${pendingBookings} pending`, onClick: () => onNavigate?.('vehicle_bookings') },
+    { label: 'Vehicle Rentals', value: vehicleBookingsCount, icon: <Car size={18} />, color: '#d97706', sub: `${cars.length} cars · ${bikes.length} bikes in fleet`, onClick: () => onNavigate?.('vehicle_bookings') },
+    { label: 'Hotel Reservations', value: hotelBookingsCount, icon: <Hotel size={18} />, color: '#0284c7', sub: `${hotels.length} partner properties listed`, onClick: () => onNavigate?.('hotel_bookings') },
+    { label: 'Craft My Trip / Packages', value: tripBookingsCount, icon: <Compass size={18} />, color: '#f97316', sub: 'Custom holidays & packages', onClick: () => onNavigate?.('trip_bookings') },
+    { label: 'Sightseeing & Activities', value: activityBookingsCount, icon: <MapPin size={18} />, color: '#10b981', sub: 'Water sports, cruises, tours', onClick: () => onNavigate?.('activity_bookings') },
+    { label: 'B2B Agent Bookings', value: b2bBookings.length, icon: <FileText size={18} />, color: '#6366f1', sub: 'B2B distribution bookings', onClick: () => onNavigate?.('b2b_commission_bookings') },
+    { label: 'B2B Wallet Balances', value: `₹${(totalB2BWalletBalance / 1000).toFixed(1)}K`, icon: <Wallet size={18} />, color: '#0d9488', sub: 'Prepaid agent deposits', onClick: () => onNavigate?.('b2b_wallets') },
+    { label: 'Total Platform Revenue', value: `₹${(totalRevenue / 1000).toFixed(1)}K`, icon: <DollarSign size={18} />, color: '#0D1B2E', trend: 8, sub: `₹${(totalRevenue * 0.1 / 1000).toFixed(1)}K platform comm. (10%)` },
+    { label: 'Active Customers', value: customers, icon: <Users size={18} />, color: '#0891b2', sub: 'Registered consumer travelers', onClick: () => onNavigate?.('user_management') },
+    { label: 'AI Leads & Inquiries', value: aiLeads.length + customEnquiries.length, icon: <Activity size={18} />, color: '#16a34a', sub: `${aiLeads.length} Sophia AI · ${customEnquiries.length} custom`, onClick: () => onNavigate?.('lead_management') },
+    { label: 'Pending KYC / Approvals', value: vendors.filter(v => !v.verified).length + pendingDrivers, icon: <AlertTriangle size={18} />, color: '#f59e0b', sub: `${vendors.filter(v => !v.verified).length} vendor · ${pendingDrivers} driver`, onClick: () => onNavigate?.('vendor_verification') },
+    { label: 'Commission Rules & Config', value: '10% Platform', icon: <Percent size={18} />, color: '#7c3aed', sub: 'Active tier markup rules', onClick: () => onNavigate?.('commission') },
   ];
 
   return (
@@ -2221,6 +2299,10 @@ export default function SuperAdminDashboard({
   bookings = [],
   aiLeads = [],
   customEnquiries = [],
+  b2bPartners = [],
+  b2bBookings = [],
+  drivers = [],
+  currentUser,
   onRefreshLeads,
   onAddUser,
   onUpdateUser,
@@ -2228,7 +2310,35 @@ export default function SuperAdminDashboard({
 }) {
   switch (activeTab) {
     case 'dashboard':
-      return <DashboardTab usersList={usersList} vendors={vendors} cars={cars} bikes={bikes} hotels={hotels} bookings={bookings} />;
+      return (
+        <DashboardTab
+          usersList={usersList}
+          vendors={vendors}
+          cars={cars}
+          bikes={bikes}
+          hotels={hotels}
+          bookings={bookings}
+          b2bPartners={b2bPartners}
+          b2bBookings={b2bBookings}
+          drivers={drivers}
+          aiLeads={aiLeads}
+          customEnquiries={customEnquiries}
+          onNavigate={onNavigate}
+        />
+      );
+    case 'b2b_dashboard':
+    case 'b2b_applications':
+    case 'b2b_all_partners':
+    case 'b2b_wallets':
+    case 'b2b_commission_partners':
+    case 'b2b_non_commission_partners':
+    case 'b2b_mode_requests':
+    case 'b2b_commission_bookings':
+    case 'b2b_non_commission_bookings':
+    case 'b2b_settings':
+      return <AdminB2BPortal activeSubTab={activeTab} onNavigateSubTab={(sub) => onNavigate(sub)} />;
+    case 'drivers':
+      return <AdminDriverManagement currentUser={currentUser} bookings={bookings} />;
     case 'admin_management':
       return <AdminManagementTab usersList={usersList} onAddUser={onAddUser} onUpdateUser={onUpdateUser} onDeleteUser={onDeleteUser} />;
     case 'user_management':
@@ -2273,6 +2383,21 @@ export default function SuperAdminDashboard({
         />
       );
     default:
-      return <DashboardTab usersList={usersList} vendors={vendors} cars={cars} bikes={bikes} hotels={hotels} bookings={bookings} />;
+      return (
+        <DashboardTab
+          usersList={usersList}
+          vendors={vendors}
+          cars={cars}
+          bikes={bikes}
+          hotels={hotels}
+          bookings={bookings}
+          b2bPartners={b2bPartners}
+          b2bBookings={b2bBookings}
+          drivers={drivers}
+          aiLeads={aiLeads}
+          customEnquiries={customEnquiries}
+          onNavigate={onNavigate}
+        />
+      );
   }
 }

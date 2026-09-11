@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 
 const DOB_MONTHS = [
@@ -16,12 +16,26 @@ const DOB_MONTHS = [
   { value: '12', label: 'December' }
 ];
 
-const currentYear = new Date().getFullYear();
-const maxYear = currentYear - 10; // 2016
-const minYear = 1930;
-const DOB_YEARS = Array.from({ length: maxYear - minYear + 1 }, (_, i) => String(maxYear - i));
+const DEFAULT_MAX_YEAR = 2026;
+const DEFAULT_MIN_YEAR = 1930;
 
-export default function DobPicker({ value = '', onChange, required = false, id = 'dob-picker' }) {
+export default function DobPicker({
+  value = '',
+  onChange,
+  required = false,
+  id = 'dob-picker',
+  maxYear: propMaxYear = DEFAULT_MAX_YEAR,
+  minYear: propMinYear = DEFAULT_MIN_YEAR
+}) {
+  const effectiveMaxYear = Number(propMaxYear) || DEFAULT_MAX_YEAR;
+  const effectiveMinYear = Number(propMinYear) || DEFAULT_MIN_YEAR;
+
+  const yearsList = useMemo(() => {
+    return Array.from(
+      { length: effectiveMaxYear - effectiveMinYear + 1 },
+      (_, i) => String(effectiveMaxYear - i)
+    );
+  }, [effectiveMaxYear, effectiveMinYear]);
   const [day, setDay] = useState('');
   const [month, setMonth] = useState('');
   const [year, setYear] = useState('');
@@ -102,7 +116,7 @@ export default function DobPicker({ value = '', onChange, required = false, id =
       const mNum = parseInt(m, 10);
       const yNum = parseInt(y, 10);
 
-      if (dNum >= 1 && dNum <= 31 && mNum >= 1 && mNum <= 12 && yNum >= minYear && yNum <= maxYear) {
+      if (dNum >= 1 && dNum <= 31 && mNum >= 1 && mNum <= 12 && yNum >= effectiveMinYear && yNum <= effectiveMaxYear) {
         setDay(d);
         setMonth(m);
         setYear(y);
@@ -187,7 +201,7 @@ export default function DobPicker({ value = '', onChange, required = false, id =
                 title="Select Birth Year"
               >
                 <option value="">Year</option>
-                {DOB_YEARS.map(y => (
+                {yearsList.map(y => (
                   <option key={y} value={y}>{y}</option>
                 ))}
               </select>

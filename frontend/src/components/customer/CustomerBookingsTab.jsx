@@ -201,6 +201,7 @@ export default function CustomerBookingsTab({
       if (categoryFilter === 'hotel' && !isHotelBooking(b)) return false;
       if (categoryFilter === 'flight' && !isFlightBooking(b)) return false;
       if (categoryFilter === 'craftmytrip' && !isCraftBooking(b)) return false;
+      if (categoryFilter === 'activity' && !isActivityBooking(b)) return false;
       if (categoryFilter === 'car' && !isCarBooking(b)) return false;
       if (categoryFilter === 'bike' && !isBikeBooking(b)) return false;
     }

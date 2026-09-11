@@ -1643,14 +1643,7 @@ export default function App() {
               </div>
               <CustomerActivitiesTab
                 activities={activities}
-                bookings={currentUser
-                  ? bookings.filter(b =>
-                      b.phone === currentUser.phone ||
-                      b.email === currentUser.email ||
-                      b.customer_id === currentUser.id ||
-                      b.customer_id === String(currentUser.id)
-                    )
-                  : []}
+                bookings={bookings}
                 currentUser={currentUser}
                 onOpenBookingDetails={() => {}}
                 onNavigateTab={handleTabChange}
