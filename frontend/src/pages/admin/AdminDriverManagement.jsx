@@ -61,8 +61,9 @@ function JobStatusBadge({ status }) {
   return <span className="badge rounded-pill px-2.5 py-1 fw-bold text-primary border border-primary-subtle" style={{ background: '#dbeafe', color: '#1d4ed8', fontSize: '0.72rem' }}>🔵 Assigned</span>;
 }
 
-export default function AdminDriverManagement({ currentUser, bookings = [] }) {
+export default function AdminDriverManagement({ currentUser, bookings = [], onRefresh }) {
   const [drivers, setDrivers] = useState([]);
+  const [localBookings, setLocalBookings] = useState(bookings);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -79,13 +80,37 @@ export default function AdminDriverManagement({ currentUser, bookings = [] }) {
   const [assignDriverId, setAssignDriverId] = useState('');
   const [assignNotes, setAssignNotes] = useState('');
 
+  useEffect(() => {
+    if (Array.isArray(bookings) && bookings.length > 0) {
+      setLocalBookings(bookings);
+    }
+  }, [bookings]);
+
   const loadDrivers = async () => {
     setLoading(true);
     try {
-      const data = await api.fetchDrivers();
+      const [data, freshBookings] = await Promise.all([
+        api.fetchDrivers().catch(() => []),
+        api.fetchBookings().catch(() => [])
+      ]);
       setDrivers(data || []);
+      if (Array.isArray(freshBookings) && freshBookings.length > 0) {
+        setLocalBookings(freshBookings);
+      }
+      if (onRefresh) {
+        onRefresh();
+      }
+      // If modal for driver details is currently open, refresh their data with fresh assignments
+      if (selectedDriverDetails?.driver?.id) {
+        try {
+          const freshDetails = await api.fetchDriverDetails(selectedDriverDetails.driver.id);
+          if (freshDetails) {
+            setSelectedDriverDetails(freshDetails);
+          }
+        } catch (err) {}
+      }
     } catch (e) {
-      console.error('Failed to load drivers:', e);
+      console.error('Failed to load drivers and bookings:', e);
     } finally {
       setLoading(false);
     }
@@ -269,7 +294,13 @@ export default function AdminDriverManagement({ currentUser, bookings = [] }) {
   });
 
   const approvedDriversList = drivers.filter(d => (d.status || '').toLowerCase() === 'approved' || (d.status || '').toLowerCase() === 'active');
-  const driverRequiredBookings = bookings.filter(b => b.driver_required == 1 || b.driver_required === 'yes' || b.driver_required === true);
+  const isDriverServiceBooking = (b) => {
+    if (!b) return false;
+    if (b.driver_required == 1 || b.driver_required === 'yes' || b.driver_required === true) return true;
+    const sType = String(b.driver_service_type || '').toUpperCase().trim();
+    return sType === 'PICKUP' || sType === 'DROP' || sType === 'FULL';
+  };
+  const driverRequiredBookings = (localBookings || []).filter(isDriverServiceBooking);
 
   return (
     <div className="p-4" style={{ minHeight: '100%' }}>
@@ -1060,18 +1091,18 @@ export default function AdminDriverManagement({ currentUser, bookings = [] }) {
                 </label>
                 {driverRequiredBookings.length === 0 ? (
                   <div className="alert alert-info py-2 px-3 small mb-0">
-                    No customer bookings currently have "Driver Required: YES". Select from all active bookings:
+                    No customer bookings currently have driver service requested. Select from all active bookings:
                     <select
                       className="form-select form-select-sm mt-2 fw-semibold"
                       value={selectedBookingForAssign?.id || ''}
                       onChange={e => {
-                        const found = bookings.find(b => String(b.id) === e.target.value);
+                        const found = (localBookings || []).find(b => String(b.id) === e.target.value);
                         setSelectedBookingForAssign(found || null);
                       }}
                       required
                     >
                       <option value="">-- Choose Booking --</option>
-                      {bookings.slice(0, 30).map(b => (
+                      {(localBookings || []).slice(0, 30).map(b => (
                         <option key={b.id} value={b.id}>
                           #{b.id} — {b.name || b.customer_name || 'Customer'} ({b.item_name || 'Trip'} • {b.pickup_date || 'Date'})
                         </option>
@@ -1083,17 +1114,20 @@ export default function AdminDriverManagement({ currentUser, bookings = [] }) {
                     className="form-select form-select-sm fw-semibold"
                     value={selectedBookingForAssign?.id || ''}
                     onChange={e => {
-                      const found = bookings.find(b => String(b.id) === e.target.value);
+                      const found = (localBookings || []).find(b => String(b.id) === e.target.value);
                       setSelectedBookingForAssign(found || null);
                     }}
                     required
                   >
                     <option value="">-- Select Customer-Requested Booking --</option>
-                    {driverRequiredBookings.map(b => (
-                      <option key={b.id} value={b.id}>
-                        🚗 #{b.id} — {b.name || b.customer_name || 'Customer'} ({b.item_name} • {b.pickup_date || 'Date'})
-                      </option>
-                    ))}
+                    {driverRequiredBookings.map(b => {
+                      const sType = String(b.driver_service_type || '').toUpperCase().trim() || 'FULL';
+                      return (
+                        <option key={b.id} value={b.id}>
+                          🚗 #{b.id} — {b.name || b.customer_name || 'Customer'} ({b.item_name} • {sType} Service • {b.pickup_date || 'Date'})
+                        </option>
+                      );
+                    })}
                   </select>
                 )}
               </div>
@@ -1103,6 +1137,10 @@ export default function AdminDriverManagement({ currentUser, bookings = [] }) {
                   <div className="d-flex justify-content-between mb-1">
                     <span className="text-muted">Customer:</span>
                     <span className="fw-bold">{selectedBookingForAssign.name || selectedBookingForAssign.customer_name} ({selectedBookingForAssign.phone})</span>
+                  </div>
+                  <div className="d-flex justify-content-between mb-1">
+                    <span className="text-muted">Driver Service:</span>
+                    <span className="fw-bold text-primary">{selectedBookingForAssign.driver_service_type || (selectedBookingForAssign.driver_required ? 'FULL' : 'Standard')} Service</span>
                   </div>
                   <div className="d-flex justify-content-between mb-1">
                     <span className="text-muted">Pickup Location:</span>

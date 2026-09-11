@@ -16,13 +16,38 @@ function getFirstDayOfMonth(year, month) {
   return new Date(year, month, 1).getDay();
 }
 
+function normalizeCalendarDate(raw) {
+  if (!raw) return '';
+  const str = String(raw).trim();
+  if (!str) return '';
+  const dmyMatch = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if (dmyMatch) {
+    const d = String(dmyMatch[1]).padStart(2, '0');
+    const m = String(dmyMatch[2]).padStart(2, '0');
+    const y = dmyMatch[3];
+    return `${y}-${m}-${d}`;
+  }
+  const ymdMatch = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if (ymdMatch) {
+    const y = ymdMatch[1];
+    const m = String(ymdMatch[2]).padStart(2, '0');
+    const d = String(ymdMatch[3]).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  if (str.length >= 10) {
+    return str.slice(0, 10);
+  }
+  return str;
+}
+
 export default function AdminAvailabilityCalendar({
   currentUser,
   hotels = [],
   cars = [],
   bikes = [],
   packages = [],
-  bookings: propBookings = []
+  bookings: propBookings = [],
+  onRefresh
 }) {
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
@@ -152,17 +177,29 @@ export default function AdminAvailabilityCalendar({
     price: p.price
   })), [packages]);
 
-  // Robust category classification: Vehicle, Hotel, Package
+  // Robust category classification: Vehicle, Hotel, Package, Flight
   const getBookingCategory = (b) => {
     if (!b) return 'other';
-    const type = String(b.type || b.package_type || '').trim().toLowerCase();
+    const type = String(b.type || b.package_type || b.item_type || '').trim().toLowerCase();
     const itemId = String(b.item_id || '').trim().toLowerCase();
-    const itemName = String(b.item_name || b.vehicle_name || b.hotel_name || b.package_name || '').trim().toLowerCase();
+    const itemName = String(b.item_name || b.vehicle_name || b.hotel_name || b.package_name || b.service_name || '').trim().toLowerCase();
 
-    // 1. Hotel check
+    // 1. Flight check
+    if (
+      type === 'flight' ||
+      itemId.includes('flight') ||
+      itemName.includes('flight') ||
+      itemName.includes('airways') ||
+      itemName.includes('airline') ||
+      Boolean(b.flight_number || b.airline)
+    ) {
+      return 'flight';
+    }
+
+    // 2. Hotel check
     if (
       type === 'hotel' ||
-      b.hotel_name ||
+      Boolean(b.hotel_id || b.hotel_name) ||
       itemId.startsWith('hotel-') ||
       itemId.startsWith('htl-') ||
       itemName.includes('hotel') ||
@@ -170,38 +207,55 @@ export default function AdminAvailabilityCalendar({
       itemName.includes('marriott') ||
       itemName.includes('taj') ||
       itemName.includes('stay') ||
+      itemName.includes('villa') ||
+      itemName.includes('suites') ||
+      itemName.includes('palace') ||
+      itemName.includes('inn') ||
+      itemName.includes('homestay') ||
       hotelList.some(h => String(h.id) === String(b.item_id) || itemName.includes(h.name.toLowerCase()))
     ) {
       return 'hotel';
     }
 
-    // 2. Vehicle check
+    // 3. Vehicle check (Cars, Bikes, Self-Drive, Fleet)
+    const vehicleKeywords = ['swift', 'thar', 'creta', 'innova', 'ertiga', 'baleno', 'i20', 'activa', 'bike', 'car', 'scooter', 'crysta', 'fortuner', 'scorpio', 'wagonr', 'sedan', 'suv', 'hatchback', 'rental', 'selfdrive', 'self-drive'];
     if (
       type === 'vehicle' ||
       type === 'car' ||
       type === 'bike' ||
       type === 'selfdrive' ||
       type === 'self-drive' ||
-      b.vehicle_name ||
+      Boolean(b.vehicle_id || b.vehicle_name) ||
       itemId.startsWith('car-') ||
       itemId.startsWith('bike-') ||
       itemId.startsWith('veh-') ||
+      vehicleKeywords.some(kw => itemName.includes(kw) || itemId.includes(kw)) ||
       vehicleList.some(v => String(v.id) === String(b.item_id) || itemName.includes(v.name.toLowerCase()))
     ) {
       return 'vehicle';
     }
 
-    // 3. Package check
+    // 4. Package check
     if (
       type === 'package' ||
       type === 'tour' ||
       type === 'trip' ||
       type === 'custom' ||
       type === 'craft' ||
-      b.package_name ||
+      type === 'sightseeing' ||
+      type === 'activity' ||
+      Boolean(b.package_name) ||
       itemId.startsWith('pkg-') ||
       itemId.startsWith('package-') ||
       itemId.startsWith('craft-') ||
+      itemId.startsWith('act-') ||
+      itemId.startsWith('sight-') ||
+      itemName.includes('package') ||
+      itemName.includes('tour') ||
+      itemName.includes('trip') ||
+      itemName.includes('getaway') ||
+      itemName.includes('escape') ||
+      itemName.includes('craft my trip') ||
       packageList.some(p => String(p.id) === String(b.item_id) || itemName.includes(p.name.toLowerCase()))
     ) {
       return 'package';
@@ -210,14 +264,14 @@ export default function AdminAvailabilityCalendar({
     return 'other';
   };
 
-  // Date range normalization
+  // Safe date range normalization across all supported formats
   const getBookingDateRange = (b) => {
-    const startStr = b.pickup_date || b.checkin_date || b.check_in_date || b.start_date || (b.created_at ? String(b.created_at).slice(0, 10) : '');
-    const endStr = b.drop_date || b.checkout_date || b.check_out_date || b.end_date || startStr;
-    return {
-      start: startStr ? String(startStr).slice(0, 10) : '',
-      end: endStr ? String(endStr).slice(0, 10) : (startStr ? String(startStr).slice(0, 10) : '')
-    };
+    if (!b) return { start: '', end: '' };
+    const rawStart = b.pickup_date || b.check_in_date || b.checkin_date || b.departure_date || b.travel_date || b.start_date || (b.created_at ? String(b.created_at).slice(0, 10) : '');
+    const rawEnd = b.drop_date || b.check_out_date || b.checkout_date || b.return_date || b.end_date || rawStart;
+    const start = normalizeCalendarDate(rawStart);
+    const end = normalizeCalendarDate(rawEnd) || start;
+    return { start, end };
   };
 
   const isBookingOnDate = (b, dateStr) => {
@@ -242,6 +296,8 @@ export default function AdminAvailabilityCalendar({
       // Filter by category
       if (typeFilter === 'vehicle' && category !== 'vehicle') return false;
       if (typeFilter === 'hotel' && category !== 'hotel') return false;
+      if (typeFilter === 'trip' && category !== 'package') return false;
+      if (typeFilter === 'flight' && category !== 'flight') return false;
 
       // Filter by specific item if selected
       if (selectedItem !== 'all') {
@@ -402,6 +458,21 @@ export default function AdminAvailabilityCalendar({
             >
               Hotels ({hotelList.length})
             </button>
+            <button
+              onClick={() => { setTypeFilter('trip'); setSelectedItem('all'); setShowAvailableOnly(false); }}
+              className={`btn btn-sm rounded-pill px-3 fw-bold border-0 transition-all ${typeFilter === 'trip' && !showAvailableOnly ? 'text-white' : 'text-secondary'}`}
+              style={{ background: typeFilter === 'trip' && !showAvailableOnly ? '#059669' : 'transparent', fontSize: '0.78rem' }}
+            >
+              Trips ({packageList.length})
+            </button>
+            <button
+              onClick={() => setShowAvailableOnly(prev => !prev)}
+              className={`btn btn-sm rounded-pill px-3 fw-bold border-0 transition-all ${showAvailableOnly ? 'text-white' : 'text-success'}`}
+              style={{ background: showAvailableOnly ? '#16a34a' : 'transparent', fontSize: '0.78rem' }}
+              title="Toggle Available units view"
+            >
+              {showAvailableOnly ? '✓ Available (Active)' : '✓ Available'}
+            </button>
           </div>
 
           {/* Specific Item Selector */}
@@ -412,9 +483,9 @@ export default function AdminAvailabilityCalendar({
             onChange={e => setSelectedItem(e.target.value)}
           >
             <option value="all">
-              {typeFilter === 'hotel' ? 'Filter Specific Hotel (All)' : typeFilter === 'vehicle' ? 'Filter Specific Vehicle (All)' : 'Filter Specific Item (All)'}
+              {typeFilter === 'hotel' ? 'Filter Specific Hotel (All)' : typeFilter === 'vehicle' ? 'Filter Specific Vehicle (All)' : typeFilter === 'trip' ? 'Filter Specific Trip (All)' : 'Filter Specific Item (All)'}
             </option>
-            {(typeFilter === 'hotel' ? hotelList : typeFilter === 'vehicle' ? vehicleList : [...vehicleList, ...hotelList]).map(it => (
+            {(typeFilter === 'hotel' ? hotelList : typeFilter === 'vehicle' ? vehicleList : typeFilter === 'trip' ? packageList : [...vehicleList, ...hotelList]).map(it => (
               <option key={it.id} value={it.name}>{it.name} ({it.type})</option>
             ))}
           </select>
@@ -427,6 +498,22 @@ export default function AdminAvailabilityCalendar({
             title="Jump to today and view active bookings"
           >
             <Calendar size={13} style={{ color: '#FF6333' }} /> Today
+          </button>
+
+          {/* Refresh Button */}
+          <button
+            onClick={async () => {
+              if (onRefresh) await onRefresh();
+              try {
+                const fresh = await api.fetchBookings();
+                if (Array.isArray(fresh)) setLiveBookings(fresh);
+              } catch (e) {}
+            }}
+            className="btn btn-sm btn-outline-secondary shadow-sm rounded-pill px-3 fw-bold d-flex align-items-center gap-1.5"
+            style={{ fontSize: '0.78rem' }}
+            title="Refresh Availability Calendar"
+          >
+            <Clock size={13} /> Refresh
           </button>
         </div>
       </div>

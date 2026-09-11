@@ -393,30 +393,72 @@ export default function AdminPortalPage({
     return { tab: 'bookings', type: 'Holiday Package Booking', color: '#f97316' };
   };
 
+  const [liveBookings, setLiveBookings] = useState(bookings);
+  const [liveUsers, setLiveUsers] = useState(usersList);
+  const [liveDrivers, setLiveDrivers] = useState([]);
+  const [liveVendors, setLiveVendors] = useState(vendors);
+  const [liveB2BPartners, setLiveB2BPartners] = useState([]);
+  const [isDataSyncing, setIsDataSyncing] = useState(false);
+
+  useEffect(() => {
+    if (bookings && bookings.length > 0) setLiveBookings(bookings);
+  }, [bookings]);
+
+  useEffect(() => {
+    if (usersList && usersList.length > 0) setLiveUsers(usersList);
+  }, [usersList]);
+
+  useEffect(() => {
+    if (vendors && vendors.length > 0) setLiveVendors(vendors);
+  }, [vendors]);
+
   const [backendNotifs, setBackendNotifs] = useState([]);
   const [adminToasts, setAdminToasts] = useState([]);
   const prevNotifIdsRef = useRef(new Set());
   const isInitialLoadRef = useRef(true);
 
-  const fetchAdminNotifications = async () => {
+  // Central live data synchronization for Admin portal
+  const loadAllAdminData = async () => {
+    setIsDataSyncing(true);
     try {
-      const res = await api.fetchNotifications({ role: 'admin', userId: currentUser?.id || 'admin' });
-      if (res && res.success && Array.isArray(res.notifications)) {
+      const [
+        freshBookings,
+        freshUsers,
+        freshDrivers,
+        freshVendors,
+        freshB2BPartners,
+        notifsRes
+      ] = await Promise.all([
+        api.fetchBookings().catch(() => []),
+        api.fetchUsers().catch(() => []),
+        api.fetchDrivers().catch(() => []),
+        api.fetchVendors().catch(() => []),
+        api.fetchB2BPartners().catch(() => []),
+        api.fetchNotifications({ role: 'admin', userId: currentUser?.id || 'admin' }).catch(() => ({ notifications: [] }))
+      ]);
+
+      if (Array.isArray(freshBookings) && freshBookings.length > 0) setLiveBookings(freshBookings);
+      if (Array.isArray(freshUsers) && freshUsers.length > 0) setLiveUsers(freshUsers);
+      if (Array.isArray(freshDrivers) && freshDrivers.length > 0) setLiveDrivers(freshDrivers);
+      if (Array.isArray(freshVendors) && freshVendors.length > 0) setLiveVendors(freshVendors);
+      if (Array.isArray(freshB2BPartners) && freshB2BPartners.length > 0) setLiveB2BPartners(freshB2BPartners);
+
+      if (notifsRes && Array.isArray(notifsRes.notifications)) {
         setBackendNotifs(prev => {
           if (
-            prev.length === res.notifications.length &&
-            prev.every((n, idx) => n.id === res.notifications[idx].id && n.is_read === res.notifications[idx].is_read)
+            prev.length === notifsRes.notifications.length &&
+            prev.every((n, idx) => n.id === notifsRes.notifications[idx].id && n.is_read === notifsRes.notifications[idx].is_read)
           ) {
             return prev;
           }
-          return res.notifications;
+          return notifsRes.notifications;
         });
 
         // Detect new unread notifications, trigger sound once and show live toasts
         if (isInitialLoadRef.current) {
-          registerSeenNotifications(res.notifications);
-        } else if (res.notifications.length > 0) {
-          const fresh = handleIncomingNotifications(res.notifications, { isInitialLoad: false });
+          registerSeenNotifications(notifsRes.notifications);
+        } else if (notifsRes.notifications.length > 0) {
+          const fresh = handleIncomingNotifications(notifsRes.notifications, { isInitialLoad: false });
           if (fresh.length > 0) {
             fresh.forEach(item => {
               const toastId = `toast_${Date.now()}_${Math.random()}`;
@@ -427,35 +469,61 @@ export default function AdminPortalPage({
             });
           }
         }
-        prevNotifIdsRef.current = new Set(res.notifications.map(n => String(n.id)));
-        isInitialLoadRef.current = false;
+        prevNotifIdsRef.current = new Set(notifsRes.notifications.map(n => String(n.id)));
       }
-    } catch (e) {}
+      isInitialLoadRef.current = false;
+    } catch (e) {
+      console.warn('Admin portal data sync error:', e);
+    } finally {
+      setIsDataSyncing(false);
+    }
   };
 
   useEffect(() => {
-    fetchAdminNotifications();
-    const interval = setInterval(fetchAdminNotifications, 3500);
+    loadAllAdminData();
+    const interval = setInterval(loadAllAdminData, 4000);
 
     const handleSync = () => {
-      fetchAdminNotifications();
+      loadAllAdminData();
     };
 
-    window.addEventListener('new-booking-created', handleSync);
+    const handleNewBooking = (e) => {
+      if (e?.detail) {
+        setLiveBookings(prev => [e.detail, ...prev.filter(b => String(b.id) !== String(e.detail.id))]);
+      }
+      loadAllAdminData();
+    };
+
+    window.addEventListener('new-booking-created', handleNewBooking);
     window.addEventListener('booking-status-updated', handleSync);
     window.addEventListener('booking-updated', handleSync);
     window.addEventListener('booking-deleted', handleSync);
+    window.addEventListener('driver-assigned', handleSync);
+    window.addEventListener('driver-status-updated', handleSync);
     window.addEventListener('tripgalileo-notification-sync', handleSync);
     window.addEventListener('authoritative-notification-received', handleSync);
+    window.addEventListener('tripgalileo-booking-sync', handleSync);
+
+    let bc = null;
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        bc = new BroadcastChannel('tripgalileo_bookings_sync');
+        bc.onmessage = handleSync;
+      }
+    } catch (err) {}
 
     return () => {
       clearInterval(interval);
-      window.removeEventListener('new-booking-created', handleSync);
+      window.removeEventListener('new-booking-created', handleNewBooking);
       window.removeEventListener('booking-status-updated', handleSync);
       window.removeEventListener('booking-updated', handleSync);
       window.removeEventListener('booking-deleted', handleSync);
+      window.removeEventListener('driver-assigned', handleSync);
+      window.removeEventListener('driver-status-updated', handleSync);
       window.removeEventListener('tripgalileo-notification-sync', handleSync);
       window.removeEventListener('authoritative-notification-received', handleSync);
+      window.removeEventListener('tripgalileo-booking-sync', handleSync);
+      if (bc) bc.close();
     };
   }, [currentUser?.id]);
 
@@ -485,8 +553,8 @@ export default function AdminPortalPage({
       });
     });
 
-    // 2. Real-time bookings from props / sync
-    (bookings || []).forEach(b => {
+    // 2. Real-time bookings from live sync
+    (liveBookings || []).forEach(b => {
       const cat = getAdminBookingCategory(b);
       const isActionable = b.status === 'Draft' || b.status === 'Pending' || b.status === 'Payment Verification Pending' || b.status === 'New' || b.status === 'CONFIRMED' || b.status === 'Confirmed';
       const bKey = `b-${b.id}`;
@@ -505,7 +573,7 @@ export default function AdminPortalPage({
     });
 
     return Array.from(notifMap.values());
-  }, [backendNotifs, bookings, readNotifIds]);
+  }, [backendNotifs, liveBookings, readNotifIds]);
 
   const activeAdminNotifications = mergedAdminNotifications.filter(n => !clearedNotifIds.includes(n.id));
   const adminUnreadCount = activeAdminNotifications.filter(n => n.isActionable && !readNotifIds.includes(n.id) && !n.is_read).length;
@@ -518,7 +586,7 @@ export default function AdminPortalPage({
       localStorage.setItem('admin_read_notifs', JSON.stringify(allIds));
     } catch (err) {}
     await api.markNotificationRead(null, { role: 'admin', userId: currentUser?.id || 'admin', all: true });
-    fetchAdminNotifications();
+    loadAllAdminData();
   };
 
   const handleAdminClearAll = async (e) => {
@@ -529,7 +597,7 @@ export default function AdminPortalPage({
       localStorage.setItem('admin_cleared_notifs', JSON.stringify(allIds));
     } catch (err) {}
     await api.clearNotifications({ role: 'admin', userId: currentUser?.id || 'admin' });
-    fetchAdminNotifications();
+    loadAllAdminData();
   };
 
   const handleAdminDismissNotification = (e, id) => {
@@ -587,7 +655,23 @@ export default function AdminPortalPage({
   const renderContent = () => {
     switch (adminActiveTab) {
       case 'overview':
-        return <AdminDashboardOverview vendors={vendors} allPackages={allPackages} hotels={hotels} cars={cars} bikes={bikes} bookings={bookings} currentUser={currentUser} />;
+      case 'dashboard':
+        return (
+          <AdminDashboardOverview
+            vendors={liveVendors}
+            allPackages={allPackages}
+            hotels={hotels}
+            cars={cars}
+            bikes={bikes}
+            bookings={liveBookings}
+            currentUser={currentUser}
+            usersList={liveUsers}
+            drivers={liveDrivers}
+            b2bPartners={liveB2BPartners}
+            onNavigate={(tab) => handleTabChange(tab)}
+            onRefresh={loadAllAdminData}
+          />
+        );
 
       case 'b2b_dashboard':
       case 'b2b_applications':
@@ -602,43 +686,53 @@ export default function AdminPortalPage({
         return <AdminB2BPortal activeSubTab={adminActiveTab} onNavigateSubTab={(sub) => setAdminActiveTab(sub)} />;
 
       case 'drivers':
-        return <AdminDriverManagement currentUser={currentUser} bookings={bookings} />;
+        return <AdminDriverManagement currentUser={currentUser} bookings={liveBookings} onRefresh={loadAllAdminData} />;
 
       case 'subscription':
         return <AdminSubscriptionPanel currentUser={currentUser} />;
       case 'cms':
         return <AdminCMS />;
       case 'customers':
-        return <AdminCustomerManagement usersList={usersList} bookings={bookings} currentUser={currentUser} />;
+        return <AdminCustomerManagement usersList={liveUsers} bookings={liveBookings} currentUser={currentUser} onRefresh={loadAllAdminData} />;
       case 'add_users':
-        return <AdminCustomerManagement usersList={usersList} bookings={bookings} initialOpenAddUser={true} currentUser={currentUser} />;
+        return <AdminCustomerManagement usersList={liveUsers} bookings={liveBookings} initialOpenAddUser={true} currentUser={currentUser} onRefresh={loadAllAdminData} />;
       case 'bookings':
-        return <AdminBookingManagement bookings={bookings} currentUser={currentUser} hotels={hotels} cars={cars} bikes={bikes} />;
+        return (
+          <AdminBookingManagement
+            bookings={liveBookings}
+            currentUser={currentUser}
+            hotels={hotels}
+            cars={cars}
+            bikes={bikes}
+            onRefreshBookings={loadAllAdminData}
+            onNavigateToCalendar={() => handleTabChange('availability')}
+          />
+        );
       case 'leads':
       case 'lead_management':
-        return <LeadManagement usersList={usersList} currentUser={currentUser} />;
+        return <LeadManagement usersList={liveUsers} currentUser={currentUser} />;
       case 'enquiries':
       case 'custom_enquiries':
-        return <AdminEnquiryCRM usersList={usersList} currentUser={currentUser} />;
+        return <AdminEnquiryCRM usersList={liveUsers} currentUser={currentUser} />;
       case 'promotions':
         return <AdminPromotions />;
       case 'analytics':
-        return <AnalyticsView bookings={bookings} hotels={hotels} cars={cars} bikes={bikes} vendors={vendors} allPackages={allPackages} />;
+        return <AnalyticsView bookings={liveBookings} hotels={hotels} cars={cars} bikes={bikes} vendors={liveVendors} allPackages={allPackages} />;
       case 'admin_flights':
         return (
           <div className="p-4">
             <div className="rounded-3 shadow-sm border" style={{ background: '#fff' }}>
-              <FlightVendorDashboard activeTab="flights" flights={flights} onAddFlight={onAddFlight} onUpdateFlight={onUpdateFlight} onDeleteFlight={onDeleteFlight} bookings={bookings} currentUser={currentUser} />
+              <FlightVendorDashboard activeTab="flights" flights={flights} onAddFlight={onAddFlight} onUpdateFlight={onUpdateFlight} onDeleteFlight={onDeleteFlight} bookings={liveBookings} currentUser={currentUser} />
             </div>
           </div>
         );
       case 'admin_hotels':
-        return <AdminHotelsView hotels={hotels} onAddHotel={onAddHotel} onUpdateHotel={onUpdateHotel} onDeleteHotel={onDeleteHotel} bookings={bookings} currentUser={currentUser} />;
+        return <AdminHotelsView hotels={hotels} onAddHotel={onAddHotel} onUpdateHotel={onUpdateHotel} onDeleteHotel={onDeleteHotel} bookings={liveBookings} currentUser={currentUser} />;
       case 'admin_vehicles':
         return (
           <div className="p-4">
             <div className="rounded-3 shadow-sm border" style={{ background: '#fff' }}>
-              <VendorDashboard activeTab={adminVehiclesInnerTab} setActiveTab={setAdminVehiclesInnerTab} vendors={vendors} cars={cars} bikes={bikes} onAddCar={onAddCar} onUpdateCar={onUpdateCar} onDeleteCar={onDeleteCar} onAddBike={onAddBike} onUpdateBike={onUpdateBike} onDeleteBike={onDeleteBike} bookings={bookings} currentUser={currentUser} />
+              <VendorDashboard activeTab={adminVehiclesInnerTab} setActiveTab={setAdminVehiclesInnerTab} vendors={liveVendors} cars={cars} bikes={bikes} onAddCar={onAddCar} onUpdateCar={onUpdateCar} onDeleteCar={onDeleteCar} onAddBike={onAddBike} onUpdateBike={onUpdateBike} onDeleteBike={onDeleteBike} bookings={liveBookings} currentUser={currentUser} />
             </div>
           </div>
         );
@@ -654,14 +748,15 @@ export default function AdminPortalPage({
                 cars={cars}
                 bikes={bikes}
                 packages={allPackages}
-                bookings={bookings}
+                bookings={liveBookings}
+                onRefresh={loadAllAdminData}
               />
             </div>
           </div>
         );
       }
       case 'markup_reports':
-        return <div className="p-4"><div className="rounded-3 shadow-sm border" style={{ background: '#fff' }}><AdminMarkupPanel markups={markups} onSaveMarkup={onSaveMarkup} vendors={vendors} bookings={bookings} flights={flights} hotels={hotels} cars={cars} bikes={bikes} packages={allPackages} /></div></div>;
+        return <div className="p-4"><div className="rounded-3 shadow-sm border" style={{ background: '#fff' }}><AdminMarkupPanel markups={markups} onSaveMarkup={onSaveMarkup} vendors={liveVendors} bookings={liveBookings} flights={flights} hotels={hotels} cars={cars} bikes={bikes} packages={allPackages} /></div></div>;
       case 'platform_settings':
         return <AdminPlatformSettings />;
       case 'payment_settings':
@@ -673,14 +768,14 @@ export default function AdminPortalPage({
           </div>
         );
       case 'wallet_recharges':
-        return <AdminWalletRecharges vendors={vendors} />;
+        return <AdminWalletRecharges vendors={liveVendors} />;
       case 'payment':
         return (
           <div className="p-4">
             <div className="rounded-3 p-4" style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.07)' }}>
               <h5 className="fw-bold mb-1" style={{ color: '#0D1B2E' }}>Payment Management</h5>
               <p className="text-muted mb-4" style={{ fontSize: '0.85rem' }}>Customer booking payments and submitted proof images.</p>
-              {bookings.filter(b => b.payment_proof || b.payment_screenshot).length === 0 ? (
+              {liveBookings.filter(b => b.payment_proof || b.payment_screenshot).length === 0 ? (
                 <div className="text-center py-5 text-muted">
                   <CreditCard size={40} className="mb-3 opacity-25" />
                   <p className="mb-0">No payment proofs submitted yet.</p>
@@ -699,7 +794,7 @@ export default function AdminPortalPage({
                       </tr>
                     </thead>
                     <tbody>
-                      {bookings.filter(b => b.payment_proof || b.payment_screenshot).map((b, i) => (
+                      {liveBookings.filter(b => b.payment_proof || b.payment_screenshot).map((b, i) => (
                         <tr key={i}>
                           <td className="px-3 py-2 fw-bold" style={{ color: '#0D1B2E' }}>#{b.id}</td>
                           <td className="px-3 py-2">
@@ -733,7 +828,7 @@ export default function AdminPortalPage({
         return (
           <div className="p-4">
             <AdminDashboard
-              vendors={vendors}
+              vendors={liveVendors}
               allPackages={allPackages}
               onAddVendor={onAddVendor}
               onUpdateVendor={onUpdateVendor}

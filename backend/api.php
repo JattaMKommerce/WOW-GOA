@@ -1015,11 +1015,46 @@ function calculateCustomerTiers($pdo, $phone, $customerId = null) {
 /**
  * Daily Birthday Cron Processor
  */
+function parseCustomerDobToMonthDay($dob) {
+    if (empty($dob)) return false;
+    $clean = trim((string)$dob);
+    // 1. ISO format: YYYY-MM-DD or YYYY/MM/DD or YYYY.MM.DD
+    if (preg_match('/^(\d{4})[-\/\.](\d{1,2})[-\/\.](\d{1,2})/', $clean, $m)) {
+        $month = intval($m[2]);
+        $day = intval($m[3]);
+        if ($month >= 1 && $month <= 12 && $day >= 1 && $day <= 31) {
+            return sprintf('%02d-%02d', $month, $day);
+        }
+    }
+    // 2. Day-Month-Year format: DD-MM-YYYY or DD/MM/YYYY or DD.MM.YYYY
+    if (preg_match('/^(\d{1,2})[-\/\.](\d{1,2})[-\/\.](\d{4})/', $clean, $m)) {
+        $first = intval($m[1]);
+        $second = intval($m[2]);
+        if ($first <= 31 && $second <= 12) {
+            $day = $first;
+            $month = $second;
+        } elseif ($first <= 12 && $second <= 31) {
+            $month = $first;
+            $day = $second;
+        } else {
+            return false;
+        }
+        return sprintf('%02d-%02d', $month, $day);
+    }
+    // 3. Fallback for textual month formats (e.g. "15 August 1995")
+    $t = strtotime($clean);
+    if ($t !== false && $t > 0) {
+        return date('m-d', $t);
+    }
+    return false;
+}
+
 function processDailyBirthdays($pdo) {
     $todayMonthDay = date('m-d');
     $currentYear = intval(date('Y'));
     $sentCount = 0;
     $skippedCount = 0;
+    $eligibleCount = 0;
     $logs = [];
 
     // Collect all users and bookings with a non-empty DOB
@@ -1045,38 +1080,24 @@ function processDailyBirthdays($pdo) {
     }
 
     foreach ($customerMap as $phone => $u) {
-        $dob = trim($u['date_of_birth']);
-        $dobTime = false;
+        $dob = trim($u['date_of_birth'] ?? '');
+        $dobMonthDay = parseCustomerDobToMonthDay($dob);
 
-        // Try standard parsing
-        $t = strtotime($dob);
-        if ($t !== false && $t > 0) {
-            $dobTime = $t;
-        } else {
-            // Try DD/MM/YYYY or DD-MM-YYYY
-            $parts = preg_split('/[\/\-\.]/', $dob);
-            if (count($parts) === 3) {
-                if (strlen($parts[0]) === 4) { // YYYY-MM-DD
-                    $dobTime = strtotime($parts[0] . '-' . $parts[1] . '-' . $parts[2]);
-                } else { // DD-MM-YYYY
-                    $dobTime = strtotime($parts[2] . '-' . $parts[1] . '-' . $parts[0]);
-                }
-            }
-        }
+        if (!$dobMonthDay) continue;
+        if ($dobMonthDay !== $todayMonthDay) continue;
 
-        if (!$dobTime) continue;
-        if (date('m-d', $dobTime) !== $todayMonthDay) continue;
+        $eligibleCount++;
 
         // Customer has birthday today!
         $tiers = calculateCustomerTiers($pdo, $phone);
         $highestTier = $tiers['highest_tier'] ?? 'Bronze';
-        $custName = $u['name'] ?: 'Valued Guest';
-        $custId = $u['id'] ?: ('c_' . $phone);
+        $custName = !empty(trim($u['name'] ?? '')) ? trim($u['name']) : 'Valued Guest';
+        $custId = !empty($u['id']) ? $u['id'] : ('c_' . $phone);
         $channel = 'SMS';
 
-        // Check duplicate protection for this year & channel
-        $chkLog = $pdo->prepare("SELECT id FROM birthday_message_logs WHERE customer_id = ? AND birthday_year = ? AND channel = ?");
-        $chkLog->execute([$custId, $currentYear, $channel]);
+        // Check duplicate protection for this year & channel across both customer_id and verified phone
+        $chkLog = $pdo->prepare("SELECT id FROM birthday_message_logs WHERE (customer_id = ? OR phone = ?) AND birthday_year = ? AND channel = ?");
+        $chkLog->execute([$custId, $phone, $currentYear, $channel]);
         if ($chkLog->fetch()) {
             $skippedCount++;
             continue;
@@ -1114,14 +1135,34 @@ function processDailyBirthdays($pdo) {
         } catch (Exception $e) {}
     }
 
+    // If birthday messages were sent, create an Admin In-App Notification
+    if ($sentCount > 0) {
+        try {
+            $notifId = 'notif_bday_' . uniqid();
+            $notifTitle = "🎂 Birthday Automation Executed";
+            $notifMsg = "Automated birthday greetings successfully dispatched to $sentCount customer(s).";
+            $stmtN = $pdo->prepare("INSERT INTO notifications (id, recipient_id, recipient_role, title, message, type, is_read, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)");
+            $stmtN->execute([$notifId, 'admin', 'admin', $notifTitle, $notifMsg, 'birthday', date('Y-m-d H:i:s')]);
+        } catch (Exception $ne) {}
+    }
+
+    $message = ($sentCount > 0)
+        ? "Daily Birthday Job Executed: $sentCount birthday message(s) sent successfully, $skippedCount duplicate(s) skipped."
+        : (($eligibleCount > 0 && $skippedCount > 0)
+            ? "All $skippedCount eligible customer birthday greeting(s) for today have already been sent."
+            : "No customer birthdays match today's date (" . date('d/m/Y') . ").");
+
     return [
         'success' => true,
         'date' => date('Y-m-d'),
+        'eligible_count' => $eligibleCount,
         'sent_count' => $sentCount,
         'skipped_duplicate_count' => $skippedCount,
+        'message' => $message,
         'logs' => $logs
     ];
 }
+
 
 /**
  * =========================================================================
@@ -2931,34 +2972,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
             $birthdaysToday = [];
             foreach ($customerMap as $phone => $u) {
-                $dob = trim($u['date_of_birth']);
-                $dobTime = false;
-                $t = strtotime($dob);
-                if ($t !== false && $t > 0) {
-                    $dobTime = $t;
-                } else {
-                    $parts = preg_split('/[\/\-\.]/', $dob);
-                    if (count($parts) === 3) {
-                        if (strlen($parts[0]) === 4) {
-                            $dobTime = strtotime($parts[0] . '-' . $parts[1] . '-' . $parts[2]);
-                        } else {
-                            $dobTime = strtotime($parts[2] . '-' . $parts[1] . '-' . $parts[0]);
-                        }
-                    }
-                }
-
-                if (!$dobTime) continue;
-                if (date('m-d', $dobTime) !== $todayMonthDay) continue;
+                $dob = trim($u['date_of_birth'] ?? '');
+                $monthDay = parseCustomerDobToMonthDay($dob);
+                if (!$monthDay || $monthDay !== $todayMonthDay) continue;
 
                 $tiers = calculateCustomerTiers($pdo, $phone);
                 $highestTier = $tiers['highest_tier'] ?? 'Bronze';
-                $custId = $u['id'] ?: ('c_' . $phone);
+                $custId = !empty($u['id']) ? $u['id'] : ('c_' . $phone);
 
                 $status = 'Pending';
                 $sentAt = null;
                 try {
-                    $chk = $pdo->prepare("SELECT status, sent_at FROM birthday_message_logs WHERE customer_id = ? AND birthday_year = ? ORDER BY sent_at DESC LIMIT 1");
-                    $chk->execute([$custId, $currentYear]);
+                    $chk = $pdo->prepare("SELECT status, sent_at FROM birthday_message_logs WHERE (customer_id = ? OR phone = ?) AND birthday_year = ? ORDER BY sent_at DESC LIMIT 1");
+                    $chk->execute([$custId, $phone, $currentYear]);
                     $logRow = $chk->fetch(PDO::FETCH_ASSOC);
                     if ($logRow) {
                         $status = $logRow['status'] ?? 'Sent';
@@ -2973,7 +2999,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                     'phone' => $phone,
                     'email' => $u['email'] ?? '',
                     'date_of_birth' => $dob,
-                    'formatted_dob' => date('d F', $dobTime),
+                    'formatted_dob' => $monthDay,
                     'car_tier' => $tiers['car']['tier_name'] ?? 'Bronze',
                     'hotel_tier' => $tiers['hotel']['tier_name'] ?? 'Bronze',
                     'trip_tier' => $tiers['trip']['tier_name'] ?? 'Bronze',

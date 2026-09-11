@@ -442,16 +442,18 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
     setCronRunning(true);
     try {
       const res = await api.runBirthdayCron();
+      const alertType = (res?.sent_count > 0) ? 'success' : 'info';
+      const alertMsg = res?.message || `Daily Birthday Job Executed: ${res?.sent_count || 0} messages sent, ${res?.skipped_duplicate_count || 0} duplicates skipped.`;
       setActionAlert({ 
-        type: 'success', 
-        text: `Daily Birthday Job Executed: ${res.sent_count || 0} messages sent, ${res.skipped_duplicate_count || 0} duplicates skipped.` 
+        type: alertType, 
+        text: alertMsg
       });
       await loadBirthdaysData();
       await loadLogsData();
-      setTimeout(() => setActionAlert(null), 5000);
+      setTimeout(() => setActionAlert(null), 6000);
     } catch (e) {
       setActionAlert({ type: 'error', text: e.message || 'Cron execution failed' });
-      setTimeout(() => setActionAlert(null), 4000);
+      setTimeout(() => setActionAlert(null), 5000);
     } finally {
       setCronRunning(false);
     }
@@ -661,10 +663,10 @@ export default function AdminCustomerManagement({ usersList = [], bookings = [],
     <div className="p-4">
       {/* Action Notification Alert */}
       {actionAlert && (
-        <div className={`alert ${actionAlert.type === 'success' ? 'alert-success' : 'alert-danger'} border-0 shadow-sm rounded-3 py-2.5 px-4 d-flex align-items-center justify-content-between mb-4 text-xs animate-fade-in`}>
+        <div className={`alert ${actionAlert.type === 'success' ? 'alert-success text-success' : actionAlert.type === 'info' ? 'alert-info text-info-emphasis' : 'alert-danger text-danger'} border-0 shadow-sm rounded-3 py-2.5 px-4 d-flex align-items-center justify-content-between mb-4 text-xs animate-fade-in`}>
           <div className="d-flex align-items-center gap-2">
             <CheckCircle2 size={16} />
-            <span>{actionAlert.text}</span>
+            <span className="fw-semibold">{actionAlert.text}</span>
           </div>
           <button className="btn btn-sm p-0 border-0" onClick={() => setActionAlert(null)}><X size={14} /></button>
         </div>
