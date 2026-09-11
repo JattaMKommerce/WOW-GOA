@@ -178,6 +178,74 @@ export default function Navbar({ activeTab, setActiveTab, currentUser, triggerOp
                       </a>
                     </li>
                   )}
+                  {(currentUser.role === 'customer' || currentUser.role === 'user') && (
+                    <li>
+                      <a 
+                        className="dropdown-item d-flex align-items-center gap-2 py-2 fw-bold text-primary" 
+                        style={{ fontSize: '13px' }}
+                        href="/dashboard"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setActiveTab('dashboard');
+                          window.history.pushState(null, '', '/dashboard');
+                          window.dispatchEvent(new PopStateEvent('popstate'));
+                        }}
+                      >
+                        <span>👤 Customer Dashboard</span>
+                      </a>
+                    </li>
+                  )}
+                  {currentUser.role === 'vendor' && (
+                    <li>
+                      <a 
+                        className="dropdown-item d-flex align-items-center gap-2 py-2 fw-bold text-dark" 
+                        style={{ fontSize: '13px' }}
+                        href="/vendor"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setActiveTab('portal');
+                          window.history.pushState(null, '', '/vendor');
+                          window.dispatchEvent(new PopStateEvent('popstate'));
+                        }}
+                      >
+                        <span>🚗 Vehicle Vendor Portal</span>
+                      </a>
+                    </li>
+                  )}
+                  {currentUser.role === 'hotel_vendor' && (
+                    <li>
+                      <a 
+                        className="dropdown-item d-flex align-items-center gap-2 py-2 fw-bold text-dark" 
+                        style={{ fontSize: '13px' }}
+                        href="/hotel-vendor"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setActiveTab('portal');
+                          window.history.pushState(null, '', '/hotel-vendor');
+                          window.dispatchEvent(new PopStateEvent('popstate'));
+                        }}
+                      >
+                        <span>🏨 Hotel Vendor Portal</span>
+                      </a>
+                    </li>
+                  )}
+                  {currentUser.role === 'flight_vendor' && (
+                    <li>
+                      <a 
+                        className="dropdown-item d-flex align-items-center gap-2 py-2 fw-bold text-dark" 
+                        style={{ fontSize: '13px' }}
+                        href="/flight-vendor"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setActiveTab('portal');
+                          window.history.pushState(null, '', '/flight-vendor');
+                          window.dispatchEvent(new PopStateEvent('popstate'));
+                        }}
+                      >
+                        <span>✈️ Flight Vendor Portal</span>
+                      </a>
+                    </li>
+                  )}
                   <li><hr className="dropdown-divider my-1" /></li>
                   <li>
                     <button 

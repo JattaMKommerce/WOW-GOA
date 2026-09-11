@@ -172,7 +172,18 @@ export default function SearchWidget({
     packageBudgetBasis: appliedFilters?.packageBudgetBasis || [],
     packageMeals: appliedFilters?.packageMeals || [],
     durations: appliedFilters?.durations || [],
-    inclusions: appliedFilters?.inclusions || []
+    inclusions: appliedFilters?.inclusions || [],
+
+    // Sightseeing & Activities
+    activityTypes: appliedFilters?.activityTypes || [],
+    activityPriceRanges: appliedFilters?.activityPriceRanges || [],
+    activityDurations: appliedFilters?.activityDurations || [],
+
+    // Craft My Trip
+    craftVehicleTypes: appliedFilters?.craftVehicleTypes || [],
+    craftHotelTypes: appliedFilters?.craftHotelTypes || [],
+    craftExperienceTypes: appliedFilters?.craftExperienceTypes || [],
+    craftBudgetRanges: appliedFilters?.craftBudgetRanges || []
   });
 
   const widgetRef = useRef(null);
@@ -418,6 +429,21 @@ export default function SearchWidget({
           packageMeals: [],
           durations: [],
           inclusions: []
+        };
+      } else if (activeTab === 'activities') {
+        cleared = {
+          ...cleared,
+          activityTypes: [],
+          activityPriceRanges: [],
+          activityDurations: []
+        };
+      } else if (activeTab === 'craftmytrip') {
+        cleared = {
+          ...cleared,
+          craftVehicleTypes: [],
+          craftHotelTypes: [],
+          craftExperienceTypes: [],
+          craftBudgetRanges: []
         };
       }
       if (setAppliedFilters) setAppliedFilters(cleared);
@@ -1263,6 +1289,383 @@ export default function SearchWidget({
               </div>
 
             </div>
+          ) : activeTab === 'activities' ? (
+            /* ──────────────────────────────────────────────────────────────────
+                TAB: SIGHTSEEING & ACTIVITIES
+            ────────────────────────────────────────────────────────────────── */
+            <div className="booking-inputs-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+              
+              {/* Field 1: Experience / Tour or Area */}
+              <div 
+                className="input-block position-relative" 
+                onClick={() => setActiveDropdown(activeDropdown === 'act-search' ? null : 'act-search')}
+              >
+                <span className="input-block-label d-flex align-items-center justify-content-between">
+                  <span>Experience or Area</span>
+                  <ChevronDown size={14} />
+                </span>
+                <div className="input-block-val text-truncate" style={{ maxWidth: '180px' }}>
+                  {searchQuery || dropLoc || 'All Goa Experiences'}
+                </div>
+                <span className="input-block-sub">Sightseeing, Water Sports & Tours</span>
+
+                {activeDropdown === 'act-search' && (
+                  <div className="tg-popover-card shadow-xl p-3" style={{ width: '360px' }} onClick={e => e.stopPropagation()}>
+                    <div className="d-flex justify-content-between align-items-center pb-2 mb-2 border-bottom">
+                      <span className="fw-bold text-dark small"><Compass size={14} className="text-primary me-1" /> Search Tours & Activities</span>
+                      <button type="button" className="btn btn-sm btn-link p-0 text-muted" onClick={() => setActiveDropdown(null)}><X size={16} /></button>
+                    </div>
+
+                    <div className="position-relative mb-2">
+                      <SearchIcon size={16} className="position-absolute text-muted" style={{ top: '10px', left: '10px' }} />
+                      <input 
+                        type="text" 
+                        className="form-control form-control-sm ps-4" 
+                        placeholder="Search Scuba, Heritage, Cruise, Calangute..." 
+                        value={searchQuery || ''} 
+                        onChange={e => {
+                          if (setSearchQuery) setSearchQuery(e.target.value);
+                        }} 
+                        autoFocus 
+                      />
+                      {searchQuery && (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-link position-absolute p-0 text-muted"
+                          style={{ top: '6px', right: '10px' }}
+                          onClick={() => { if (setSearchQuery) setSearchQuery(''); }}
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="mb-2">
+                      <div className="text-muted small fw-bold mb-1">Top Curated Experiences</div>
+                      <div className="d-flex flex-column gap-1">
+                        {[
+                          { name: 'Goa Heritage & Culture Tour', type: 'Sightseeing', icon: '🏛️' },
+                          { name: 'North Goa Beach Sightseeing', type: 'Sightseeing', icon: '🏖️' },
+                          { name: 'Scuba Diving Experience', type: 'Activity', icon: '🤿' },
+                          { name: 'Parasailing Adventure', type: 'Activity', icon: '🪂' }
+                        ].map(exp => (
+                          <button
+                            key={exp.name}
+                            type="button"
+                            className="btn btn-light w-100 text-start p-2 d-flex justify-content-between align-items-center mb-1 border-0"
+                            onClick={() => {
+                              if (setSearchQuery) setSearchQuery(exp.name);
+                              setActiveDropdown(null);
+                            }}
+                          >
+                            <div className="d-flex align-items-center gap-2">
+                              <span>{exp.icon}</span>
+                              <span className="fw-bold text-dark small">{exp.name}</span>
+                            </div>
+                            <span className="badge bg-light text-muted small">{exp.type}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-muted small fw-bold mb-1">Popular Goa Areas</div>
+                      <div className="d-flex flex-wrap gap-1">
+                        {['All Goa', 'Calangute', 'Panaji', 'Old Goa', 'Grand Island', 'Baga', 'South Goa'].map(area => (
+                          <button
+                            key={area}
+                            type="button"
+                            className="btn btn-sm btn-outline-secondary rounded-pill py-0 px-2 bg-white"
+                            style={{ fontSize: '11px' }}
+                            onClick={() => {
+                              if (setSearchQuery) setSearchQuery(area === 'All Goa' ? '' : area);
+                              setDropLoc(area);
+                              setActiveDropdown(null);
+                            }}
+                          >
+                            {area}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Field 2: Tour Date */}
+              <div 
+                className="input-block position-relative" 
+                onClick={() => setActiveDropdown(activeDropdown === 'act-date' ? null : 'act-date')}
+              >
+                <span className="input-block-label d-flex align-items-center justify-content-between">
+                  <span>Tour Date</span>
+                  <ChevronDown size={14} />
+                </span>
+                <div className="d-flex align-items-baseline gap-1 mt-1">
+                  <span className="fw-black text-dark" style={{ fontSize: '26px', lineHeight: '1' }}>{displayPickupDay}</span>
+                  <span className="text-dark fw-bold" style={{ fontSize: '15px' }}>{displayPickupMonthYear}</span>
+                </div>
+                <span className="input-block-sub">{displayPickupWeekday}</span>
+
+                {activeDropdown === 'act-date' && (
+                  <div className="tg-popover-card shadow-xl" onClick={e => e.stopPropagation()}>
+                    <CalendarPickerView
+                      title="Select Tour Date"
+                      selectedDate={pickupDate}
+                      minDate={todayStr}
+                      onSelect={(d) => {
+                        setPickupDate(d);
+                        setActiveDropdown(null);
+                      }}
+                      onClose={() => setActiveDropdown(null)}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Field 3: Travellers / Guests */}
+              <div 
+                className="input-block position-relative" 
+                onClick={() => setActiveDropdown(activeDropdown === 'act-guests' ? null : 'act-guests')}
+              >
+                <span className="input-block-label d-flex align-items-center justify-content-between">
+                  <span>Travellers</span>
+                  <ChevronDown size={14} />
+                </span>
+                <div className="d-flex align-items-baseline gap-1 mt-1">
+                  <span className="fw-black text-dark" style={{ fontSize: '26px', lineHeight: '1' }}>{hotelAdults || 2}</span>
+                  <span className="text-dark fw-bold" style={{ fontSize: '15px' }}>
+                    Adults {hotelChildren > 0 ? `· ${hotelChildren} Ch` : ''}
+                  </span>
+                </div>
+                <span className="input-block-sub">{(hotelAdults || 2) + (hotelChildren || 0)} Guests</span>
+
+                {activeDropdown === 'act-guests' && (
+                  <div className="tg-popover-card shadow-xl p-3" onClick={e => e.stopPropagation()}>
+                    <RoomsGuestsPopoverContent
+                      rooms={hotelRooms}
+                      setRooms={setHotelRooms}
+                      adults={hotelAdults}
+                      setAdults={setHotelAdults}
+                      childrenCount={hotelChildren}
+                      onChildrenChange={handleChildrenCountChange}
+                      childAges={childAges}
+                      onChildAgeChange={handleChildAgeChange}
+                      onDone={() => setActiveDropdown(null)}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Field 4: Filters */}
+              <div 
+                className="input-block position-relative" 
+                onClick={() => setActiveDropdown(activeDropdown === 'filters' ? null : 'filters')}
+              >
+                <span className="input-block-label d-flex align-items-center justify-content-between">
+                  <span>Filters</span>
+                  <ChevronDown size={14} />
+                </span>
+                <div className="d-flex align-items-baseline gap-1 mt-1">
+                  <span className="fw-bold text-dark" style={{ fontSize: '16px', lineHeight: '1.2' }}>
+                    {activeTabFiltersCount > 0 ? (
+                      <span className="text-warning fw-black">{activeTabFiltersCount} Applied</span>
+                    ) : (
+                      'Select Filters'
+                    )}
+                  </span>
+                </div>
+                <span className="input-block-sub mt-1">
+                  {activeTabFiltersCount > 0 ? 'Click to edit' : '(Optional)'}
+                </span>
+
+                {activeDropdown === 'filters' && (
+                  <UnifiedFilterPopover
+                    activeTab={activeTab}
+                    localFilters={localFilters}
+                    setLocalFilters={setLocalFilters}
+                    onApply={handleApplyFilters}
+                    onClearAll={handleClearAllForTab}
+                    onClose={() => setActiveDropdown(null)}
+                  />
+                )}
+              </div>
+
+            </div>
+          ) : activeTab === 'craftmytrip' ? (
+            /* ──────────────────────────────────────────────────────────────────
+                TAB: CRAFT MY TRIP
+            ────────────────────────────────────────────────────────────────── */
+            <div className="booking-inputs-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
+              
+              {/* Field 1: Trip Base / Destination */}
+              <div 
+                className="input-block position-relative" 
+                onClick={() => setActiveDropdown(activeDropdown === 'craft-dest' ? null : 'craft-dest')}
+              >
+                <span className="input-block-label d-flex align-items-center justify-content-between">
+                  <span>Trip Destination</span>
+                  <ChevronDown size={14} />
+                </span>
+                <div className="input-block-val">Goa</div>
+                <span className="input-block-sub">North &amp; South Goa</span>
+
+                {activeDropdown === 'craft-dest' && (
+                  <div className="tg-popover-card shadow-xl p-3" style={{ width: '320px' }} onClick={e => e.stopPropagation()}>
+                    <div className="d-flex justify-content-between align-items-center pb-2 mb-2 border-bottom">
+                      <span className="fw-bold text-dark small"><Wand2 size={14} className="text-warning me-1" /> Custom Goa Getaway</span>
+                      <button type="button" className="btn btn-sm btn-link p-0 text-muted" onClick={() => setActiveDropdown(null)}><X size={16} /></button>
+                    </div>
+                    <p className="text-muted small mb-2">Craft My Trip customizes your complete itinerary covering rental rides, boutique hotels, scenic sightseeing, and flights.</p>
+                    <div className="d-flex flex-column gap-1">
+                      <div className="p-2 rounded bg-light small fw-bold text-dark d-flex align-items-center gap-2">
+                        <span>🏖️</span> North Goa: Calangute, Baga, Anjuna
+                      </div>
+                      <div className="p-2 rounded bg-light small fw-bold text-dark d-flex align-items-center gap-2">
+                        <span>🌴</span> South Goa: Colva, Palolem, Luxury Resorts
+                      </div>
+                      <div className="p-2 rounded bg-light small fw-bold text-dark d-flex align-items-center gap-2">
+                        <span>🏛️</span> Central Goa: Panaji, Fontainhas, Old Goa
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Field 2: Trip Start Date */}
+              <div 
+                className="input-block position-relative" 
+                onClick={() => setActiveDropdown(activeDropdown === 'craft-pickup' ? null : 'craft-pickup')}
+              >
+                <span className="input-block-label d-flex align-items-center justify-content-between">
+                  <span>Trip Start Date</span>
+                  <ChevronDown size={14} />
+                </span>
+                <div className="d-flex align-items-baseline gap-1 mt-1">
+                  <span className="fw-black text-dark" style={{ fontSize: '26px', lineHeight: '1' }}>{displayPickupDay}</span>
+                  <span className="text-dark fw-bold" style={{ fontSize: '15px' }}>{displayPickupMonthYear}</span>
+                </div>
+                <span className="input-block-sub">{displayPickupWeekday}</span>
+
+                {activeDropdown === 'craft-pickup' && (
+                  <div className="tg-popover-card shadow-xl" onClick={e => e.stopPropagation()}>
+                    <CalendarPickerView
+                      title="Select Trip Start Date"
+                      selectedDate={pickupDate}
+                      minDate={todayStr}
+                      onSelect={(d) => {
+                        setPickupDate(d);
+                        if (!dropDate || dropDate <= d) {
+                          setDropDate(getNextDayDateStr(d));
+                        }
+                        setActiveDropdown('craft-drop');
+                      }}
+                      onClose={() => setActiveDropdown(null)}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Field 3: Trip End Date */}
+              <div 
+                className="input-block position-relative" 
+                onClick={() => setActiveDropdown(activeDropdown === 'craft-drop' ? null : 'craft-drop')}
+              >
+                <span className="input-block-label d-flex align-items-center justify-content-between">
+                  <span>Trip End Date</span>
+                  <ChevronDown size={14} />
+                </span>
+                <div className="d-flex align-items-baseline gap-1 mt-1">
+                  <span className="fw-black text-dark" style={{ fontSize: '26px', lineHeight: '1' }}>{displayDropDay}</span>
+                  <span className="text-dark fw-bold" style={{ fontSize: '15px' }}>{displayDropMonthYear}</span>
+                </div>
+                <span className="input-block-sub">{displayDropWeekday}</span>
+
+                {activeDropdown === 'craft-drop' && (
+                  <div className="tg-popover-card shadow-xl" onClick={e => e.stopPropagation()}>
+                    <CalendarPickerView
+                      title="Select Trip End Date"
+                      selectedDate={dropDate}
+                      minDate={minCheckOutDate}
+                      onSelect={(d) => {
+                        setDropDate(d);
+                        setActiveDropdown(null);
+                      }}
+                      onClose={() => setActiveDropdown(null)}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Field 4: Travellers */}
+              <div 
+                className="input-block position-relative" 
+                onClick={() => setActiveDropdown(activeDropdown === 'craft-guests' ? null : 'craft-guests')}
+              >
+                <span className="input-block-label d-flex align-items-center justify-content-between">
+                  <span>Travellers</span>
+                  <ChevronDown size={14} />
+                </span>
+                <div className="d-flex align-items-baseline gap-1 mt-1">
+                  <span className="fw-black text-dark" style={{ fontSize: '26px', lineHeight: '1' }}>{hotelAdults || 2}</span>
+                  <span className="text-dark fw-bold" style={{ fontSize: '15px' }}>
+                    Adults {hotelChildren > 0 ? `· ${hotelChildren} Ch` : ''}
+                  </span>
+                </div>
+                <span className="input-block-sub">Ride &amp; Hotel Capacity</span>
+
+                {activeDropdown === 'craft-guests' && (
+                  <div className="tg-popover-card shadow-xl p-3" onClick={e => e.stopPropagation()}>
+                    <RoomsGuestsPopoverContent
+                      rooms={hotelRooms}
+                      setRooms={setHotelRooms}
+                      adults={hotelAdults}
+                      setAdults={setHotelAdults}
+                      childrenCount={hotelChildren}
+                      onChildrenChange={handleChildrenCountChange}
+                      childAges={childAges}
+                      onChildAgeChange={handleChildAgeChange}
+                      onDone={() => setActiveDropdown(null)}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Field 5: Trip Preferences */}
+              <div 
+                className="input-block position-relative" 
+                onClick={() => setActiveDropdown(activeDropdown === 'filters' ? null : 'filters')}
+              >
+                <span className="input-block-label d-flex align-items-center justify-content-between">
+                  <span>Preferences</span>
+                  <ChevronDown size={14} />
+                </span>
+                <div className="d-flex align-items-baseline gap-1 mt-1">
+                  <span className="fw-bold text-dark" style={{ fontSize: '16px', lineHeight: '1.2' }}>
+                    {activeTabFiltersCount > 0 ? (
+                      <span className="text-warning fw-black">{activeTabFiltersCount} Applied</span>
+                    ) : (
+                      'Trip Filters'
+                    )}
+                  </span>
+                </div>
+                <span className="input-block-sub mt-1">
+                  {activeTabFiltersCount > 0 ? 'Click to edit' : '(Optional)'}
+                </span>
+
+                {activeDropdown === 'filters' && (
+                  <UnifiedFilterPopover
+                    activeTab={activeTab}
+                    localFilters={localFilters}
+                    setLocalFilters={setLocalFilters}
+                    onApply={handleApplyFilters}
+                    onClearAll={handleClearAllForTab}
+                    onClose={() => setActiveDropdown(null)}
+                  />
+                )}
+              </div>
+
+            </div>
           ) : (
             /* ──────────────────────────────────────────────────────────────────
                 TAB: TRIP PACKAGES
@@ -1526,13 +1929,15 @@ export default function SearchWidget({
           )}
 
           {/* ─── FLOATING ORANGE SEARCH BUTTON ─────────────────────────────── */}
-          {activeTab !== 'craftmytrip' && (
-            <div className="search-btn-container">
-              <button type="submit" className="btn-widget-search">
-                {activeTab === 'selfdrive' ? 'SEARCH VEHICLES' : activeTab === 'hotels' ? 'SEARCH HOTELS' : activeTab === 'flights' ? 'SEARCH FLIGHTS' : 'SEARCH PACKAGES'}
-              </button>
-            </div>
-          )}
+          <div className="search-btn-container">
+            <button type="submit" className="btn-widget-search">
+              {activeTab === 'selfdrive' ? 'SEARCH VEHICLES' :
+               activeTab === 'hotels' ? 'SEARCH HOTELS' :
+               activeTab === 'flights' ? 'SEARCH FLIGHTS' :
+               activeTab === 'activities' ? 'SEARCH ACTIVITIES' :
+               activeTab === 'craftmytrip' ? 'START CRAFTING TRIP ✨' : 'SEARCH PACKAGES'}
+            </button>
+          </div>
 
         </form>
       </div>

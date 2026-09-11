@@ -70,8 +70,30 @@ import { getTodayDateStr, addDays, validateBookingDates } from './utils/dateUtil
 export default function App() {
   const { liveConfig } = useSiteConfig();
   
-  // Navigation & Tabs state (Default to public storefront selfdrive view)
-  const [activeTab, setActiveTab] = useState('selfdrive');
+  // Navigation & Tabs state — restored from sessionStorage on refresh so portals survive reload
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      const p = typeof window !== 'undefined' ? window.location.pathname.toLowerCase() : '/';
+      // Derive tab directly from URL path — most reliable on refresh
+      if (p.startsWith('/admin') || p === '/portal' || p.startsWith('/sub-admin') || p.startsWith('/subadmin') || p.startsWith('/superadmin') || p.startsWith('/super-admin') || p === '/vendor' || p === '/hotel-vendor' || p === '/flight-vendor') return 'portal';
+      if (p.startsWith('/b2b')) return 'b2b';
+      if (p.startsWith('/driver')) return 'driver';
+      if (p.startsWith('/customer')) return 'customer';
+      if (p.startsWith('/dashboard')) return 'dashboard';
+      if (p.startsWith('/activities')) return 'activities';
+      if (p.startsWith('/craft')) return 'craftmytrip';
+      if (p.startsWith('/hotels')) return 'hotels';
+      if (p.startsWith('/cars')) return 'cars';
+      if (p.startsWith('/bikes')) return 'bikes';
+      if (p.startsWith('/flights')) return 'flights';
+      if (p.startsWith('/packages')) return 'packages';
+      if (p.startsWith('/self-drive') || p.startsWith('/selfdrive')) return 'selfdrive';
+      // Fall back to sessionStorage if path is just '/'
+      const saved = sessionStorage.getItem('tg_activeTab');
+      if (saved) return saved;
+    } catch (e) {}
+    return 'selfdrive';
+  });
   const [currentPath, setCurrentPath] = useState(() => (typeof window !== 'undefined' ? window.location.pathname.toLowerCase() : '/'));
   const path = currentPath;
 
@@ -125,6 +147,25 @@ export default function App() {
       return null;
     }
   });
+  const [isAuthHydrating, setIsAuthHydrating] = useState(true);
+
+  // Restore authenticated session state synchronously on boot
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('currentUser');
+      if (saved && saved !== 'undefined') {
+        const parsed = JSON.parse(saved);
+        if (parsed && (parsed.id || parsed.username || parsed.role)) {
+          setCurrentUser(parsed);
+        }
+      }
+    } catch (e) {
+      console.warn('[Auth] Hydration error:', e);
+    } finally {
+      setIsAuthHydrating(false);
+    }
+  }, []);
+
   const [usersList, setUsersList] = useState(defaultUsers);
 
   // Database-driven data states
@@ -312,18 +353,25 @@ export default function App() {
       const p = window.location.pathname.toLowerCase();
       setCurrentPath(p);
       const cleanPath = p.replace(/^\//, '').split('/')[0];
-      if (cleanPath === 'packages') setActiveTab('packages');
-      else if (cleanPath === 'self-drive' || cleanPath === 'selfdrive' || cleanPath === '') setActiveTab('selfdrive');
-      else if (cleanPath === 'hotels') setActiveTab('hotels');
-      else if (cleanPath === 'cars') setActiveTab('cars');
-      else if (cleanPath === 'bikes') setActiveTab('bikes');
-      else if (cleanPath === 'flights') setActiveTab('flights');
-      else if (cleanPath === 'craft' || cleanPath === 'craftmytrip') setActiveTab('craftmytrip');
-      else if (cleanPath === 'custom-trip') setActiveTab('custom-trip');
-      else if (cleanPath === 'customer' || cleanPath.startsWith('customer') || cleanPath === 'my-bookings') setActiveTab('customer');
-      else if (cleanPath === 'admin' || cleanPath === 'portal' || cleanPath === 'superadmin' || cleanPath === 'vendor' || cleanPath === 'hotel-vendor' || cleanPath === 'hotel-pms' || cleanPath === 'flight-vendor' || cleanPath === 'sub-admin' || cleanPath === 'subadmin') setActiveTab('portal');
-      else if (cleanPath === 'dashboard') setActiveTab('dashboard');
-      else if (cleanPath === 'b2b' || cleanPath.startsWith('b2b')) setActiveTab('b2b');
+      let newTab = null;
+      if (cleanPath === 'packages') newTab = 'packages';
+      else if (cleanPath === 'self-drive' || cleanPath === 'selfdrive' || cleanPath === '') newTab = 'selfdrive';
+      else if (cleanPath === 'hotels') newTab = 'hotels';
+      else if (cleanPath === 'cars') newTab = 'cars';
+      else if (cleanPath === 'bikes') newTab = 'bikes';
+      else if (cleanPath === 'flights') newTab = 'flights';
+      else if (cleanPath === 'activities') newTab = 'activities';
+      else if (cleanPath === 'craft' || cleanPath === 'craftmytrip') newTab = 'craftmytrip';
+      else if (cleanPath === 'custom-trip') newTab = 'custom-trip';
+      else if (cleanPath === 'customer' || cleanPath.startsWith('customer') || cleanPath === 'my-bookings') newTab = 'customer';
+      else if (cleanPath === 'admin' || cleanPath === 'portal' || cleanPath === 'superadmin' || cleanPath === 'vendor' || cleanPath === 'hotel-vendor' || cleanPath === 'hotel-pms' || cleanPath === 'flight-vendor' || cleanPath === 'sub-admin' || cleanPath === 'subadmin') newTab = 'portal';
+      else if (cleanPath === 'dashboard') newTab = 'dashboard';
+      else if (cleanPath === 'b2b' || cleanPath.startsWith('b2b')) newTab = 'b2b';
+      else if (cleanPath === 'driver') newTab = 'driver';
+      if (newTab) {
+        setActiveTab(newTab);
+        try { sessionStorage.setItem('tg_activeTab', newTab); } catch (e) {}
+      }
     };
 
     syncTabFromUrl();
@@ -343,6 +391,8 @@ export default function App() {
       setSelectedBookingItem(null);
     }
     setActiveTab(normalizedTab);
+    // Persist active tab to sessionStorage so browser refresh restores the correct portal
+    try { sessionStorage.setItem('tg_activeTab', normalizedTab); } catch (e) {}
 
     const pathMap = {
       'packages': '/packages',
@@ -351,6 +401,7 @@ export default function App() {
       'cars': '/cars',
       'bikes': '/bikes',
       'flights': '/flights',
+      'activities': '/activities',
       'craftmytrip': '/craft',
       'custom-trip': '/custom-trip',
       'customer': '/customer',
@@ -362,7 +413,7 @@ export default function App() {
     window.history.pushState({}, '', targetPath);
     setCurrentPath(targetPath.toLowerCase());
 
-    if (['hotels', 'flights', 'craftmytrip'].includes(normalizedTab)) {
+    if (['hotels', 'flights', 'craftmytrip', 'activities'].includes(normalizedTab)) {
       setSearchTriggered(true);
     } else if (['selfdrive', 'packages', 'cars', 'home'].includes(normalizedTab)) {
       setSearchTriggered(false);
@@ -455,6 +506,45 @@ export default function App() {
     }
   };
 
+  const resolveTargetRoute = (user) => {
+    let targetPath = '/admin';
+    let targetTab = 'portal';
+
+    if (user.role === 'driver') {
+      targetTab = 'driver';
+      targetPath = '/driver';
+    } else if (user.role === 'b2b' || user.role === 'agent') {
+      try {
+        localStorage.setItem('b2b_partner_user', JSON.stringify(user));
+        localStorage.setItem('b2b_partner_token', user.id || 'b2b_partner_a');
+      } catch (e) {}
+      targetTab = 'b2b';
+      targetPath = '/b2b';
+    } else if (user.role === 'customer' || user.role === 'user') {
+      targetTab = 'dashboard';
+      targetPath = '/dashboard';
+    } else if (user.role === 'subadmin' || user.role === 'sub_admin') {
+      targetTab = 'portal';
+      targetPath = '/sub-admin';
+    } else if (user.role === 'superadmin') {
+      targetTab = 'portal';
+      targetPath = '/superadmin';
+    } else if (user.role === 'hotel_vendor') {
+      targetTab = 'portal';
+      targetPath = '/hotel-vendor';
+    } else if (user.role === 'flight_vendor') {
+      targetTab = 'portal';
+      targetPath = '/flight-vendor';
+    } else if (user.role === 'vendor') {
+      targetTab = 'portal';
+      targetPath = '/vendor';
+    } else {
+      targetTab = 'portal';
+      targetPath = '/admin';
+    }
+    return { targetTab, targetPath };
+  };
+
   const handleLogin = async (usernameOrUser, password) => {
     // If called with a user object directly
     if (typeof usernameOrUser === 'object' && usernameOrUser !== null) {
@@ -464,25 +554,12 @@ export default function App() {
         localStorage.setItem('currentUser', JSON.stringify(user));
       } catch (e) {}
       setShowLoginModal(false);
-      if (user.role === 'driver') {
-        setActiveTab('driver');
-        window.history.pushState(null, '', '/driver');
-      } else if (user.role === 'b2b' || user.role === 'agent') {
-        try {
-          localStorage.setItem('b2b_partner_user', JSON.stringify(user));
-          localStorage.setItem('b2b_partner_token', user.id || 'b2b_partner_a');
-        } catch (e) {}
-        setActiveTab('b2b');
-        window.history.pushState(null, '', '/b2b');
-      } else if (user.role === 'customer' || user.role === 'user') {
-        setActiveTab('dashboard');
-      } else if (user.role === 'subadmin' || user.role === 'sub_admin') {
-        setActiveTab('portal');
-        window.history.pushState(null, '', '/sub-admin');
-        setCurrentPath('/sub-admin');
-      } else {
-        setActiveTab('portal');
-      }
+
+      const { targetTab, targetPath } = resolveTargetRoute(user);
+      setActiveTab(targetTab);
+      window.history.pushState(null, '', targetPath);
+      setCurrentPath(targetPath.toLowerCase());
+      try { sessionStorage.setItem('tg_activeTab', targetTab); } catch (e) {}
       return true;
     }
 
@@ -514,25 +591,13 @@ export default function App() {
           localStorage.setItem('currentUser', JSON.stringify(user));
         } catch (e) {}
         setShowLoginModal(false);
-        if (user.role === 'driver') {
-          setActiveTab('driver');
-          window.history.pushState(null, '', '/driver');
-        } else if (user.role === 'b2b' || user.role === 'agent') {
-          try {
-            localStorage.setItem('b2b_partner_user', JSON.stringify(user));
-            localStorage.setItem('b2b_partner_token', user.id || 'b2b_partner_a');
-          } catch (e) {}
-          setActiveTab('b2b');
-          window.history.pushState(null, '', '/b2b');
-        } else if (user.role === 'customer' || user.role === 'user') {
-          setActiveTab('dashboard');
-        } else if (user.role === 'subadmin' || user.role === 'sub_admin') {
-          setActiveTab('portal');
-          window.history.pushState(null, '', '/sub-admin');
-          setCurrentPath('/sub-admin');
-        } else {
-          setActiveTab('portal');
-        }
+
+        const { targetTab, targetPath } = resolveTargetRoute(user);
+        setActiveTab(targetTab);
+        window.history.pushState(null, '', targetPath);
+        setCurrentPath(targetPath.toLowerCase());
+        try { sessionStorage.setItem('tg_activeTab', targetTab); } catch (e) {}
+
         try {
           const userBookings = await api.fetchBookings();
           if (Array.isArray(userBookings)) setBookingsList(userBookings);
@@ -554,8 +619,11 @@ export default function App() {
       localStorage.removeItem('b2b_partner_token');
       localStorage.removeItem('b2b_partner_user');
       localStorage.removeItem('driverUser');
+      sessionStorage.removeItem('tg_activeTab');
     } catch (e) {}
     setActiveTab('packages');
+    window.history.pushState(null, '', '/');
+    setCurrentPath('/');
   };
 
   // Inventory CRUD handlers
@@ -864,6 +932,18 @@ export default function App() {
     }
   };
 
+  if (isAuthHydrating) {
+    return (
+      <div className="d-flex w-100 vh-100 align-items-center justify-content-center bg-light">
+        <div className="text-center">
+          <div className="spinner-border text-primary mb-2" style={{ width: '2.5rem', height: '2.5rem' }} role="status">
+            <span className="visually-hidden">Loading session...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!dataLoaded) {
     return (
       <div className="d-flex w-100 vh-100 align-items-center justify-content-center bg-light">
@@ -1068,10 +1148,33 @@ export default function App() {
       );
     }
 
-    // Admin Portal — only for admin/superadmin roles
-    if (currentUser && !['admin', 'superadmin'].includes(currentUser.role)) {
-      // Non-admin user trying to access portal — redirect to storefront
-      handleTabChange('selfdrive');
+    // Admin Portal — authentication & role guards
+    if (!currentUser) {
+      return (
+        <div className="d-flex flex-column min-vh-100 bg-dark align-items-center justify-content-center p-4">
+          <LoginModal
+            isOpen={true}
+            onClose={() => {
+              handleTabChange('selfdrive');
+            }}
+            onLogin={handleLogin}
+          />
+        </div>
+      );
+    }
+
+    if (!['admin', 'superadmin'].includes(currentUser.role)) {
+      if (currentUser.role === 'customer' || currentUser.role === 'user') {
+        handleTabChange('dashboard');
+      } else if (currentUser.role === 'vendor' || currentUser.role === 'hotel_vendor' || currentUser.role === 'flight_vendor') {
+        handleTabChange('portal');
+      } else if (currentUser.role === 'driver') {
+        handleTabChange('driver');
+      } else if (currentUser.role === 'b2b' || currentUser.role === 'agent') {
+        handleTabChange('b2b');
+      } else {
+        handleTabChange('selfdrive');
+      }
       return null;
     }
 
@@ -1118,7 +1221,7 @@ export default function App() {
   }
 
   // ─── CUSTOMER DASHBOARD ──────────────────────────────────────────────────
-  if (activeTab === 'dashboard') {
+  if (activeTab === 'dashboard' || path.startsWith('/dashboard')) {
     return (
       <div className="d-flex flex-column min-vh-100 bg-light">
         <Navbar
@@ -1135,6 +1238,38 @@ export default function App() {
           onOpenLogin={() => setShowLoginModal(true)}
         />
         <Footer setActiveTab={handleTabChange} />
+      </div>
+    );
+  }
+
+  // ─── CRAFT MY TRIP STANDALONE VIEW ───────────────────────────────────────
+  if (path.startsWith('/craft') || activeTab === 'craftmytrip') {
+    return (
+      <div className="d-flex flex-column min-vh-100 bg-white">
+        <Navbar
+          activeTab={activeTab}
+          setActiveTab={handleTabChange}
+          currentUser={currentUser}
+          triggerOpenLogin={() => setShowLoginModal(true)}
+          onOpenLogin={() => setShowLoginModal(true)}
+          onLogout={handleLogout}
+        />
+        <CraftMyTripPage
+          allCars={cars}
+          allBikes={bikes}
+          allHotels={hotels}
+          allActivities={activities}
+          pickupDate={pickupDate}
+          dropDate={dropDate}
+          bookings={bookings}
+          onBack={() => handleTabChange('selfdrive')}
+          appliedFilters={appliedFilters}
+          setAppliedFilters={setAppliedFilters}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+        />
+        <Footer setActiveTab={handleTabChange} />
+        <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLogin={handleLogin} />
       </div>
     );
   }
@@ -1264,19 +1399,6 @@ export default function App() {
               />
               <FeaturesGrid />
             </>
-          )}
-
-          {activeTab === 'craftmytrip' && (
-            <CraftMyTripPage
-              allCars={cars}
-              allBikes={bikes}
-              allHotels={hotels}
-              allActivities={activities}
-              pickupDate={pickupDate}
-              dropDate={dropDate}
-              bookings={bookings}
-              onBack={() => setActiveTab('selfdrive')}
-            />
           )}
 
           {activeTab === 'cars' && (
@@ -1521,10 +1643,21 @@ export default function App() {
               </div>
               <CustomerActivitiesTab
                 activities={activities}
-                bookings={bookings}
+                bookings={currentUser
+                  ? bookings.filter(b =>
+                      b.phone === currentUser.phone ||
+                      b.email === currentUser.email ||
+                      b.customer_id === currentUser.id ||
+                      b.customer_id === String(currentUser.id)
+                    )
+                  : []}
                 currentUser={currentUser}
                 onOpenBookingDetails={() => {}}
                 onNavigateTab={handleTabChange}
+                appliedFilters={appliedFilters}
+                setAppliedFilters={setAppliedFilters}
+                searchQuery={searchQuery}
+                setSearchQuery={setSearchQuery}
               />
             </div>
           )}

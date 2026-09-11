@@ -12,13 +12,24 @@ export default function CustomerActivitiesTab({
   activities = [],
   bookings = [],
   onOpenBookingDetails,
-  onNavigateTab
+  onNavigateTab,
+  appliedFilters = {},
+  setAppliedFilters,
+  searchQuery: parentSearchQuery = '',
+  setSearchQuery: setParentSearchQuery
 }) {
   const [items, setItems] = useState(activities || []);
   const [loading, setLoading] = useState(false);
   const [typeFilter, setTypeFilter] = useState('all'); // 'all' | 'sightseeing' | 'activity'
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(parentSearchQuery || '');
   const [bookingModalItem, setBookingModalItem] = useState(null);
+
+  // Sync parent search query when changed
+  useEffect(() => {
+    if (parentSearchQuery !== undefined && parentSearchQuery !== searchQuery) {
+      setSearchQuery(parentSearchQuery);
+    }
+  }, [parentSearchQuery]);
   
   // Booking Form State
   const [travelDate, setTravelDate] = useState(getTodayDateStr());
@@ -56,27 +67,114 @@ export default function CustomerActivitiesTab({
     }
   }, [currentUser]);
 
-  // Filter activities
+  // Filter activities — check both type and item_type fields, case-insensitively
   const filteredItems = items.filter(item => {
-    const itemType = (item.type || 'activity').toLowerCase();
-    if (typeFilter === 'sightseeing' && itemType !== 'sightseeing') return false;
-    if (typeFilter === 'activity' && itemType !== 'activity') return false;
+    // Resolve type from either `type` or `item_type` field, lowercase for comparison
+    const rawType = (item.type || item.item_type || '').toLowerCase();
+    const rawCat = (item.category || '').toLowerCase();
+    const price = parseFloat(item.price || 0);
+    const duration = (item.duration || '').toLowerCase();
 
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
+    // 1. Quick pill filter (all / sightseeing / activity)
+    if (typeFilter === 'sightseeing') {
+      const isSight = rawType === 'sightseeing' ||
+        rawCat.includes('sight') || rawCat.includes('heritage') ||
+        rawCat.includes('tour') || rawCat.includes('monument');
+      if (!isSight) return false;
+    } else if (typeFilter === 'activity') {
+      const isSight = rawType === 'sightseeing' ||
+        rawCat.includes('sight') || rawCat.includes('heritage') ||
+        rawCat.includes('tour') || rawCat.includes('monument');
+      const isAct = rawType === 'activity' || rawType === 'addon' ||
+        rawCat.includes('water') || rawCat.includes('adventure') ||
+        rawCat.includes('sport') || rawCat.includes('cruise') ||
+        rawCat.includes('experience') || (!isSight && rawType !== '');
+      if (!isAct) return false;
+    }
+
+    // 2. Applied Categories / Types from popover
+    const appTypes = appliedFilters?.activityTypes || [];
+    if (appTypes.length > 0) {
+      const typeMatch = appTypes.some(at => {
+        const catLower = at.toLowerCase();
+        if (catLower.includes('sightseeing')) {
+          return rawType === 'sightseeing' || rawCat.includes('sight') || rawCat.includes('tour');
+        }
+        if (catLower.includes('water') || catLower.includes('adventure')) {
+          return rawCat.includes('water') || rawCat.includes('adventure') || rawCat.includes('sport') || rawType === 'activity';
+        }
+        if (catLower.includes('cruise') || catLower.includes('boat')) {
+          return rawCat.includes('cruise') || rawCat.includes('boat') || (item.title || '').toLowerCase().includes('cruise');
+        }
+        if (catLower.includes('heritage') || catLower.includes('culture')) {
+          return rawCat.includes('heritage') || rawCat.includes('culture') || (item.title || '').toLowerCase().includes('heritage');
+        }
+        if (catLower.includes('island')) {
+          return (item.location || '').toLowerCase().includes('island') || (item.title || '').toLowerCase().includes('island');
+        }
+        return rawCat.includes(catLower) || rawType.includes(catLower);
+      });
+      if (!typeMatch) return false;
+    }
+
+    // 3. Price range filter
+    const appPrices = appliedFilters?.activityPriceRanges || [];
+    if (appPrices.length > 0) {
+      const priceMatch = appPrices.some(pr => {
+        if (pr === '< 1500') return price < 1500;
+        if (pr === '1500-2500') return price >= 1500 && price <= 2500;
+        if (pr === '2500-4000') return price >= 2500 && price <= 4000;
+        if (pr === '> 4000') return price > 4000;
+        return true;
+      });
+      if (!priceMatch) return false;
+    }
+
+    // 4. Duration filter
+    const appDurations = appliedFilters?.activityDurations || [];
+    if (appDurations.length > 0) {
+      const durMatch = appDurations.some(d => {
+        const dLower = d.toLowerCase();
+        if (dLower.includes('1–2') || dLower.includes('1-2')) return duration.includes('1') || duration.includes('2');
+        if (dLower.includes('3–4') || dLower.includes('3-4')) return duration.includes('3') || duration.includes('4');
+        if (dLower.includes('5–6') || dLower.includes('5-6')) return duration.includes('5') || duration.includes('6');
+        if (dLower.includes('full')) return duration.includes('full') || duration.includes('day');
+        return true;
+      });
+      if (!durMatch) return false;
+    }
+
+    // 5. Search query
+    const effectiveQuery = (searchQuery || parentSearchQuery || '').trim().toLowerCase();
+    if (effectiveQuery && effectiveQuery !== 'goa' && effectiveQuery !== 'all goa' && effectiveQuery !== 'all experiences') {
       const title = (item.title || item.name || '').toLowerCase();
       const loc = (item.location || '').toLowerCase();
-      const cat = (item.category || '').toLowerCase();
-      if (!title.includes(q) && !loc.includes(q) && !cat.includes(q)) return false;
+      const desc = (item.description || '').toLowerCase();
+      if (!title.includes(effectiveQuery) && !loc.includes(effectiveQuery) && !rawCat.includes(effectiveQuery) && !desc.includes(effectiveQuery)) {
+        return false;
+      }
     }
     return true;
   });
 
-  // Filter customer's existing activity/sightseeing bookings
+  // Filter customer's existing activity/sightseeing bookings — only current user's
   const myActivityBookings = (bookings || []).filter(b => {
+    // package_type stored as 'Sightseeing', 'Activity', 'sightseeing', 'activity', etc.
     const type = String(b.package_type || b.type || '').toLowerCase();
     const itemId = String(b.item_id || '').toLowerCase();
-    return type === 'activity' || type === 'sightseeing' || itemId.startsWith('act-') || itemId.startsWith('sight-');
+    const isActivity = type === 'activity' || type === 'sightseeing' ||
+      itemId.startsWith('act-') || itemId.startsWith('sight-') ||
+      itemId.startsWith('act') || type.includes('activity') || type.includes('sightseeing');
+    if (!isActivity) return false;
+    // Only show if belongs to current user (phone, email, or customer_id match)
+    if (currentUser) {
+      return (
+        (currentUser.phone && b.phone === currentUser.phone) ||
+        (currentUser.email && b.email === currentUser.email) ||
+        (currentUser.id && (b.customer_id === currentUser.id || b.customer_id === String(currentUser.id)))
+      );
+    }
+    return false; // hide all if not logged in
   });
 
   const handleOpenBooking = (item) => {
@@ -176,7 +274,10 @@ export default function CustomerActivitiesTab({
               className="form-control form-control-sm ps-5 rounded-pill border"
               placeholder="Search tours & activities..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                if (setParentSearchQuery) setParentSearchQuery(e.target.value);
+              }}
               style={{ fontSize: '12px' }}
             />
           </div>
@@ -189,8 +290,8 @@ export default function CustomerActivitiesTab({
           <div className="d-flex flex-wrap gap-2">
             {[
               { id: 'all', label: `✨ All Experiences (${items.length})` },
-              { id: 'sightseeing', label: `🏛️ Sightseeing Tours (${items.filter(i => (i.type || '').toLowerCase() === 'sightseeing').length})` },
-              { id: 'activity', label: `🌊 Activities & Adventures (${items.filter(i => (i.type || '').toLowerCase() === 'activity').length})` },
+              { id: 'sightseeing', label: `🏛️ Sightseeing Tours (${items.filter(i => { const t = (i.type || i.item_type || '').toLowerCase(); const c = (i.category || '').toLowerCase(); return t === 'sightseeing' || c.includes('sight') || c.includes('heritage') || c.includes('tour'); }).length})` },
+              { id: 'activity', label: `🌊 Activities & Adventures (${items.filter(i => { const t = (i.type || i.item_type || '').toLowerCase(); const c = (i.category || '').toLowerCase(); const isSight = t === 'sightseeing' || c.includes('sight') || c.includes('heritage') || c.includes('tour'); return !isSight && (t === 'activity' || t === 'addon' || c.includes('water') || c.includes('adventure') || c.includes('sport') || c.includes('cruise') || c.includes('experience') || t !== ''); }).length})` },
             ].map(tab => (
               <button
                 key={tab.id}
@@ -205,8 +306,31 @@ export default function CustomerActivitiesTab({
             ))}
           </div>
 
-          <div className="text-xs text-muted fw-bold">
-            Showing {filteredItems.length} curated {filteredItems.length === 1 ? 'option' : 'options'}
+          <div className="d-flex align-items-center gap-3">
+            {((appliedFilters?.activityTypes?.length || 0) > 0 || (appliedFilters?.activityPriceRanges?.length || 0) > 0 || searchQuery) && (
+              <button
+                type="button"
+                className="btn btn-sm btn-link text-danger text-decoration-none p-0 text-xs fw-bold"
+                onClick={() => {
+                  setTypeFilter('all');
+                  setSearchQuery('');
+                  if (setParentSearchQuery) setParentSearchQuery('');
+                  if (setAppliedFilters) {
+                    setAppliedFilters(prev => ({
+                      ...prev,
+                      activityTypes: [],
+                      activityPriceRanges: [],
+                      activityDurations: []
+                    }));
+                  }
+                }}
+              >
+                ✕ Clear Filters
+              </button>
+            )}
+            <div className="text-xs text-muted fw-bold">
+              Showing {filteredItems.length} curated {filteredItems.length === 1 ? 'option' : 'options'}
+            </div>
           </div>
         </div>
       </div>
@@ -223,10 +347,22 @@ export default function CustomerActivitiesTab({
           <h5 className="fw-bold text-dark mb-1">No Experiences Found</h5>
           <p className="text-muted text-xs mb-3">Try adjusting your filters or search keywords.</p>
           <button 
-            className="btn btn-sm btn-outline-secondary rounded-pill px-3 mx-auto"
-            onClick={() => { setTypeFilter('all'); setSearchQuery(''); }}
+            className="btn btn-sm btn-dark rounded-pill px-4 mx-auto fw-bold"
+            onClick={() => {
+              setTypeFilter('all');
+              setSearchQuery('');
+              if (setParentSearchQuery) setParentSearchQuery('');
+              if (setAppliedFilters) {
+                setAppliedFilters(prev => ({
+                  ...prev,
+                  activityTypes: [],
+                  activityPriceRanges: [],
+                  activityDurations: []
+                }));
+              }
+            }}
           >
-            Reset Filters
+            Reset All Filters
           </button>
         </div>
       ) : (

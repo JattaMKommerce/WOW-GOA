@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Car, Bike, Hotel, Plane, Users, CheckCircle, ArrowLeft, ArrowRight,
   Search, Star, MapPin, Zap, X, CreditCard, Shield, PlaneTakeoff, PlaneLanding, Calendar, User,
-  Wand2, AlertCircle, BadgeCheck, Check, Loader2, Compass, Clock
+  Wand2, AlertCircle, BadgeCheck, Check, Loader2, Compass, Clock,
+  ChevronLeft, ChevronRight
 } from 'lucide-react';
 import * as api from '../../services/api';
 import HotelImageGallery from '../../components/HotelImageGallery';
@@ -57,12 +58,14 @@ function StepIndicator({ currentStep }) {
 }
 
 // ─── Step 1: Choose Your Ride ────────────────────────────────────────────────
-function Step1Vehicle({ allCars = [], allBikes = [], bookings = [], pickupDate, dropDate, selectedVehicle, setSelectedVehicle, memberCount, setMemberCount, onNext, onBack }) {
+function Step1Vehicle({ allCars = [], allBikes = [], bookings = [], pickupDate, dropDate, selectedVehicle, setSelectedVehicle, memberCount, setMemberCount, onNext, onBack, appliedFilters = {}, searchQuery: initialSearchQuery = '' }) {
   const [vehicleType, setVehicleType] = useState(selectedVehicle?.vehicle_type === 'bike' || selectedVehicle?.type === 'bike' ? 'bike' : 'car');
   const [error, setError] = useState('');
   const [localCars, setLocalCars] = useState(allCars);
   const [localBikes, setLocalBikes] = useState(allBikes);
   const [loadingVehicles, setLoadingVehicles] = useState(false);
+  const [filterSub, setFilterSub] = useState('All');
+  const [searchVeh, setSearchVeh] = useState(initialSearchQuery || '');
 
   // Auto-fetch if parent props were empty on mount
   useEffect(() => {
@@ -101,6 +104,56 @@ function Step1Vehicle({ allCars = [], allBikes = [], bookings = [], pickupDate, 
 
   const vehicles = vehicleType === 'car' ? availableCars : availableBikes;
 
+  const filteredVehicles = vehicles.filter(v => {
+    const name = (v.name || '').toLowerCase();
+    const cat = (v.category || '').toLowerCase();
+    const fuel = (v.fuel || '').toLowerCase();
+    const trans = (v.transmission || '').toLowerCase();
+    const seating = parseInt(v.seating || (vehicleType === 'bike' ? 2 : 4), 10);
+
+    // 1. Quick pill filter
+    if (filterSub && filterSub !== 'All') {
+      const f = filterSub.toLowerCase();
+      if (f === 'suv' && !cat.includes('suv') && !name.includes('creta') && !name.includes('brezza') && !name.includes('seltos')) return false;
+      if (f === 'sedan' && !cat.includes('sedan') && !name.includes('dzire') && !name.includes('city') && !name.includes('verna')) return false;
+      if (f === 'hatchback' && !cat.includes('hatchback') && !name.includes('swift') && !name.includes('i10') && !name.includes('i20')) return false;
+      if (f.includes('7-seater') && seating < 7 && !cat.includes('7') && !name.includes('ertiga') && !name.includes('innova')) return false;
+      if (f.includes('thar') && !name.includes('thar') && !cat.includes('thar') && !cat.includes('4x4') && !cat.includes('open')) return false;
+      if (f === 'automatic' && !trans.includes('auto') && !trans.includes('amt') && !trans.includes('at') && !trans.includes('cvt')) return false;
+      if (f === 'manual' && !trans.includes('manual')) return false;
+      if (f.includes('scooter') && !cat.includes('scooter') && !name.includes('activa') && !name.includes('jupiter') && !name.includes('moped')) return false;
+      if (f.includes('cruiser') && !cat.includes('cruiser') && !name.includes('bullet') && !name.includes('classic') && !name.includes('enfield')) return false;
+      if (f.includes('sports') && !cat.includes('sport') && !name.includes('ninja') && !name.includes('r15') && !name.includes('duke') && !name.includes('ktm') && !name.includes('fz')) return false;
+    }
+
+    // 2. Search box
+    if (searchVeh.trim()) {
+      const q = searchVeh.trim().toLowerCase();
+      if (!name.includes(q) && !cat.includes(q) && !(v.location || '').toLowerCase().includes(q)) {
+        return false;
+      }
+    }
+
+    // 3. craftVehicleTypes from appliedFilters
+    const craftTypes = appliedFilters?.craftVehicleTypes || [];
+    if (craftTypes.length > 0) {
+      const matchCraft = craftTypes.some(ct => {
+        const ctl = ct.toLowerCase();
+        if (ctl.includes('hatchback')) return cat.includes('hatchback') || name.includes('swift') || name.includes('i10');
+        if (ctl.includes('sedan')) return cat.includes('sedan') || name.includes('dzire') || name.includes('city');
+        if (ctl.includes('suv')) return cat.includes('suv') || name.includes('creta') || name.includes('brezza');
+        if (ctl.includes('7-seater')) return seating >= 7 || cat.includes('7') || name.includes('ertiga');
+        if (ctl.includes('thar') || ctl.includes('open')) return name.includes('thar') || cat.includes('open');
+        if (ctl.includes('scooter')) return cat.includes('scooter') || name.includes('activa') || name.includes('jupiter');
+        if (ctl.includes('cruiser') || ctl.includes('bullet')) return name.includes('bullet') || name.includes('classic') || cat.includes('cruiser');
+        return true;
+      });
+      if (!matchCraft) return false;
+    }
+
+    return true;
+  });
+
   const maxMembers = selectedVehicle
     ? vehicleType === 'bike' ? 2 : (parseInt(selectedVehicle.seating) || 4)
     : vehicleType === 'bike' ? 2 : 6;
@@ -115,6 +168,7 @@ function Step1Vehicle({ allCars = [], allBikes = [], bookings = [], pickupDate, 
   const handleVehicleTypeChange = (type) => {
     setVehicleType(type);
     setSelectedVehicle(null);
+    setFilterSub('All');
     setMemberCount(1);
     setError('');
   };
@@ -164,6 +218,47 @@ function Step1Vehicle({ allCars = [], allBikes = [], bookings = [], pickupDate, 
         </button>
       </div>
 
+      {/* Quick Filters and Search Bar */}
+      <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3 mt-3">
+        <div className="d-flex flex-wrap gap-1.5">
+          {(vehicleType === 'car' 
+            ? ['All', 'SUV', 'Sedan', 'Hatchback', '7-Seater', 'Thar / 4x4', 'Automatic', 'Manual']
+            : ['All', 'Scooter', 'Cruiser / Royal Enfield', 'Sports Bike']
+          ).map(f => (
+            <button
+              key={f}
+              type="button"
+              className={`btn btn-sm rounded-pill px-3 py-1 text-xs fw-bold ${
+                filterSub === f ? 'btn-dark text-white' : 'btn-light text-secondary border'
+              }`}
+              onClick={() => setFilterSub(f)}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
+
+        <div className="input-group input-group-sm" style={{ maxWidth: '240px' }}>
+          <span className="input-group-text bg-white border-end-0 text-muted"><Search size={14} /></span>
+          <input
+            type="text"
+            className="form-control border-start-0 text-xs"
+            placeholder={`Search ${vehicleType === 'car' ? 'cars' : 'bikes'}...`}
+            value={searchVeh}
+            onChange={e => setSearchVeh(e.target.value)}
+          />
+          {searchVeh && (
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary border-start-0 bg-white"
+              onClick={() => setSearchVeh('')}
+            >
+              <X size={12} />
+            </button>
+          )}
+        </div>
+      </div>
+
       {vehicleType === 'bike' && (
         <div className="cmt-info-banner">
           <AlertCircle size={16} />
@@ -182,13 +277,30 @@ function Step1Vehicle({ allCars = [], allBikes = [], bookings = [], pickupDate, 
       {/* Vehicle Grid */}
       {!loadingVehicles && (
         <div className="cmt-vehicle-grid">
-          {vehicles.length === 0 && (
-            <div className="cmt-empty">
-              <Car size={40} opacity={0.3} />
-              <p>No {vehicleType}s available for your selected dates. Click "Skip Ride" to proceed with Hotel & Flight.</p>
+          {filteredVehicles.length === 0 && (
+            <div className="cmt-empty text-center py-5 w-100">
+              <Car size={40} opacity={0.3} className="mx-auto mb-2" />
+              <p className="fw-bold mb-1">No {vehicleType}s match your selected filters.</p>
+              <p className="text-muted small mb-3">Try adjusting your filters, searching another model, or skip ride.</p>
+              <div className="d-flex justify-content-center gap-2">
+                <button
+                  type="button"
+                  className="btn btn-sm btn-dark rounded-pill px-3"
+                  onClick={() => { setFilterSub('All'); setSearchVeh(''); }}
+                >
+                  Clear Filters
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary rounded-pill px-3"
+                  onClick={handleSkip}
+                >
+                  Skip Ride
+                </button>
+              </div>
             </div>
           )}
-          {vehicles.map(v => {
+          {filteredVehicles.map(v => {
             const isSelected = selectedVehicle?.id === v.id;
             const seats = vehicleType === 'bike' ? 2 : (parseInt(v.seating) || 4);
             return (
@@ -275,13 +387,15 @@ const GOA_HOTEL_AREAS = [
   'Margao', 'Vasco da Gama', 'Colva', 'Benaulim', 'Palolem', 'Ponda'
 ];
 
-function Step2Hotel({ allHotels = [], pickupDate, dropDate, selectedHotel, setSelectedHotel, memberCount, onNext, onBack }) {
+function Step2Hotel({ allHotels = [], pickupDate, dropDate, selectedHotel, setSelectedHotel, memberCount, onNext, onBack, appliedFilters = {}, searchQuery: initialSearchQuery = '' }) {
   const [searchLoc, setSearchLoc] = useState('Goa');
   const [liveHotels, setLiveHotels] = useState([]);
   const [loadingLive, setLoadingLive] = useState(false);
   const [error, setError] = useState('');
   const [hasSearched, setHasSearched] = useState(false);
   const [galleryHotel, setGalleryHotel] = useState(null);
+  const [starFilter, setStarFilter] = useState('All');
+  const [searchHotelName, setSearchHotelName] = useState(initialSearchQuery || '');
 
   const validPickup = pickupDate || getTodayDateStr();
   const validDrop = dropDate || getNextDayDateStr(validPickup);
@@ -326,6 +440,45 @@ function Step2Hotel({ allHotels = [], pickupDate, dropDate, selectedHotel, setSe
     setSearchLoc(newLoc);
     handleSearchLive(newLoc);
   };
+
+  const filteredHotels = liveHotels.filter(h => {
+    const stars = String(h.stars || h.star_rating || h.rating || '3');
+    const name = (h.name || '').toLowerCase();
+    const area = (h.area || '').toLowerCase();
+    const type = (h.property_type || h.type || '').toLowerCase();
+
+    // 1. Star filter
+    if (starFilter && starFilter !== 'All') {
+      if (starFilter === 'boutique') {
+        if (!type.includes('boutique') && !type.includes('heritage') && !name.includes('heritage')) return false;
+      } else if (!stars.includes(starFilter)) {
+        return false;
+      }
+    }
+
+    // 2. Search hotel name
+    if (searchHotelName.trim()) {
+      const q = searchHotelName.trim().toLowerCase();
+      if (!name.includes(q) && !area.includes(q) && !type.includes(q)) return false;
+    }
+
+    // 3. craftHotelTypes from appliedFilters
+    const craftHotels = appliedFilters?.craftHotelTypes || [];
+    if (craftHotels.length > 0) {
+      const match = craftHotels.some(ch => {
+        const chl = ch.toLowerCase();
+        if (chl.includes('5 star')) return stars.includes('5');
+        if (chl.includes('4 star')) return stars.includes('4');
+        if (chl.includes('3 star')) return stars.includes('3');
+        if (chl.includes('beachfront')) return area.includes('baga') || area.includes('calangute') || area.includes('colva') || name.includes('beach') || name.includes('resort');
+        if (chl.includes('heritage') || chl.includes('boutique')) return type.includes('boutique') || type.includes('heritage') || name.includes('heritage');
+        return true;
+      });
+      if (!match) return false;
+    }
+
+    return true;
+  });
 
   const handleNext = () => {
     if (!selectedHotel) {
@@ -379,7 +532,7 @@ function Step2Hotel({ allHotels = [], pickupDate, dropDate, selectedHotel, setSe
       </div>
 
       {/* Quick Goa Area Selector */}
-      <div style={{ marginBottom: '20px' }}>
+      <div style={{ marginBottom: '15px' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
           {GOA_HOTEL_AREAS.map(area => (
             <button
@@ -404,6 +557,50 @@ function Step2Hotel({ allHotels = [], pickupDate, dropDate, selectedHotel, setSe
         </div>
       </div>
 
+      {/* Star Ratings & Hotel Search Filter Bar */}
+      <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+        <div className="d-flex flex-wrap gap-1.5">
+          {[
+            { id: 'All', label: 'All Stays' },
+            { id: '5', label: '⭐ 5★ Luxury' },
+            { id: '4', label: '⭐ 4★ Premium' },
+            { id: '3', label: '⭐ 3★ Standard' },
+            { id: 'boutique', label: '🏛️ Boutique / Heritage' }
+          ].map(f => (
+            <button
+              key={f.id}
+              type="button"
+              className={`btn btn-sm rounded-pill px-3 py-1 text-xs fw-bold ${
+                starFilter === f.id ? 'btn-dark text-white' : 'btn-light text-secondary border'
+              }`}
+              onClick={() => setStarFilter(f.id)}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="input-group input-group-sm" style={{ maxWidth: '240px' }}>
+          <span className="input-group-text bg-white border-end-0 text-muted"><Search size={14} /></span>
+          <input
+            type="text"
+            className="form-control border-start-0 text-xs"
+            placeholder="Filter hotel name..."
+            value={searchHotelName}
+            onChange={e => setSearchHotelName(e.target.value)}
+          />
+          {searchHotelName && (
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary border-start-0 bg-white"
+              onClick={() => setSearchHotelName('')}
+            >
+              <X size={12} />
+            </button>
+          )}
+        </div>
+      </div>
+
       {error && <div className="cmt-error"><AlertCircle size={15} /> {error}</div>}
 
       {/* Hotel List */}
@@ -414,13 +611,30 @@ function Step2Hotel({ allHotels = [], pickupDate, dropDate, selectedHotel, setSe
             <p className="text-muted fw-semibold">Finding premium hotels in Goa...</p>
           </div>
         )}
-        {!loadingLive && hasSearched && liveHotels.length === 0 && (
-          <div className="cmt-empty text-center py-5 bg-white rounded border">
-            <Hotel size={40} opacity={0.3} className="mb-3" />
-            <h4 className="text-muted">No hotels found in {searchLoc}. Try searching for "Goa".</h4>
+        {!loadingLive && hasSearched && filteredHotels.length === 0 && (
+          <div className="cmt-empty text-center py-5 bg-white rounded-4 border p-4">
+            <Hotel size={40} opacity={0.3} className="mx-auto mb-2" />
+            <h5 className="fw-bold text-dark mb-1">No hotels found matching your filters in {searchLoc}.</h5>
+            <p className="text-muted small mb-3">Try clearing your filters, searching another area, or skip hotel.</p>
+            <div className="d-flex justify-content-center gap-2">
+              <button
+                type="button"
+                className="btn btn-sm btn-dark rounded-pill px-3"
+                onClick={() => { setStarFilter('All'); setSearchHotelName(''); setSearchLoc('Goa'); handleSearchLive('Goa'); }}
+              >
+                Clear Hotel Filters
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-secondary rounded-pill px-3"
+                onClick={handleSkip}
+              >
+                Skip Hotel
+              </button>
+            </div>
           </div>
         )}
-        {!loadingLive && liveHotels.map((h, idx) => {
+        {!loadingLive && filteredHotels.map((h, idx) => {
           const isSelected = selectedHotel?.id === h.id || (selectedHotel?.name === h.name);
           const nightPrice = getHotelNightPrice(h);
           const totalHotelPrice = nightPrice * nights;
@@ -542,11 +756,26 @@ function Step2Hotel({ allHotels = [], pickupDate, dropDate, selectedHotel, setSe
 }
 
 // ─── Step 3: Sightseeing & Activities ──────────────────────────────────────
-function Step3Activities({ allActivities = [], selectedActivities = [], setSelectedActivities, memberCount, onNext, onBack }) {
+function Step3Activities({
+  allActivities = [],
+  selectedActivities = [],
+  setSelectedActivities,
+  memberCount,
+  onNext,
+  onBack,
+  appliedFilters = {},
+  searchQuery: initialSearchQuery = ''
+}) {
   const [filterType, setFilterType] = useState('all'); // 'all', 'sightseeing', 'activity'
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(initialSearchQuery || '');
   const [liveActivities, setLiveActivities] = useState(allActivities || []);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (initialSearchQuery) {
+      setSearchQuery(initialSearchQuery);
+    }
+  }, [initialSearchQuery]);
 
   useEffect(() => {
     if (allActivities && allActivities.length > 0) {
@@ -578,21 +807,49 @@ function Step3Activities({ allActivities = [], selectedActivities = [], setSelec
     const cat = String(act.category || '').toLowerCase();
     const name = String(act.title || act.name || '').toLowerCase();
     const loc = String(act.location || '').toLowerCase();
+    const isSight = type === 'sightseeing' || cat.includes('sight') || cat.includes('tour') || cat.includes('heritage');
+    const isAct = type === 'activity' || cat.includes('water') || cat.includes('adventure') || cat.includes('sport') || cat.includes('cruise') || !isSight;
 
-    // Type filter
-    if (filterType === 'sightseeing') {
-      const isSight = type === 'sightseeing' || cat.includes('sight') || cat.includes('tour') || cat.includes('heritage');
-      if (!isSight) return false;
-    } else if (filterType === 'activity') {
-      const isAct = type === 'activity' || cat.includes('water') || cat.includes('adventure') || cat.includes('sport') || cat.includes('cruise') || type !== 'sightseeing';
-      if (!isAct) return false;
-    }
+    // 1. Type filter pills
+    if (filterType === 'sightseeing' && !isSight) return false;
+    if (filterType === 'activity' && !isAct) return false;
 
-    // Search query
+    // 2. Search query
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      return name.includes(q) || loc.includes(q) || cat.includes(q);
+      if (!name.includes(q) && !loc.includes(q) && !cat.includes(q)) return false;
     }
+
+    // 3. craftExperienceTypes / activityTypes from appliedFilters
+    const expFilters = appliedFilters?.craftExperienceTypes || appliedFilters?.activityTypes || [];
+    if (expFilters.length > 0) {
+      const match = expFilters.some(exp => {
+        const expl = exp.toLowerCase();
+        if (expl.includes('water') || expl.includes('scuba')) return cat.includes('water') || cat.includes('scuba') || name.includes('scuba') || name.includes('water');
+        if (expl.includes('cruise') || expl.includes('island')) return cat.includes('cruise') || cat.includes('island') || name.includes('cruise') || name.includes('island');
+        if (expl.includes('heritage') || expl.includes('church')) return cat.includes('heritage') || cat.includes('church') || cat.includes('sight') || name.includes('heritage') || name.includes('church') || isSight;
+        if (expl.includes('nightlife') || expl.includes('pub')) return cat.includes('night') || cat.includes('pub') || cat.includes('club') || name.includes('night') || name.includes('pub');
+        if (expl.includes('adventure') || expl.includes('trek')) return cat.includes('adventure') || cat.includes('trek') || name.includes('trek') || name.includes('adventure');
+        if (expl.includes('romantic') || expl.includes('sunset')) return cat.includes('sunset') || cat.includes('romantic') || name.includes('sunset');
+        return true;
+      });
+      if (!match) return false;
+    }
+
+    // 4. Price range filter from appliedFilters
+    const priceRanges = appliedFilters?.activityPriceRanges || [];
+    if (priceRanges.length > 0) {
+      const price = parseFloat(act.price) || 0;
+      const matchPrice = priceRanges.some(pr => {
+        if (pr === 'under_500') return price < 500;
+        if (pr === '500_1500') return price >= 500 && price <= 1500;
+        if (pr === '1500_3000') return price >= 1500 && price <= 3000;
+        if (pr === 'above_3000') return price > 3000;
+        return true;
+      });
+      if (!matchPrice) return false;
+    }
+
     return true;
   });
 
@@ -668,6 +925,15 @@ function Step3Activities({ allActivities = [], selectedActivities = [], setSelec
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
           />
+          {searchQuery && (
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary border-start-0 bg-white"
+              onClick={() => setSearchQuery('')}
+            >
+              <X size={12} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -681,7 +947,23 @@ function Step3Activities({ allActivities = [], selectedActivities = [], setSelec
         <div className="text-center py-5 bg-white rounded-4 border p-4">
           <Compass size={40} className="text-muted opacity-50 mb-2 mx-auto" />
           <h6 className="fw-bold text-dark mb-1">No Experiences Found</h6>
-          <p className="text-muted small mb-0">Try clearing your search filter or view all experiences.</p>
+          <p className="text-muted small mb-3">Try clearing your filters or search keywords.</p>
+          <div className="d-flex justify-content-center gap-2">
+            <button
+              type="button"
+              className="btn btn-sm btn-dark rounded-pill px-3"
+              onClick={() => { setFilterType('all'); setSearchQuery(''); }}
+            >
+              Reset Filters
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary rounded-pill px-3"
+              onClick={onNext}
+            >
+              Skip to Next Step
+            </button>
+          </div>
         </div>
       ) : (
         <div className="row g-3">
@@ -1399,7 +1681,20 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
 }
 
 // ─── Main CraftMyTripPage ────────────────────────────────────────────────────
-export default function CraftMyTripPage({ allCars = [], allBikes = [], allHotels = [], allActivities = [], pickupDate, dropDate, bookings = [], onBack }) {
+export default function CraftMyTripPage({
+  allCars = [],
+  allBikes = [],
+  allHotels = [],
+  allActivities = [],
+  pickupDate,
+  dropDate,
+  bookings = [],
+  onBack,
+  appliedFilters = {},
+  setAppliedFilters,
+  searchQuery = '',
+  setSearchQuery
+}) {
   const [step, setStep] = useState(1);
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [memberCount, setMemberCount] = useState(1);
@@ -1450,6 +1745,8 @@ export default function CraftMyTripPage({ allCars = [], allBikes = [], allHotels
             setMemberCount={setMemberCount}
             onNext={goNext}
             onBack={goBack}
+            appliedFilters={appliedFilters}
+            searchQuery={searchQuery}
           />
         )}
         {step === 2 && (
@@ -1462,6 +1759,8 @@ export default function CraftMyTripPage({ allCars = [], allBikes = [], allHotels
             memberCount={memberCount}
             onNext={goNext}
             onBack={goBack}
+            appliedFilters={appliedFilters}
+            searchQuery={searchQuery}
           />
         )}
         {step === 3 && (
@@ -1472,6 +1771,8 @@ export default function CraftMyTripPage({ allCars = [], allBikes = [], allHotels
             memberCount={memberCount}
             onNext={goNext}
             onBack={goBack}
+            appliedFilters={appliedFilters}
+            searchQuery={searchQuery}
           />
         )}
         {step === 4 && (
