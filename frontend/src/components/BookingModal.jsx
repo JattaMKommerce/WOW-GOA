@@ -4,6 +4,7 @@ import { getTodayDateStr, addDays } from '../utils/dateUtils';
 import * as api from '../services/api';
 import { checkCustomerDob } from '../services/api';
 import UnifiedGalleryViewer from './UnifiedGalleryViewer';
+import DobPicker from './common/DobPicker';
 
 export default function BookingModal({
   selectedBookingItem,
@@ -285,6 +286,11 @@ export default function BookingModal({
   const handleFormSubmit = (e) => {
     e.preventDefault();
 
+    if (!userDob && !isDobSaved) {
+      alert("Please select your Date of Birth (Day, Month, and Year). Date of Birth is required for birthday privileges and special offers from WOW GOA.");
+      return;
+    }
+
     // Validation for driver services when enabled
     if (driverRequired) {
       if (!driverServiceType) {
@@ -562,15 +568,12 @@ export default function BookingModal({
                             <span className="d-flex align-items-center gap-1">
                               <Cake size={14} className="text-warning" /> Date of Birth <span className="text-danger">*</span>
                             </span>
-                            <span className="text-muted" style={{ fontSize: '11px' }}>[ DD / MM / YYYY ]</span>
+                            <span className="text-muted" style={{ fontSize: '11px' }}>[ Day / Month / Year ]</span>
                           </label>
-                          <input 
-                            type="date" 
-                            className="form-control" 
+                          <DobPicker 
                             value={userDob}
-                            onChange={(e) => setUserDob(e.target.value)}
-                            required 
-                            max={new Date().toISOString().split('T')[0]}
+                            onChange={(val) => setUserDob(val)}
+                            required={true}
                           />
                           <small className="text-muted d-block mt-1" style={{ fontSize: '11px', color: '#64748b' }}>
                             Date of Birth is required to provide birthday benefits and special offers from WOW GOA.
@@ -1149,7 +1152,7 @@ export default function BookingModal({
                       </div>
                       <div className="d-flex justify-content-between mb-2">
                         <span>{isFlight ? 'Flight Info:' : 'Duration:'}</span>
-                        <span>{isFlight ? `${selectedBookingItem.stops || 'Direct'} (${selectedBookingItem.duration || '2h'})` : `${calculatedDays} ${isHotel ? 'Nights' : 'Days'}`}</span>
+                        <span className="fw-semibold">{isFlight ? `${selectedBookingItem.stops || 'Direct'} (${selectedBookingItem.duration || '2h'})` : `${calculatedDays} ${isHotel ? (calculatedDays === 1 ? 'Night' : 'Nights') : (calculatedDays === 1 ? 'Day' : 'Days')}${isHotel ? ` (${calculatedDays}N)` : ''}`}</span>
                       </div>
 
                       {addonPackage && (

@@ -2,6 +2,23 @@ import React, { useState } from 'react';
 import { Users, Search, Phone, Mail, Eye, Calendar, DollarSign, Car, X, User, MapPin, Crown, ShieldCheck } from 'lucide-react';
 import { calculateLoyaltyTiers } from '../../../utils/loyaltyHelper';
 
+// Helper to extract authoritative numeric timestamp from booking
+function getBookingTimestamp(b) {
+  if (!b) return 0;
+  if (b.created_at) {
+    const raw = String(b.created_at).trim();
+    const d = new Date(raw.includes('T') ? raw : raw.replace(' ', 'T')).getTime();
+    if (!isNaN(d) && d > 0) return d;
+  }
+  const dateStr = b.pickup_date || b.start_date || b.check_in_date || b.departure_date;
+  if (dateStr) {
+    const d = new Date(String(dateStr).trim()).getTime();
+    if (!isNaN(d) && d > 0) return d;
+  }
+  const num = String(b.id || '').replace(/\D/g, '');
+  return num ? parseInt(num.slice(-8), 10) : 0;
+}
+
 export default function VehicleCustomerManagement({ bookings = [] }) {
   const [search, setSearch] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState(null);
@@ -16,6 +33,8 @@ export default function VehicleCustomerManagement({ bookings = [] }) {
 
     if (!customerKey) return;
 
+    const bTime = getBookingTimestamp(b);
+
     if (!customerMap[customerKey]) {
       customerMap[customerKey] = {
         id: `CUST-${rawPhone.replace(/\D/g, '').slice(-6) || Math.floor(1000 + Math.random() * 9000)}`,
@@ -26,7 +45,8 @@ export default function VehicleCustomerManagement({ bookings = [] }) {
         city: b.pickup_loc || b.pickup_location || 'Goa',
         total_bookings: 0,
         total_spent: 0,
-        last_booking_date: b.pickup_date || b.created_at || '—',
+        last_booking_date: b.pickup_date || (b.created_at ? String(b.created_at).slice(0, 10) : '—'),
+        latest_timestamp: bTime,
         bookings: []
       };
     }
@@ -35,18 +55,37 @@ export default function VehicleCustomerManagement({ bookings = [] }) {
     c.total_bookings += 1;
     const amt = parseFloat(b.total_amount || b.total_paid || 0) || 0;
     c.total_spent += amt;
-    if (b.pickup_date && b.pickup_date > (c.last_booking_date || '')) {
-      c.last_booking_date = b.pickup_date;
+    
+    if (bTime >= (c.latest_timestamp || 0)) {
+      c.latest_timestamp = bTime;
+      if (b.pickup_date) {
+        c.last_booking_date = b.pickup_date;
+      } else if (b.created_at) {
+        c.last_booking_date = String(b.created_at).slice(0, 10);
+      }
+      if (rawName && rawName !== 'Customer') c.name = rawName;
+      if (rawPhone) c.phone = rawPhone;
+      if (rawEmail) c.email = rawEmail;
+      if (b.license && b.license !== '—') c.license = b.license;
+      if (b.pickup_loc || b.pickup_location) c.city = b.pickup_loc || b.pickup_location;
     }
     c.bookings.push(b);
   });
 
+  // Sort customers descending from latest to previous (newest first)
   const customersList = Object.values(customerMap).map(c => {
+    // Sort each customer's individual booking history from newest to oldest
+    c.bookings.sort((b1, b2) => getBookingTimestamp(b2) - getBookingTimestamp(b1));
     const tiers = calculateLoyaltyTiers(c.bookings);
     return {
       ...c,
       carTier: tiers.car // Strictly Car Tier only (isolating Hotel & Trip)
     };
+  }).sort((a, b) => {
+    // Primary sort: Latest booking timestamp descending
+    const diff = (b.latest_timestamp || 0) - (a.latest_timestamp || 0);
+    if (diff !== 0) return diff;
+    return String(b.id || '').localeCompare(String(a.id || ''));
   });
 
   const filtered = customersList.filter(c =>
@@ -125,7 +164,15 @@ export default function VehicleCustomerManagement({ bookings = [] }) {
                     </div>
                     <div>
                       <div className="fw-bold" style={{ color: '#0D1B2E', fontSize: '0.85rem' }}>{c.name}</div>
-                      <div style={{ fontSize: '0.65rem', color: '#94a3b8' }}>ID: #{c.id}</div>
+                      <div className="d-flex align-items-center gap-1" style={{ fontSize: '0.65rem', color: '#94a3b8' }}>
+                        <span>ID: #{c.id}</span>
+                        {c.last_booking_date && c.last_booking_date !== '—' && (
+                          <>
+                            <span>·</span>
+                            <span className="text-secondary fw-semibold">📅 {c.last_booking_date}</span>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </td>

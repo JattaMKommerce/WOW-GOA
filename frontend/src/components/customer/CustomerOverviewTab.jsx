@@ -10,6 +10,187 @@ import CustomerLoyaltyCard from './CustomerLoyaltyCard';
 import { getBookingDisplayImage } from '../../utils/bookingImageHelper';
 import * as api from '../../services/api';
 
+// ─── Unified Driver Service Helper ───
+const hasDriverService = (b) => {
+  if (!b) return false;
+  const svcType = String(b.driver_service_type || '').toUpperCase().trim();
+  if (['PICKUP', 'DROP', 'FULL'].includes(svcType)) return true;
+  if (svcType === 'NONE') return false;
+  if (b.driver_required === 1 || b.driver_required === '1' || b.driver_required === true || b.driver_required === 'yes') return true;
+  if (b.assigned_driver_id && String(b.assigned_driver_id).trim() !== '') return true;
+  const pkgType = String(b.package_type || b.type || '').toLowerCase();
+  const itemName = String(b.item_name || b.package_name || '').toLowerCase();
+  if (pkgType.includes('with driver') || itemName.includes('with driver') || itemName.includes('with chauffeur')) return true;
+  return false;
+};
+
+// ─── Unified Category Breakdown Helpers ───
+const isCraftBooking = (b) => {
+  if (!b) return false;
+  const type = String(b.package_type || b.type || '').toLowerCase();
+  const itemName = String(b.item_name || b.package_name || '').toLowerCase();
+  const itemId = String(b.item_id || '').toLowerCase();
+  return type.includes('craft') || itemName.includes('craft my trip') || itemId.includes('craft');
+};
+
+const isFlightBooking = (b) => {
+  if (!b || isCraftBooking(b)) return false;
+  const type = String(b.package_type || b.type || '').toLowerCase();
+  const itemName = String(b.item_name || b.package_name || '').toLowerCase();
+  const itemId = String(b.item_id || '').toLowerCase();
+  return type === 'flight' || type.includes('flight') || itemName.includes('flight') || itemId.includes('flight');
+};
+
+const isHotelBooking = (b) => {
+  if (!b || isCraftBooking(b) || isFlightBooking(b)) return false;
+  const type = String(b.package_type || b.type || '').toLowerCase();
+  const itemName = String(b.item_name || b.package_name || b.hotel_name || '').toLowerCase();
+  const itemId = String(b.item_id || '').toLowerCase();
+  if (type.includes('package') || type.includes('self drive') || type === 'selfdrive' || itemId.startsWith('pkg-') || itemId.startsWith('package-')) {
+    return false;
+  }
+  return (
+    type === 'hotel' ||
+    type.includes('hotel') ||
+    Boolean(b.hotel_name && !b.vehicle_name && !b.car_included) ||
+    itemId.includes('hotel') ||
+    itemName.includes('hotel') ||
+    itemName.includes('resort') ||
+    itemName.includes('villa') ||
+    itemName.includes('palace') ||
+    itemName.includes('beachfront') ||
+    itemName.includes('suites') ||
+    itemName.includes('stay')
+  );
+};
+
+const isSightseeingBooking = (b) => {
+  if (!b || isCraftBooking(b) || isFlightBooking(b) || isHotelBooking(b)) return false;
+  const type = String(b.package_type || b.type || '').toLowerCase();
+  const itemId = String(b.item_id || '').toLowerCase();
+  const itemName = String(b.item_name || b.package_name || '').toLowerCase();
+
+  if (type === 'sightseeing' || type.includes('sightseeing')) return true;
+  if (itemId.startsWith('sight-') || itemId.startsWith('sight_')) return true;
+  if (itemName.includes('sightseeing') || itemName.includes('heritage tour') || itemName.includes('monument')) return true;
+
+  return false;
+};
+
+const isActivityBooking = (b) => {
+  if (!b || isCraftBooking(b) || isFlightBooking(b) || isHotelBooking(b)) return false;
+  if (isSightseeingBooking(b)) return false;
+  const type = String(b.package_type || b.type || '').toLowerCase();
+  const itemId = String(b.item_id || '').toLowerCase();
+  const itemName = String(b.item_name || b.package_name || '').toLowerCase();
+
+  return (
+    type === 'activity' ||
+    type.includes('activity') ||
+    itemId.startsWith('act-') ||
+    itemId.startsWith('act_') ||
+    itemId.startsWith('act') ||
+    itemName.includes('scuba') ||
+    itemName.includes('water sport') ||
+    itemName.includes('watersport') ||
+    itemName.includes('parasailing') ||
+    itemName.includes('cruise') ||
+    itemName.includes('adventure') ||
+    itemName.includes('kayaking') ||
+    itemName.includes('snorkeling')
+  );
+};
+
+const isBikeItem = (b) => {
+  if (!b || isCraftBooking(b) || isFlightBooking(b) || isHotelBooking(b) || isSightseeingBooking(b) || isActivityBooking(b)) return false;
+  const type = String(b.package_type || b.type || '').toLowerCase();
+  const itemName = String(b.item_name || b.package_name || b.vehicle_name || '').toLowerCase();
+  const itemId = String(b.item_id || '').toLowerCase();
+  return (
+    type === 'bike' ||
+    type.includes('bike') ||
+    type.includes('scooter') ||
+    type.includes('two wheeler') ||
+    type.includes('two-wheeler') ||
+    itemId.startsWith('bike-') ||
+    itemId.startsWith('bike_') ||
+    itemName.includes('bike') ||
+    itemName.includes('scooter') ||
+    itemName.includes('activa') ||
+    itemName.includes('himalayan') ||
+    itemName.includes('bullet') ||
+    itemName.includes('jupiter') ||
+    itemName.includes('classic 350') ||
+    itemName.includes('fz-s') ||
+    itemName.includes('access 125') ||
+    itemName.includes('faschino')
+  );
+};
+
+const isCarItem = (b) => {
+  if (!b || isCraftBooking(b) || isFlightBooking(b) || isHotelBooking(b) || isSightseeingBooking(b) || isActivityBooking(b) || isBikeItem(b)) return false;
+  const type = String(b.package_type || b.type || '').toLowerCase();
+  const itemName = String(b.item_name || b.package_name || b.vehicle_name || '').toLowerCase();
+  const itemId = String(b.item_id || '').toLowerCase();
+
+  if (itemId.startsWith('car-') || itemId.startsWith('car_')) return true;
+  if (type === 'car' || type.includes('car rental') || type.includes('vehicle rental') || type === 'vehicle' || type === 'driver') return true;
+
+  const carKeywords = ['car', 'thar', 'swift', 'creta', 'ertiga', 'fortuner', 'innova', 'cabriolet', 'audi', 'bmw', 'baleno', 'i20', 'scorpio', 'kia', 'seltos', 'verna', 'wagonr', 'celerio', 'dzire', 'altroz', 'nexon'];
+  if (carKeywords.some(kw => itemName.includes(kw))) return true;
+
+  return false;
+};
+
+const isTripPackageItem = (b) => {
+  if (!b || isCraftBooking(b) || isFlightBooking(b) || isHotelBooking(b) || isSightseeingBooking(b) || isActivityBooking(b) || isBikeItem(b)) return false;
+  const type = String(b.package_type || b.type || '').toLowerCase();
+  const itemName = String(b.item_name || b.package_name || '').toLowerCase();
+  const itemId = String(b.item_id || '').toLowerCase();
+
+  if (itemId.startsWith('car-') || itemId.startsWith('bike-')) return false;
+
+  if (type === 'package' || type === 'trip_package' || type === 'tour' || type === 'trip' || type.includes('package') || type.includes('tour') || type.includes('holiday')) {
+    return true;
+  }
+  if (itemId.startsWith('pkg-') || itemId.startsWith('package-') || itemId.startsWith('tp-')) {
+    return true;
+  }
+
+  const packageKeywords = [
+    'package', 'tour', 'getaway', 'explorer', 'escape', 'holiday',
+    'vacation', 'experience', 'bali', 'kerala', 'kashmir', 'dubai',
+    'thailand', 'maldives', 'goa tour', 'heritage trail', 'coastal goa',
+    'sunset escape', 'honeymoon'
+  ];
+  if (packageKeywords.some(kw => itemName.includes(kw))) {
+    return true;
+  }
+
+  if (Boolean(b.duration && (b.hotel_name || b.hotel_included) && !itemId.startsWith('car-') && !itemId.startsWith('bike-'))) {
+    return true;
+  }
+
+  return false;
+};
+
+// ─── Classification Rules ───
+const isCarsCategory = (b) => isCarItem(b) && hasDriverService(b);
+const isBikesCategory = (b) => isBikeItem(b) && hasDriverService(b);
+const isTripPackageCategory = (b) => isTripPackageItem(b) && hasDriverService(b);
+const isSelfDriveHolidayCategory = (b) => {
+  if (!b || isCraftBooking(b) || isFlightBooking(b) || isHotelBooking(b) || isSightseeingBooking(b) || isActivityBooking(b)) return false;
+  if (isCarItem(b) && !hasDriverService(b)) return true;
+  if (isBikeItem(b) && !hasDriverService(b)) return true;
+  if (isTripPackageItem(b) && !hasDriverService(b)) return true;
+  const type = String(b.package_type || b.type || '').toLowerCase();
+  const itemName = String(b.item_name || b.package_name || '').toLowerCase();
+  if ((type.includes('self drive') || type === 'selfdrive' || itemName.includes('self drive')) && !hasDriverService(b)) {
+    return true;
+  }
+  return false;
+};
+
 export default function CustomerOverviewTab({
   currentUser,
   bookings = [],
@@ -18,6 +199,7 @@ export default function CustomerOverviewTab({
   bikes = [],
   hotels = [],
   flights = [],
+  activities = [],
   onNavigateTab,
   onSelectBooking,
   onDirectBook,
@@ -46,12 +228,7 @@ export default function CustomerOverviewTab({
   const myBookings = Array.isArray(bookings) ? bookings : [];
 
   // Self Drive Holiday bookings
-  const selfDriveBookings = myBookings.filter(b => 
-    b.package_type === 'Self Drive Package' || 
-    b.type === 'selfdrive' || 
-    (b.item_name && b.item_name.toLowerCase().includes('self drive')) ||
-    b.type === 'package'
-  );
+  const selfDriveBookings = myBookings.filter(b => isSelfDriveHolidayCategory(b));
 
   // Active / Upcoming bookings
   const activeBookings = myBookings.filter(b => 
@@ -92,6 +269,7 @@ export default function CustomerOverviewTab({
   const hotelsList = (Array.isArray(hotels) && hotels.length > 0) ? hotels : [];
   const carsList = (Array.isArray(cars) && cars.length > 0) ? cars : [];
   const flightsList = (Array.isArray(flights) && flights.length > 0) ? flights : [];
+  const activitiesList = (Array.isArray(activities) && activities.length > 0) ? activities : [];
 
   // Handle direct booking from card
   const handleTriggerBooking = (item) => {
@@ -102,180 +280,17 @@ export default function CustomerOverviewTab({
     }
   };
 
-  // ─── Unified Category Breakdown Helpers ───
-  const isCraftBooking = (b) => {
-    if (!b) return false;
-    const type = String(b.package_type || b.type || '').toLowerCase();
-    const itemName = String(b.item_name || b.package_name || '').toLowerCase();
-    const itemId = String(b.item_id || '').toLowerCase();
-    return type.includes('craft') || itemName.includes('craft my trip') || itemId.includes('craft');
-  };
-
-  const isFlightBooking = (b) => {
-    if (!b || isCraftBooking(b)) return false;
-    const type = String(b.package_type || b.type || '').toLowerCase();
-    const itemName = String(b.item_name || b.package_name || '').toLowerCase();
-    const itemId = String(b.item_id || '').toLowerCase();
-    return type === 'flight' || type.includes('flight') || itemName.includes('flight') || itemName.includes('air') || itemId.includes('flight');
-  };
-
-  const isDriverBooking = (b) => {
-    if (!b || isCraftBooking(b)) return false;
-    const svcType = String(b.driver_service_type || '').toUpperCase();
-    return Boolean(
-      ['PICKUP', 'DROP', 'FULL'].includes(svcType) ||
-      b.driver_required == 1 ||
-      b.driver_required === 'yes' ||
-      b.driver_required === true ||
-      b.assigned_driver_id ||
-      (b.package_type && String(b.package_type).toLowerCase().includes('driver')) ||
-      (b.item_name && String(b.item_name).toLowerCase().includes('driver'))
-    );
-  };
-
-  const isHotelBooking = (b) => {
-    if (!b || isCraftBooking(b) || isFlightBooking(b)) return false;
-    const type = String(b.package_type || b.type || '').toLowerCase();
-    const itemName = String(b.item_name || b.package_name || b.hotel_name || '').toLowerCase();
-    const itemId = String(b.item_id || '').toLowerCase();
-    if (type.includes('package') || type.includes('self drive') || type === 'selfdrive' || itemId.startsWith('pkg-') || itemId.startsWith('package-')) {
-      return false;
-    }
-    return (
-      type === 'hotel' ||
-      type.includes('hotel') ||
-      Boolean(b.hotel_name && !b.vehicle_name && !b.car_included) ||
-      itemId.includes('hotel') ||
-      itemName.includes('hotel') ||
-      itemName.includes('resort') ||
-      itemName.includes('villa') ||
-      itemName.includes('palace') ||
-      itemName.includes('beachfront') ||
-      itemName.includes('suites') ||
-      itemName.includes('stay')
-    );
-  };
-
-  const isPackageBooking = (b) => {
-    if (!b || isCraftBooking(b) || isFlightBooking(b)) return false;
-    const type = String(b.package_type || b.type || '').toLowerCase();
-    const itemName = String(b.item_name || b.package_name || '').toLowerCase();
-    const itemId = String(b.item_id || '').toLowerCase();
-    
-    // Explicitly exclude self drive bookings
-    if (type.includes('self drive') || itemName.includes('self drive') || type === 'selfdrive') {
-      return false;
-    }
-
-    // Explicit trip package types
-    if (
-      type === 'package' ||
-      type === 'trip_package' ||
-      type === 'tour' ||
-      type === 'trip' ||
-      type.includes('trip package') ||
-      type.includes('tour package') ||
-      type.includes('holiday package') ||
-      type.includes('complete package') ||
-      type.includes('tour') ||
-      type.includes('package')
-    ) {
-      return true;
-    }
-
-    // Item ID indicators
-    if (itemId.startsWith('pkg-') || itemId.startsWith('package-') || itemId.startsWith('tp-')) {
-      return true;
-    }
-
-    // Known Package Names & themes (e.g. Tropical Bali Getaway, Romantic Sunset Escape, etc.)
-    const packageKeywords = [
-      'package', 'tour', 'getaway', 'explorer', 'escape', 'holiday',
-      'vacation', 'experience', 'bali', 'kerala', 'kashmir', 'dubai',
-      'thailand', 'maldives', 'goa tour', 'heritage trail', 'coastal goa',
-      'sunset escape', 'honeymoon'
-    ];
-    if (packageKeywords.some(kw => itemName.includes(kw))) {
-      if (!itemId.startsWith('car-') && !itemId.startsWith('bike-')) {
-        return true;
-      }
-    }
-
-    // Multi-day packages with duration / itinerary
-    if (Boolean(b.duration && (b.hotel_name || b.hotel_included) && !itemId.startsWith('car-') && !itemId.startsWith('bike-'))) {
-      return true;
-    }
-
-    return false;
-  };
-
-  const isSelfDriveBooking = (b) => {
-    if (!b || isCraftBooking(b) || isFlightBooking(b) || isPackageBooking(b)) return false;
-    const type = String(b.package_type || b.type || '').toLowerCase();
-    const itemName = String(b.item_name || b.package_name || '').toLowerCase();
-    return (
-      type.includes('self drive') ||
-      type === 'selfdrive' ||
-      itemName.includes('self drive') ||
-      (b.package_name && String(b.package_name).toLowerCase().includes('self drive'))
-    );
-  };
-
-  const isBikeBooking = (b) => {
-    if (!b || isCraftBooking(b) || isPackageBooking(b) || isSelfDriveBooking(b)) return false;
-    const type = String(b.package_type || b.type || '').toLowerCase();
-    const itemName = String(b.item_name || b.package_name || '').toLowerCase();
-    const itemId = String(b.item_id || '').toLowerCase();
-    return (
-      type === 'bike' ||
-      type.includes('bike') ||
-      type.includes('scooter') ||
-      itemId.startsWith('bike-') ||
-      itemName.includes('bike') ||
-      itemName.includes('scooter') ||
-      itemName.includes('activa') ||
-      itemName.includes('himalayan') ||
-      itemName.includes('bullet') ||
-      itemName.includes('jupiter') ||
-      itemName.includes('classic 350') ||
-      itemName.includes('fz-s')
-    );
-  };
-
-  const isCarBooking = (b) => {
-    if (!b || isCraftBooking(b) || isPackageBooking(b) || isSelfDriveBooking(b) || isBikeBooking(b) || isHotelBooking(b) || isFlightBooking(b)) return false;
-    const type = String(b.package_type || b.type || '').toLowerCase();
-    const itemName = String(b.item_name || b.package_name || '').toLowerCase();
-    const itemId = String(b.item_id || '').toLowerCase();
-    return (
-      type === 'car' ||
-      type.includes('car rental') ||
-      type.includes('vehicle rental') ||
-      type === 'vehicle' ||
-      itemId.startsWith('car-') ||
-      itemId.startsWith('car_') ||
-      itemName.includes('car rental') ||
-      itemName.includes('thar') ||
-      itemName.includes('swift') ||
-      itemName.includes('creta') ||
-      itemName.includes('ertiga') ||
-      itemName.includes('fortuner') ||
-      itemName.includes('innova') ||
-      itemName.includes('cabriolet') ||
-      itemName.includes('audi') ||
-      itemName.includes('bmw')
-    );
-  };
-
   // Category breakdown counts
-  const selfDriveCount = myBookings.filter(isSelfDriveBooking).length;
-  const driverCount = myBookings.filter(isDriverBooking).length;
-  const packageCount = myBookings.filter(isPackageBooking).length;
+  const selfDriveCount = myBookings.filter(isSelfDriveHolidayCategory).length;
+  const carCount = myBookings.filter(isCarsCategory).length;
+  const bikeCount = myBookings.filter(isBikesCategory).length;
+  const packageCount = myBookings.filter(isTripPackageCategory).length;
+  const sightseeingCount = myBookings.filter(isSightseeingBooking).length;
+  const activityCount = myBookings.filter(isActivityBooking).length;
+  const sightseeingActivitiesCount = sightseeingCount + activityCount;
   const hotelCount = myBookings.filter(isHotelBooking).length;
   const flightCount = myBookings.filter(isFlightBooking).length;
   const craftCount = myBookings.filter(isCraftBooking).length;
-  const carCount = myBookings.filter(isCarBooking).length;
-  const bikeCount = myBookings.filter(isBikeBooking).length;
   const completedBookings = myBookings.filter(b => (b.status || '').toLowerCase() === 'completed');
 
   // Sorted upcoming bookings (nearest upcoming date first)
@@ -458,22 +473,28 @@ export default function CustomerOverviewTab({
             Your Bookings by Category:
           </span>
           <div className="d-flex flex-wrap gap-2">
-            <span className="badge bg-light text-dark border px-3 py-1.5 rounded-pill text-xs fw-bold cursor-pointer" onClick={() => onNavigateTab('bookings')}>
-              ⭐ Self Drive: <strong className="text-warning">{selfDriveCount}</strong>
+            <span className="badge bg-light text-dark border px-3 py-1.5 rounded-pill text-xs fw-bold cursor-pointer" onClick={() => onNavigateTab('bookings', 'selfdrive')}>
+              ⭐ Self Drive Holiday: <strong className="text-warning">{selfDriveCount}</strong>
             </span>
-            <span className="badge bg-light text-dark border px-3 py-1.5 rounded-pill text-xs fw-bold cursor-pointer" onClick={() => onNavigateTab('bookings')}>
-              🚗 Vehicle + Driver: <strong className="text-warning">{driverCount}</strong>
+            <span className="badge bg-light text-dark border px-3 py-1.5 rounded-pill text-xs fw-bold cursor-pointer" onClick={() => onNavigateTab('bookings', 'cars')}>
+              🚗 Cars: <strong className="text-primary">{carCount}</strong>
             </span>
-            <span className="badge bg-light text-dark border px-3 py-1.5 rounded-pill text-xs fw-bold cursor-pointer" onClick={() => onNavigateTab('bookings')}>
-              🌴 Trip Packages: <strong className="text-primary">{packageCount}</strong>
+            <span className="badge bg-light text-dark border px-3 py-1.5 rounded-pill text-xs fw-bold cursor-pointer" onClick={() => onNavigateTab('bookings', 'bikes')}>
+              🏍️ Bikes: <strong className="text-info">{bikeCount}</strong>
             </span>
-            <span className="badge bg-light text-dark border px-3 py-1.5 rounded-pill text-xs fw-bold cursor-pointer" onClick={() => onNavigateTab('bookings')}>
-              🏨 Hotels: <strong className="text-success">{hotelCount}</strong>
+            <span className="badge bg-light text-dark border px-3 py-1.5 rounded-pill text-xs fw-bold cursor-pointer" onClick={() => onNavigateTab('bookings', 'package')}>
+              🌴 Trip Package: <strong className="text-primary">{packageCount}</strong>
             </span>
-            <span className="badge bg-light text-dark border px-3 py-1.5 rounded-pill text-xs fw-bold cursor-pointer" onClick={() => onNavigateTab('bookings')}>
-              ✈️ Flights: <strong className="text-info">{flightCount}</strong>
+            <span className="badge bg-light text-dark border px-3 py-1.5 rounded-pill text-xs fw-bold cursor-pointer" onClick={() => onNavigateTab('bookings', 'sightseeing_activities')}>
+              🎯 Sightseeing & Activities: <strong className="text-danger">{sightseeingActivitiesCount}</strong>
             </span>
-            <span className="badge bg-light text-dark border px-3 py-1.5 rounded-pill text-xs fw-bold cursor-pointer" onClick={() => onNavigateTab('bookings')}>
+            <span className="badge bg-light text-dark border px-3 py-1.5 rounded-pill text-xs fw-bold cursor-pointer" onClick={() => onNavigateTab('bookings', 'hotel')}>
+              🏨 Hotel: <strong className="text-success">{hotelCount}</strong>
+            </span>
+            <span className="badge bg-light text-dark border px-3 py-1.5 rounded-pill text-xs fw-bold cursor-pointer" onClick={() => onNavigateTab('bookings', 'flight')}>
+              ✈️ Flight: <strong className="text-info">{flightCount}</strong>
+            </span>
+            <span className="badge bg-light text-dark border px-3 py-1.5 rounded-pill text-xs fw-bold cursor-pointer" onClick={() => onNavigateTab('bookings', 'craftmytrip')}>
               ✨ Craft My Trip: <strong className="text-purple">{craftCount}</strong>
             </span>
           </div>
@@ -565,33 +586,39 @@ export default function CustomerOverviewTab({
               {(() => {
                 const type = (nextHoliday.package_type || nextHoliday.type || '').toLowerCase();
                 const itemName = (nextHoliday.item_name || nextHoliday.package_name || nextHoliday.vehicle_name || '').toLowerCase();
+                const itemId = String(nextHoliday.item_id || '').toLowerCase();
+                const isActivity = type === 'activity' || type === 'sightseeing' || itemId.startsWith('act') || itemId.startsWith('sight');
                 const isHotel = type === 'hotel' || type.includes('hotel') || itemName.includes('resort') || itemName.includes('hotel') || Boolean(nextHoliday.hotel_name);
                 const isBike = type === 'bike' || type.includes('bike rental') || itemName.includes('bike') || itemName.includes('scooter') || itemName.includes('activa') || itemName.includes('himalayan') || itemName.includes('bullet') || itemName.includes('gt');
                 const isSelfDrivePkg = type.includes('self drive') || type === 'selfdrive' || itemName.includes('self drive') || itemName.includes('craft my trip');
                 const isFlight = type === 'flight' || itemName.includes('flight');
-                const isTourPkg = (type.includes('package') || type.includes('tour')) && !isSelfDrivePkg;
+                const isTourPkg = (type.includes('package') || type.includes('tour')) && !isSelfDrivePkg && !isActivity;
 
-                const categoryBadge = isSelfDrivePkg 
-                  ? '⭐ Self Drive Holiday' 
-                  : isHotel 
-                    ? '🏨 Hotel & Resort Stay' 
-                    : isBike 
-                      ? '🏍️ Bike Rental' 
-                      : isTourPkg 
-                        ? '🌴 Tour Package' 
-                        : isFlight 
-                          ? '✈️ Flight Booking' 
-                          : '🚗 Self Drive Car';
+                const categoryBadge = isActivity
+                  ? '🎯 Sightseeing & Activity'
+                  : isSelfDrivePkg 
+                    ? '⭐ Self Drive Holiday' 
+                    : isHotel 
+                      ? '🏨 Hotel & Resort Stay' 
+                      : isBike 
+                        ? '🏍️ Bike Rental' 
+                        : isTourPkg 
+                          ? '🌴 Tour Package' 
+                          : isFlight 
+                            ? '✈️ Flight Booking' 
+                            : '🚗 Self Drive Car';
 
-                const subtitleText = isHotel
-                  ? 'Luxury Resort Stay • Breakfast & Pool Access Included'
-                  : isBike
-                    ? 'Unlimited KMs • Clean Helmets • Goa Tourist Permit'
-                    : isSelfDrivePkg
-                      ? 'Self Drive Vehicle + Hotel Stay + Unlimited KMs'
-                      : isTourPkg
-                        ? 'Guided Tour Itinerary • Transfers Included'
-                        : 'Unlimited KMs • Comprehensive Insurance • Goa Permit';
+                const subtitleText = isActivity
+                  ? 'Curated Sightseeing & Adventure Experience in Goa'
+                  : isHotel
+                    ? 'Luxury Resort Stay • Breakfast & Pool Access Included'
+                    : isBike
+                      ? 'Unlimited KMs • Clean Helmets • Goa Tourist Permit'
+                      : isSelfDrivePkg
+                        ? 'Self Drive Vehicle + Hotel Stay + Unlimited KMs'
+                        : isTourPkg
+                          ? 'Guided Tour Itinerary • Transfers Included'
+                          : 'Unlimited KMs • Comprehensive Insurance • Goa Permit';
 
                 return (
                   <div className="row g-4 align-items-center">
@@ -715,10 +742,10 @@ export default function CustomerOverviewTab({
                     </span>
                   </div>
                   <button 
-                    onClick={() => onNavigateTab('driver-trips')}
+                    onClick={() => onSelectBooking(nextHoliday)}
                     className="btn btn-xs btn-dark fw-bold rounded-pill px-3 py-1"
                   >
-                    Track Driver Details →
+                    View Booking Details →
                   </button>
                 </div>
               </div>
@@ -963,6 +990,23 @@ export default function CustomerOverviewTab({
           >
             <Plane size={16} />
             <span>✈️ Flights & Transfers</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setExploreCategory('activities')}
+            className={`btn btn-sm rounded-pill px-3.5 py-2 text-xs fw-bold d-flex align-items-center gap-2 transition-all ${
+              exploreCategory === 'activities'
+                ? 'text-white shadow-sm border-0'
+                : 'btn-light text-dark border'
+            }`}
+            style={{
+              fontWeight: 700,
+              background: exploreCategory === 'activities' ? 'linear-gradient(135deg, #0D1B2E 0%, #1E3E62 100%)' : undefined
+            }}
+          >
+            <MapPin size={16} />
+            <span>🎯 Sightseeing & Activities ({activitiesList.length})</span>
           </button>
         </div>
 
@@ -1337,6 +1381,79 @@ export default function CustomerOverviewTab({
               </div>
             </div>
           ))}
+
+          {/* 6. Sightseeing & Activities Cards */}
+          {exploreCategory === 'activities' && (
+            activitiesList.length === 0 ? (
+              <div className="col-12 text-center py-5">
+                <div className="rounded-circle p-3 bg-light d-inline-flex mx-auto mb-3 text-warning">
+                  <MapPin size={32} />
+                </div>
+                <h6 className="fw-bold text-dark mb-1">No Activities Yet</h6>
+                <p className="text-muted text-xs mb-3">Sightseeing spots and adventure activities will appear here.</p>
+              </div>
+            ) : (
+              activitiesList.map((item, idx) => {
+                const imgSrc = item.image_url || item.image || 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=600&q=80';
+                const isSightseeing = (item.type || '').toLowerCase() === 'sightseeing';
+                return (
+                  <div key={item.id || idx} className="col-md-6 col-xl-4">
+                    <div className="card border-0 shadow-sm rounded-4 h-100 overflow-hidden bg-white hover-shadow transition-all d-flex flex-column" style={{ border: '1px solid #eef2f6' }}>
+                      <div className="position-relative" style={{ height: '170px' }}>
+                        <img
+                          src={imgSrc}
+                          alt={item.title || item.name}
+                          className="w-100 h-100 object-fit-cover"
+                          onError={(e) => { e.target.onerror = null; e.target.src = 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=600&q=80'; }}
+                        />
+                        <span className={`position-absolute top-0 start-0 m-2 badge text-white text-xxs px-2.5 py-1 rounded-pill fw-black shadow-sm ${isSightseeing ? 'bg-success' : 'bg-warning text-dark'}`}>
+                          {isSightseeing ? '🏛️ Sightseeing' : '🎯 Activity'}
+                        </span>
+                        {item.duration && (
+                          <span className="position-absolute bottom-0 end-0 m-2 badge bg-dark bg-opacity-75 text-white text-xxs px-2 py-1 rounded-pill">
+                            ⏱️ {item.duration}
+                          </span>
+                        )}
+                      </div>
+                      <div className="card-body p-3 d-flex flex-column justify-content-between flex-grow-1">
+                        <div>
+                          <h6 className="fw-black text-dark mb-0.5 font-heading text-truncate" title={item.title || item.name}>
+                            {item.title || item.name}
+                          </h6>
+                          {item.location && (
+                            <div className="text-muted text-xxs mb-1.5">📍 {item.location}</div>
+                          )}
+                          {item.category && (
+                            <span className="badge bg-light text-dark border text-xxs px-2 py-0.5 mb-1.5 d-inline-block">{item.category}</span>
+                          )}
+                          <p className="text-muted text-xxs mb-2 line-clamp-2" style={{ minHeight: '32px' }}>
+                            {item.description || 'An unforgettable Goa experience.'}
+                          </p>
+                        </div>
+                        <div className="pt-2 border-top">
+                          <div className="d-flex align-items-center justify-content-between mb-2">
+                            <div>
+                              <span className="text-xxs text-muted">Per Person From</span>
+                              <div className="fs-5 fw-black text-dark font-heading">
+                                ₹{Number(item.price || 999).toLocaleString('en-IN')}
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => onNavigateTab && onNavigateTab('activities')}
+                            className="btn btn-sm btn-warning text-dark rounded-pill w-100 py-1.5 text-xs fw-bold shadow-sm d-flex align-items-center justify-content-center gap-1"
+                          >
+                            <span>Book Now →</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )
+          )}
 
         </div>
       </div>

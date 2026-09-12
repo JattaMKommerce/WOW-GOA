@@ -174,3 +174,41 @@ h1, h2, h3, h4, h5, h6 {
 .tab-slide-enter {
   animation: tabSlideUp 0.38s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+/* Visible Right-Hand Scrollbar for Modals */
+.vehicle-modal-scrollbar {
+  overflow-y: auto !important;
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 #f1f5f9;
+}
+.vehicle-modal-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+.vehicle-modal-scrollbar::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+.vehicle-modal-scrollbar::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 4px;
+}
+.vehicle-modal-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin,
+.spin-animation,
+.animate-spin {
+  animation: spin 1s linear infinite !important;
+  display: inline-block;
+}
+

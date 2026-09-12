@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Plus, Edit, Trash2, Search, ToggleLeft, ToggleRight, X, Save, Camera, Car, Bike, Upload, Loader2, CheckCircle2, Star, Image as ImageIcon } from 'lucide-react';
 import { toggleVehicleAvailability, updateVehicle, deleteVehicle, uploadImage } from '../../../services/api';
 
@@ -187,9 +187,15 @@ function isBikeItem(item) {
   return false;
 }
 
-export default function VehicleFleetManagement({ currentUser, cars = [], bikes = [], onAddCar, onAddBike, onUpdateCar, onUpdateBike, onDeleteCar, onDeleteBike }) {
-  const [activeTab, setActiveTab] = useState('all');
+export default function VehicleFleetManagement({ currentUser, cars = [], bikes = [], initialFilter, onAddCar, onAddBike, onUpdateCar, onUpdateBike, onDeleteCar, onDeleteBike }) {
+  const [activeTab, setActiveTab] = useState(initialFilter || 'all');
   const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    if (initialFilter) {
+      setActiveTab(initialFilter);
+    }
+  }, [initialFilter]);
   const [editing, setEditing] = useState(null);
   const [editForm, setEditForm] = useState({
     name: '',
@@ -231,10 +237,16 @@ export default function VehicleFleetManagement({ currentUser, cars = [], bikes =
     ...(cars || []).filter(c => isBikeItem(c))
   ];
 
+  const allCombined = [...displayCars.map(v => ({ ...v, _type: 'car' })), ...displayBikes.map(v => ({ ...v, _type: 'bike' }))];
+  const availableCount = allCombined.filter(v => v.is_available !== 0 && v.is_available !== false && v.is_available !== '0').length;
+  const unavailableCount = allCombined.filter(v => v.is_available === 0 || v.is_available === false || v.is_available === '0').length;
+
   const filtered = (() => {
-    const src = activeTab === 'cars' ? displayCars.map(v => ({ ...v, _type: 'car' }))
-      : activeTab === 'bikes' ? displayBikes.map(v => ({ ...v, _type: 'bike' }))
-      : [...displayCars.map(v => ({ ...v, _type: 'car' })), ...displayBikes.map(v => ({ ...v, _type: 'bike' }))];
+    let src = allCombined;
+    if (activeTab === 'cars') src = displayCars.map(v => ({ ...v, _type: 'car' }));
+    else if (activeTab === 'bikes') src = displayBikes.map(v => ({ ...v, _type: 'bike' }));
+    else if (activeTab === 'available') src = allCombined.filter(v => v.is_available !== 0 && v.is_available !== false && v.is_available !== '0');
+    else if (activeTab === 'unavailable') src = allCombined.filter(v => v.is_available === 0 || v.is_available === false || v.is_available === '0');
     return src.filter(v => (v.name || '').toLowerCase().includes(search.toLowerCase()));
   })();
 
@@ -481,6 +493,8 @@ export default function VehicleFleetManagement({ currentUser, cars = [], bikes =
           { id: 'all', label: `All (${displayCars.length + displayBikes.length})` },
           { id: 'cars', label: `Cars (${displayCars.length})` },
           { id: 'bikes', label: `Bikes (${displayBikes.length})` },
+          { id: 'available', label: `Available (${availableCount})` },
+          { id: 'unavailable', label: `Unavailable (${unavailableCount})` },
         ].map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id)} className="btn btn-sm px-3 py-1 rounded-pill fw-bold" style={{ fontSize: '0.78rem', background: activeTab === t.id ? '#0D1B2E' : '#fff', color: activeTab === t.id ? '#fff' : '#475569', border: '1px solid rgba(0,0,0,0.1)' }}>
             {t.label}
@@ -545,13 +559,14 @@ export default function VehicleFleetManagement({ currentUser, cars = [], bikes =
 
       {/* Edit Modal */}
       {editing && (
-        <div className="position-fixed top-0 start-0 end-0 bottom-0 d-flex align-items-center justify-content-center" style={{ background: 'rgba(13,27,46,0.65)', backdropFilter: 'blur(6px)', zIndex: 1060 }} onClick={() => setEditing(null)}>
-          <div className="rounded-4 overflow-hidden shadow-lg" style={{ width: '100%', maxWidth: '580px', background: '#fff', margin: '0 16px', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-            <div className="d-flex align-items-center justify-content-between px-4 py-3" style={{ background: '#0D1B2E' }}>
+        <div className="position-fixed top-0 start-0 end-0 bottom-0 d-flex align-items-center justify-content-center p-2 p-md-3" style={{ background: 'rgba(13,27,46,0.65)', backdropFilter: 'blur(6px)', zIndex: 1060 }} onClick={() => setEditing(null)}>
+          <div className="rounded-4 shadow-lg d-flex flex-column" style={{ width: '100%', maxWidth: '580px', background: '#fff', maxHeight: '90vh', borderRadius: '16px', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+            <div className="d-flex align-items-center justify-content-between px-4 py-3 flex-shrink-0" style={{ background: '#0D1B2E' }}>
               <h6 className="mb-0 fw-bold text-white" style={{ fontSize: '14px' }}>Edit {editing._type === 'car' ? 'Car' : 'Bike'} — {editing.name}</h6>
               <button className="btn p-1 border-0 text-white-50" onClick={() => setEditing(null)}><X size={16} /></button>
             </div>
-            <form onSubmit={handleSaveEdit} className="p-4">
+            <form onSubmit={handleSaveEdit} className="d-flex flex-column flex-grow-1 overflow-hidden" style={{ minHeight: 0 }}>
+              <div className="p-4 flex-grow-1 vehicle-modal-scrollbar" style={{ overflowY: 'auto', minHeight: 0 }}>
               <div className="row g-2 mb-3">
                 <div className="col-7">
                   <label className="form-label fw-bold" style={{ fontSize: '0.78rem', color: '#475569' }}>Vehicle Name *</label>
@@ -716,10 +731,13 @@ export default function VehicleFleetManagement({ currentUser, cars = [], bikes =
                 )}
                 {uploadError && <div className="text-danger mt-1" style={{ fontSize: '0.72rem' }}>{uploadError}</div>}
               </div>
+            </div>
 
-              <button type="submit" disabled={saving || uploadingImage} className="btn w-100 py-2 fw-bold text-white rounded-3 d-flex align-items-center justify-content-center gap-2" style={{ background: 'linear-gradient(90deg,#FF6333,#FF8A00)' }}>
-                <Save size={14} />{saving ? 'Saving...' : 'Save Changes'}
-              </button>
+            <div className="px-4 py-3 flex-shrink-0 border-top bg-white">
+                <button type="submit" disabled={saving || uploadingImage} className="btn w-100 py-2.5 fw-bold text-white rounded-3 d-flex align-items-center justify-content-center gap-2" style={{ background: 'linear-gradient(90deg,#FF6333,#FF8A00)' }}>
+                  <Save size={14} />{saving ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
             </form>
           </div>
         </div>
@@ -727,13 +745,14 @@ export default function VehicleFleetManagement({ currentUser, cars = [], bikes =
 
       {/* Add Vehicle Modal */}
       {showAdd && (
-        <div className="position-fixed top-0 start-0 end-0 bottom-0 d-flex align-items-center justify-content-center" style={{ background: 'rgba(13,27,46,0.65)', backdropFilter: 'blur(6px)', zIndex: 1060 }} onClick={() => setShowAdd(false)}>
-          <div className="rounded-4 overflow-hidden shadow-lg" style={{ width: '100%', maxWidth: '580px', background: '#fff', margin: '0 16px', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-            <div className="d-flex align-items-center justify-content-between px-4 py-3" style={{ background: '#0D1B2E' }}>
+        <div className="position-fixed top-0 start-0 end-0 bottom-0 d-flex align-items-center justify-content-center p-2 p-md-3" style={{ background: 'rgba(13,27,46,0.65)', backdropFilter: 'blur(6px)', zIndex: 1060 }} onClick={() => setShowAdd(false)}>
+          <div className="rounded-4 shadow-lg d-flex flex-column" style={{ width: '100%', maxWidth: '580px', background: '#fff', maxHeight: '90vh', borderRadius: '16px', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+            <div className="d-flex align-items-center justify-content-between px-4 py-3 flex-shrink-0" style={{ background: '#0D1B2E' }}>
               <h6 className="mb-0 fw-bold text-white" style={{ fontSize: '14px' }}>Add Vehicle to Fleet</h6>
               <button className="btn p-1 border-0 text-white-50" onClick={() => setShowAdd(false)}><X size={16} /></button>
             </div>
-            <form onSubmit={handleAdd} className="p-4">
+            <form onSubmit={handleAdd} className="d-flex flex-column flex-grow-1 overflow-hidden" style={{ minHeight: 0 }}>
+              <div className="p-4 flex-grow-1 vehicle-modal-scrollbar" style={{ overflowY: 'auto', minHeight: 0 }}>
               <div className="d-flex gap-2 mb-3">
                 {[{ id: 'car', label: '🚗 Car' }, { id: 'bike', label: '🏍️ Bike' }].map(t => (
                   <button
@@ -922,10 +941,13 @@ export default function VehicleFleetManagement({ currentUser, cars = [], bikes =
                 )}
                 {uploadError && <div className="text-danger mt-1" style={{ fontSize: '0.72rem' }}>{uploadError}</div>}
               </div>
+            </div>
 
-              <button type="submit" disabled={saving || uploadingImage} className="btn w-100 py-2 fw-bold text-white rounded-3 d-flex align-items-center justify-content-center gap-2" style={{ background: 'linear-gradient(90deg,#FF6333,#FF8A00)' }}>
-                <Plus size={14} />{saving ? 'Adding to Fleet...' : `Add ${addType === 'car' ? 'Car' : 'Bike'} to Fleet`}
-              </button>
+            <div className="px-4 py-3 flex-shrink-0 border-top bg-white">
+                <button type="submit" disabled={saving || uploadingImage} className="btn w-100 py-2.5 fw-bold text-white rounded-3 d-flex align-items-center justify-content-center gap-2" style={{ background: 'linear-gradient(90deg,#FF6333,#FF8A00)' }}>
+                  <Plus size={14} />{saving ? 'Adding to Fleet...' : `Add ${addType === 'car' ? 'Car' : 'Bike'} to Fleet`}
+                </button>
+              </div>
             </form>
           </div>
         </div>

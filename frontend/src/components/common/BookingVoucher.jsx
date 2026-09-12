@@ -148,8 +148,19 @@ export default function BookingVoucher({
   const bookingStatus = (booking.status || 'Confirmed').toUpperCase();
 
   // ─── 7. Print Handler ───
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = (e) => {
+    if (e) {
+      if (e.preventDefault) e.preventDefault();
+      if (e.stopPropagation) e.stopPropagation();
+    }
+    try {
+      window.focus();
+    } catch (err) {
+      // ignore
+    }
+    setTimeout(() => {
+      window.print();
+    }, 50);
   };
 
   const content = (
@@ -536,47 +547,113 @@ export default function BookingVoucher({
           /* Page setup for standard A4 portrait */
           @page {
             size: A4 portrait;
-            margin: 8mm 10mm;
+            margin: 6mm 8mm;
           }
 
-          /* Hide all ambient application elements */
+          /* Force background colors and clean paper canvas */
+          html, body {
+            width: 100% !important;
+            height: auto !important;
+            min-height: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #ffffff !important;
+            overflow: visible !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+
+          /* Hide all ambient application elements by default */
           body * {
             visibility: hidden !important;
           }
 
-          /* Show only the voucher document */
+          /* Explicitly unhide and unclip the modal container hierarchy */
+          .modal-backdrop-custom,
+          .modal-backdrop-custom *,
           .booking-voucher-document,
           .booking-voucher-document * {
             visibility: visible !important;
           }
 
-          .booking-voucher-document {
-            position: fixed !important;
+          /* Reset Modal Backdrop to unclipped, white, static flow */
+          .modal-backdrop-custom {
+            position: absolute !important;
             left: 0 !important;
             top: 0 !important;
             width: 100% !important;
-            max-width: 100% !important;
+            height: auto !important;
+            max-height: none !important;
             margin: 0 !important;
-            padding: 8px 12px !important;
+            padding: 0 !important;
+            background: #ffffff !important;
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+            overflow: visible !important;
+            z-index: 999999 !important;
+          }
+
+          /* Reset Modal Card */
+          .modal-backdrop-custom .card {
+            position: static !important;
+            display: block !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            height: auto !important;
+            max-height: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+            border-radius: 0 !important;
+            background: #ffffff !important;
+            overflow: visible !important;
+          }
+
+          /* Reset Modal Card Body */
+          .modal-backdrop-custom .card-body {
+            position: static !important;
+            display: block !important;
+            width: 100% !important;
+            height: auto !important;
+            max-height: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #ffffff !important;
+            overflow: visible !important;
+          }
+
+          /* The Voucher Document itself */
+          .booking-voucher-document {
+            position: static !important;
+            display: block !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            margin: 0 auto !important;
+            padding: 6px 10px !important;
             border: 1px solid #cbd5e1 !important;
+            border-radius: 4px !important;
             box-shadow: none !important;
             background: #ffffff !important;
             color: #0f172a !important;
-            font-size: 10.5px !important;
-            line-height: 1.3 !important;
+            font-size: 10px !important;
+            line-height: 1.25 !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
           }
 
           /* Completely hide buttons, close icons, and toolbar */
           .no-print,
           .no-print * {
             display: none !important;
+            visibility: hidden !important;
             height: 0 !important;
             margin: 0 !important;
             padding: 0 !important;
           }
 
-          /* Prevent unwanted page splits */
-          .border, .card, table, tr, ol, div {
+          /* Prevent unwanted page splits inside boxes */
+          .border, table, tr, div, ol, li {
             page-break-inside: avoid !important;
             break-inside: avoid !important;
           }

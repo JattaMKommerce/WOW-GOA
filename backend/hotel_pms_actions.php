@@ -13,8 +13,8 @@ if ($actor) {
     if ($actor['role'] === 'hotel_vendor' || $actor['role'] === 'vendor') {
         $vendor_id = $actor['id'];
     } elseif ($actor['role'] === 'admin' || $actor['role'] === 'superadmin') {
-        // Admin can specify vendor_id
-        $vendor_id = $payload['vendor_id'] ?? ($payload['vendorId'] ?? null);
+        // Admin can specify vendor_id, default to actor id or admin
+        $vendor_id = $payload['vendor_id'] ?? ($payload['vendorId'] ?? ($actor['id'] ?? 'admin'));
     } else {
         http_response_code(403);
         echo json_encode(['success' => false, 'error' => 'Forbidden: You do not have access to Hotel PMS actions.']);
@@ -148,7 +148,7 @@ if ($action === 'add_master_hotel' || $action === 'add_hotel' || $action === 'cr
     $docsJson = isset($payload['documents_json']) ? (is_array($payload['documents_json']) ? json_encode($payload['documents_json']) : $payload['documents_json']) : null;
 
     $stmt = $pdo->prepare("UPDATE hotels SET 
-        name=?, location=?, area=?, price=?, stars=?, description=?, image=?, images_json=?,
+        name=?, location=?, area=?, price=?, stars=?, rating=?, badge=?, amenities=?, description=?, image=?, images_json=?,
         property_type=?, phone=?, email=?, website=?, checkin_time=?, checkout_time=?,
         address=?, city=?, state=?, pincode=?, gst_number=?, property_registration_no=?,
         facilities_json=?, wizard_step=?, profile_completion=?, documents_json=COALESCE(?, documents_json)
@@ -159,6 +159,9 @@ if ($action === 'add_master_hotel' || $action === 'add_hotel' || $action === 'cr
         $payload['area'] ?? ($payload['city'] ?? 'Goa'),
         intval($payload['price'] ?? ($payload['selling_price'] ?? ($payload['base_price'] ?? 5000))),
         intval($payload['stars'] ?? 4),
+        floatval($payload['rating'] ?? 4.5),
+        $payload['badge'] ?? 'Standard',
+        $amenitiesStr,
         $payload['description'] ?? '',
         $image,
         $images_json,

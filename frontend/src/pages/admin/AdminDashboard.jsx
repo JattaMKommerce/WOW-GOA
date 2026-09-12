@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Building, Compass, Sparkles, Shield, Plus, Calendar, Settings, Plane, Hotel, Map as MapIcon, MapPin, X, MessageSquare, CreditCard, Box, MessageCircle, Search, Clock, Edit3, Trash2, Star } from 'lucide-react';
+import { Building, Compass, Sparkles, Shield, Plus, Calendar, Settings, Plane, Hotel, Map as MapIcon, MapPin, X, MessageSquare, CreditCard, Box, MessageCircle, Search, Clock, Edit3, Trash2, Star, Eye, CheckCircle2 } from 'lucide-react';
 import * as api from '../../services/api';
 import AdminWalletSettlements from '../../components/admin/AdminWalletSettlements';
 import AdminActivitiesManagement from './AdminActivitiesManagement';
@@ -56,9 +56,14 @@ export default function AdminDashboard({
   onDeleteVendor,
   onSetVendorPassword,
   activeTab,
-  currentUser
+  currentUser,
+  cars = [],
+  bikes = [],
+  hotels = []
 }) {
   const [searchTerm, setSearchTerm] = useState('');
+  const [vendorTypeFilter, setVendorTypeFilter] = useState('all');
+  const [selectedVendorDetails, setSelectedVendorDetails] = useState(null);
   const [packageSearchTerm, setPackageSearchTerm] = useState('');
   const [showPackageForm, setShowPackageForm] = useState(false);
   const [showVendorForm, setShowVendorForm] = useState(false);
@@ -473,10 +478,38 @@ export default function AdminDashboard({
     }
   };
 
-  const filteredVendors = vendors.filter(v =>
-    v.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    v.city.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredVendors = (vendors || []).filter(v => {
+    let matchType = true;
+    const r = (v.role || '').toLowerCase();
+    if (vendorTypeFilter === 'hotel') matchType = (r === 'hotel_vendor');
+    else if (vendorTypeFilter === 'flight') matchType = (r === 'flight_vendor');
+    else if (vendorTypeFilter === 'bike') matchType = (r === 'bike_vendor' || r === 'bike');
+    else if (vendorTypeFilter === 'vehicle') matchType = (r === 'vendor' || r === 'vehicle_vendor' || (!r && !r.includes('hotel') && !r.includes('flight')));
+
+    const q = (searchTerm || '').toLowerCase();
+    const matchSearch =
+      (v.name || v.username || '').toLowerCase().includes(q) ||
+      (v.email || '').toLowerCase().includes(q) ||
+      (v.city || '').toLowerCase().includes(q) ||
+      (v.phone || '').toLowerCase().includes(q);
+
+    return matchType && matchSearch;
+  });
+
+  const getVendorRoleMeta = (role) => {
+    const r = (role || '').toLowerCase();
+    if (r === 'hotel_vendor') return { label: 'HOTEL VENDOR', bg: '#e0e7ff', color: '#4338ca' };
+    if (r === 'flight_vendor') return { label: 'FLIGHT VENDOR', bg: '#e0f2fe', color: '#0369a1' };
+    if (r === 'bike_vendor' || r === 'bike') return { label: 'BIKE VENDOR', bg: '#fef3c7', color: '#b45309' };
+    return { label: 'VEHICLE VENDOR', bg: '#ffedd5', color: '#c2410c' };
+  };
+
+  const getVendorInventoryCount = (vId) => {
+    const vCars = (cars || []).filter(c => String(c.vendor_id) === String(vId) || String(c.vendorId) === String(vId)).length;
+    const vBikes = (bikes || []).filter(b => String(b.vendor_id) === String(vId) || String(b.vendorId) === String(vId)).length;
+    const vHotels = (hotels || []).filter(h => String(h.vendor_id) === String(vId) || String(h.vendorId) === String(vId)).length;
+    return { cars: vCars, bikes: vBikes, hotels: vHotels, total: vCars + vBikes + vHotels };
+  };
 
   const handleCreateAddOn = (e) => {
     e.preventDefault();
@@ -1188,7 +1221,7 @@ export default function AdminDashboard({
           </div>
         </div>
 
-        <div className="d-flex flex-column gap-4 overflow-auto pb-4" style={{ maxHeight: 'calc(100vh - 280px)', paddingRight: '10px' }}>
+        <div className="d-flex flex-column gap-4 pb-4">
           {allPackages && allPackages.filter(pkg => pkg.name.toLowerCase().includes(packageSearchTerm.toLowerCase())).map(pkg => (
             <div 
               key={pkg.id} 
@@ -1329,9 +1362,10 @@ export default function AdminDashboard({
                 <div className="mb-4">
                   <label className="form-label small fw-bold text-secondary">Vendor Role</label>
                   <select className="form-select premium-input-field" value={vendorRole} onChange={(e) => setVendorRole(e.target.value)} required>
-                    <option value="vendor">Vehicle Vendor (Cars/Bikes)</option>
-                    <option value="flight_vendor">Flight Vendor</option>
-                    <option value="hotel_vendor">Hotel Vendor</option>
+                    <option value="vendor">Vehicle Vendor (Cars & Fleet)</option>
+                    <option value="bike_vendor">Bike Vendor (Bikes & Scooters)</option>
+                    <option value="hotel_vendor">Hotel Vendor (Rooms & Stays)</option>
+                    <option value="flight_vendor">Flight Vendor (Airline / Charters)</option>
                   </select>
                 </div>
                 <div className="mb-4">
@@ -1361,7 +1395,7 @@ export default function AdminDashboard({
             <div>
               <h4 className="fw-extrabold mb-2 text-dark font-heading" style={{ letterSpacing: '0.5px' }}>Registered Operators ({vendors.length})</h4>
               <p className="mb-0 text-secondary fw-medium" style={{ fontSize: '0.95rem' }}>
-                Manage rental vendors, track active locations, and monitor system status.
+                Manage verified vehicle, bike, hotel, and flight vendor operators across WOW GOA.
               </p>
             </div>
             <button 
@@ -1385,65 +1419,190 @@ export default function AdminDashboard({
           </div>
         </div>
 
-        {/* Filter / Search Bar */}
-        <div className="p-3 rounded-pill shadow-sm bg-white mb-4 d-flex align-items-center gap-3" style={{ border: '1px solid rgba(0,0,0,0.05)' }}>
-          <div className="flex-grow-1 px-2">
-            <div className="text-uppercase fw-bold text-muted mb-1" style={{ fontSize: '0.7rem', letterSpacing: '1px' }}>Search Operator</div>
-            <input type="text" className="form-control border-0 p-0 shadow-none fw-bold text-dark" placeholder="e.g. Panjim Rentals" style={{ fontSize: '0.95rem', background: 'transparent' }} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+        {/* Filter / Search Bar & Category Pills */}
+        <div className="p-3 rounded-4 shadow-sm bg-white mb-4 d-flex flex-column gap-3" style={{ border: '1px solid rgba(0,0,0,0.06)' }}>
+          <div className="d-flex align-items-center gap-3">
+            <div className="flex-grow-1 px-2">
+              <div className="text-uppercase fw-bold text-muted mb-1" style={{ fontSize: '0.68rem', letterSpacing: '0.5px' }}>Search Operator</div>
+              <input type="text" className="form-control border-0 p-0 shadow-none fw-bold text-dark" placeholder="Search by name, email, phone, or location..." style={{ fontSize: '0.95rem', background: 'transparent' }} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+            </div>
+            {searchTerm && (
+              <button type="button" onClick={() => setSearchTerm('')} className="btn btn-sm btn-link text-muted p-1">
+                <X size={16} />
+              </button>
+            )}
+          </div>
+
+          <div className="d-flex align-items-center gap-2 flex-wrap pt-2 border-top">
+            <span className="small text-muted fw-semibold me-1" style={{ fontSize: '0.75rem' }}>Category:</span>
+            {[
+              { id: 'all', label: `All Vendors (${vendors.length})` },
+              { id: 'vehicle', label: '🚗 Vehicle Vendors' },
+              { id: 'bike', label: '🛵 Bike Vendors' },
+              { id: 'hotel', label: '🏨 Hotel Vendors' },
+              { id: 'flight', label: '✈️ Flight Vendors' },
+            ].map(cat => (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setVendorTypeFilter(cat.id)}
+                className={`btn btn-sm rounded-pill px-3 py-1 fw-bold ${vendorTypeFilter === cat.id ? 'btn-dark text-white' : 'btn-light text-secondary border'}`}
+                style={{ fontSize: '0.75rem' }}
+              >
+                {cat.label}
+              </button>
+            ))}
           </div>
         </div>
 
-          <div className="d-flex flex-column gap-3 overflow-auto" style={{ maxHeight: '520px' }}>
+          <div className="d-flex flex-column gap-3 pb-4">
             {filteredVendors.length === 0 ? (
               <p className="text-muted text-center py-5">No matching operators found.</p>
             ) : (
-              filteredVendors.map(v => (
-                <div key={v.id} className="operator-row-card p-3 d-flex justify-content-between align-items-center flex-wrap gap-3 border rounded-3 bg-white">
-                  <div className="d-flex align-items-center gap-3">
-                    <div className="rounded-circle d-flex align-items-center justify-content-center" style={{ width: '45px', height: '45px', background: 'rgba(255, 107, 53, 0.08)' }}>
-                      <Building className="text-warning" size={20} />
+              filteredVendors.map(v => {
+                const meta = getVendorRoleMeta(v.role);
+                const invCount = getVendorInventoryCount(v.id);
+                const isInactive = v.status === 'inactive' || v.status === 'suspended';
+                const isPending = v.status === 'pending';
+
+                return (
+                  <div key={v.id} className="operator-row-card p-3 d-flex justify-content-between align-items-center flex-wrap gap-3 border rounded-3 bg-white shadow-xs">
+                    <div className="d-flex align-items-center gap-3">
+                      <div className="rounded-circle d-flex align-items-center justify-content-center" style={{ width: '45px', height: '45px', background: `${meta.color}15` }}>
+                        <Building style={{ color: meta.color }} size={22} />
+                      </div>
+                      <div>
+                        <div className="d-flex align-items-center gap-2 flex-wrap">
+                          <h6 className="mb-0 fw-bold text-dark">{v.name || v.username}</h6>
+                          <span className="badge rounded-pill px-2 py-0.5 fw-bold" style={{ background: meta.bg, color: meta.color, fontSize: '0.65rem' }}>
+                            {meta.label}
+                          </span>
+                        </div>
+                        <span className="text-muted small d-block mt-0.5" style={{ fontSize: '0.78rem' }}>
+                          {v.email || 'No email'} • {v.phone || 'No phone'} • Plan: ₹{v.monthly_plan_price || 0}/mo
+                        </span>
+                      </div>
                     </div>
-                    <div>
-                      <h6 className="mb-0 fw-bold text-dark">{v.name}</h6>
-                      <span className="text-muted text-xs d-block">{v.email} • {v.phone} • Plan: ₹{v.monthly_plan_price || 0}/mo</span>
+                    <div className="d-flex align-items-center gap-2 flex-wrap">
+                      <span className="badge bg-light text-dark border px-2.5 py-1.5 rounded-pill" style={{ fontSize: '0.72rem' }}>
+                        📍 {v.city || 'Goa'}
+                      </span>
+                      <span className={`badge rounded-pill px-2.5 py-1.5 fw-bold ${isInactive ? 'bg-danger text-white' : isPending ? 'bg-warning text-dark' : 'bg-success text-white'}`} style={{ fontSize: '0.72rem' }}>
+                        {v.status ? v.status.toUpperCase() : 'ACTIVE'}
+                      </span>
+                      <div className="d-flex gap-2 ms-2">
+                        <button 
+                          type="button"
+                          className="btn btn-sm btn-outline-info d-flex align-items-center gap-1 fw-semibold"
+                          style={{ fontSize: '0.78rem' }}
+                          onClick={() => setSelectedVendorDetails(v)}
+                          title="View Vendor Details"
+                        >
+                          <Eye size={14} /> Details
+                        </button>
+                        <button 
+                          className="btn btn-sm btn-outline-primary"
+                          onClick={() => {
+                            setEditingVendorId(v.id);
+                            setVendorName(v.name);
+                            setVendorEmail(v.email);
+                            setVendorPhone(v.phone);
+                            setVendorCity(v.city || '');
+                            setVendorRole(v.role || 'vendor');
+                            setVendorMonthlyPlanPrice(v.monthly_plan_price || 0);
+                            setVendorPassword('');
+                            setShowVendorForm(true);
+                          }}
+                          title="Edit Vendor"
+                        >
+                          <Edit3 size={15} />
+                        </button>
+                        <button 
+                          className="btn btn-sm btn-outline-danger"
+                          onClick={async () => {
+                            if (window.confirm(`Are you sure you want to delete ${v.name}?`)) {
+                              await onDeleteVendor(v.id);
+                            }
+                          }}
+                          title="Delete Vendor"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  <div className="d-flex align-items-center gap-2">
-                    <span className="badge-pill-location">{v.city}</span>
-                    <span className="badge-pill-status-active">Active</span>
-                    <div className="d-flex gap-2 ms-3">
-                      <button 
-                        className="btn btn-sm btn-outline-primary"
-                        onClick={() => {
-                          setEditingVendorId(v.id);
-                          setVendorName(v.name);
-                          setVendorEmail(v.email);
-                          setVendorPhone(v.phone);
-                          setVendorCity(v.city || '');
-                          setVendorRole(v.role || 'vendor');
-                          setVendorMonthlyPlanPrice(v.monthly_plan_price || 0);
-                          setVendorPassword('');
-                          setShowVendorForm(true);
-                        }}
-                      >
-                        <Edit3 size={16} />
-                      </button>
-                      <button 
-                        className="btn btn-sm btn-outline-danger"
-                        onClick={async () => {
-                          if (window.confirm(`Are you sure you want to delete ${v.name}?`)) {
-                            await onDeleteVendor(v.id);
-                          }
-                        }}
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
+
+        {/* Vendor Details Modal */}
+        {selectedVendorDetails && (
+          <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1050 }}>
+            <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: '540px' }}>
+              <div className="modal-content rounded-4 border-0 shadow-lg overflow-hidden">
+                <div className="modal-header text-white px-4 py-3" style={{ background: '#0D1B2E' }}>
+                  <div className="d-flex align-items-center gap-2">
+                    <Building size={18} className="text-warning" />
+                    <h5 className="modal-title fw-bold mb-0 text-white" style={{ fontSize: '15px' }}>
+                      Vendor Details — {selectedVendorDetails.name || selectedVendorDetails.username}
+                    </h5>
+                  </div>
+                  <button type="button" className="btn-close btn-close-white" onClick={() => setSelectedVendorDetails(null)}></button>
+                </div>
+                <div className="modal-body p-4">
+                  <div className="p-3 rounded-3 mb-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                    <div className="d-flex align-items-center justify-content-between mb-2 pb-2 border-bottom">
+                      <h6 className="fw-bold mb-0 text-dark">{selectedVendorDetails.name || selectedVendorDetails.username}</h6>
+                      <span className={`badge rounded-pill px-2.5 py-1 fw-bold ${
+                        selectedVendorDetails.status === 'inactive' || selectedVendorDetails.status === 'suspended' ? 'bg-danger text-white' :
+                        selectedVendorDetails.status === 'pending' ? 'bg-warning text-dark' : 'bg-success text-white'
+                      }`} style={{ fontSize: '0.72rem' }}>
+                        {selectedVendorDetails.status ? selectedVendorDetails.status.toUpperCase() : 'ACTIVE'}
+                      </span>
+                    </div>
+                    <div className="row g-2" style={{ fontSize: '0.82rem' }}>
+                      <div className="col-6"><span className="text-muted">Vendor ID:</span> <strong className="font-monospace">{selectedVendorDetails.id}</strong></div>
+                      <div className="col-6"><span className="text-muted">Category:</span> <strong>{getVendorRoleMeta(selectedVendorDetails.role).label}</strong></div>
+                      <div className="col-6"><span className="text-muted">Email:</span> <strong>{selectedVendorDetails.email || '—'}</strong></div>
+                      <div className="col-6"><span className="text-muted">Phone:</span> <strong>{selectedVendorDetails.phone || '—'}</strong></div>
+                      <div className="col-6"><span className="text-muted">Location:</span> <strong>{selectedVendorDetails.city || 'Goa'}</strong></div>
+                      <div className="col-6"><span className="text-muted">Monthly Plan:</span> <strong>₹{selectedVendorDetails.monthly_plan_price || 0}/mo</strong></div>
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                    <h6 className="fw-bold mb-2 text-dark small">Inventory & Fleet Association</h6>
+                    {(() => {
+                      const count = getVendorInventoryCount(selectedVendorDetails.id);
+                      return (
+                        <div className="row g-2 text-center" style={{ fontSize: '0.82rem' }}>
+                          <div className="col-4 p-2 bg-white rounded border">
+                            <div className="text-muted small">Cars Listed</div>
+                            <div className="fs-5 fw-bold text-primary">{count.cars}</div>
+                          </div>
+                          <div className="col-4 p-2 bg-white rounded border">
+                            <div className="text-muted small">Bikes Listed</div>
+                            <div className="fs-5 fw-bold text-warning">{count.bikes}</div>
+                          </div>
+                          <div className="col-4 p-2 bg-white rounded border">
+                            <div className="text-muted small">Hotels Listed</div>
+                            <div className="fs-5 fw-bold text-success">{count.hotels}</div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+                <div className="modal-footer px-4 py-2 bg-light">
+                  <button type="button" className="btn btn-sm btn-secondary rounded-pill px-4 fw-semibold" onClick={() => setSelectedVendorDetails(null)}>
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         {vendorPasswordModal.isOpen && (
           <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
             <div className="modal-dialog modal-dialog-centered">
@@ -2545,7 +2704,10 @@ export default function AdminDashboard({
       case 'hotel-master': return renderHotelMasterTab();
       case 'coupons': return renderCouponsTab();
       case 'wallets': return <AdminWalletSettlements currentUser={currentUser} />;
-      default: return null;
+      case 'dashboard':
+      case 'overview':
+      default:
+        return renderPackagesTab();
     }
   };
 

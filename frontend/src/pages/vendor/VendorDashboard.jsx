@@ -28,7 +28,7 @@ const GOA_LOCATIONS = [
 ];
 
 // ─── EDIT VEHICLE MODAL ──────────────────────────────────────────────────────
-function EditVehicleModal({ vehicle, vehicleType, onClose, onSaved }) {
+function EditVehicleModal({ vehicle, vehicleType, onClose, onSaved, onUpdateCar, onUpdateBike }) {
   const isCar = vehicleType === 'car';
 
   const [name, setName] = useState(vehicle.name || '');
@@ -49,7 +49,7 @@ function EditVehicleModal({ vehicle, vehicleType, onClose, onSaved }) {
     setSaving(true);
     setError('');
     try {
-      await updateVehicle({
+      const payload = {
         id: vehicle.id,
         type: isCar ? 'car' : 'bike',
         name,
@@ -60,9 +60,16 @@ function EditVehicleModal({ vehicle, vehicleType, onClose, onSaved }) {
         seating: isCar ? seating : undefined,
         engine: !isCar ? engine : undefined,
         mileage: !isCar ? mileage : undefined,
-        image,
+        image: image || vehicle.image,
         category: vehicle.category,
-      });
+      };
+      if (isCar && onUpdateCar) {
+        await onUpdateCar(payload);
+      } else if (!isCar && onUpdateBike) {
+        await onUpdateBike(payload);
+      } else {
+        await updateVehicle(payload);
+      }
       onSaved();
     } catch (err) {
       setError(err.message || 'Failed to save changes.');
@@ -230,6 +237,8 @@ export default function VendorDashboard({
   bikes,
   onAddCar,
   onAddBike,
+  onUpdateCar,
+  onUpdateBike,
   onDeleteCar,
   onDeleteBike,
   bookings = [],
@@ -397,9 +406,14 @@ export default function VendorDashboard({
     setLoadingToggle(id);
     try {
       await toggleVehicleAvailability(id, type, !currentStatus);
-      window.location.reload();
+      if (type === 'car' && onUpdateCar) {
+        await onUpdateCar({ id, is_available: !currentStatus ? 1 : 0 });
+      } else if (type === 'bike' && onUpdateBike) {
+        await onUpdateBike({ id, is_available: !currentStatus ? 1 : 0 });
+      }
     } catch (err) {
       alert("Failed to update status.");
+    } finally {
       setLoadingToggle(null);
     }
   };
@@ -839,7 +853,9 @@ export default function VendorDashboard({
           vehicle={editVehicle.vehicle}
           vehicleType={editVehicle.type}
           onClose={() => setEditVehicle(null)}
-          onSaved={() => { setEditVehicle(null); window.location.reload(); }}
+          onSaved={() => setEditVehicle(null)}
+          onUpdateCar={onUpdateCar}
+          onUpdateBike={onUpdateBike}
         />
       )}
 

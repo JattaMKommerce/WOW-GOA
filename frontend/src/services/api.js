@@ -673,6 +673,8 @@ export async function b2bBook(bookingPayload) {
   if (!res.ok || !data.success) {
     throw new Error(data.error || 'Failed to confirm B2B booking.');
   }
+  broadcastBookingSync({ action: 'created', booking: data.booking || data });
+  broadcastNotificationUpdate({ type: 'b2b', title: 'New B2B Booking' });
   return data;
 }
 
@@ -744,6 +746,7 @@ export async function b2bApprovePartner(partnerId) {
   if (!res.ok || !data.success) {
     throw new Error(data.error || 'Failed to approve B2B partner application.');
   }
+  broadcastNotificationUpdate({ type: 'b2b', title: 'B2B Partner Approved' });
   return data;
 }
 
@@ -757,6 +760,7 @@ export async function b2bRejectPartner(partnerId, reason = '') {
   if (!res.ok || !data.success) {
     throw new Error(data.error || 'Failed to reject B2B partner application.');
   }
+  broadcastNotificationUpdate({ type: 'b2b', title: 'B2B Partner Rejected' });
   return data;
 }
 
@@ -773,6 +777,7 @@ export async function b2bRequestMode(partnerId, requestedMode) {
   if (!res.ok || !data.success) {
     throw new Error(data.error || 'Failed to submit mode request.');
   }
+  broadcastNotificationUpdate({ type: 'b2b', title: 'B2B Mode Change Request' });
   return data;
 }
 
@@ -786,6 +791,7 @@ export async function b2bApproveModeRequest(partnerId) {
   if (!res.ok || !data.success) {
     throw new Error(data.error || 'Failed to approve mode request.');
   }
+  broadcastNotificationUpdate({ type: 'b2b', title: 'B2B Mode Request Approved' });
   return data;
 }
 
@@ -799,6 +805,7 @@ export async function b2bRejectModeRequest(partnerId, reason = '') {
   if (!res.ok || !data.success) {
     throw new Error(data.error || 'Failed to reject mode request.');
   }
+  broadcastNotificationUpdate({ type: 'b2b', title: 'B2B Mode Request Rejected' });
   return data;
 }
 
@@ -1492,7 +1499,9 @@ export async function createAiLead(name, phone) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, phone })
   });
-  return res.json();
+  const data = await res.json();
+  broadcastNotificationUpdate({ type: 'lead', title: `New Sophia AI Lead: ${name}` });
+  return data;
 }
 
 export async function createLead(leadData) {
@@ -1503,6 +1512,7 @@ export async function createLead(leadData) {
   });
   const data = await res.json();
   if (!res.ok || !data.success) throw new Error(data.error || 'Failed to create lead');
+  broadcastNotificationUpdate({ type: 'lead', title: `New Lead: ${leadData.name || 'Customer'}` });
   return data;
 }
 
@@ -1514,43 +1524,74 @@ export async function updateLead(leadId, updateData) {
   });
   const data = await res.json();
   if (!res.ok || !data.success) throw new Error(data.error || 'Failed to update lead');
+  broadcastNotificationUpdate({ type: 'lead', title: `Lead #${leadId} Updated` });
   return data;
 }
 
-export async function updateLeadStatus(leadId, status) {
+export async function updateLeadStatus(leadId, status, user = {}) {
   const res = await apiFetch(API_BASE, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'update_lead_status', id: leadId, status })
+    body: JSON.stringify({ 
+      action: 'update_lead_status', 
+      id: leadId, 
+      status,
+      user_id: user.id || user.username || '',
+      user_name: user.name || user.username || '',
+      user_role: user.role || ''
+    })
   });
   const data = await res.json();
   if (!res.ok || !data.success) throw new Error(data.error || 'Failed to update lead status');
+  broadcastNotificationUpdate({ type: 'lead', title: `Lead #${leadId} Status: ${status}` });
+  broadcastBookingSync({ type: 'lead_status', leadId, status });
   return data;
 }
 
-export async function updateLeadAssignee(leadId, assignedTo, assignedBy = 'Admin') {
+export async function updateLeadAssignee(leadId, assignedTo, assignedBy = 'Super Admin', userRole = 'superadmin') {
   const res = await apiFetch(API_BASE, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'assign_lead', id: leadId, assigned_to: assignedTo, assigned_by: assignedBy })
+    headers: { 
+      'Content-Type': 'application/json',
+      'X-User-Role': userRole,
+      'X-User-Identifier': assignedBy
+    },
+    body: JSON.stringify({ 
+      action: 'assign_lead', 
+      id: leadId, 
+      assigned_to: assignedTo, 
+      assigned_by: assignedBy,
+      user_role: userRole
+    })
   });
   const data = await res.json();
   if (!res.ok || !data.success) throw new Error(data.error || 'Failed to assign lead');
+  broadcastNotificationUpdate({ type: 'lead', title: `Lead #${leadId} Assigned to ${assignedTo}` });
+  broadcastBookingSync({ type: 'lead_assigned', leadId, assignedTo });
   return data;
 }
 
-export async function assignLead(leadId, assignedTo, assignedBy = 'Admin') {
-  return updateLeadAssignee(leadId, assignedTo, assignedBy);
+export async function assignLead(leadId, assignedTo, assignedBy = 'Super Admin', userRole = 'superadmin') {
+  return updateLeadAssignee(leadId, assignedTo, assignedBy, userRole);
 }
 
-export async function updateNextAction(leadId, nextAction) {
+export async function updateNextAction(leadId, nextAction, user = {}) {
   const res = await apiFetch(API_BASE, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'update_next_action', id: leadId, next_action: nextAction })
+    body: JSON.stringify({ 
+      action: 'update_next_action', 
+      id: leadId, 
+      next_action: nextAction,
+      user_id: user.id || user.username || '',
+      user_name: user.name || user.username || '',
+      user_role: user.role || ''
+    })
   });
   const data = await res.json();
   if (!res.ok || !data.success) throw new Error(data.error || 'Failed to update next action');
+  broadcastNotificationUpdate({ type: 'lead', title: `Lead #${leadId} Next Action Updated` });
+  broadcastBookingSync({ type: 'lead_next_action', leadId, nextAction });
   return data;
 }
 
@@ -1561,9 +1602,7 @@ export async function fetchAssignableUsers() {
     const list = Array.isArray(data) ? data : [];
     return list.filter(u => {
       const r = (u.role || '').toLowerCase();
-      const n = (u.name || u.username || '').toLowerCase();
-      const excluded = ['admin', 'superadmin', 'super_admin', 'go_operator', 'goa_operator'];
-      return !excluded.includes(r) && !excluded.includes(n);
+      return !['superadmin', 'super_admin'].includes(r);
     });
   } catch (err) {
     console.warn('[API] fetchAssignableUsers fallback:', err.message);
@@ -1595,6 +1634,8 @@ export async function addLeadComment(leadId, comment, user = {}) {
   });
   const data = await res.json();
   if (!res.ok || !data.success) throw new Error(data.error || 'Failed to add comment');
+  broadcastNotificationUpdate({ type: 'lead', title: `New comment on Lead #${leadId}` });
+  broadcastBookingSync({ type: 'lead_comment', leadId });
   return data;
 }
 
@@ -1617,6 +1658,7 @@ export async function toggleUserStatus(userId, status) {
   });
   const data = await res.json();
   if (!res.ok || !data.success) throw new Error(data.error || 'Failed to toggle user status');
+  broadcastNotificationUpdate({ type: 'user_status', userId, status });
   return data;
 }
 
@@ -1642,11 +1684,16 @@ export async function deleteLead(leadId) {
   return data;
 }
 
-export async function updateAiLeadChat(id, chatHistory) {
+export async function updateAiLeadChat(id, chatHistory, aiLeadId = null) {
   const res = await apiFetch(`${API_BASE}?action=update_ai_lead_chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id, chat_history: JSON.stringify(chatHistory) })
+    body: JSON.stringify({ 
+      id, 
+      lead_id: id,
+      ai_lead_id: aiLeadId,
+      chat_history: typeof chatHistory === 'string' ? chatHistory : JSON.stringify(chatHistory) 
+    })
   });
   return res.json();
 }
@@ -1855,17 +1902,21 @@ export async function createBooking(bookingData) {
     const data = await res.json();
     if (data && data.success) {
       createdBookingId = data.booking_id;
+    } else {
+      throw new Error(data?.error || data?.message || 'Server rejected booking request.');
     }
   } else {
     let errMsg = 'Failed to submit booking on server.';
     try {
       const rawText = await res.text();
       console.warn('Booking rejected by server (HTTP ' + res.status + '):', rawText);
-      try {
-        const errData = JSON.parse(rawText);
-        errMsg = errData.error || errData.message || rawText || errMsg;
-      } catch (parseErr) {
-        errMsg = rawText || errMsg;
+      if (rawText && rawText.trim()) {
+        try {
+          const errData = JSON.parse(rawText);
+          errMsg = errData.error || errData.message || rawText.trim();
+        } catch (parseErr) {
+          errMsg = rawText.trim();
+        }
       }
     } catch (readErr) {
       console.error('Failed to read server error response:', readErr);
@@ -2531,6 +2582,7 @@ export async function deleteAddOn(id) {
 
 // Canonical Activity Service aliases
 export const getActivities = getAddOns;
+export const fetchActivities = getAddOns;
 export const createActivity = createAddOn;
 export const updateActivity = updateAddOn;
 export const deleteActivity = deleteAddOn;
@@ -3061,6 +3113,7 @@ export async function updateDriverStatus(driverId, status) {
   if (!res.ok || !data.success) {
     throw new Error(data.error || data.message || 'Failed to update driver status.');
   }
+  broadcastNotificationUpdate({ type: 'driver', title: `Driver Status Updated: ${status}` });
   return data;
 }
 
@@ -3074,6 +3127,8 @@ export async function assignDriver(bookingId, driverId, notes = '') {
   if (!res.ok || !data.success) {
     throw new Error(data.error || data.message || 'Failed to assign driver.');
   }
+  broadcastBookingSync({ action: 'driver_assigned', booking_id: bookingId, driver_id: driverId });
+  broadcastNotificationUpdate({ type: 'driver', title: `Driver Assigned to Booking #${bookingId}` });
   return data;
 }
 
@@ -3087,6 +3142,8 @@ export async function updateDriverJobStatus(bookingId, driverId, status, notes =
   if (!res.ok || !data.success) {
     throw new Error(data.error || data.message || 'Failed to update driver job status.');
   }
+  broadcastBookingSync({ action: 'driver_job_status', booking_id: bookingId, status });
+  broadcastNotificationUpdate({ type: 'driver', title: `Job #${bookingId}: ${status}` });
   return data;
 }
 
@@ -3100,6 +3157,8 @@ export async function deleteDriver(driverId) {
   if (!res.ok || !data.success) {
     throw new Error(data.error || data.message || 'Failed to delete driver.');
   }
+  broadcastBookingSync({ action: 'driver_deleted', driver_id: driverId });
+  broadcastNotificationUpdate({ type: 'driver', title: 'Driver Account Deleted' });
   return data;
 }
 
@@ -3123,6 +3182,8 @@ export async function acceptAvailableJob(bookingId, driverId, notes = '') {
     err.conflict = data.conflict || res.status === 409;
     throw err;
   }
+  broadcastBookingSync({ action: 'driver_job_accepted', booking_id: bookingId, driver_id: driverId });
+  broadcastNotificationUpdate({ type: 'driver', title: `Job #${bookingId} Accepted by Driver` });
   return data;
 }
 

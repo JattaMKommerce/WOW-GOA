@@ -2,7 +2,7 @@ import React from 'react';
 import { 
   Building2, Calendar, CheckCircle2, Clock, XCircle, DollarSign, Gift, Tag, 
   TrendingUp, ArrowUpRight, Hotel, Car, Compass, ChevronRight, Users, 
-  ShieldCheck, Wallet, Plane, Wand2, ArrowRight, Lock, AlertCircle
+  ShieldCheck, Wallet, Plane, Wand2, ArrowRight, Lock, AlertCircle, Sparkles
 } from 'lucide-react';
 
 export default function B2BDashboardTab({ 
@@ -269,8 +269,34 @@ export default function B2BDashboardTab({
             </div>
           </div>
 
+          {/* Sightseeing & Activities */}
+          <div className="col-12 col-sm-6 col-lg-4">
+            <div 
+              onClick={() => onSelectService('activities')}
+              className="p-3.5 rounded-4 border border-light-subtle h-100 cursor-pointer transition-all hover-shadow-md bg-light d-flex flex-column justify-content-between"
+              style={{ cursor: 'pointer' }}
+            >
+              <div>
+                <div className="d-flex align-items-center justify-content-between mb-2">
+                  <div className="rounded-3 p-2 bg-dark text-white">
+                    <Sparkles size={20} />
+                  </div>
+                  <span className="badge bg-danger text-white text-xxs fw-bold px-2 py-0.5 rounded-pill">Experiences</span>
+                </div>
+                <h6 className="fw-bold text-dark font-heading mb-1">Sightseeing & Activities</h6>
+                <p className="text-muted text-xxs mb-0 leading-relaxed">
+                  Heritage tours, coastal beach sightseeing, scuba diving, and adventure water sports.
+                </p>
+              </div>
+              <div className="pt-3 d-flex align-items-center justify-content-between text-danger fw-bold text-xs">
+                <span>Book Experience</span>
+                <ChevronRight size={16} />
+              </div>
+            </div>
+          </div>
+
           {/* Flights */}
-          <div className="col-12 col-sm-6 col-lg-6">
+          <div className="col-12 col-sm-6 col-lg-4">
             <div 
               onClick={() => onSelectService('flights')}
               className="p-3.5 rounded-4 border border-light-subtle h-100 cursor-pointer transition-all hover-shadow-md bg-light d-flex flex-column justify-content-between"
@@ -296,7 +322,7 @@ export default function B2BDashboardTab({
           </div>
 
           {/* Craft My Trip */}
-          <div className="col-12 col-sm-6 col-lg-6">
+          <div className="col-12 col-sm-6 col-lg-4">
             <div 
               onClick={() => onSelectService('craft')}
               className="p-3.5 rounded-4 border border-light-subtle h-100 cursor-pointer transition-all hover-shadow-md bg-light d-flex flex-column justify-content-between"

@@ -97,8 +97,14 @@ export default function VendorPortalPage({
   setBookingsList
 }) {
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [tabParams, setTabParams] = useState({});
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  const handleNavigate = (tab, params = {}) => {
+    setActiveTab(tab);
+    setTabParams(params || {});
+  };
 
   if (!currentUser || currentUser.role !== 'vendor') {
     return (
@@ -120,13 +126,14 @@ export default function VendorPortalPage({
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
-        return <VehiclePMSDashboard currentUser={currentUser} cars={cars} bikes={bikes} bookings={bookings} onNavigate={setActiveTab} />;
+        return <VehiclePMSDashboard currentUser={currentUser} cars={cars} bikes={bikes} bookings={bookings} onNavigate={handleNavigate} />;
       case 'fleet':
         return (
           <VehicleFleetManagement
             currentUser={currentUser}
             cars={cars}
             bikes={bikes}
+            initialFilter={tabParams.filter}
             onAddCar={onAddCar}
             onAddBike={onAddBike}
             onUpdateCar={onUpdateCar}
@@ -141,6 +148,7 @@ export default function VendorPortalPage({
             bookings={bookings}
             cars={cars}
             bikes={bikes}
+            initialStatus={tabParams.statusFilter || tabParams.filter}
             setBookingsList={setBookingsList}
             currentUser={currentUser}
           />
@@ -156,11 +164,11 @@ export default function VendorPortalPage({
       case 'payment_settings':
         return <PMSPaymentSettings currentUser={currentUser} />;
       case 'reports':
-        return <VehicleReports cars={cars} bikes={bikes} bookings={bookings} onNavigate={setActiveTab} />;
+        return <VehicleReports cars={cars} bikes={bikes} bookings={bookings} onNavigate={handleNavigate} />;
       case 'settings':
         return <VehicleVendorProfileSettings currentUser={currentUser} />;
       default:
-        return <VehiclePMSDashboard currentUser={currentUser} cars={cars} bikes={bikes} bookings={bookings} onNavigate={setActiveTab} />;
+        return <VehiclePMSDashboard currentUser={currentUser} cars={cars} bikes={bikes} bookings={bookings} onNavigate={handleNavigate} />;
     }
   };
 
@@ -179,7 +187,7 @@ export default function VendorPortalPage({
         </div>
         <div className="flex-grow-1 py-2">
           {SIDEBAR_GROUPS.map((group, idx) => (
-            <SidebarGroup key={group.label} group={group} activeTab={activeTab} onSelect={setActiveTab} defaultOpen={idx < 2} />
+            <SidebarGroup key={group.label} group={group} activeTab={activeTab} onSelect={(id) => handleNavigate(id, {})} defaultOpen={idx < 2} />
           ))}
         </div>
         <div className="p-3 flex-shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
@@ -190,7 +198,7 @@ export default function VendorPortalPage({
       </div>
 
       {/* Main */}
-      <div className="flex-grow-1 d-flex flex-column" style={{ height: '100vh', overflow: 'hidden' }}>
+      <div className="flex-grow-1 d-flex flex-column" style={{ height: '100vh', maxHeight: '100vh', minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
         <header className="d-flex align-items-center justify-content-between px-4 flex-shrink-0" style={{ height: '56px', backgroundColor: '#0D1B2E', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
           <div className="d-flex align-items-center gap-3">
             <button onClick={() => setSidebarOpen(!sidebarOpen)} className="btn btn-sm p-1 border-0 text-white-50" style={{ background: 'transparent' }}><Menu size={20} /></button>
@@ -234,7 +242,17 @@ export default function VendorPortalPage({
           </div>
         </header>
 
-        <div className="flex-grow-1 overflow-auto">
+        <div 
+          className="flex-grow-1" 
+          style={{ 
+            height: 'calc(100vh - 56px)', 
+            maxHeight: 'calc(100vh - 56px)', 
+            minHeight: 0, 
+            overflowY: 'auto', 
+            overflowX: 'hidden',
+            WebkitOverflowScrolling: 'touch'
+          }}
+        >
           {renderContent()}
         </div>
       </div>

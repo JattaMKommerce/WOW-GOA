@@ -3,7 +3,8 @@ import {
   Compass, LogOut, Users, Settings, Shield, LayoutDashboard,
   Building, Car, Hotel, Plane, CalendarDays, Wallet, CreditCard,
   Percent, BarChart2, Globe, ChevronDown, ChevronRight,
-  Bell, Menu, X, UserCog, CheckCircle, Map as MapIcon
+  Bell, Menu, X, UserCog, CheckCircle, Map as MapIcon,
+  Briefcase, Clock, Gift, Tag, AlertCircle, FileText
 } from 'lucide-react';
 import SuperAdminDashboard from './SuperAdminDashboard';
 import * as api from '../../services/api';
@@ -27,6 +28,27 @@ const SIDEBAR_GROUPS = [
     items: [
       { id: 'admin_management', label: 'Admin Management', icon: <UserCog size={15} /> },
       { id: 'user_management', label: 'Global User Management', icon: <Users size={15} /> },
+    ]
+  },
+  {
+    label: 'B2B Distribution',
+    items: [
+      { id: 'b2b_dashboard', label: 'B2B Dashboard', icon: <Briefcase size={15} /> },
+      { id: 'b2b_applications', label: 'Partner Applications', icon: <Clock size={15} /> },
+      { id: 'b2b_all_partners', label: 'All Partners', icon: <Users size={15} /> },
+      { id: 'b2b_wallets', label: 'Agent Wallets & Ledgers', icon: <Wallet size={15} /> },
+      { id: 'b2b_commission_partners', label: 'Commission Partners', icon: <Gift size={15} /> },
+      { id: 'b2b_non_commission_partners', label: 'Non-Commission Partners', icon: <Tag size={15} /> },
+      { id: 'b2b_mode_requests', label: 'Mode Change Requests', icon: <AlertCircle size={15} /> },
+      { id: 'b2b_commission_bookings', label: 'Commission Bookings', icon: <FileText size={15} /> },
+      { id: 'b2b_non_commission_bookings', label: 'Non-Commission Bookings', icon: <FileText size={15} /> },
+      { id: 'b2b_settings', label: 'B2B Settings & Rules', icon: <Settings size={15} /> },
+    ]
+  },
+  {
+    label: 'Fleet & Drivers',
+    items: [
+      { id: 'drivers', label: 'Driver Management', icon: <Users size={15} /> },
     ]
   },
   {
@@ -74,6 +96,17 @@ const PAGE_TITLES = {
   dashboard: 'ERP Dashboard',
   admin_management: 'Admin Management',
   user_management: 'Global User Management',
+  b2b_dashboard: 'B2B Dashboard',
+  b2b_applications: 'B2B Partner Applications',
+  b2b_all_partners: 'B2B All Partners',
+  b2b_wallets: 'B2B Agent Wallets & Ledgers',
+  b2b_commission_partners: 'B2B Commission Partners',
+  b2b_non_commission_partners: 'B2B Non-Commission Partners',
+  b2b_mode_requests: 'B2B Mode Change Requests',
+  b2b_commission_bookings: 'B2B Commission Bookings',
+  b2b_non_commission_bookings: 'B2B Non-Commission Bookings',
+  b2b_settings: 'B2B Settings & Rules',
+  drivers: 'Driver Management',
   vendor_management: 'Vendor Management',
   vendor_verification: 'KYC & Verification',
   lead_management: 'Lead Management',
@@ -293,6 +326,9 @@ export default function SuperAdminPortalPage({
   const [liveUsers, setLiveUsers] = useState(usersList?.length ? usersList : defaultUsers);
   const [liveBookings, setLiveBookings] = useState(bookings?.length ? bookings : defaultBookings);
   const [liveVendors, setLiveVendors] = useState(vendors?.length ? vendors : defaultVendors);
+  const [liveB2BPartners, setLiveB2BPartners] = useState([]);
+  const [liveB2BBookings, setLiveB2BBookings] = useState([]);
+  const [liveDrivers, setLiveDrivers] = useState([]);
   const [aiLeads, setAiLeads] = useState(defaultAiLeads);
   const [customEnquiries, setCustomEnquiries] = useState(defaultCustomEnquiries);
 
@@ -321,22 +357,36 @@ export default function SuperAdminPortalPage({
 
   const isInitialLoadRef = React.useRef(true);
 
-  // Fetch real leads, custom enquiries, bookings, vendors, users, and authoritative notifications in real-time
+  // Fetch real leads, custom enquiries, bookings, vendors, users, B2B partners/bookings, drivers and authoritative notifications in real-time
   const loadAllPortalData = async () => {
     try {
-      const [leadsData, enquiriesData, bookingsData, vendorsData, freshUsers, authNotifsRes] = await Promise.all([
-        api.fetchAiLeads(),
-        api.fetchCustomEnquiries(),
-        api.fetchBookings(),
-        api.fetchVendors(),
-        api.fetchUsers(),
+      const [
+        leadsData,
+        enquiriesData,
+        bookingsData,
+        vendorsData,
+        freshUsers,
+        b2bPartnersData,
+        b2bBookingsData,
+        driversData,
+        authNotifsRes
+      ] = await Promise.all([
+        api.fetchAiLeads().catch(() => []),
+        api.fetchCustomEnquiries().catch(() => []),
+        api.fetchBookings().catch(() => []),
+        api.fetchVendors().catch(() => []),
+        api.fetchUsers().catch(() => []),
+        api.fetchB2BPartners().catch(() => []),
+        api.fetchB2BBookings('all', { mode: '' }).catch(() => []),
+        api.fetchDrivers().catch(() => []),
         api.fetchNotifications({ role: 'superadmin' }).catch(() => ({ notifications: [] }))
       ]);
       if (leadsData && leadsData.length) setAiLeads(leadsData);
       if (enquiriesData && enquiriesData.length) setCustomEnquiries(enquiriesData);
-      if (bookingsData && bookingsData.length) {
-        setLiveBookings(bookingsData);
-      }
+      if (bookingsData && bookingsData.length) setLiveBookings(bookingsData);
+      if (b2bPartnersData && Array.isArray(b2bPartnersData)) setLiveB2BPartners(b2bPartnersData);
+      if (b2bBookingsData && Array.isArray(b2bBookingsData)) setLiveB2BBookings(b2bBookingsData);
+      if (driversData && Array.isArray(driversData)) setLiveDrivers(driversData);
       if (authNotifsRes && Array.isArray(authNotifsRes.notifications)) {
         if (isInitialLoadRef.current) {
           registerSeenNotifications(authNotifsRes.notifications);
@@ -492,6 +542,11 @@ export default function SuperAdminPortalPage({
     window.addEventListener('tripgalileo-notification-sync', handleSync);
     window.addEventListener('tripgalileo-booking-sync', handleSync);
     window.addEventListener('authoritative-notification-received', handleSync);
+    window.addEventListener('driver-assigned', handleSync);
+    window.addEventListener('driver-status-updated', handleSync);
+    window.addEventListener('b2b-booking-created', handleSync);
+    window.addEventListener('b2b-partner-updated', handleSync);
+    window.addEventListener('pms-notification-updated', handleSync);
 
     let bcBookings;
     let bcNotifs;
@@ -513,6 +568,11 @@ export default function SuperAdminPortalPage({
       window.removeEventListener('tripgalileo-notification-sync', handleSync);
       window.removeEventListener('tripgalileo-booking-sync', handleSync);
       window.removeEventListener('authoritative-notification-received', handleSync);
+      window.removeEventListener('driver-assigned', handleSync);
+      window.removeEventListener('driver-status-updated', handleSync);
+      window.removeEventListener('b2b-booking-created', handleSync);
+      window.removeEventListener('b2b-partner-updated', handleSync);
+      window.removeEventListener('pms-notification-updated', handleSync);
       if (bcBookings) bcBookings.close();
       if (bcNotifs) bcNotifs.close();
     };
@@ -626,6 +686,28 @@ export default function SuperAdminPortalPage({
     isActionable: true
   }));
 
+  const driverNotifs = (liveDrivers || []).filter(d => (d.status || '').toLowerCase() === 'pending').map(d => ({
+    id: `drv-${d.id}`,
+    type: 'driver',
+    title: 'Driver Approval Pending',
+    message: `Driver ${d.name || d.phone} (${d.vehicle_details || 'Fleet'}) requires document verification & approval`,
+    time: 'Action Required',
+    color: '#3b82f6',
+    tab: 'drivers',
+    isActionable: true
+  }));
+
+  const b2bNotifs = (liveB2BPartners || []).filter(p => (p.status || '').toLowerCase() === 'pending').map(p => ({
+    id: `b2b-${p.id}`,
+    type: 'b2b',
+    title: 'B2B Partner Application',
+    message: `Partner ${p.company_name || p.contact_name || p.username} submitted B2B registration`,
+    time: 'Action Required',
+    color: '#8b5cf6',
+    tab: 'b2b_applications',
+    isActionable: true
+  }));
+
   const [clearedNotifIds, setClearedNotifIds] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('cleared_notifs') || '[]');
@@ -635,7 +717,7 @@ export default function SuperAdminPortalPage({
   });
 
   // Combine and sort by date descending
-  const notificationsList = [...kycNotifs, ...bookingNotifs, ...enquiryNotifs, ...leadNotifs].sort((a, b) => {
+  const notificationsList = [...kycNotifs, ...driverNotifs, ...b2bNotifs, ...bookingNotifs, ...enquiryNotifs, ...leadNotifs].sort((a, b) => {
     if (a.time === 'Action Required') return -1;
     if (b.time === 'Action Required') return 1;
     return (b.time || '').localeCompare(a.time || '');
@@ -986,6 +1068,10 @@ export default function SuperAdminPortalPage({
             bookings={Array.isArray(liveBookings) ? liveBookings : []}
             aiLeads={Array.isArray(aiLeads) ? aiLeads : []}
             customEnquiries={Array.isArray(customEnquiries) ? customEnquiries : []}
+            b2bPartners={Array.isArray(liveB2BPartners) ? liveB2BPartners : []}
+            b2bBookings={Array.isArray(liveB2BBookings) ? liveB2BBookings : []}
+            drivers={Array.isArray(liveDrivers) ? liveDrivers : []}
+            currentUser={currentUser}
             onRefreshLeads={loadAllPortalData}
             onAddUser={handlePortalAddUser}
             onUpdateUser={handlePortalUpdateUser}

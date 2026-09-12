@@ -120,6 +120,35 @@ export default function AdminB2BPortal({ activeSubTab = 'b2b_dashboard', onNavig
 
   useEffect(() => {
     loadData();
+    const interval = setInterval(loadData, 3500);
+
+    const handleSync = () => {
+      loadData();
+    };
+
+    window.addEventListener('tripgalileo-booking-sync', handleSync);
+    window.addEventListener('tripgalileo-notification-sync', handleSync);
+    window.addEventListener('booking-status-updated', handleSync);
+
+    let bcBookings;
+    let bcNotifs;
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        bcBookings = new BroadcastChannel('tripgalileo_bookings_sync');
+        bcBookings.onmessage = handleSync;
+        bcNotifs = new BroadcastChannel('tripgalileo_notifications_sync');
+        bcNotifs.onmessage = handleSync;
+      }
+    } catch (e) {}
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('tripgalileo-booking-sync', handleSync);
+      window.removeEventListener('tripgalileo-notification-sync', handleSync);
+      window.removeEventListener('booking-status-updated', handleSync);
+      if (bcBookings) bcBookings.close();
+      if (bcNotifs) bcNotifs.close();
+    };
   }, [activeSubTab]);
 
   const handleApprovePartner = async (partnerId) => {

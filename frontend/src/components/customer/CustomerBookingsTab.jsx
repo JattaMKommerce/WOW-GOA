@@ -5,19 +5,51 @@ import {
   Filter, Download, Eye, CheckCircle2, Clock, XCircle,
   FileText, ArrowRight, ShieldCheck, MapPin, ChevronRight, X
 } from 'lucide-react';
+import { formatBookingDateTime, formatDateShort } from '../../utils/dateUtils';
 
 export default function CustomerBookingsTab({
   currentUser,
   bookings = [],
-  onOpenBookingDetails
+  onOpenBookingDetails,
+  initialCategory = 'all'
 }) {
-  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState(initialCategory || 'all');
+  const [sightseeingSubFilter, setSightseeingSubFilter] = useState('sightseeing'); // 'sightseeing' | 'activities'
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedVoucherBooking, setSelectedVoucherBooking] = useState(null);
 
+  // Sync initialCategory prop if passed
+  React.useEffect(() => {
+    if (initialCategory && initialCategory !== categoryFilter) {
+      if (initialCategory === 'sightseeing') {
+        setCategoryFilter('sightseeing_activities');
+        setSightseeingSubFilter('sightseeing');
+      } else if (initialCategory === 'activities') {
+        setCategoryFilter('sightseeing_activities');
+        setSightseeingSubFilter('activities');
+      } else {
+        setCategoryFilter(initialCategory);
+      }
+    }
+  }, [initialCategory]);
+
   // Bookings passed from CustomerPortalPage are already strictly isolated for the customer
   const myBookings = Array.isArray(bookings) ? bookings : [];
+
+  // ─── Unified Driver Service Helper ───
+  const hasDriverService = (b) => {
+    if (!b) return false;
+    const svcType = String(b.driver_service_type || '').toUpperCase().trim();
+    if (['PICKUP', 'DROP', 'FULL'].includes(svcType)) return true;
+    if (svcType === 'NONE') return false;
+    if (b.driver_required === 1 || b.driver_required === '1' || b.driver_required === true || b.driver_required === 'yes') return true;
+    if (b.assigned_driver_id && String(b.assigned_driver_id).trim() !== '') return true;
+    const pkgType = String(b.package_type || b.type || '').toLowerCase();
+    const itemName = String(b.item_name || b.package_name || '').toLowerCase();
+    if (pkgType.includes('with driver') || itemName.includes('with driver') || itemName.includes('with chauffeur')) return true;
+    return false;
+  };
 
   // ─── Unified Category Helpers ───
   const isCraftBooking = (b) => {
@@ -33,21 +65,7 @@ export default function CustomerBookingsTab({
     const type = String(b.package_type || b.type || '').toLowerCase();
     const itemName = String(b.item_name || b.package_name || '').toLowerCase();
     const itemId = String(b.item_id || '').toLowerCase();
-    return type === 'flight' || type.includes('flight') || itemName.includes('flight') || itemName.includes('air') || itemId.includes('flight');
-  };
-
-  const isDriverBooking = (b) => {
-    if (!b || isCraftBooking(b)) return false;
-    const svcType = String(b.driver_service_type || '').toUpperCase();
-    return Boolean(
-      ['PICKUP', 'DROP', 'FULL'].includes(svcType) ||
-      b.driver_required == 1 ||
-      b.driver_required === 'yes' ||
-      b.driver_required === true ||
-      b.assigned_driver_id ||
-      (b.package_type && String(b.package_type).toLowerCase().includes('driver')) ||
-      (b.item_name && String(b.item_name).toLowerCase().includes('driver'))
-    );
+    return type === 'flight' || type.includes('flight') || itemName.includes('flight') || itemId.includes('flight');
   };
 
   const isHotelBooking = (b) => {
@@ -73,88 +91,57 @@ export default function CustomerBookingsTab({
     );
   };
 
-  const isActivityBooking = (b) => {
-    if (!b) return false;
+  const isSightseeingBooking = (b) => {
+    if (!b || isCraftBooking(b) || isFlightBooking(b) || isHotelBooking(b)) return false;
     const type = String(b.package_type || b.type || '').toLowerCase();
     const itemId = String(b.item_id || '').toLowerCase();
-    return type === 'activity' || type === 'sightseeing' || itemId.startsWith('act-') || itemId.startsWith('activity-') || itemId.startsWith('sight-') || itemId.startsWith('act_');
-  };
-
-  const isPackageBooking = (b) => {
-    if (!b || isCraftBooking(b) || isFlightBooking(b) || isActivityBooking(b)) return false;
-    const type = String(b.package_type || b.type || '').toLowerCase();
     const itemName = String(b.item_name || b.package_name || '').toLowerCase();
-    const itemId = String(b.item_id || '').toLowerCase();
-    
-    // Explicitly exclude self drive bookings
-    if (type.includes('self drive') || itemName.includes('self drive') || type === 'selfdrive') {
-      return false;
-    }
 
-    // Explicit trip package types
-    if (
-      type === 'package' ||
-      type === 'trip_package' ||
-      type === 'tour' ||
-      type === 'trip' ||
-      type.includes('trip package') ||
-      type.includes('tour package') ||
-      type.includes('holiday package') ||
-      type.includes('complete package') ||
-      type.includes('tour') ||
-      type.includes('package')
-    ) {
-      return true;
-    }
-
-    // Item ID indicators
-    if (itemId.startsWith('pkg-') || itemId.startsWith('package-') || itemId.startsWith('tp-')) {
-      return true;
-    }
-
-    // Known Package Names & themes (e.g. Tropical Bali Getaway, Romantic Sunset Escape, etc.)
-    const packageKeywords = [
-      'package', 'tour', 'getaway', 'explorer', 'escape', 'holiday',
-      'vacation', 'experience', 'bali', 'kerala', 'kashmir', 'dubai',
-      'thailand', 'maldives', 'goa tour', 'heritage trail', 'coastal goa',
-      'sunset escape', 'honeymoon'
-    ];
-    if (packageKeywords.some(kw => itemName.includes(kw))) {
-      if (!itemId.startsWith('car-') && !itemId.startsWith('bike-')) {
-        return true;
-      }
-    }
-
-    // Multi-day packages with duration / itinerary
-    if (Boolean(b.duration && (b.hotel_name || b.hotel_included) && !itemId.startsWith('car-') && !itemId.startsWith('bike-'))) {
-      return true;
-    }
+    if (type === 'sightseeing' || type.includes('sightseeing')) return true;
+    if (itemId.startsWith('sight-') || itemId.startsWith('sight_')) return true;
+    if (itemName.includes('sightseeing') || itemName.includes('heritage tour') || itemName.includes('monument')) return true;
 
     return false;
   };
 
-  const isSelfDriveBooking = (b) => {
-    if (!b || isCraftBooking(b) || isFlightBooking(b) || isPackageBooking(b)) return false;
+  const isActivityBooking = (b) => {
+    if (!b || isCraftBooking(b) || isFlightBooking(b) || isHotelBooking(b)) return false;
+    // Strict isolation: Sightseeing booking must NOT appear under Activities
+    if (isSightseeingBooking(b)) return false;
     const type = String(b.package_type || b.type || '').toLowerCase();
+    const itemId = String(b.item_id || '').toLowerCase();
     const itemName = String(b.item_name || b.package_name || '').toLowerCase();
+
     return (
-      type.includes('self drive') ||
-      type === 'selfdrive' ||
-      itemName.includes('self drive') ||
-      (b.package_name && String(b.package_name).toLowerCase().includes('self drive'))
+      type === 'activity' ||
+      type.includes('activity') ||
+      itemId.startsWith('act-') ||
+      itemId.startsWith('act_') ||
+      itemId.startsWith('act') ||
+      itemName.includes('scuba') ||
+      itemName.includes('water sport') ||
+      itemName.includes('watersport') ||
+      itemName.includes('parasailing') ||
+      itemName.includes('cruise') ||
+      itemName.includes('adventure') ||
+      itemName.includes('kayaking') ||
+      itemName.includes('snorkeling')
     );
   };
 
-  const isBikeBooking = (b) => {
-    if (!b || isCraftBooking(b) || isPackageBooking(b) || isSelfDriveBooking(b)) return false;
+  const isBikeItem = (b) => {
+    if (!b || isCraftBooking(b) || isFlightBooking(b) || isHotelBooking(b) || isSightseeingBooking(b) || isActivityBooking(b)) return false;
     const type = String(b.package_type || b.type || '').toLowerCase();
-    const itemName = String(b.item_name || b.package_name || '').toLowerCase();
+    const itemName = String(b.item_name || b.package_name || b.vehicle_name || '').toLowerCase();
     const itemId = String(b.item_id || '').toLowerCase();
     return (
       type === 'bike' ||
       type.includes('bike') ||
       type.includes('scooter') ||
+      type.includes('two wheeler') ||
+      type.includes('two-wheeler') ||
       itemId.startsWith('bike-') ||
+      itemId.startsWith('bike_') ||
       itemName.includes('bike') ||
       itemName.includes('scooter') ||
       itemName.includes('activa') ||
@@ -162,47 +149,95 @@ export default function CustomerBookingsTab({
       itemName.includes('bullet') ||
       itemName.includes('jupiter') ||
       itemName.includes('classic 350') ||
-      itemName.includes('fz-s')
+      itemName.includes('fz-s') ||
+      itemName.includes('access 125') ||
+      itemName.includes('faschino')
     );
   };
 
-  const isCarBooking = (b) => {
-    if (!b || isCraftBooking(b) || isPackageBooking(b) || isSelfDriveBooking(b) || isBikeBooking(b) || isHotelBooking(b) || isFlightBooking(b)) return false;
+  const isCarItem = (b) => {
+    if (!b || isCraftBooking(b) || isFlightBooking(b) || isHotelBooking(b) || isSightseeingBooking(b) || isActivityBooking(b) || isBikeItem(b)) return false;
+    const type = String(b.package_type || b.type || '').toLowerCase();
+    const itemName = String(b.item_name || b.package_name || b.vehicle_name || '').toLowerCase();
+    const itemId = String(b.item_id || '').toLowerCase();
+
+    if (itemId.startsWith('car-') || itemId.startsWith('car_')) return true;
+    if (type === 'car' || type.includes('car rental') || type.includes('vehicle rental') || type === 'vehicle' || type === 'driver') return true;
+
+    const carKeywords = ['car', 'thar', 'swift', 'creta', 'ertiga', 'fortuner', 'innova', 'cabriolet', 'audi', 'bmw', 'baleno', 'i20', 'scorpio', 'kia', 'seltos', 'verna', 'wagonr', 'celerio', 'dzire', 'altroz', 'nexon'];
+    if (carKeywords.some(kw => itemName.includes(kw))) return true;
+
+    return false;
+  };
+
+  const isTripPackageItem = (b) => {
+    if (!b || isCraftBooking(b) || isFlightBooking(b) || isHotelBooking(b) || isSightseeingBooking(b) || isActivityBooking(b) || isBikeItem(b)) return false;
     const type = String(b.package_type || b.type || '').toLowerCase();
     const itemName = String(b.item_name || b.package_name || '').toLowerCase();
     const itemId = String(b.item_id || '').toLowerCase();
-    return (
-      type === 'car' ||
-      type.includes('car rental') ||
-      type.includes('vehicle rental') ||
-      type === 'vehicle' ||
-      itemId.startsWith('car-') ||
-      itemId.startsWith('car_') ||
-      itemName.includes('car rental') ||
-      itemName.includes('thar') ||
-      itemName.includes('swift') ||
-      itemName.includes('creta') ||
-      itemName.includes('ertiga') ||
-      itemName.includes('fortuner') ||
-      itemName.includes('innova') ||
-      itemName.includes('cabriolet') ||
-      itemName.includes('audi') ||
-      itemName.includes('bmw')
-    );
+
+    if (itemId.startsWith('car-') || itemId.startsWith('bike-')) return false;
+
+    if (type === 'package' || type === 'trip_package' || type === 'tour' || type === 'trip' || type.includes('package') || type.includes('tour') || type.includes('holiday')) {
+      return true;
+    }
+    if (itemId.startsWith('pkg-') || itemId.startsWith('package-') || itemId.startsWith('tp-')) {
+      return true;
+    }
+
+    const packageKeywords = [
+      'package', 'tour', 'getaway', 'explorer', 'escape', 'holiday',
+      'vacation', 'experience', 'bali', 'kerala', 'kashmir', 'dubai',
+      'thailand', 'maldives', 'goa tour', 'heritage trail', 'coastal goa',
+      'sunset escape', 'honeymoon'
+    ];
+    if (packageKeywords.some(kw => itemName.includes(kw))) {
+      return true;
+    }
+
+    if (Boolean(b.duration && (b.hotel_name || b.hotel_included) && !itemId.startsWith('car-') && !itemId.startsWith('bike-'))) {
+      return true;
+    }
+
+    return false;
+  };
+
+  // ─── Classification Rules ───
+  // Car + Driver -> Cars
+  // Bike + Driver -> Bikes
+  // Trip Package + Driver -> Trip Package
+  // Without Driver (Car/Bike/Trip) -> Self Drive Holiday
+  const isCarsCategory = (b) => isCarItem(b) && hasDriverService(b);
+  const isBikesCategory = (b) => isBikeItem(b) && hasDriverService(b);
+  const isTripPackageCategory = (b) => isTripPackageItem(b) && hasDriverService(b);
+  const isSelfDriveHolidayCategory = (b) => {
+    if (!b || isCraftBooking(b) || isFlightBooking(b) || isHotelBooking(b) || isSightseeingBooking(b) || isActivityBooking(b)) return false;
+    if (isCarItem(b) && !hasDriverService(b)) return true;
+    if (isBikeItem(b) && !hasDriverService(b)) return true;
+    if (isTripPackageItem(b) && !hasDriverService(b)) return true;
+    const type = String(b.package_type || b.type || '').toLowerCase();
+    const itemName = String(b.item_name || b.package_name || '').toLowerCase();
+    if ((type.includes('self drive') || type === 'selfdrive' || itemName.includes('self drive')) && !hasDriverService(b)) {
+      return true;
+    }
+    return false;
   };
 
   // Apply category and status filters
   const filteredBookings = myBookings.filter(b => {
     // Category filter
     if (categoryFilter !== 'all') {
-      if (categoryFilter === 'driver' && !isDriverBooking(b)) return false;
-      if (categoryFilter === 'selfdrive' && !isSelfDriveBooking(b)) return false;
-      if (categoryFilter === 'package' && !isPackageBooking(b)) return false;
+      if (categoryFilter === 'selfdrive' && !isSelfDriveHolidayCategory(b)) return false;
+      if (categoryFilter === 'cars' && !isCarsCategory(b)) return false;
+      if (categoryFilter === 'bikes' && !isBikesCategory(b)) return false;
+      if (categoryFilter === 'package' && !isTripPackageCategory(b)) return false;
+      if (categoryFilter === 'sightseeing_activities') {
+        if (sightseeingSubFilter === 'sightseeing' && !isSightseeingBooking(b)) return false;
+        if (sightseeingSubFilter === 'activities' && !isActivityBooking(b)) return false;
+      }
       if (categoryFilter === 'hotel' && !isHotelBooking(b)) return false;
       if (categoryFilter === 'flight' && !isFlightBooking(b)) return false;
       if (categoryFilter === 'craftmytrip' && !isCraftBooking(b)) return false;
-      if (categoryFilter === 'car' && !isCarBooking(b)) return false;
-      if (categoryFilter === 'bike' && !isBikeBooking(b)) return false;
     }
 
     // Status filter
@@ -229,26 +264,41 @@ export default function CustomerBookingsTab({
     if (isCraftBooking(item)) return <Compass size={15} className="text-warning" />;
     if (isFlightBooking(item)) return <Plane size={15} className="text-info" />;
     if (isHotelBooking(item)) return <Hotel size={15} className="text-success" />;
-    if (isPackageBooking(item)) return <Package size={15} className="text-primary" />;
-    if (isDriverBooking(item)) return <Car size={15} className="text-warning" />;
-    if (isSelfDriveBooking(item)) return <Compass size={15} className="text-warning" />;
-    if (isBikeBooking(item)) return <Car size={15} className="text-info" />;
-    if (isCarBooking(item)) return <Car size={15} className="text-primary" />;
+    if (isTripPackageCategory(item)) return <Package size={15} className="text-primary" />;
+    if (isSightseeingBooking(item)) return <MapPin size={15} className="text-warning" />;
+    if (isActivityBooking(item)) return <MapPin size={15} className="text-danger" />;
+    if (isBikesCategory(item)) return <Car size={15} className="text-info" />;
+    if (isCarsCategory(item)) return <Car size={15} className="text-primary" />;
+    if (isSelfDriveHolidayCategory(item)) return <Compass size={15} className="text-warning" />;
     return <Package size={15} className="text-primary" />;
   };
 
   const getCategoryTitle = (b) => {
+    if (!b) return 'Booking';
+    if (isCarsCategory(b)) return 'Cars';
+    if (isBikesCategory(b)) return 'Bikes';
+    if (isTripPackageCategory(b)) return 'Trip Package';
+    if (isSightseeingBooking(b)) return 'Sightseeing';
+    if (isActivityBooking(b)) return 'Activities';
+    if (isHotelBooking(b)) return 'Hotel';
+    if (isFlightBooking(b)) return 'Flight';
+    if (isCraftBooking(b)) return 'Craft My Trip';
+    if (isSelfDriveHolidayCategory(b)) return 'Self Drive Holiday';
+    return 'Self Drive Holiday';
+  };
+
+  const getCategoryBadge = (b) => {
+    if (!b) return 'Booking';
+    if (isCarsCategory(b)) return '🚗 Cars';
+    if (isBikesCategory(b)) return '🏍️ Bikes';
+    if (isTripPackageCategory(b)) return '🌴 Trip Package';
+    if (isSightseeingBooking(b)) return '🏛️ Sightseeing';
+    if (isActivityBooking(b)) return '🎯 Activities';
+    if (isHotelBooking(b)) return '🏨 Hotel';
+    if (isFlightBooking(b)) return '✈️ Flight';
     if (isCraftBooking(b)) return '✨ Craft My Trip';
-    if (isFlightBooking(b)) return '✈️ Flight Booking';
-    if (isHotelBooking(b)) {
-      return isDriverBooking(b) ? '🏨 Hotel + Chauffeur' : '🏨 Hotel Stay';
-    }
-    if (isPackageBooking(b)) return '🌴 Trip Package';
-    if (isSelfDriveBooking(b)) return '⭐ Self Drive Holiday';
-    if (isDriverBooking(b)) return '🚗 Vehicle + Driver';
-    if (isBikeBooking(b)) return '🏍️ Bike Rental';
-    if (isCarBooking(b)) return '🚗 Car Rental';
-    return b.package_type || (b.type === 'package' ? '🌴 Trip Package' : b.type) || '🌴 Trip Package';
+    if (isSelfDriveHolidayCategory(b)) return '⭐ Self Drive Holiday';
+    return '⭐ Self Drive Holiday';
   };
 
   const getStatusBadge = (status) => {
@@ -257,7 +307,7 @@ export default function CustomerBookingsTab({
     if (s === 'upcoming') return <span className="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 px-2.5 py-1 rounded-pill fw-bold">Upcoming</span>;
     if (s === 'ongoing') return <span className="badge bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25 px-2.5 py-1 rounded-pill fw-bold">Ongoing</span>;
     if (s === 'completed') return <span className="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2.5 py-1 rounded-pill fw-bold">Completed</span>;
-    if (s === 'cancelled') return <span className="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25 px-2.5 py-1 rounded-pill fw-bold">Cancelled</span>;
+    if (s === 'cancelled') return <span className="badge bg-danger bg-danger-subtle text-danger border border-danger border-opacity-25 px-2.5 py-1 rounded-pill fw-bold">Cancelled</span>;
     if (s.includes('review')) return <span className="badge bg-warning bg-opacity-10 text-dark border border-warning border-opacity-25 px-2.5 py-1 rounded-pill fw-bold">Under Review</span>;
     return <span className="badge bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25 px-2.5 py-1 rounded-pill fw-bold">Pending Confirmation</span>;
   };
@@ -265,14 +315,15 @@ export default function CustomerBookingsTab({
   // Category counts
   const countByType = {
     all: myBookings.length,
-    selfdrive: myBookings.filter(isSelfDriveBooking).length,
-    driver: myBookings.filter(isDriverBooking).length,
-    package: myBookings.filter(isPackageBooking).length,
+    selfdrive: myBookings.filter(isSelfDriveHolidayCategory).length,
+    cars: myBookings.filter(isCarsCategory).length,
+    bikes: myBookings.filter(isBikesCategory).length,
+    package: myBookings.filter(isTripPackageCategory).length,
+    sightseeing: myBookings.filter(isSightseeingBooking).length,
+    activities: myBookings.filter(isActivityBooking).length,
     hotel: myBookings.filter(isHotelBooking).length,
     flight: myBookings.filter(isFlightBooking).length,
     craftmytrip: myBookings.filter(isCraftBooking).length,
-    car: myBookings.filter(isCarBooking).length,
-    bike: myBookings.filter(isBikeBooking).length,
   };
 
   return (
@@ -308,25 +359,26 @@ export default function CustomerBookingsTab({
       {/* ─── Filters Bar ─── */}
       <div className="card border-0 shadow-sm rounded-4 p-3 mb-4 bg-white" style={{ border: '1px solid #eef2f6' }}>
         <div className="d-flex flex-wrap align-items-center justify-content-between gap-3">
-          {/* Category Filter Pills */}
+          {/* Category Filter Pills — Exact 9 items in mandated order */}
           <div className="d-flex flex-wrap gap-1.5">
             {[
               { id: 'all', label: `All Bookings (${countByType.all})` },
-              { id: 'selfdrive', label: `⭐ Self Drive Holidays (${countByType.selfdrive})` },
-              { id: 'driver', label: `🚗 Vehicle + Driver (${countByType.driver})` },
-              { id: 'package', label: `🌴 Trip Packages (${countByType.package})` },
-              { id: 'hotel', label: `🏨 Hotels (${countByType.hotel})` },
-              { id: 'flight', label: `✈️ Flights (${countByType.flight})` },
+              { id: 'selfdrive', label: `⭐ Self Drive Holiday (${countByType.selfdrive})` },
+              { id: 'cars', label: `🚗 Cars (${countByType.cars})` },
+              { id: 'bikes', label: `🏍️ Bikes (${countByType.bikes})` },
+              { id: 'package', label: `🌴 Trip Package (${countByType.package})` },
+              { id: 'sightseeing_activities', label: `🎯 Sightseeing & Activities (${countByType.sightseeing + countByType.activities})` },
+              { id: 'hotel', label: `🏨 Hotel (${countByType.hotel})` },
+              { id: 'flight', label: `✈️ Flight (${countByType.flight})` },
               { id: 'craftmytrip', label: `✨ Craft My Trip (${countByType.craftmytrip})` },
-              { id: 'car', label: `🚗 Cars (${countByType.car})` },
-              { id: 'bike', label: `🏍️ Bikes (${countByType.bike})` },
             ].map(cat => (
               <button 
                 key={cat.id}
                 onClick={() => setCategoryFilter(cat.id)}
-                className={`btn btn-sm px-3 py-1.5 rounded-pill fw-bold text-xs ${
+                className={`btn btn-sm px-3 py-1.5 rounded-pill fw-bold text-xs transition-all text-nowrap flex-shrink-0 ${
                   categoryFilter === cat.id ? 'btn-dark text-white shadow-sm' : 'btn-light text-secondary border'
                 }`}
+                style={{ whiteSpace: 'nowrap' }}
               >
                 {cat.label}
               </button>
@@ -352,6 +404,35 @@ export default function CustomerBookingsTab({
             </select>
           </div>
         </div>
+
+        {/* Sightseeing & Activities Sub-Options: Exactly 2 options */}
+        {categoryFilter === 'sightseeing_activities' && (
+          <div className="d-flex align-items-center gap-2 mt-3 pt-2.5 border-top animate-fade-in">
+            <span className="text-muted text-xs fw-bold me-1">Category Options:</span>
+            <button
+              type="button"
+              onClick={() => setSightseeingSubFilter('sightseeing')}
+              className={`btn btn-sm px-3 py-1 rounded-pill fw-bold text-xs transition-all ${
+                sightseeingSubFilter === 'sightseeing'
+                  ? 'btn-warning text-dark shadow-xs'
+                  : 'btn-light text-secondary border'
+              }`}
+            >
+              🏛️ Sightseeing ({countByType.sightseeing})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSightseeingSubFilter('activities')}
+              className={`btn btn-sm px-3 py-1 rounded-pill fw-bold text-xs transition-all ${
+                sightseeingSubFilter === 'activities'
+                  ? 'btn-warning text-dark shadow-xs'
+                  : 'btn-light text-secondary border'
+              }`}
+            >
+              🎯 Activities ({countByType.activities})
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ─── Responsive Bookings Grid / Cards for Mobile & Desktop ─── */}
@@ -386,7 +467,7 @@ export default function CustomerBookingsTab({
                 <div className="p-2.5 bg-light rounded-3 text-xs mb-3">
                   <div className="d-flex justify-content-between mb-1">
                     <span className="text-muted">Travel Dates:</span>
-                    <span className="fw-bold text-dark">{b.pickup_date || b.travel_date || 'Upcoming'}{b.drop_date ? ` to ${b.drop_date}` : ''}</span>
+                    <span className="fw-bold text-dark">{formatDateShort(b.pickup_date || b.travel_date)}{b.drop_date ? ` to ${formatDateShort(b.drop_date)}` : ''}</span>
                   </div>
                   <div className="d-flex justify-content-between mb-1">
                     <span className="text-muted">Total Fare:</span>
@@ -398,18 +479,14 @@ export default function CustomerBookingsTab({
                   </div>
                 </div>
 
-                <div className="d-flex gap-2">
+                <div>
                   <button 
                     onClick={() => setSelectedVoucherBooking(b)}
-                    className="btn btn-sm btn-light border text-dark fw-bold rounded-pill px-3 py-1.5 text-xs flex-grow-1"
+                    className="btn btn-sm btn-dark text-white fw-bold rounded-pill py-2 w-100 text-xs d-flex align-items-center justify-content-center gap-1.5 shadow-xs"
+                    title="View & Print Booking Voucher"
                   >
-                    Print Voucher
-                  </button>
-                  <button 
-                    onClick={() => onOpenBookingDetails(b)}
-                    className="btn btn-sm btn-dark text-white fw-bold rounded-pill px-3 py-1.5 text-xs flex-grow-1"
-                  >
-                    View Details →
+                    <Eye size={14} />
+                    <span>View & Print Voucher</span>
                   </button>
                 </div>
               </div>
@@ -465,8 +542,8 @@ export default function CustomerBookingsTab({
                     </td>
 
                     <td className="text-xs">
-                      <div className="fw-bold text-dark">{b.pickup_date || b.travel_date || 'Scheduled'}</div>
-                      {b.drop_date && <div className="text-muted text-xxs">to {b.drop_date}</div>}
+                      <div className="fw-bold text-dark">{formatDateShort(b.pickup_date || b.travel_date)}</div>
+                      {b.drop_date && <div className="text-muted text-xxs">to {formatDateShort(b.drop_date)}</div>}
                     </td>
 
                     <td className="fw-black text-dark">
@@ -490,23 +567,14 @@ export default function CustomerBookingsTab({
                     </td>
 
                     <td className="text-end pe-4">
-                      <div className="d-flex align-items-center justify-content-end gap-1.5">
-                        <button 
-                          onClick={() => setSelectedVoucherBooking(b)}
-                          className="btn btn-sm btn-light border text-dark fw-bold rounded-pill px-2.5 py-1 text-xs d-flex align-items-center gap-1"
-                          title="Download Printable Receipt / Voucher"
-                        >
-                          <Download size={12} />
-                          <span>Voucher</span>
-                        </button>
-
-                        <button 
-                          onClick={() => onOpenBookingDetails(b)}
-                          className="btn btn-sm btn-dark text-white fw-bold rounded-pill px-3 py-1 text-xs"
-                        >
-                          Details
-                        </button>
-                      </div>
+                      <button 
+                        onClick={() => setSelectedVoucherBooking(b)}
+                        className="btn btn-sm btn-dark text-white fw-bold rounded-pill px-3 py-1 text-xs d-inline-flex align-items-center gap-1.5 shadow-xs"
+                        title="View & Print Booking Voucher"
+                      >
+                        <Eye size={13} />
+                        <span>View Voucher</span>
+                      </button>
                     </td>
                   </tr>
                 );
@@ -517,7 +585,7 @@ export default function CustomerBookingsTab({
                   <td colSpan="8" className="text-center py-5 text-muted">
                     {categoryFilter === 'hotel' ? (
                       <>
-                        <Hotel size={40} className="mb-2 text-warning opacity-75" />
+                        <Hotel size={40} className="mb-2 text-success opacity-75" />
                         <h5 className="fw-bold text-dark mb-1">No Hotel Bookings Found</h5>
                         <p className="text-muted text-xs mb-3">You haven't reserved any hotel stays or resort accommodations yet.</p>
                         <a href="/#hotels" className="btn btn-sm btn-warning text-dark fw-bold rounded-pill px-4 py-2 shadow-sm">
@@ -533,13 +601,46 @@ export default function CustomerBookingsTab({
                           Search Flights →
                         </a>
                       </>
+                    ) : categoryFilter === 'cars' ? (
+                      <>
+                        <Car size={40} className="mb-2 text-primary opacity-75" />
+                        <h5 className="fw-bold text-dark mb-1">No Car Bookings Found</h5>
+                        <p className="text-muted text-xs mb-3">You haven't booked any car reservations with driver service yet.</p>
+                        <a href="/#self-drive-categories" className="btn btn-sm btn-warning text-dark fw-bold rounded-pill px-4 py-2 shadow-sm">
+                          Explore Cars →
+                        </a>
+                      </>
+                    ) : categoryFilter === 'bikes' ? (
+                      <>
+                        <Car size={40} className="mb-2 text-info opacity-75" />
+                        <h5 className="fw-bold text-dark mb-1">No Bike Bookings Found</h5>
+                        <p className="text-muted text-xs mb-3">You haven't booked any bike reservations with driver service yet.</p>
+                        <a href="/#self-drive-categories" className="btn btn-sm btn-warning text-dark fw-bold rounded-pill px-4 py-2 shadow-sm">
+                          Explore Bikes →
+                        </a>
+                      </>
                     ) : categoryFilter === 'package' ? (
                       <>
                         <Package size={40} className="mb-2 text-primary opacity-75" />
-                        <h5 className="fw-bold text-dark mb-1">No Trip Packages Found</h5>
-                        <p className="text-muted text-xs mb-3">Discover curated North & South Goa holiday packages with luxury stays and transfers.</p>
+                        <h5 className="fw-bold text-dark mb-1">No Trip Package Bookings Found</h5>
+                        <p className="text-muted text-xs mb-3">Discover curated North & South Goa holiday packages with driver service.</p>
                         <a href="/#packages" className="btn btn-sm btn-warning text-dark fw-bold rounded-pill px-4 py-2 shadow-sm">
                           Explore Trip Packages →
+                        </a>
+                      </>
+                    ) : categoryFilter === 'sightseeing_activities' ? (
+                      <>
+                        <MapPin size={40} className="mb-2 text-danger opacity-75" />
+                        <h5 className="fw-bold text-dark mb-1">
+                          {sightseeingSubFilter === 'sightseeing' ? 'No Sightseeing Bookings Found' : 'No Activity Bookings Found'}
+                        </h5>
+                        <p className="text-muted text-xs mb-3">
+                          {sightseeingSubFilter === 'sightseeing'
+                            ? 'Explore curated North & South Goa heritage and beach sightseeing excursions.'
+                            : 'Explore scuba diving, water sports, boat cruises, and thrilling activities in Goa.'}
+                        </p>
+                        <a href="/#activities" className="btn btn-sm btn-warning text-dark fw-bold rounded-pill px-4 py-2 shadow-sm">
+                          Explore {sightseeingSubFilter === 'sightseeing' ? 'Sightseeing' : 'Activities'} →
                         </a>
                       </>
                     ) : categoryFilter === 'craftmytrip' ? (
@@ -551,20 +652,11 @@ export default function CustomerBookingsTab({
                           Craft Your Own Trip →
                         </a>
                       </>
-                    ) : categoryFilter === 'driver' ? (
-                      <>
-                        <Car size={40} className="mb-2 text-warning opacity-75" />
-                        <h5 className="fw-bold text-dark mb-1">No Vehicle + Driver Bookings Found</h5>
-                        <p className="text-muted text-xs mb-3">Book premium vehicles with verified local Goa chauffeurs for doorstep pickup and effortless sightseeing.</p>
-                        <a href="/#self-drive-categories" className="btn btn-sm btn-warning text-dark fw-bold rounded-pill px-4 py-2 shadow-sm">
-                          Book Vehicle with Driver →
-                        </a>
-                      </>
                     ) : categoryFilter === 'selfdrive' ? (
                       <>
                         <Compass size={40} className="mb-2 text-warning opacity-75" />
                         <h5 className="fw-bold text-dark mb-1">No Self Drive Holidays Found</h5>
-                        <p className="text-muted text-xs mb-3">Book premium Self Drive packages with unlimited KMs and resort stays.</p>
+                        <p className="text-muted text-xs mb-3">Book premium Self Drive vehicles and packages with unlimited KMs and resort stays.</p>
                         <a href="/#self-drive-categories" className="btn btn-sm btn-warning text-dark fw-bold rounded-pill px-4 py-2 shadow-sm">
                           Book a Self Drive Holiday →
                         </a>

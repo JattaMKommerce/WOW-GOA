@@ -257,6 +257,7 @@ function PaymentBadge({ status }) {
 export default function AdminBookingManagement({
   bookings: initialBookings = [],
   onRefreshBookings,
+  onNavigateToCalendar,
   currentUser,
   hotels = [],
   cars = [],
@@ -310,8 +311,12 @@ export default function AdminBookingManagement({
     setLoading(true);
     try {
       const fresh = await api.fetchBookings();
-      setBookingsList(fresh || []);
-      if (onRefreshBookings) onRefreshBookings();
+      if (Array.isArray(fresh)) {
+        setBookingsList(fresh);
+      }
+      if (onRefreshBookings) {
+        await onRefreshBookings();
+      }
     } catch (e) {
       console.error('Failed to fetch bookings:', e);
     } finally {
@@ -630,6 +635,17 @@ export default function AdminBookingManagement({
           </p>
         </div>
         <div className="d-flex align-items-center gap-2">
+          {onNavigateToCalendar && (
+            <button
+              type="button"
+              className="btn btn-outline-primary btn-sm px-3 py-2 rounded-3 d-flex align-items-center gap-1.5 bg-white shadow-sm fw-semibold"
+              onClick={onNavigateToCalendar}
+              title="Open Availability & Reservation Calendar"
+            >
+              <Calendar size={14} />
+              Availability Calendar
+            </button>
+          )}
           <button
             type="button"
             className="btn btn-outline-secondary btn-sm px-3 py-2 rounded-3 d-flex align-items-center gap-1.5 bg-white shadow-sm"

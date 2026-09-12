@@ -329,11 +329,107 @@ if (!$connected) {
             )",
             "ALTER TABLE bookings ADD COLUMN physical_unit_id VARCHAR(50) DEFAULT NULL",
             "ALTER TABLE bookings ADD COLUMN vendor_id VARCHAR(50) DEFAULT NULL",
-            "ALTER TABLE notifications ADD COLUMN role VARCHAR(50) DEFAULT NULL"
+            "ALTER TABLE notifications ADD COLUMN role VARCHAR(50) DEFAULT NULL",
+            "CREATE TABLE IF NOT EXISTS add_ons (
+                id VARCHAR(50) PRIMARY KEY,
+                title VARCHAR(255),
+                name VARCHAR(255),
+                type VARCHAR(50) DEFAULT 'Activity',
+                category VARCHAR(100) DEFAULT 'Activity',
+                location VARCHAR(100) DEFAULT 'Goa',
+                price INT DEFAULT 0,
+                duration VARCHAR(50) DEFAULT '2-3 Hours',
+                description TEXT,
+                image_url VARCHAR(255),
+                image VARCHAR(255),
+                is_active INT DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )",
+            "ALTER TABLE add_ons ADD COLUMN title VARCHAR(255) DEFAULT NULL",
+            "ALTER TABLE add_ons ADD COLUMN name VARCHAR(255) DEFAULT NULL",
+            "ALTER TABLE add_ons ADD COLUMN type VARCHAR(50) DEFAULT 'Activity'",
+            "ALTER TABLE add_ons ADD COLUMN category VARCHAR(100) DEFAULT 'Activity'",
+            "ALTER TABLE add_ons ADD COLUMN location VARCHAR(100) DEFAULT 'Goa'",
+            "ALTER TABLE add_ons ADD COLUMN price INT DEFAULT 0",
+            "ALTER TABLE add_ons ADD COLUMN duration VARCHAR(50) DEFAULT '2-3 Hours'",
+            "ALTER TABLE add_ons ADD COLUMN description TEXT DEFAULT NULL",
+            "ALTER TABLE add_ons ADD COLUMN image_url VARCHAR(255) DEFAULT NULL",
+            "ALTER TABLE add_ons ADD COLUMN image VARCHAR(255) DEFAULT NULL",
+            "ALTER TABLE add_ons ADD COLUMN is_active INT DEFAULT 1",
+            "ALTER TABLE add_ons ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP"
         ];
         foreach ($drvAlters as $da) {
             try { $pdo->exec($da); } catch (Exception $e) {}
         }
+
+        // Seed exactly 2 Sightseeing + 2 Activity records if add_ons table is empty
+        try {
+            $actCount = $pdo->query("SELECT COUNT(*) FROM add_ons")->fetchColumn();
+            if (intval($actCount) === 0) {
+                $seedAct = $pdo->prepare("INSERT INTO add_ons (id, title, name, type, category, location, price, duration, description, image_url, image, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                // 1. Sightseeing: Goa Heritage & Culture Tour
+                $seedAct->execute([
+                    'sight-heritage-01',
+                    'Goa Heritage & Culture Tour',
+                    'Goa Heritage & Culture Tour',
+                    'Sightseeing',
+                    'Heritage & Culture',
+                    'Old Goa & Panaji',
+                    1800,
+                    '5-6 Hours',
+                    'Immerse in Goa\'s rich colonial heritage, visiting Basilica of Bom Jesus, Se Cathedral, Latin Quarter (Fontainhas), and vibrant spice plantations.',
+                    'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=800&auto=format&fit=crop&q=60',
+                    'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=800&auto=format&fit=crop&q=60',
+                    1
+                ]);
+                // 2. Sightseeing: North Goa Beach Sightseeing
+                $seedAct->execute([
+                    'sight-northgoa-02',
+                    'North Goa Beach Sightseeing',
+                    'North Goa Beach Sightseeing',
+                    'Sightseeing',
+                    'Sightseeing & Tours',
+                    'North Goa (Calangute, Baga, Anjuna)',
+                    1500,
+                    '4-5 Hours',
+                    'Explore iconic North Goa coastal highlights including historic Fort Aguada, lively Calangute & Baga beaches, and scenic Chapora Fort cliff views.',
+                    'https://images.unsplash.com/photo-1587922546307-776227941871?w=800&auto=format&fit=crop&q=60',
+                    'https://images.unsplash.com/photo-1587922546307-776227941871?w=800&auto=format&fit=crop&q=60',
+                    1
+                ]);
+                // 3. Activity: Scuba Diving Experience
+                $seedAct->execute([
+                    'act-scuba-01',
+                    'Scuba Diving Experience',
+                    'Scuba Diving Experience',
+                    'Activity',
+                    'Water Sports',
+                    'Grand Island, Goa',
+                    2999,
+                    '3-4 Hours',
+                    'PADI-certified guided dive at Grand Island featuring clear water visibility, colorful coral reef exploration, equipment, and underwater photos & videos.',
+                    'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=800&auto=format&fit=crop&q=60',
+                    'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=800&auto=format&fit=crop&q=60',
+                    1
+                ]);
+                // 4. Activity: Parasailing Adventure
+                $seedAct->execute([
+                    'act-parasail-02',
+                    'Parasailing Adventure',
+                    'Parasailing Adventure',
+                    'Activity',
+                    'Adventure',
+                    'Calangute Beach, Goa',
+                    1200,
+                    '1-2 Hours',
+                    'Soar high above the Arabian Sea with thrilling winch-boat parasailing, offering panoramic shoreline vistas with full safety harness and life-jacket gear.',
+                    'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop&q=60',
+                    'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop&q=60',
+                    1
+                ]);
+            }
+        } catch (Exception $e) {}
+
         // Auto-heal hotel and room type vendor ownership for hotel_vendor console
         try {
             $pdo->exec("UPDATE hotels SET vendor_id = 'u-5' WHERE vendor_id IS NULL OR vendor_id = '' OR vendor_id = 'vendor-3' OR vendor_id = 'admin'");
@@ -919,11 +1015,46 @@ function calculateCustomerTiers($pdo, $phone, $customerId = null) {
 /**
  * Daily Birthday Cron Processor
  */
+function parseCustomerDobToMonthDay($dob) {
+    if (empty($dob)) return false;
+    $clean = trim((string)$dob);
+    // 1. ISO format: YYYY-MM-DD or YYYY/MM/DD or YYYY.MM.DD
+    if (preg_match('/^(\d{4})[-\/\.](\d{1,2})[-\/\.](\d{1,2})/', $clean, $m)) {
+        $month = intval($m[2]);
+        $day = intval($m[3]);
+        if ($month >= 1 && $month <= 12 && $day >= 1 && $day <= 31) {
+            return sprintf('%02d-%02d', $month, $day);
+        }
+    }
+    // 2. Day-Month-Year format: DD-MM-YYYY or DD/MM/YYYY or DD.MM.YYYY
+    if (preg_match('/^(\d{1,2})[-\/\.](\d{1,2})[-\/\.](\d{4})/', $clean, $m)) {
+        $first = intval($m[1]);
+        $second = intval($m[2]);
+        if ($first <= 31 && $second <= 12) {
+            $day = $first;
+            $month = $second;
+        } elseif ($first <= 12 && $second <= 31) {
+            $month = $first;
+            $day = $second;
+        } else {
+            return false;
+        }
+        return sprintf('%02d-%02d', $month, $day);
+    }
+    // 3. Fallback for textual month formats (e.g. "15 August 1995")
+    $t = strtotime($clean);
+    if ($t !== false && $t > 0) {
+        return date('m-d', $t);
+    }
+    return false;
+}
+
 function processDailyBirthdays($pdo) {
     $todayMonthDay = date('m-d');
     $currentYear = intval(date('Y'));
     $sentCount = 0;
     $skippedCount = 0;
+    $eligibleCount = 0;
     $logs = [];
 
     // Collect all users and bookings with a non-empty DOB
@@ -949,38 +1080,24 @@ function processDailyBirthdays($pdo) {
     }
 
     foreach ($customerMap as $phone => $u) {
-        $dob = trim($u['date_of_birth']);
-        $dobTime = false;
+        $dob = trim($u['date_of_birth'] ?? '');
+        $dobMonthDay = parseCustomerDobToMonthDay($dob);
 
-        // Try standard parsing
-        $t = strtotime($dob);
-        if ($t !== false && $t > 0) {
-            $dobTime = $t;
-        } else {
-            // Try DD/MM/YYYY or DD-MM-YYYY
-            $parts = preg_split('/[\/\-\.]/', $dob);
-            if (count($parts) === 3) {
-                if (strlen($parts[0]) === 4) { // YYYY-MM-DD
-                    $dobTime = strtotime($parts[0] . '-' . $parts[1] . '-' . $parts[2]);
-                } else { // DD-MM-YYYY
-                    $dobTime = strtotime($parts[2] . '-' . $parts[1] . '-' . $parts[0]);
-                }
-            }
-        }
+        if (!$dobMonthDay) continue;
+        if ($dobMonthDay !== $todayMonthDay) continue;
 
-        if (!$dobTime) continue;
-        if (date('m-d', $dobTime) !== $todayMonthDay) continue;
+        $eligibleCount++;
 
         // Customer has birthday today!
         $tiers = calculateCustomerTiers($pdo, $phone);
         $highestTier = $tiers['highest_tier'] ?? 'Bronze';
-        $custName = $u['name'] ?: 'Valued Guest';
-        $custId = $u['id'] ?: ('c_' . $phone);
+        $custName = !empty(trim($u['name'] ?? '')) ? trim($u['name']) : 'Valued Guest';
+        $custId = !empty($u['id']) ? $u['id'] : ('c_' . $phone);
         $channel = 'SMS';
 
-        // Check duplicate protection for this year & channel
-        $chkLog = $pdo->prepare("SELECT id FROM birthday_message_logs WHERE customer_id = ? AND birthday_year = ? AND channel = ?");
-        $chkLog->execute([$custId, $currentYear, $channel]);
+        // Check duplicate protection for this year & channel across both customer_id and verified phone
+        $chkLog = $pdo->prepare("SELECT id FROM birthday_message_logs WHERE (customer_id = ? OR phone = ?) AND birthday_year = ? AND channel = ?");
+        $chkLog->execute([$custId, $phone, $currentYear, $channel]);
         if ($chkLog->fetch()) {
             $skippedCount++;
             continue;
@@ -1018,14 +1135,34 @@ function processDailyBirthdays($pdo) {
         } catch (Exception $e) {}
     }
 
+    // If birthday messages were sent, create an Admin In-App Notification
+    if ($sentCount > 0) {
+        try {
+            $notifId = 'notif_bday_' . uniqid();
+            $notifTitle = "🎂 Birthday Automation Executed";
+            $notifMsg = "Automated birthday greetings successfully dispatched to $sentCount customer(s).";
+            $stmtN = $pdo->prepare("INSERT INTO notifications (id, recipient_id, recipient_role, title, message, type, is_read, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)");
+            $stmtN->execute([$notifId, 'admin', 'admin', $notifTitle, $notifMsg, 'birthday', date('Y-m-d H:i:s')]);
+        } catch (Exception $ne) {}
+    }
+
+    $message = ($sentCount > 0)
+        ? "Daily Birthday Job Executed: $sentCount birthday message(s) sent successfully, $skippedCount duplicate(s) skipped."
+        : (($eligibleCount > 0 && $skippedCount > 0)
+            ? "All $skippedCount eligible customer birthday greeting(s) for today have already been sent."
+            : "No customer birthdays match today's date (" . date('d/m/Y') . ").");
+
     return [
         'success' => true,
         'date' => date('Y-m-d'),
+        'eligible_count' => $eligibleCount,
         'sent_count' => $sentCount,
         'skipped_duplicate_count' => $skippedCount,
+        'message' => $message,
         'logs' => $logs
     ];
 }
+
 
 /**
  * =========================================================================
@@ -1463,7 +1600,157 @@ function authenticateRequest($pdo, $required = false) {
         exit();
     }
 
-    return $verifiedUser;
+    return is_array($verifiedUser) ? $verifiedUser : null;
+}
+
+/**
+ * Intelligently extract customer enquiry / requirements from AI Chatbot conversation history.
+ * Preserves manually edited requirements by staff.
+ */
+function extractLeadRequirements($chatHistory, $currentNotes = '') {
+    // If current notes were already manually set or customized by staff, keep them
+    $isDefaultNote = empty($currentNotes) || stripos($currentNotes, 'Inquired via') !== false;
+    if (!$isDefaultNote) {
+        return [
+            'requirement' => $currentNotes,
+            'notes' => $currentNotes,
+            'base_req' => $currentNotes,
+            'pax' => null,
+            'budget' => null,
+            'destination' => null,
+            'duration' => null,
+            'is_manual' => true
+        ];
+    }
+
+    if (is_string($chatHistory)) {
+        $chatHistory = json_decode($chatHistory, true) ?: [];
+    }
+    if (!is_array($chatHistory)) {
+        $chatHistory = [];
+    }
+
+    $userTexts = [];
+    foreach ($chatHistory as $msg) {
+        if (($msg['role'] ?? '') === 'user' && !empty($msg['content'])) {
+            $userTexts[] = trim($msg['content']);
+        }
+    }
+
+    if (empty($userTexts)) {
+        return [
+            'notes' => $currentNotes ?: 'Inquired via Sophia AI Assistant',
+            'pax' => null,
+            'budget' => null,
+            'destination' => null,
+            'duration' => null,
+            'is_manual' => false
+        ];
+    }
+
+    $fullText = implode(' ', $userTexts);
+
+    // 1. Destination
+    $dest = null;
+    if (preg_match('/\b(South\s*Goa)\b/i', $fullText)) {
+        $dest = 'South Goa';
+    } elseif (preg_match('/\b(North\s*Goa)\b/i', $fullText)) {
+        $dest = 'North Goa';
+    } elseif (preg_match('/\b(Old\s*Goa)\b/i', $fullText)) {
+        $dest = 'Old Goa';
+    } elseif (preg_match('/\b(Goa|Candolim|Calangute|Baga|Anjuna|Panaji|Panjim|Vagator|Morjim|Palolem|Colva)\b/i', $fullText, $m)) {
+        $dest = ucfirst(strtolower($m[1]));
+    }
+
+    // 2. Duration
+    $duration = null;
+    if (preg_match('/\b(\d+)\s*(?:days?|d)\b/i', $fullText, $m)) {
+        $duration = $m[1] . ' days';
+    } elseif (preg_match('/\b(\d+)\s*(?:nights?|n)\b/i', $fullText, $m)) {
+        $duration = $m[1] . ' nights';
+    } elseif (preg_match('/\bweekend\b/i', $fullText)) {
+        $duration = 'Weekend';
+    }
+
+    // 3. Pax
+    $pax = null;
+    if (preg_match('/\b(\d+)\s*(?:people|persons?|pax|adults?|guests?|members?)\b/i', $fullText, $m)) {
+        $pax = $m[1];
+    } elseif (preg_match('/\b(couple|2\s*adults?)\b/i', $fullText)) {
+        $pax = '2';
+    } elseif (preg_match('/\b(family)\b/i', $fullText)) {
+        $pax = 'Family';
+    }
+
+    // 4. Budget
+    $budget = null;
+    if (preg_match('/(?:budget\s*(?:is|of|around|:)?\s*|₹\s*|inr\s*|rs\.?\s*)([\d,]+)(?:\s*(?:k|thousand))?/i', $fullText, $m)) {
+        $rawNum = (int)str_replace(',', '', $m[1]);
+        if (stripos($m[0], 'k') !== false || stripos($m[0], 'thousand') !== false) {
+            $rawNum *= 1000;
+        }
+        if ($rawNum > 0) {
+            $budget = '₹' . number_format($rawNum);
+        }
+    } elseif (preg_match('/\b([\d,]+)\s*(?:k|thousand)\s*(?:budget)?\b/i', $fullText, $m)) {
+        $rawNum = (int)str_replace(',', '', $m[1]) * 1000;
+        if ($rawNum > 0) {
+            $budget = '₹' . number_format($rawNum);
+        }
+    } elseif (preg_match('/\b(\d{4,6})\b/', $fullText, $m)) {
+        $rawNum = (int)$m[1];
+        if ($rawNum >= 1000) {
+            $budget = '₹' . number_format($rawNum);
+        }
+    }
+
+    // 5. Trip Type / Category
+    $category = 'trip';
+    if (preg_match('/\b(thar|car|scooter|bike|vehicle|rental|cab|taxi)\b/i', $fullText, $m)) {
+        $category = ucfirst(strtolower($m[1])) . ' rental';
+    } elseif (preg_match('/\b(hotel|resort|villa|stay)\b/i', $fullText, $m)) {
+        $category = ucfirst(strtolower($m[1])) . ' stay';
+    } elseif (preg_match('/\b(flight|airline)\b/i', $fullText)) {
+        $category = 'Flight';
+    } elseif (preg_match('/\b(water\s*sports?|scuba|cruise)\b/i', $fullText, $m)) {
+        $category = ucwords(strtolower($m[1]));
+    }
+
+    // 6. Build Requirement summary
+    $parts = [];
+    if ($dest) {
+        $parts[] = "$dest $category";
+    } else {
+        $parts[] = ucfirst($category);
+    }
+
+    if ($duration) {
+        $baseReq = $parts[0] . ' – ' . $duration;
+    } else {
+        $baseReq = $parts[0];
+    }
+
+    $extras = [];
+    if ($pax) {
+        $extras[] = "$pax people";
+    }
+    if ($budget) {
+        $extras[] = "Budget: $budget";
+    }
+
+    // Concise Customer Requirement (e.g. "South Goa trip – 3 days")
+    $requirement = $baseReq;
+
+    return [
+        'requirement' => $requirement,
+        'notes' => $requirement,
+        'base_req' => $baseReq,
+        'pax' => $pax,
+        'budget' => $budget,
+        'destination' => $dest ?: 'Goa',
+        'duration' => $duration,
+        'is_manual' => false
+    ];
 }
 
 /**
@@ -2112,6 +2399,9 @@ function resolveB2BPricingRule($pdo, $partnerId, $serviceType, $partnerUser = nu
     if ($normService === 'car' || $normService === 'bike' || $normService === 'selfdrive') {
         $normService = 'vehicle';
     }
+    if ($normService === 'sightseeing' || $normService === 'activities') {
+        $normService = 'activity';
+    }
 
     // Priority 1: Partner + Service Specific Rule
     $stmt1 = $pdo->prepare("SELECT * FROM b2b_pricing_rules WHERE partner_id = ? AND service_type = ? AND is_active = 1 LIMIT 1");
@@ -2196,6 +2486,9 @@ function calculateAuthoritativeB2BPrice($pdo, $serviceType, $itemId, $days, $qty
     $normService = strtolower(trim($serviceType ?: 'package'));
     if ($normService === 'car' || $normService === 'bike' || $normService === 'selfdrive') {
         $normService = 'vehicle';
+    }
+    if ($normService === 'sightseeing' || $normService === 'activities') {
+        $normService = 'activity';
     }
 
     $daysCount = max(1, intval($days ?: 1));
@@ -2286,6 +2579,23 @@ function calculateAuthoritativeB2BPrice($pdo, $serviceType, $itemId, $days, $qty
         $taxAmount = round($rawBasePrice * 0.05, 2);
         $itemName = $extraDetails['item_name'] ?? 'Custom Tailor-Made Trip';
         $itemImage = $extraDetails['item_image'] ?? '';
+    } elseif ($normService === 'activity' || $normService === 'sightseeing') {
+        $stmtA = $pdo->prepare("SELECT * FROM add_ons WHERE id = ?");
+        $stmtA->execute([$itemId]);
+        $act = $stmtA->fetch(PDO::FETCH_ASSOC);
+        if ($act) {
+            $itemName = !empty($act['title']) ? $act['title'] : ($act['name'] ?? 'Sightseeing & Activity');
+            $itemImage = !empty($act['image_url']) ? $act['image_url'] : ($act['image'] ?? '');
+            $actPrice = floatval($act['price'] ?? 1500);
+            $guests = max(1, intval($extraDetails['guests'] ?? ($extraDetails['qty'] ?? $qtyCount)));
+            $rawBasePrice = $actPrice * $guests;
+            $taxAmount = round($rawBasePrice * 0.05, 2);
+        } else {
+            $rawBasePrice = floatval($extraDetails['total_amount'] ?? ($extraDetails['price'] ?? 1500));
+            $taxAmount = round($rawBasePrice * 0.05, 2);
+            $itemName = $extraDetails['item_name'] ?? ($extraDetails['title'] ?? 'Sightseeing & Activity');
+            $itemImage = $extraDetails['image_url'] ?? '';
+        }
     } else {
         $rawBasePrice = floatval($extraDetails['total_amount'] ?? 5000);
         $taxAmount = round($rawBasePrice * 0.18, 2);
@@ -2662,34 +2972,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
             $birthdaysToday = [];
             foreach ($customerMap as $phone => $u) {
-                $dob = trim($u['date_of_birth']);
-                $dobTime = false;
-                $t = strtotime($dob);
-                if ($t !== false && $t > 0) {
-                    $dobTime = $t;
-                } else {
-                    $parts = preg_split('/[\/\-\.]/', $dob);
-                    if (count($parts) === 3) {
-                        if (strlen($parts[0]) === 4) {
-                            $dobTime = strtotime($parts[0] . '-' . $parts[1] . '-' . $parts[2]);
-                        } else {
-                            $dobTime = strtotime($parts[2] . '-' . $parts[1] . '-' . $parts[0]);
-                        }
-                    }
-                }
-
-                if (!$dobTime) continue;
-                if (date('m-d', $dobTime) !== $todayMonthDay) continue;
+                $dob = trim($u['date_of_birth'] ?? '');
+                $monthDay = parseCustomerDobToMonthDay($dob);
+                if (!$monthDay || $monthDay !== $todayMonthDay) continue;
 
                 $tiers = calculateCustomerTiers($pdo, $phone);
                 $highestTier = $tiers['highest_tier'] ?? 'Bronze';
-                $custId = $u['id'] ?: ('c_' . $phone);
+                $custId = !empty($u['id']) ? $u['id'] : ('c_' . $phone);
 
                 $status = 'Pending';
                 $sentAt = null;
                 try {
-                    $chk = $pdo->prepare("SELECT status, sent_at FROM birthday_message_logs WHERE customer_id = ? AND birthday_year = ? ORDER BY sent_at DESC LIMIT 1");
-                    $chk->execute([$custId, $currentYear]);
+                    $chk = $pdo->prepare("SELECT status, sent_at FROM birthday_message_logs WHERE (customer_id = ? OR phone = ?) AND birthday_year = ? ORDER BY sent_at DESC LIMIT 1");
+                    $chk->execute([$custId, $phone, $currentYear]);
                     $logRow = $chk->fetch(PDO::FETCH_ASSOC);
                     if ($logRow) {
                         $status = $logRow['status'] ?? 'Sent';
@@ -2704,7 +2999,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                     'phone' => $phone,
                     'email' => $u['email'] ?? '',
                     'date_of_birth' => $dob,
-                    'formatted_dob' => date('d F', $dobTime),
+                    'formatted_dob' => $monthDay,
                     'car_tier' => $tiers['car']['tier_name'] ?? 'Bronze',
                     'hotel_tier' => $tiers['hotel']['tier_name'] ?? 'Bronze',
                     'trip_tier' => $tiers['trip']['tier_name'] ?? 'Bronze',
@@ -3506,7 +3801,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             }
             exit;} elseif ($resource === 'assignable_users') {
             try {
-                $stmt = $pdo->query("SELECT id, username, name, email, phone, role, status FROM users WHERE status = 'active' AND role IN ('subadmin', 'sub_admin', 'agent') ORDER BY name ASC, username ASC");
+                $stmt = $pdo->query("SELECT id, username, name, email, phone, role, status FROM users WHERE status = 'active' AND role IN ('admin', 'subadmin', 'sub_admin', 'agent') ORDER BY role ASC, name ASC, username ASC");
                 $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 echo json_encode($data ?: []);
             } catch (Exception $e) {
@@ -3556,7 +3851,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                     'title' => $titleVal,
                     'name' => $titleVal,
                     'type' => $typeVal,
-                    'category' => $typeVal,
+                    'item_type' => $typeVal,
+                    'category' => !empty($r['category']) ? $r['category'] : $typeVal,
                     'location' => $r['location'] ?? 'Goa',
                     'price' => intval($r['price'] ?? 0),
                     'duration' => $r['duration'] ?? '2-3 Hours',
@@ -5784,22 +6080,79 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!isset($payload['name']) || !isset($payload['phone'])) {
                 throw new Exception("Missing name or phone parameter.");
             }
+            $aiLeadId = uniqid('ai-');
             $stmt = $pdo->prepare("INSERT INTO ai_leads (id, name, phone, created_at) VALUES (?, ?, ?, ?)");
             $stmt->execute([
-                uniqid('ai-'),
+                $aiLeadId,
                 $payload['name'],
                 $payload['phone'],
                 date('Y-m-d H:i:s')
             ]);
             
             // Auto-capture into enterprise leads table
+            $leadId = 'LD-' . rand(1000, 9999);
             try {
-                $leadId = 'LD-' . rand(1000, 9999);
                 $leadStmt = $pdo->prepare("INSERT INTO leads (id, name, phone, email, source, service, assigned_to, status, budget, notes, admin_id, created_at, updated_at) VALUES (?, ?, ?, '', 'AI Planner', 'AI Travel Assistant Chat', 'Unassigned', 'New', '', 'Inquired via Sophia AI Assistant', 'admin', ?, ?)");
                 $leadStmt->execute([$leadId, $payload['name'], $payload['phone'], date('Y-m-d H:i:s'), date('Y-m-d H:i:s')]);
             } catch (Exception $leade) {}
             
-            echo json_encode(["success" => true, "message" => "AI Lead captured successfully."]);
+            echo json_encode(["success" => true, "id" => $aiLeadId, "lead_id" => $leadId, "message" => "AI Lead captured successfully."]);
+            exit;
+        } elseif ($action === 'update_ai_lead_chat') {
+            $id = $payload['id'] ?? $payload['lead_id'] ?? null;
+            $aiLeadId = $payload['ai_lead_id'] ?? null;
+            $chatHistory = $payload['chat_history'] ?? null;
+            
+            if ($id && $chatHistory) {
+                // Find matching enterprise lead row in leads table
+                $leadStmt = $pdo->prepare("SELECT * FROM leads WHERE id = ? OR phone = (SELECT phone FROM ai_leads WHERE id = ?) ORDER BY created_at DESC LIMIT 1");
+                $leadStmt->execute([$id, $id]);
+                $leadRow = $leadStmt->fetch(PDO::FETCH_ASSOC);
+
+                // Find matching ai_lead row
+                $aiStmt = $pdo->prepare("SELECT * FROM ai_leads WHERE id = ? OR id = ? OR phone = ? ORDER BY created_at DESC LIMIT 1");
+                $aiStmt->execute([$aiLeadId, $id, $leadRow['phone'] ?? '']);
+                $aiRow = $aiStmt->fetch(PDO::FETCH_ASSOC);
+
+                $extracted = extractLeadRequirements($chatHistory, $leadRow['notes'] ?? '');
+                $chatHistStr = is_string($chatHistory) ? $chatHistory : json_encode($chatHistory);
+
+                // Update enterprise leads table: customer requirement notes, budget, pax, and transcript
+                if ($leadRow) {
+                    $updNotes = $extracted['notes'];
+                    $updBudget = $extracted['budget'] ?: $leadRow['budget'];
+                    $updPax = $extracted['pax'] ?: ($leadRow['pax'] ?? null);
+                    $updLeads = $pdo->prepare("UPDATE leads SET 
+                        notes = COALESCE(?, notes),
+                        budget = COALESCE(?, budget),
+                        pax = COALESCE(?, pax),
+                        chat_history = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?");
+                    $updLeads->execute([$updNotes, $updBudget, $updPax, $chatHistStr, $leadRow['id']]);
+                }
+
+                // Update ai_leads table: destination, dates, budget, pax, transcript
+                if ($aiRow) {
+                    $updAi = $pdo->prepare("UPDATE ai_leads SET 
+                        destination = COALESCE(NULLIF(?, ''), destination),
+                        dates = COALESCE(NULLIF(?, ''), dates),
+                        budget = COALESCE(NULLIF(?, ''), budget),
+                        pax = COALESCE(NULLIF(?, ''), pax),
+                        chat_history = ?,
+                        status = 'Hot Lead'
+                        WHERE id = ?");
+                    $updAi->execute([
+                        $extracted['destination'],
+                        $extracted['duration'],
+                        $extracted['budget'],
+                        $extracted['pax'],
+                        $chatHistStr,
+                        $aiRow['id']
+                    ]);
+                }
+            }
+            echo json_encode(["success" => true, "message" => "Chat and customer requirements updated successfully."]);
             exit;
         } elseif ($action === 'add_vehicle' || $action === 'add_car' || $action === 'add_bike') {
             $bikeCats = ['scooter', 'scooter / moped', 'sports bike', 'cruiser', 'tourer / adventure', 'electric scooter (ev)', 'superbike', 'dirt / off-road', 'cafe racer', 'standard / commuter', 'bike'];
@@ -5870,58 +6223,75 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                    || (($payload['type'] ?? '') === 'bike') 
                    || in_array(strtolower(trim($payload['category'] ?? '')), $bikeCats);
             $isCar = !$isBike;
-            if ($action === 'update_vehicle' && empty($payload['type']) && empty($payload['category'])) {
-                $checkCar = $pdo->prepare("SELECT id FROM cars WHERE id = ?");
+            if ($action === 'update_vehicle') {
+                $checkCar = $pdo->prepare("SELECT * FROM cars WHERE id = ?");
                 $checkCar->execute([$id]);
-                $isCar = (bool)$checkCar->fetch();
-            }
+                $existingCar = $checkCar->fetch(PDO::FETCH_ASSOC);
 
-            // Multi-image handling
-            $imagesList = [];
-            if (!empty($payload['images']) && is_array($payload['images'])) {
-                $imagesList = array_values(array_filter($payload['images']));
-            } elseif (!empty($payload['images_json'])) {
-                $decoded = json_decode($payload['images_json'], true);
-                if (is_array($decoded)) $imagesList = array_values(array_filter($decoded));
-            }
-            if (empty($imagesList) && !empty($payload['image'])) {
-                $imagesList = [$payload['image']];
-            }
-            $image = !empty($imagesList) ? $imagesList[0] : ($payload['image'] ?? '');
-            $images_json = !empty($imagesList) ? json_encode($imagesList) : null;
+                $checkBike = null;
+                $existingBike = null;
+                if (!$existingCar) {
+                    $checkBike = $pdo->prepare("SELECT * FROM bikes WHERE id = ?");
+                    $checkBike->execute([$id]);
+                    $existingBike = $checkBike->fetch(PDO::FETCH_ASSOC);
+                }
 
-            if ($isCar) {
-                $stmt = $pdo->prepare("UPDATE cars SET name=?, category=?, price=?, seating=?, fuel=?, transmission=?, image=?, images_json=?, location=?, mileage=? WHERE id=?");
-                $stmt->execute([
-                    $payload['name'] ?? '',
-                    $payload['category'] ?? 'Hatchback',
-                    intval($payload['price'] ?? 0),
-                    $payload['seating'] ?? ($payload['seats'] ?? '5 Seater'),
-                    $payload['fuel'] ?? 'Petrol',
-                    $payload['transmission'] ?? 'Automatic',
-                    $image,
-                    $images_json,
-                    $payload['location'] ?? 'Goa Delivery',
-                    $payload['mileage'] ?? '',
-                    $id
-                ]);
-            } else {
-                $stmt = $pdo->prepare("UPDATE bikes SET name=?, category=?, price=?, engine=?, fuel=?, mileage=?, image=?, images_json=?, location=? WHERE id=?");
-                $stmt->execute([
-                    $payload['name'] ?? '',
-                    $payload['category'] ?? 'Scooter',
-                    intval($payload['price'] ?? 0),
-                    $payload['engine'] ?? '150cc',
-                    $payload['fuel'] ?? 'Petrol',
-                    $payload['mileage'] ?? '40 km/l',
-                    $image,
-                    $images_json,
-                    $payload['location'] ?? 'Goa Delivery',
-                    $id
-                ]);
+                if ($existingCar || $isCar) {
+                    $existing = $existingCar ?: [];
+                    $vName = !empty($payload['name']) ? $payload['name'] : ($existing['name'] ?? '');
+                    $vCat = !empty($payload['category']) ? $payload['category'] : ($existing['category'] ?? 'Hatchback');
+                    $vPrice = (isset($payload['price']) && $payload['price'] !== '') ? intval($payload['price']) : intval($existing['price'] ?? 0);
+                    $vSeating = !empty($payload['seating']) ? $payload['seating'] : (!empty($payload['seats']) ? $payload['seats'] : ($existing['seating'] ?? '5 Seater'));
+                    $vFuel = !empty($payload['fuel']) ? $payload['fuel'] : ($existing['fuel'] ?? 'Petrol');
+                    $vTrans = !empty($payload['transmission']) ? $payload['transmission'] : ($existing['transmission'] ?? 'Automatic');
+                    $vImage = !empty($image) ? $image : ($existing['image'] ?? '');
+                    $vImagesJson = !empty($images_json) ? $images_json : ($existing['images_json'] ?? null);
+                    $vLoc = !empty($payload['location']) ? $payload['location'] : ($existing['location'] ?? 'Goa Delivery');
+                    $vMileage = !empty($payload['mileage']) ? $payload['mileage'] : ($existing['mileage'] ?? '');
+
+                    $stmt = $pdo->prepare("UPDATE cars SET name=?, category=?, price=?, seating=?, fuel=?, transmission=?, image=?, images_json=?, location=?, mileage=? WHERE id=?");
+                    $stmt->execute([
+                        $vName,
+                        $vCat,
+                        $vPrice,
+                        $vSeating,
+                        $vFuel,
+                        $vTrans,
+                        $vImage,
+                        $vImagesJson,
+                        $vLoc,
+                        $vMileage,
+                        $id
+                    ]);
+                } else {
+                    $existing = $existingBike ?: [];
+                    $vName = !empty($payload['name']) ? $payload['name'] : ($existing['name'] ?? '');
+                    $vCat = !empty($payload['category']) ? $payload['category'] : ($existing['category'] ?? 'Scooter');
+                    $vPrice = (isset($payload['price']) && $payload['price'] !== '') ? intval($payload['price']) : intval($existing['price'] ?? 0);
+                    $vEngine = !empty($payload['engine']) ? $payload['engine'] : ($existing['engine'] ?? '150cc');
+                    $vFuel = !empty($payload['fuel']) ? $payload['fuel'] : ($existing['fuel'] ?? 'Petrol');
+                    $vMileage = !empty($payload['mileage']) ? $payload['mileage'] : ($existing['mileage'] ?? '40 km/l');
+                    $vImage = !empty($image) ? $image : ($existing['image'] ?? '');
+                    $vImagesJson = !empty($images_json) ? $images_json : ($existing['images_json'] ?? null);
+                    $vLoc = !empty($payload['location']) ? $payload['location'] : ($existing['location'] ?? 'Goa Delivery');
+
+                    $stmt = $pdo->prepare("UPDATE bikes SET name=?, category=?, price=?, engine=?, fuel=?, mileage=?, image=?, images_json=?, location=? WHERE id=?");
+                    $stmt->execute([
+                        $vName,
+                        $vCat,
+                        $vPrice,
+                        $vEngine,
+                        $vFuel,
+                        $vMileage,
+                        $vImage,
+                        $vImagesJson,
+                        $vLoc,
+                        $id
+                    ]);
+                }
+                echo json_encode(["success" => true, "message" => "Vehicle updated successfully."]);
+                exit;
             }
-            echo json_encode(["success" => true, "message" => "Vehicle updated successfully."]);
-            exit;
         } elseif ($action === 'toggle_vehicle_availability') {
             $id = $payload['id'] ?? null;
             if (!$id) throw new Exception("Missing vehicle ID.");
@@ -6119,6 +6489,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // booking pipeline. Preserves existing response contract exactly.
 
             $actor = authenticateRequest($pdo, false);
+            $actor = is_array($actor) ? $actor : null;
 
             try {
                 $result = BookingService::createBooking($pdo, $payload, $actor, 'D2C');
@@ -6128,6 +6499,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     "success" => false,
                     "conflict" => $bse->isConflict(),
                     "error" => $bse->getMessage()
+                ]);
+                exit();
+            } catch (Throwable $t) {
+                http_response_code(500);
+                echo json_encode([
+                    "success" => false,
+                    "error" => "Booking submission failed: " . $t->getMessage()
                 ]);
                 exit();
             }
@@ -6195,6 +6573,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // ── Phase 6: Package/Trip Master + Child Bookings ──────────────────────
             // Creates a master booking + child hotel/vehicle/driver allocations atomically.
             $actor = authenticateRequest($pdo, false);
+            $actor = is_array($actor) ? $actor : null;
             $isB2B = ($actor && in_array(strtolower($actor['role'] ?? ''), ['b2b', 'agent']));
             $channel = $isB2B ? 'B2B' : 'D2C';
             if ($isB2B) {
@@ -6217,6 +6596,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } catch (BookingServiceException $bse) {
                 http_response_code($bse->getHttpCode());
                 echo json_encode(["success" => false, "conflict" => $bse->isConflict(), "error" => $bse->getMessage()]);
+            } catch (Throwable $t) {
+                http_response_code(500);
+                echo json_encode(["success" => false, "error" => "Package booking submission failed: " . $t->getMessage()]);
             }
             exit;} elseif ($action === 'run_birthday_cron') {
             $cronResult = processDailyBirthdays($pdo);
@@ -7444,7 +7826,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;} elseif ($action === 'create_add_on' || $action === 'create_activity') {
             $existingCols = array_map(function($c) { return strtolower($c['name']); }, $pdo->query("PRAGMA table_info(add_ons)")->fetchAll(PDO::FETCH_ASSOC));
             $title = $payload['title'] ?? ($payload['name'] ?? 'Activity');
-            $type = $payload['type'] ?? ($payload['category'] ?? 'Activity');
+            $type = $payload['type'] ?? 'Activity';
+            $category = $payload['category'] ?? ($payload['type'] ?? 'Activity');
             $location = $payload['location'] ?? 'Goa';
             $price = intval($payload['price'] ?? 0);
             $duration = $payload['duration'] ?? '2-3 Hours';
@@ -7458,7 +7841,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (in_array('title', $existingCols)) $insertData['title'] = $title;
             if (in_array('name', $existingCols)) $insertData['name'] = $title;
             if (in_array('type', $existingCols)) $insertData['type'] = $type;
-            if (in_array('category', $existingCols)) $insertData['category'] = $type;
+            if (in_array('category', $existingCols)) $insertData['category'] = $category;
             if (in_array('location', $existingCols)) $insertData['location'] = $location;
             if (in_array('price', $existingCols)) $insertData['price'] = $price;
             if (in_array('duration', $existingCols)) $insertData['duration'] = $duration;
@@ -7466,6 +7849,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (in_array('image_url', $existingCols)) $insertData['image_url'] = $imageUrl;
             if (in_array('image', $existingCols)) $insertData['image'] = $imageUrl;
             if (in_array('is_active', $existingCols)) $insertData['is_active'] = $isActive;
+            $imagesJson = isset($payload['images_json']) ? (is_array($payload['images_json']) ? json_encode($payload['images_json']) : $payload['images_json']) : (!empty($payload['images']) ? json_encode($payload['images']) : null);
+            if ($imagesJson !== null && in_array('images_json', $existingCols)) $insertData['images_json'] = $imagesJson;
 
             $colsStr = implode(', ', array_keys($insertData));
             $placeholders = implode(', ', array_fill(0, count($insertData), '?'));
@@ -7480,20 +7865,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
             }
             $title = $payload['title'] ?? ($payload['name'] ?? null);
-            $type = $payload['type'] ?? ($payload['category'] ?? null);
+            $type = $payload['type'] ?? null;
+            $category = $payload['category'] ?? null;
             $location = $payload['location'] ?? null;
             $price = isset($payload['price']) ? intval($payload['price']) : null;
             $duration = $payload['duration'] ?? null;
             $description = $payload['description'] ?? null;
             $imageUrl = $payload['image_url'] ?? ($payload['image'] ?? null);
             $isActive = isset($payload['is_active']) ? intval($payload['is_active']) : null;
+            $imagesJson = isset($payload['images_json']) ? (is_array($payload['images_json']) ? json_encode($payload['images_json']) : $payload['images_json']) : (!empty($payload['images']) ? json_encode($payload['images']) : null);
 
             $updates = [];
             $vals = [];
             if ($title !== null && in_array('title', $existingCols)) { $updates[] = "title = ?"; $vals[] = $title; }
             if ($title !== null && in_array('name', $existingCols)) { $updates[] = "name = ?"; $vals[] = $title; }
             if ($type !== null && in_array('type', $existingCols)) { $updates[] = "type = ?"; $vals[] = $type; }
-            if ($type !== null && in_array('category', $existingCols)) { $updates[] = "category = ?"; $vals[] = $type; }
+            if ($category !== null && in_array('category', $existingCols)) { $updates[] = "category = ?"; $vals[] = $category; }
             if ($location !== null && in_array('location', $existingCols)) { $updates[] = "location = ?"; $vals[] = $location; }
             if ($price !== null && in_array('price', $existingCols)) { $updates[] = "price = ?"; $vals[] = $price; }
             if ($duration !== null && in_array('duration', $existingCols)) { $updates[] = "duration = ?"; $vals[] = $duration; }
@@ -7501,6 +7888,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($imageUrl !== null && in_array('image_url', $existingCols)) { $updates[] = "image_url = ?"; $vals[] = $imageUrl; }
             if ($imageUrl !== null && in_array('image', $existingCols)) { $updates[] = "image = ?"; $vals[] = $imageUrl; }
             if ($isActive !== null && in_array('is_active', $existingCols)) { $updates[] = "is_active = ?"; $vals[] = $isActive; }
+            if ($imagesJson !== null && in_array('images_json', $existingCols)) { $updates[] = "images_json = ?"; $vals[] = $imagesJson; }
 
             if (!empty($updates)) {
                 $vals[] = $actId;
@@ -8187,6 +8575,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $source = $payload['source'] ?? null;
             $service = $payload['service'] ?? null;
             $assigned_to = $payload['assigned_to'] ?? $payload['assignedTo'] ?? null;
+            if ($assigned_to !== null) {
+                $actor = authenticateRequest($pdo, false);
+                $role = strtolower(trim($actor['role'] ?? ($payload['user_role'] ?? ($_SERVER['HTTP_X_USER_ROLE'] ?? ''))));
+                if (!in_array($role, ['superadmin', 'super_admin'])) {
+                    $assigned_to = null; // Strictly forbid non-superadmin from changing assignment in update_lead
+                }
+            }
             $status = $payload['status'] ?? null;
             $budget = $payload['budget'] ?? null;
             $notes = $payload['notes'] ?? null;
@@ -8216,6 +8611,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $stmt = $pdo->prepare("UPDATE leads SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?");
             $stmt->execute([$status, $id]);
+
+            // Save status update to existing lead_comments activity/history
+            $actor = authenticateRequest($pdo, false);
+            $userId = $payload['user_id'] ?? ($actor['id'] ?? ($_SERVER['HTTP_X_USER_ID'] ?? 'user'));
+            $userName = $payload['user_name'] ?? ($actor['name'] ?? ($actor['username'] ?? ($_SERVER['HTTP_X_USER_IDENTIFIER'] ?? 'User')));
+            $userRole = $payload['user_role'] ?? ($actor['role'] ?? ($_SERVER['HTTP_X_USER_ROLE'] ?? 'user'));
+            $now = date('Y-m-d H:i:s');
+            $commentId = 'comm_' . time() . '_' . rand(100, 999);
+            $sysMsg = "Pipeline status updated to \"$status\" by $userName ($userRole).";
+            $stmtComm = $pdo->prepare("INSERT INTO lead_comments (id, lead_id, user_id, user_name, user_role, comment, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmtComm->execute([$commentId, $id, $userId, $userName, $userRole, $sysMsg, $now, $now]);
+
             echo json_encode(["success" => true, "message" => "Lead status updated."]);
             exit;
         } elseif ($action === 'toggle_user_status') {
@@ -8232,14 +8639,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         } elseif ($action === 'assign_lead' || $action === 'update_lead_assignee') {
             $actor = authenticateRequest($pdo, false);
-            if ($actor && in_array($actor['role'], ['subadmin', 'sub_admin', 'agent'])) {
+            // In Flow 2: STRICT RULE - ONLY Super Admin can assign, reassign, or unassign leads
+            $role = strtolower(trim($actor['role'] ?? ($payload['user_role'] ?? ($_SERVER['HTTP_X_USER_ROLE'] ?? ''))));
+            if (!in_array($role, ['superadmin', 'super_admin'])) {
                 http_response_code(403);
-                echo json_encode(["success" => false, "error" => "Forbidden: Sub-Admins cannot assign leads. Only Admin or Super Admin can assign leads."]);
+                echo json_encode(["success" => false, "error" => "Forbidden: Only Super Admin can assign, reassign, or unassign leads in Flow 2."]);
                 exit;
             }
             $id = $payload['id'] ?? $payload['lead_id'] ?? null;
             $assigned_to = trim($payload['assigned_to'] ?? ($payload['assignedTo'] ?? 'Unassigned'));
-            $assigned_by = trim($payload['assigned_by'] ?? ($payload['assignedBy'] ?? ($_SERVER['HTTP_X_USER_IDENTIFIER'] ?? 'Admin')));
+            $assigned_by = trim($payload['assigned_by'] ?? ($payload['assignedBy'] ?? ($actor['name'] ?? ($actor['username'] ?? ($_SERVER['HTTP_X_USER_IDENTIFIER'] ?? 'Super Admin')))));
             $now = date('Y-m-d H:i:s');
             
             if (!$id) {
@@ -8262,13 +8671,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $pdo->prepare("UPDATE leads SET assigned_to = ?, assigned_at = ?, assigned_by = ?, updated_at = ? WHERE id = ?");
             $stmt->execute([$assigned_to, $now, $assigned_by, $now, $id]);
 
-            // Add system timeline comment
+            // Add activity history comment (preserving initial assign vs reassign)
             $commentId = 'comm_' . time() . '_' . rand(100, 999);
-            $sysMsg = $assigned_to === 'Unassigned' 
-                ? "Lead was unassigned by $assigned_by."
-                : "Lead assigned to $assigned_to by $assigned_by.";
+            if ($assigned_to === 'Unassigned') {
+                $sysMsg = "Lead was unassigned by $assigned_by";
+            } elseif (!empty($currentLead['assigned_to']) && $currentLead['assigned_to'] !== 'Unassigned' && $currentLead['assigned_to'] !== $assigned_to) {
+                $sysMsg = "Lead reassigned from {$currentLead['assigned_to']} to $assigned_to by $assigned_by";
+            } else {
+                $sysMsg = "Lead assigned to $assigned_to by $assigned_by";
+            }
             $stmtComm = $pdo->prepare("INSERT INTO lead_comments (id, lead_id, user_id, user_name, user_role, comment, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-            $stmtComm->execute([$commentId, $id, 'system', 'System', 'system', $sysMsg, $now, $now]);
+            $stmtComm->execute([$commentId, $id, 'system', $assigned_by, 'superadmin', $sysMsg, $now, $now]);
 
             echo json_encode([
                 "success" => true,
@@ -8290,6 +8703,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $stmt = $pdo->prepare("UPDATE leads SET next_action = ?, updated_at = ? WHERE id = ?");
             $stmt->execute([$next_action, $now, $id]);
+
+            // Save next action update to existing lead_comments activity/history
+            $actor = authenticateRequest($pdo, false);
+            $userId = $payload['user_id'] ?? ($actor['id'] ?? ($_SERVER['HTTP_X_USER_ID'] ?? 'user'));
+            $userName = $payload['user_name'] ?? ($actor['name'] ?? ($actor['username'] ?? ($_SERVER['HTTP_X_USER_IDENTIFIER'] ?? 'User')));
+            $userRole = $payload['user_role'] ?? ($actor['role'] ?? ($_SERVER['HTTP_X_USER_ROLE'] ?? 'user'));
+            $commentId = 'comm_' . time() . '_' . rand(100, 999);
+            $sysMsg = "Next actionable step updated: \"$next_action\" by $userName ($userRole).";
+            $stmtComm = $pdo->prepare("INSERT INTO lead_comments (id, lead_id, user_id, user_name, user_role, comment, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmtComm->execute([$commentId, $id, $userId, $userName, $userRole, $sysMsg, $now, $now]);
+
             echo json_encode(["success" => true, "message" => "Next action updated.", "next_action" => $next_action]);
             exit;
         } elseif ($action === 'add_lead_comment') {

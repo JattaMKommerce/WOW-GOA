@@ -77,14 +77,19 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
   const [hotelRooms, setHotelRooms] = useState(1);
   const [hotelFilterStars, setHotelFilterStars] = useState('All');
 
-  // Step 3: Flight Selection
+  // Step 3: Activities Selection
+  const [activities, setActivities] = useState([]);
+  const [selectedActivities, setSelectedActivities] = useState([]);
+  const [activityFilter, setActivityFilter] = useState('all');
+
+  // Step 4: Flight Selection
   const [includeFlight, setIncludeFlight] = useState(false);
   const [flightOrigin, setFlightOrigin] = useState(FLIGHT_ORIGINS[0]);
   const [flightAirline, setFlightAirline] = useState('IndiGo Premium');
   const [flightClass, setFlightClass] = useState('Economy');
   const [flightPricePerPerson, setFlightPricePerPerson] = useState(4800);
 
-  // Step 4: Guest Details & Booking State
+  // Step 5: Guest Details & Booking State
   const [guestDetails, setGuestDetails] = useState({
     name: '',
     phone: '',
@@ -96,21 +101,23 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
   const [bookingError, setBookingError] = useState('');
   const [bookingSuccess, setBookingSuccess] = useState(null);
 
-  // Load live cars, bikes, hotels
+  // Load live cars, bikes, hotels, activities
   useEffect(() => {
     let isMounted = true;
     const load = async () => {
       setLoadingData(true);
       try {
-        const [cList, bList, hList] = await Promise.all([
+        const [cList, bList, hList, aList] = await Promise.all([
           api.fetchCars().catch(() => []),
           api.fetchBikes().catch(() => []),
-          api.fetchHotels().catch(() => [])
+          api.fetchHotels().catch(() => []),
+          api.fetchActivities().catch(() => [])
         ]);
         if (isMounted) {
           setCars(Array.isArray(cList) ? cList : []);
           setBikes(Array.isArray(bList) ? bList : []);
           setHotels(Array.isArray(hList) ? hList : []);
+          setActivities(Array.isArray(aList) ? aList : []);
         }
       } catch (err) {
         console.warn('Error loading craft inventory:', err);
@@ -140,7 +147,11 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
     return Math.round(flightPricePerPerson * memberCount);
   }, [includeFlight, flightPricePerPerson, memberCount]);
 
-  const retailSellingPrice = vehicleCost + hotelCost + flightCost;
+  const activitiesCost = useMemo(() => {
+    return (selectedActivities || []).reduce((sum, act) => sum + (parseFloat(act.price) || 0) * memberCount, 0);
+  }, [selectedActivities, memberCount]);
+
+  const retailSellingPrice = vehicleCost + hotelCost + flightCost + activitiesCost;
 
   const financialSnapshot = useMemo(() => {
     if (mode === 'COMMISSION') {
@@ -177,16 +188,18 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
       return;
     }
     if (retailSellingPrice <= 0) {
-      setBookingError('Please select at least one service (Vehicle, Hotel, or Flight) to craft your trip.');
+      setBookingError('Please select at least one service (Vehicle, Hotel, Sightseeing/Activity, or Flight) to craft your trip.');
       return;
     }
 
     setBookingLoading(true);
     setBookingError('');
 
+    const actSummary = (selectedActivities || []).map(a => a.title || a.name);
     const tripTitle = [
       selectedVehicle ? selectedVehicle.name : null,
       selectedHotel ? selectedHotel.name : null,
+      actSummary.length > 0 ? `${actSummary.length} Experiences (${actSummary.slice(0, 2).join(', ')})` : null,
       includeFlight ? `${flightAirline} (${flightOrigin} → GOA)` : null
     ].filter(Boolean).join(' + ') || 'Bespoke Goa Holiday Package';
 
@@ -210,6 +223,7 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
         special_requests: guestDetails.special_requests,
         vehicle: selectedVehicle ? { id: selectedVehicle.id, name: selectedVehicle.name, cost: vehicleCost } : null,
         hotel: selectedHotel ? { id: selectedHotel.id, name: selectedHotel.name, cost: hotelCost, rooms: hotelRooms } : null,
+        activities: (selectedActivities || []).map(a => ({ id: a.id, name: a.title || a.name, type: a.type, price: a.price })),
         flight: includeFlight ? { airline: flightAirline, origin: flightOrigin, cost: flightCost, pax: memberCount } : null,
         pax: memberCount,
         duration: `${nights}N / ${days}D`
@@ -274,6 +288,12 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
               <span className="fw-semibold text-dark text-xs">{selectedHotel.name} ({hotelRooms} Room)</span>
             </div>
           )}
+          {selectedActivities.length > 0 && (
+            <div className="d-flex justify-content-between align-items-center mb-2">
+              <span className="text-muted text-xs">🎯 Experiences:</span>
+              <span className="fw-semibold text-dark text-xs">{selectedActivities.map(a => a.title || a.name).join(', ')}</span>
+            </div>
+          )}
           {includeFlight && (
             <div className="d-flex justify-content-between align-items-center mb-2">
               <span className="text-muted text-xs">✈️ Flight:</span>
@@ -309,6 +329,7 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
               setStep(1);
               setSelectedVehicle(null);
               setSelectedHotel(null);
+              setSelectedActivities([]);
               setIncludeFlight(false);
               setGuestDetails({ name: '', phone: '', email: '', special_requests: '', payment_method: 'Prepaid Agent Wallet' });
             }}
@@ -336,7 +357,7 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
             </div>
             <h4 className="fw-black text-dark font-heading mb-1">Craft My Trip (Custom Itinerary Builder)</h4>
             <p className="text-muted text-xs mb-0">
-              Build custom packages for your agency guests by combining verified vehicles, resort stays, and flights into one single B2B booking.
+              Build custom packages for your agency guests by combining verified vehicles, resort stays, sightseeing & activities, and flights into one single B2B booking.
             </p>
           </div>
 
@@ -366,13 +387,14 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
           </div>
         </div>
 
-        {/* ─── 4-Step Progress Navigation ────────────────────────────────────── */}
+        {/* ─── 5-Step Progress Navigation ────────────────────────────────────── */}
         <div className="d-flex align-items-center justify-content-between pt-3 flex-wrap gap-2">
           {[
             { num: 1, label: '1. Choose Ride', icon: Car, active: step === 1, done: step > 1, summary: selectedVehicle ? selectedVehicle.name : (vehicleTab === 'skip' ? 'No Ride' : 'Pending') },
             { num: 2, label: '2. Pick Resort', icon: Hotel, active: step === 2, done: step > 2, summary: selectedHotel ? selectedHotel.name : (skipHotel ? 'No Stay' : 'Pending') },
-            { num: 3, label: '3. Add Flight', icon: Plane, active: step === 3, done: step > 3, summary: includeFlight ? `${flightAirline}` : 'No Flight' },
-            { num: 4, label: '4. Guest & Confirm', icon: ShieldCheck, active: step === 4, done: false, summary: `₹${financialSnapshot.netPayable.toLocaleString()} Net` }
+            { num: 3, label: '3. Experiences', icon: Sparkles, active: step === 3, done: step > 3, summary: selectedActivities.length > 0 ? `${selectedActivities.length} Added` : 'None' },
+            { num: 4, label: '4. Add Flight', icon: Plane, active: step === 4, done: step > 4, summary: includeFlight ? `${flightAirline}` : 'No Flight' },
+            { num: 5, label: '5. Guest & Confirm', icon: ShieldCheck, active: step === 5, done: false, summary: `₹${financialSnapshot.netPayable.toLocaleString()} Net` }
           ].map((s) => {
             const Icon = s.icon;
             return (
@@ -382,7 +404,7 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
                 className={`d-flex align-items-center gap-2.5 p-2 rounded-3 cursor-pointer transition-all flex-grow-1 ${
                   s.active ? 'bg-warning bg-opacity-10 border border-warning' : s.done ? 'bg-light border' : 'bg-transparent text-muted'
                 }`}
-                style={{ cursor: 'pointer', minWidth: '150px' }}
+                style={{ cursor: 'pointer', minWidth: '130px' }}
               >
                 <div className={`rounded-circle p-1.5 d-flex align-items-center justify-content-center ${
                   s.active ? 'bg-warning text-dark' : s.done ? 'bg-success text-white' : 'bg-secondary text-white opacity-50'
@@ -597,7 +619,7 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
                   ← Back to Ride
                 </button>
                 <button type="button" className="btn btn-primary rounded-pill px-4 py-1.5 text-xs fw-bold" onClick={() => setStep(3)}>
-                  Continue to Flight →
+                  Continue to Experiences →
                 </button>
               </div>
             </div>
@@ -701,7 +723,7 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
                   className="btn btn-primary rounded-pill px-4 py-2 text-xs fw-bold d-flex align-items-center gap-1"
                   onClick={() => setStep(3)}
                 >
-                  <span>Continue to Flights</span>
+                  <span>Continue to Experiences</span>
                   <ArrowRight size={14} />
                 </button>
               </div>
@@ -710,13 +732,157 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
         </div>
       )}
 
-      {/* ─── STEP 3: OPTIONAL FLIGHT ─────────────────────────────────────────── */}
+      {/* ─── STEP 3: SIGHTSEEING & ACTIVITIES ───────────────────────────────── */}
       {step === 3 && (
         <div className="card border-0 shadow-sm rounded-4 p-4 bg-white mb-4 animate-fade-in">
           <div className="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom flex-wrap gap-2">
             <div>
               <h5 className="fw-bold mb-0 text-dark font-heading d-flex align-items-center gap-2">
-                <Plane size={18} className="text-primary" /> Step 3: Optional Flights Addition
+                <Sparkles size={18} className="text-warning" /> Step 3: Sightseeing & Activities
+              </h5>
+              <p className="text-muted text-xs mb-0">Select optional guided tours, beach excursions, or water sports adventures for {memberCount} guest{memberCount > 1 ? 's' : ''}.</p>
+            </div>
+
+            <div className="d-flex gap-1.5 bg-light p-1 rounded-pill border">
+              <button 
+                type="button" 
+                onClick={() => setActivityFilter('all')} 
+                className={`btn btn-xs rounded-pill px-3 py-1 fw-bold text-xs ${activityFilter === 'all' ? 'btn-dark text-white shadow-xs' : 'btn-light text-muted'}`}
+              >
+                ✨ All ({activities.length})
+              </button>
+              <button 
+                type="button" 
+                onClick={() => setActivityFilter('sightseeing')} 
+                className={`btn btn-xs rounded-pill px-3 py-1 fw-bold text-xs ${activityFilter === 'sightseeing' ? 'btn-dark text-white shadow-xs' : 'btn-light text-muted'}`}
+              >
+                🏛️ Sightseeing ({activities.filter(a => (a.type || '').toLowerCase() === 'sightseeing').length})
+              </button>
+              <button 
+                type="button" 
+                onClick={() => setActivityFilter('activity')} 
+                className={`btn btn-xs rounded-pill px-3 py-1 fw-bold text-xs ${activityFilter === 'activity' ? 'btn-dark text-white shadow-xs' : 'btn-light text-muted'}`}
+              >
+                ⚡ Activities ({activities.filter(a => (a.type || '').toLowerCase() === 'activity').length})
+              </button>
+            </div>
+          </div>
+
+          {/* Activities Grid */}
+          <div className="row g-3">
+            {activities
+              .filter(a => activityFilter === 'all' || (a.type || '').toLowerCase() === activityFilter)
+              .map((act) => {
+                const isSelected = selectedActivities.some(a => a.id === act.id);
+                const price = parseFloat(act.price || 0);
+                const totalPrice = price * memberCount;
+                const isSightseeing = (act.type || '').toLowerCase() === 'sightseeing';
+
+                const toggleActivity = () => {
+                  setSelectedActivities(prev => 
+                    isSelected ? prev.filter(a => a.id !== act.id) : [...prev, act]
+                  );
+                };
+
+                return (
+                  <div key={act.id} className="col-12 col-sm-6 col-lg-6">
+                    <div 
+                      onClick={toggleActivity}
+                      className={`card h-100 rounded-4 overflow-hidden cursor-pointer transition-all border ${
+                        isSelected ? 'border-2 border-warning shadow-md' : 'border-light-subtle hover-shadow-sm'
+                      }`}
+                      style={{ cursor: 'pointer', background: isSelected ? '#fffdf7' : '#ffffff' }}
+                    >
+                      <div className="row g-0 h-100">
+                        <div className="col-4 position-relative" style={{ minHeight: '130px', background: '#f1f5f9' }}>
+                          <img 
+                            src={act.image_url || (isSightseeing ? 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=400' : 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400')} 
+                            alt={act.title || act.name}
+                            className="w-100 h-100 object-fit-cover"
+                          />
+                          <span className={`badge position-absolute top-0 start-0 m-1.5 text-3xs fw-bold px-1.5 py-0.5 rounded-pill ${
+                            isSightseeing ? 'bg-primary text-white' : 'bg-success text-white'
+                          }`}>
+                            {isSightseeing ? 'Sightseeing' : 'Activity'}
+                          </span>
+                        </div>
+                        <div className="col-8 p-3 d-flex flex-column justify-content-between">
+                          <div>
+                            <div className="d-flex justify-content-between align-items-start">
+                              <h6 className="fw-bold text-dark text-xs mb-1 text-truncate">{act.title || act.name}</h6>
+                              {isSelected && (
+                                <span className="badge bg-warning text-dark text-3xs px-1.5 py-0.5 rounded-pill fw-bold flex-shrink-0">
+                                  ✓ Added
+                                </span>
+                              )}
+                            </div>
+                            <div className="d-flex align-items-center gap-2 text-3xs text-muted mb-1">
+                              <span>📍 {act.location || 'Goa'}</span>
+                              <span>⏱️ {act.duration || 'Flexible'}</span>
+                            </div>
+                            <p className="text-muted text-3xs mb-2 line-clamp-2">
+                              {act.description || 'Verified Goa local experience with expert guides.'}
+                            </p>
+                          </div>
+
+                          <div className="pt-2 border-top d-flex align-items-center justify-content-between">
+                            <div>
+                              <div className="text-3xs text-muted">₹{price.toLocaleString()} / person</div>
+                              <div className="text-xs fw-black text-dark font-monospace">₹{totalPrice.toLocaleString()} ({memberCount} Pax)</div>
+                            </div>
+                            <button
+                              type="button"
+                              className={`btn btn-xs rounded-pill px-2.5 py-1 fw-bold ${
+                                isSelected ? 'btn-warning text-dark' : 'btn-outline-secondary'
+                              }`}
+                              onClick={(e) => { e.stopPropagation(); toggleActivity(); }}
+                            >
+                              {isSelected ? '✓ Selected' : '+ Add'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+
+          {/* Bottom Actions */}
+          <div className="d-flex justify-content-between align-items-center mt-4 pt-3 border-top">
+            <button type="button" className="btn btn-outline-secondary rounded-pill px-3 py-1.5 text-xs" onClick={() => setStep(2)}>
+              ← Back to Resort
+            </button>
+            <div className="d-flex gap-2">
+              {selectedActivities.length === 0 ? (
+                <button type="button" className="btn btn-outline-secondary rounded-pill px-3 py-1.5 text-xs" onClick={() => setStep(4)}>
+                  Skip Experiences
+                </button>
+              ) : (
+                <button type="button" className="btn btn-outline-danger rounded-pill px-3 py-1.5 text-xs" onClick={() => setSelectedActivities([])}>
+                  Clear Selected
+                </button>
+              )}
+              <button 
+                type="button" 
+                className="btn btn-primary rounded-pill px-4 py-2 text-xs fw-bold d-flex align-items-center gap-1"
+                onClick={() => setStep(4)}
+              >
+                <span>Continue to Flights ({selectedActivities.length} Selected)</span>
+                <ArrowRight size={14} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── STEP 4: OPTIONAL FLIGHT ─────────────────────────────────────────── */}
+      {step === 4 && (
+        <div className="card border-0 shadow-sm rounded-4 p-4 bg-white mb-4 animate-fade-in">
+          <div className="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom flex-wrap gap-2">
+            <div>
+              <h5 className="fw-bold mb-0 text-dark font-heading d-flex align-items-center gap-2">
+                <Plane size={18} className="text-primary" /> Step 4: Optional Flights Addition
               </h5>
               <p className="text-muted text-xs mb-0">Add domestic / international flights for your guest or skip if self-arranged.</p>
             </div>
@@ -744,7 +910,7 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
               <button 
                 type="button" 
                 className="btn btn-primary rounded-pill px-4 py-2 text-xs fw-bold"
-                onClick={() => setStep(4)}
+                onClick={() => setStep(5)}
               >
                 Continue to Final Confirmation →
               </button>
@@ -806,13 +972,13 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
           )}
 
           <div className="d-flex justify-content-between align-items-center mt-4 pt-3 border-top">
-            <button type="button" className="btn btn-outline-secondary rounded-pill px-3 py-1.5 text-xs" onClick={() => setStep(2)}>
-              ← Back to Resort
+            <button type="button" className="btn btn-outline-secondary rounded-pill px-3 py-1.5 text-xs" onClick={() => setStep(3)}>
+              ← Back to Experiences
             </button>
             <button 
               type="button" 
               className="btn btn-primary rounded-pill px-4 py-2 text-xs fw-bold d-flex align-items-center gap-1"
-              onClick={() => setStep(4)}
+              onClick={() => setStep(5)}
             >
               <span>Review & Confirm B2B Reservation</span>
               <ArrowRight size={14} />
@@ -821,8 +987,8 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
         </div>
       )}
 
-      {/* ─── STEP 4: GUEST DETAILS & CONFIRMATION ────────────────────────────── */}
-      {step === 4 && (
+      {/* ─── STEP 5: GUEST DETAILS & CONFIRMATION ────────────────────────────── */}
+      {step === 5 && (
         <form onSubmit={handleConfirmB2BBooking} className="animate-fade-in">
           <div className="row g-4 mb-4">
             {/* Left: Guest Details Form */}
@@ -958,6 +1124,18 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
                       <span className="text-xs fw-bold text-dark">₹{hotelCost.toLocaleString()}</span>
                     </div>
 
+                    {/* Experiences */}
+                    <div className="p-2.5 rounded-3 bg-light border d-flex justify-content-between align-items-center">
+                      <div className="d-flex align-items-center gap-2">
+                        <Sparkles size={16} className="text-warning flex-shrink-0" />
+                        <div>
+                          <div className="fw-bold text-dark text-xs">{selectedActivities.length > 0 ? `${selectedActivities.length} Experiences Included` : 'No Experiences Added'}</div>
+                          <div className="text-3xs text-muted">{selectedActivities.length > 0 ? selectedActivities.map(a => a.title || a.name).join(', ') : 'Skipped'}</div>
+                        </div>
+                      </div>
+                      <span className="text-xs fw-bold text-dark">₹{activitiesCost.toLocaleString()}</span>
+                    </div>
+
                     {/* Flight */}
                     <div className="p-2.5 rounded-3 bg-light border d-flex justify-content-between align-items-center">
                       <div className="d-flex align-items-center gap-2">
@@ -1020,7 +1198,7 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
                   <button 
                     type="button" 
                     className="btn btn-link text-muted text-xxs w-100 text-decoration-none mt-2"
-                    onClick={() => setStep(3)}
+                    onClick={() => setStep(4)}
                   >
                     ← Back to Modify Flight / Dates
                   </button>

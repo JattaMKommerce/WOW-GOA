@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   SlidersHorizontal, X, Check, Car, Bike, Hotel, Plane,
-  Compass, Fuel, Gauge, DollarSign, MapPin, Sparkles, Utensils, Calendar
+  Compass, Fuel, Gauge, DollarSign, MapPin, Sparkles, Utensils, Calendar, Wand2
 } from 'lucide-react';
 
 export const VEHICLE_TYPES = ['Two Wheelers', 'Four Wheelers', 'Luxury Cars'];
@@ -82,6 +82,57 @@ export const PKG_MEALS = ['Breakfast Included', 'All Meals Included'];
 export const PKG_DURATIONS = ['1–3 Days', '4–6 Days', '7+ Days'];
 export const PKG_INCLUSIONS = ['Flight Included', 'Cab Included', 'Airport Transfers', 'Tour Guide'];
 
+// ─── SIGHTSEEING & ACTIVITIES CONSTANTS ─────────────────────────────────────
+export const ACTIVITY_CATEGORIES = [
+  'Sightseeing Tours',
+  'Water Sports & Adventure',
+  'Cruises & Boat Tours',
+  'Heritage & Culture',
+  'Island Excursions'
+];
+export const ACTIVITY_PRICES = [
+  { id: '< 1500', label: 'Under ₹1,500' },
+  { id: '1500-2500', label: '₹1,500–₹2,500' },
+  { id: '2500-4000', label: '₹2,500–₹4,000' },
+  { id: '> 4000', label: 'Above ₹4,000' }
+];
+export const ACTIVITY_DURATIONS = [
+  '1–2 Hours',
+  '3–4 Hours',
+  '5–6 Hours',
+  'Full Day'
+];
+
+// ─── CRAFT MY TRIP PREFERENCES CONSTANTS ────────────────────────────────────
+export const CRAFT_VEHICLES = [
+  'Hatchbacks (Swift/i10)',
+  'Sedans (Dzire/City)',
+  'SUVs (Creta/Brezza)',
+  '7-Seaters (Ertiga)',
+  'Thar 4x4 / Open Top',
+  'Scooters (Activa)',
+  'Cruiser Bikes (Bullet)'
+];
+export const CRAFT_HOTELS = [
+  '5 Star Luxury Resort',
+  '4 Star Premium',
+  '3 Star Standard',
+  'Beachfront Villa',
+  'Boutique Heritage'
+];
+export const CRAFT_EXPERIENCES = [
+  'Sightseeing & Heritage',
+  'Water Sports & Adventure',
+  'River Cruises',
+  'Island & Scuba'
+];
+export const CRAFT_BUDGETS = [
+  { id: '< 10000', label: 'Under ₹10,000' },
+  { id: '10000-25000', label: '₹10,000–₹25,000' },
+  { id: '25000-50000', label: '₹25,000–₹50,000' },
+  { id: '> 50000', label: 'Above ₹50,000' }
+];
+
 export function countActiveTabFilters(tab, filters) {
   if (!filters) return 0;
   if (tab === 'selfdrive') {
@@ -128,6 +179,21 @@ export function countActiveTabFilters(tab, filters) {
       (filters.inclusions?.length || 0)
     );
   }
+  if (tab === 'activities') {
+    return (
+      (filters.activityTypes?.length || 0) +
+      (filters.activityPriceRanges?.length || 0) +
+      (filters.activityDurations?.length || 0)
+    );
+  }
+  if (tab === 'craftmytrip') {
+    return (
+      (filters.craftVehicleTypes?.length || 0) +
+      (filters.craftHotelTypes?.length || 0) +
+      (filters.craftExperienceTypes?.length || 0) +
+      (filters.craftBudgetRanges?.length || 0)
+    );
+  }
   return 0;
 }
 
@@ -170,7 +236,9 @@ export default function UnifiedFilterPopover({
           <span className="fw-bold text-dark" style={{ fontSize: '0.90rem' }}>
             {activeTab === 'selfdrive' ? 'Vehicle Filters' :
              activeTab === 'hotels' ? 'Hotel Filters' :
-             activeTab === 'flights' ? 'Flight Filters' : 'Package Filters'}
+             activeTab === 'flights' ? 'Flight Filters' :
+             activeTab === 'activities' ? 'Sightseeing & Activity Filters' :
+             activeTab === 'craftmytrip' ? 'Trip Customization Filters' : 'Package Filters'}
           </span>
           {activeCount > 0 && (
             <span className="badge rounded-pill" style={{ background: '#fff7ed', color: '#ff6333', border: '1px solid #ffedd5', fontSize: '0.70rem', fontWeight: 700 }}>
@@ -847,6 +915,181 @@ export default function UnifiedFilterPopover({
                     >
                       {active && <Check size={12} />}
                       <span>{inc}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ─────────────────────────────────────────────────────────────
+            SIGHTSEEING & ACTIVITIES FILTERS
+        ───────────────────────────────────────────────────────────── */}
+        {activeTab === 'activities' && (
+          <div className="d-flex flex-column gap-3">
+            {/* Activity Category / Type */}
+            <div>
+              <div className="text-muted small fw-bold mb-1.5 d-flex align-items-center gap-1">
+                <Compass size={13} className="text-primary" /> Experience Category
+              </div>
+              <div className="d-flex flex-wrap gap-1.5">
+                {ACTIVITY_CATEGORIES.map(cat => {
+                  const active = localFilters.activityTypes?.includes(cat);
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      className={`tg-filter-chip ${active ? 'active' : ''}`}
+                      onClick={() => toggleFilter('activityTypes', cat)}
+                    >
+                      {active && <Check size={12} />}
+                      <span>{cat}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Price Range */}
+            <div>
+              <div className="text-muted small fw-bold mb-1.5 d-flex align-items-center gap-1">
+                <DollarSign size={13} className="text-primary" /> Price Per Person
+              </div>
+              <div className="d-flex flex-wrap gap-1.5">
+                {ACTIVITY_PRICES.map(pr => {
+                  const active = localFilters.activityPriceRanges?.includes(pr.id);
+                  return (
+                    <button
+                      key={pr.id}
+                      type="button"
+                      className={`tg-filter-chip ${active ? 'active' : ''}`}
+                      onClick={() => toggleFilter('activityPriceRanges', pr.id)}
+                    >
+                      {active && <Check size={12} />}
+                      <span>{pr.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Duration */}
+            <div>
+              <div className="text-muted small fw-bold mb-1.5 d-flex align-items-center gap-1">
+                <Calendar size={13} className="text-primary" /> Tour Duration
+              </div>
+              <div className="d-flex flex-wrap gap-1.5">
+                {ACTIVITY_DURATIONS.map(dur => {
+                  const active = localFilters.activityDurations?.includes(dur);
+                  return (
+                    <button
+                      key={dur}
+                      type="button"
+                      className={`tg-filter-chip ${active ? 'active' : ''}`}
+                      onClick={() => toggleFilter('activityDurations', dur)}
+                    >
+                      {active && <Check size={12} />}
+                      <span>{dur}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ─────────────────────────────────────────────────────────────
+            CRAFT MY TRIP FILTERS / PREFERENCES
+        ───────────────────────────────────────────────────────────── */}
+        {activeTab === 'craftmytrip' && (
+          <div className="d-flex flex-column gap-3">
+            {/* Preferred Vehicle */}
+            <div>
+              <div className="text-muted small fw-bold mb-1.5 d-flex align-items-center gap-1">
+                <Car size={13} className="text-primary" /> Preferred Vehicle Type
+              </div>
+              <div className="d-flex flex-wrap gap-1.5">
+                {CRAFT_VEHICLES.map(v => {
+                  const active = localFilters.craftVehicleTypes?.includes(v);
+                  return (
+                    <button
+                      key={v}
+                      type="button"
+                      className={`tg-filter-chip ${active ? 'active' : ''}`}
+                      onClick={() => toggleFilter('craftVehicleTypes', v)}
+                    >
+                      {active && <Check size={12} />}
+                      <span>{v}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Stay Style */}
+            <div>
+              <div className="text-muted small fw-bold mb-1.5 d-flex align-items-center gap-1">
+                <Hotel size={13} className="text-primary" /> Stay & Hotel Category
+              </div>
+              <div className="d-flex flex-wrap gap-1.5">
+                {CRAFT_HOTELS.map(h => {
+                  const active = localFilters.craftHotelTypes?.includes(h);
+                  return (
+                    <button
+                      key={h}
+                      type="button"
+                      className={`tg-filter-chip ${active ? 'active' : ''}`}
+                      onClick={() => toggleFilter('craftHotelTypes', h)}
+                    >
+                      {active && <Check size={12} />}
+                      <span>{h}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Experience Focus */}
+            <div>
+              <div className="text-muted small fw-bold mb-1.5 d-flex align-items-center gap-1">
+                <Compass size={13} className="text-primary" /> Experience Focus
+              </div>
+              <div className="d-flex flex-wrap gap-1.5">
+                {CRAFT_EXPERIENCES.map(e => {
+                  const active = localFilters.craftExperienceTypes?.includes(e);
+                  return (
+                    <button
+                      key={e}
+                      type="button"
+                      className={`tg-filter-chip ${active ? 'active' : ''}`}
+                      onClick={() => toggleFilter('craftExperienceTypes', e)}
+                    >
+                      {active && <Check size={12} />}
+                      <span>{e}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Budget */}
+            <div>
+              <div className="text-muted small fw-bold mb-1.5 d-flex align-items-center gap-1">
+                <DollarSign size={13} className="text-primary" /> Total Trip Budget
+              </div>
+              <div className="d-flex flex-wrap gap-1.5">
+                {CRAFT_BUDGETS.map(b => {
+                  const active = localFilters.craftBudgetRanges?.includes(b.id);
+                  return (
+                    <button
+                      key={b.id}
+                      type="button"
+                      className={`tg-filter-chip ${active ? 'active' : ''}`}
+                      onClick={() => toggleFilter('craftBudgetRanges', b.id)}
+                    >
+                      {active && <Check size={12} />}
+                      <span>{b.label}</span>
                     </button>
                   );
                 })}

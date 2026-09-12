@@ -52,11 +52,17 @@ export default function B2BInventoryTab({
   mode = 'COMMISSION', // 'COMMISSION' or 'NON_COMMISSION' (passed strictly from database-approved portal state)
   partnerUser,
   initialService = 'selfdrive',
+  initialActivities = [],
   onInitiateBooking
 }) {
   const [activeService, setActiveService] = useState(initialService);
+  const [items, setItems] = useState(() => {
+    if (initialService === 'activities' && Array.isArray(initialActivities) && initialActivities.length > 0) {
+      return initialActivities;
+    }
+    return [];
+  });
   const [searchQuery, setSearchQuery] = useState('');
-  const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Selected item for rich details modal
@@ -134,6 +140,8 @@ export default function B2BInventoryTab({
           resData = await api.fetchPackages();
         } else if (activeService === 'flights') {
           resData = await api.fetchFlights();
+        } else if (activeService === 'activities') {
+          resData = await api.fetchActivities();
         }
         if (isMounted) {
           setItems(Array.isArray(resData) ? resData : []);
@@ -158,6 +166,8 @@ export default function B2BInventoryTab({
       rawPrice = parseFloat(item.price_discounted || item.price || 5000);
     } else if (activeService === 'flights') {
       rawPrice = parseFloat(item.price || item.total_amount || 4500);
+    } else if (activeService === 'activities') {
+      rawPrice = parseFloat(item.price || 1500);
     } else {
       rawPrice = parseFloat(item.price || 2500);
     }
@@ -226,7 +236,7 @@ export default function B2BInventoryTab({
     const nights = isHotel ? calculateHotelNights() : (parseInt(guestDetails.daysOrQty) || 1);
     const rooms = isHotel ? (parseInt(guestDetails.rooms) || 1) : 1;
     const qty = isHotel ? (nights * rooms) : (parseInt(guestDetails.daysOrQty) || 1);
-    const serviceType = isHotel ? 'hotel' : (activeService === 'flights' ? 'flight' : 'package');
+    const serviceType = isHotel ? 'hotel' : (activeService === 'flights' ? 'flight' : (activeService === 'activities' ? (bookingItem.type || 'activity').toLowerCase() : 'package'));
 
     const totalSelling = pr.sellingPrice * qty;
 
@@ -239,7 +249,7 @@ export default function B2BInventoryTab({
       days: nights,
       qty: qty,
       pickup_date: isHotel ? guestDetails.checkInDate : guestDetails.date,
-      drop_date: isHotel ? guestDetails.checkOutDate : undefined,
+      drop_date: isHotel ? guestDetails.checkOutDate : (guestDetails.date || undefined),
       guest_name: guestDetails.name,
       guest_phone: guestDetails.phone,
       guest_email: guestDetails.email,
@@ -333,6 +343,15 @@ export default function B2BInventoryTab({
             >
               <Hotel size={14} />
               <span>Hotels & Resorts</span>
+            </button>
+            <button
+              onClick={() => setActiveService('activities')}
+              className={`btn btn-sm rounded-pill px-3 py-1.5 text-xs fw-semibold d-flex align-items-center gap-1.5 transition-all ${
+                activeService === 'activities' ? 'btn-dark text-white shadow-sm' : 'btn-outline-secondary'
+              }`}
+            >
+              <Sparkles size={14} />
+              <span>Sightseeing & Activities</span>
             </button>
             <button
               onClick={() => setActiveService('flights')}
@@ -430,7 +449,7 @@ export default function B2BInventoryTab({
                     />
                     <div className="position-absolute top-0 start-0 m-2.5 d-flex gap-1.5 flex-wrap">
                       <span className="badge bg-dark bg-opacity-75 backdrop-blur text-white text-xxs px-2 py-1 rounded-pill">
-                        {activeService.toUpperCase()}
+                        {activeService === 'activities' ? (item.type || 'EXPERIENCE').toUpperCase() : activeService.toUpperCase()}
                       </span>
                       {item.tag && (
                         <span className="badge bg-warning text-dark text-xxs px-2 py-1 rounded-pill fw-bold">

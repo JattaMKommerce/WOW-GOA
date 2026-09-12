@@ -15,6 +15,7 @@ export default function AIChatbot() {
   const [msgIndex, setMsgIndex] = useState(0);
   const [fade, setFade] = useState(true);
   const [leadId, setLeadId] = useState(null);
+  const [aiLeadId, setAiLeadId] = useState(null);
   
   // Chat state
   const [messages, setMessages] = useState([]);
@@ -96,8 +97,10 @@ export default function AIChatbot() {
     // Save lead to DB
     try {
       const res = await createAiLead(leadName, leadPhone);
-      if (res.success && res.id) {
-        setLeadId(res.id);
+      if (res.success) {
+        if (res.lead_id) setLeadId(res.lead_id);
+        else if (res.id) setLeadId(res.id);
+        if (res.id) setAiLeadId(res.id);
       }
     } catch (err) {
       console.error('Failed to submit lead:', err);
@@ -118,7 +121,7 @@ export default function AIChatbot() {
     setIsLoading(true);
     
     if (leadId) {
-      updateAiLeadChat(leadId, newMessages).catch(console.error);
+      updateAiLeadChat(leadId, newMessages, aiLeadId).catch(console.error);
     }
     
     try {
@@ -126,13 +129,13 @@ export default function AIChatbot() {
       const updatedMessages = [...newMessages, { role: 'assistant', content: replyText }];
       setMessages(updatedMessages);
       if (leadId) {
-        updateAiLeadChat(leadId, updatedMessages).catch(console.error);
+        updateAiLeadChat(leadId, updatedMessages, aiLeadId).catch(console.error);
       }
     } catch (err) {
       const errorMessages = [...newMessages, { role: 'assistant', content: "I'm having trouble connecting to my brain right now. Please try again later!" }];
       setMessages(errorMessages);
       if (leadId) {
-        updateAiLeadChat(leadId, errorMessages).catch(console.error);
+        updateAiLeadChat(leadId, errorMessages, aiLeadId).catch(console.error);
       }
     } finally {
       setIsLoading(false);
