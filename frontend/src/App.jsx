@@ -457,7 +457,7 @@ export default function App() {
     }
   };
 
-  const handleOpenHotelBooking = (hotel) => {
+  const handleOpenHotelBooking = (hotel, selectedRoom = null, selectedRatePlan = null) => {
     if (document.activeElement && typeof document.activeElement.blur === 'function') {
       document.activeElement.blur();
     }
@@ -470,7 +470,12 @@ export default function App() {
         });
       });
     }
-    setSelectedBookingItem(hotel);
+    const bookingItem = {
+      ...hotel,
+      preselected_room: selectedRoom,
+      preselected_rate_plan: selectedRatePlan
+    };
+    setSelectedBookingItem(bookingItem);
     let days = 2;
     if (pickupDate && dropDate) {
       const diff = Math.round((new Date(dropDate) - new Date(pickupDate)) / (1000 * 60 * 60 * 24));
@@ -1502,6 +1507,8 @@ export default function App() {
           {activeTab === 'hotel-details' && selectedDetailItem && (
             <HotelDetailsPage
               hotel={selectedDetailItem}
+              pickupDate={pickupDate}
+              dropDate={dropDate}
               nights={
                 (pickupDate && dropDate)
                   ? Math.max(1, Math.round((new Date(dropDate) - new Date(pickupDate)) / (1000 * 60 * 60 * 24)))

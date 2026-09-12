@@ -131,15 +131,46 @@ export async function fetchBikes() {
   }
 }
 
-export async function fetchHotels() {
+export async function fetchHotels(params = {}) {
   try {
-    const res = await apiFetch(`${API_BASE}?resource=hotels`);
+    let url = `${API_BASE}?resource=hotels`;
+    if (params.checkIn) url += `&check_in=${encodeURIComponent(params.checkIn)}`;
+    if (params.checkOut) url += `&check_out=${encodeURIComponent(params.checkOut)}`;
+    const res = await apiFetch(url);
     if (!res.ok) return [];
     const data = await res.json();
     return Array.isArray(data) ? data : [];
   } catch (err) {
     console.warn('[API] Hotels fetch fallback used:', err.message);
     return [];
+  }
+}
+
+export async function fetchHotelRoomsPublic(hotelId, options = {}) {
+  try {
+    let url = `${API_BASE}?resource=hotel_rooms_public&hotel_id=${encodeURIComponent(hotelId)}`;
+    if (options.checkIn) url += `&check_in=${encodeURIComponent(options.checkIn)}`;
+    if (options.checkOut) url += `&check_out=${encodeURIComponent(options.checkOut)}`;
+    if (options.rooms) url += `&rooms=${encodeURIComponent(options.rooms)}`;
+    const res = await apiFetch(url);
+    if (!res.ok) return { success: false, room_types: [], message: 'Failed to load rooms' };
+    const data = await res.json();
+    return data;
+  } catch (err) {
+    console.warn('[API] Hotel public rooms fetch error:', err.message);
+    return { success: false, room_types: [], error: err.message };
+  }
+}
+
+export async function fetchHotelPublicReviews(hotelId) {
+  try {
+    const res = await apiFetch(`${API_BASE}?resource=hotel_public_reviews&hotel_id=${encodeURIComponent(hotelId)}`);
+    if (!res.ok) return { success: false, reviews: [], summary: {} };
+    const data = await res.json();
+    return data;
+  } catch (err) {
+    console.warn('[API] Hotel public reviews fetch error:', err.message);
+    return { success: false, reviews: [], summary: {} };
   }
 }
 
@@ -1438,15 +1469,18 @@ export async function deleteUser(id) {
   }
 }
 
-export async function chatWithAI(messages) {
+export async function chatWithAI(messages, context = null) {
   const res = await apiFetch(`${API_BASE}?action=chat_with_ai`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages })
+    body: JSON.stringify({ messages, context })
   });
   const data = await res.json();
   if (!res.ok || !data.success) throw new Error(data.error || 'AI Chat failed');
-  return data.reply;
+  return {
+    reply: data.reply,
+    context: data.context || null
+  };
 }
 
 export async function addVendor(vendorData) {

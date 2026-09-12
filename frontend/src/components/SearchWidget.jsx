@@ -1670,7 +1670,7 @@ export default function SearchWidget({
             /* ──────────────────────────────────────────────────────────────────
                 TAB: TRIP PACKAGES
             ────────────────────────────────────────────────────────────────── */
-            <div className="booking-inputs-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
+            <div className="booking-inputs-grid booking-inputs-grid-6">
               
               {/* Field 1: From City */}
               <div 
@@ -1823,13 +1823,13 @@ export default function SearchWidget({
                 )}
               </div>
 
-              {/* Field 3: Departure Date */}
+              {/* Field 3: Arrival Date */}
               <div 
                 className="input-block position-relative" 
-                onClick={() => setActiveDropdown(activeDropdown === 'pkg-date' ? null : 'pkg-date')}
+                onClick={() => setActiveDropdown(activeDropdown === 'pkg-arrival' ? null : 'pkg-arrival')}
               >
                 <span className="input-block-label d-flex align-items-center justify-content-between">
-                  <span>Departure Date</span>
+                  <span>Arrival Date</span>
                   <ChevronDown size={14} />
                 </span>
                 <div className="d-flex align-items-baseline gap-1 mt-1">
@@ -1838,10 +1838,10 @@ export default function SearchWidget({
                 </div>
                 <span className="input-block-sub">{displayPickupWeekday}</span>
 
-                {activeDropdown === 'pkg-date' && (
+                {activeDropdown === 'pkg-arrival' && (
                   <div className="tg-popover-card shadow-xl" onClick={e => e.stopPropagation()}>
                     <CalendarPickerView
-                      title="Select Departure Date"
+                      title="Select Arrival Date"
                       selectedDate={pickupDate}
                       minDate={todayStr}
                       onSelect={(d) => {
@@ -1849,6 +1849,37 @@ export default function SearchWidget({
                         if (!dropDate || dropDate <= d) {
                           setDropDate(getNextDayDateStr(d));
                         }
+                        setActiveDropdown('pkg-departure');
+                      }}
+                      onClose={() => setActiveDropdown(null)}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Field 4: Departure Date */}
+              <div 
+                className="input-block position-relative" 
+                onClick={() => setActiveDropdown(activeDropdown === 'pkg-departure' ? null : 'pkg-departure')}
+              >
+                <span className="input-block-label d-flex align-items-center justify-content-between">
+                  <span>Departure Date</span>
+                  <ChevronDown size={14} />
+                </span>
+                <div className="d-flex align-items-baseline gap-1 mt-1">
+                  <span className="fw-black text-dark" style={{ fontSize: '26px', lineHeight: '1' }}>{displayDropDay}</span>
+                  <span className="text-dark fw-bold" style={{ fontSize: '15px' }}>{displayDropMonthYear}</span>
+                </div>
+                <span className="input-block-sub">{displayDropWeekday}</span>
+
+                {activeDropdown === 'pkg-departure' && (
+                  <div className="tg-popover-card shadow-xl" onClick={e => e.stopPropagation()}>
+                    <CalendarPickerView
+                      title="Select Departure Date"
+                      selectedDate={dropDate}
+                      minDate={getNextDayDateStr(pickupDate || todayStr)}
+                      onSelect={(d) => {
+                        setDropDate(d);
                         setActiveDropdown(null);
                       }}
                       onClose={() => setActiveDropdown(null)}
@@ -1857,7 +1888,7 @@ export default function SearchWidget({
                 )}
               </div>
 
-              {/* Field 4: Rooms & Guests */}
+              {/* Field 5: Rooms & Guests */}
               <div 
                 className="input-block position-relative" 
                 onClick={() => setActiveDropdown(activeDropdown === 'pkg-guests' ? null : 'pkg-guests')}

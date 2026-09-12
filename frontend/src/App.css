@@ -205,6 +205,35 @@
   }
 }
 
+/* 6-Column Input Grid for Packages & Custom Search Tabs */
+.booking-inputs-grid-6 {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr) !important;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.booking-inputs-grid-6 .input-block {
+  padding: 16px 16px;
+}
+
+@media (max-width: 1199px) {
+  .booking-inputs-grid-6 {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .booking-inputs-grid-6 {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+@media (max-width: 576px) {
+  .booking-inputs-grid-6 {
+    grid-template-columns: 1fr !important;
+  }
+}
+
 .input-block {
   padding: 16px 24px;
   border-right: 1px solid #e5e7eb;

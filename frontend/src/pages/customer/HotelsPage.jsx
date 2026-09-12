@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Star, MapPin, Check, ChevronRight, AlertCircle, RotateCcw } from 'lucide-react';
+import { Star, MapPin, Check, ChevronRight, AlertCircle, RotateCcw, Compass, ExternalLink, X } from 'lucide-react';
 import HotelImageGallery from '../../components/HotelImageGallery';
 import ImageCarousel from '../../components/common/ImageCarousel';
 import UnifiedGalleryViewer from '../../components/UnifiedGalleryViewer';
@@ -24,6 +24,7 @@ export default function HotelsPage({
   // Local state for advanced filters
   const [selectedStars, setSelectedStars] = useState(() => appliedFilters?.hotelStars || []);
   const [galleryHotel, setGalleryHotel] = useState(null);
+  const [mapHotel, setMapHotel] = useState(null);
 
   // Sync when appliedFilters changes
   React.useEffect(() => {
@@ -351,11 +352,27 @@ export default function HotelsPage({
                           </div>
                         </div>
                         <h3 className="mmt-hotel-title">{hotel.name}</h3>
-                        <div className="mmt-hotel-location">
-                          <MapPin size={14} />
-                          {hotel.area || hotel.location || 'Goa'} 
-                          <span className="text-muted fw-normal ms-1">| View on Map</span>
+                        <div className="mmt-hotel-location d-flex align-items-center flex-wrap">
+                          <MapPin size={14} className="me-1" />
+                          <span>{hotel.area || hotel.location || 'Goa'}</span>
+                          <button 
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setMapHotel(hotel);
+                            }}
+                            className="btn btn-link p-0 text-primary fw-bold ms-1.5 text-xs text-decoration-none d-inline-flex align-items-center gap-0.5"
+                          >
+                            <Compass size={12} /> View on Map
+                          </button>
                         </div>
+                        {hotel.availability_badge && (
+                          <div className="mt-1">
+                            <span className={`badge ${hotel.is_available_for_dates === false ? 'bg-danger text-white' : 'bg-success bg-opacity-10 text-success border border-success border-opacity-25'} px-2 py-0.5 rounded-pill text-xxs fw-bold`}>
+                              {hotel.availability_badge}
+                            </span>
+                          </div>
+                        )}
                       </div>
                       
                       <div className="d-flex flex-column align-items-end">
@@ -363,16 +380,18 @@ export default function HotelsPage({
                           <span className="fw-bold fs-6">{hotel.rating || 4.5}</span>
                           <span className="ms-1 small">/ 5</span>
                         </div>
-                        <span className="small text-muted fw-semibold">Excellent</span>
+                        <span className="small text-muted fw-semibold">
+                          {parseFloat(hotel.rating || 4.5) >= 4.5 ? 'Exceptional' : 'Very Good'}
+                        </span>
                       </div>
                     </div>
 
                     <div className="mt-3">
                       <span className="text-success small fw-bold d-flex align-items-center mb-1">
-                        <Check size={14} className="me-1" /> Free Cancellation till 24 hrs before check-in
+                        <Check size={14} className="me-1" /> {hotel.policies_json ? 'Free cancellation available on select rate plans' : 'Free Cancellation up to 48 hrs before check-in'}
                       </span>
                       <span className="text-success small fw-bold d-flex align-items-center">
-                        <Check size={14} className="me-1" /> Breakfast Included
+                        <Check size={14} className="me-1" /> EP, CP, MAP &amp; AP Meal Plans Available
                       </span>
                     </div>
 
@@ -422,6 +441,52 @@ export default function HotelsPage({
           hotel={galleryHotel} 
           onClose={() => setGalleryHotel(null)} 
         />
+      )}
+
+      {mapHotel && (
+        <div className="position-fixed inset-0 bg-dark bg-opacity-75 d-flex align-items-center justify-content-center p-3" style={{ zIndex: 1060, top: 0, left: 0, right: 0, bottom: 0 }}>
+          <div className="bg-white rounded-4 shadow-lg overflow-hidden w-100 max-w-4xl border" style={{ maxWidth: '850px', height: '80vh' }}>
+            <div className="d-flex justify-content-between align-items-center p-3 border-bottom bg-light">
+              <div className="d-flex align-items-center gap-2">
+                <MapPin size={20} className="text-primary" />
+                <div>
+                  <h5 className="fw-bold text-dark mb-0">{mapHotel.name}</h5>
+                  <span className="text-muted text-xs">{mapHotel.address ? `${mapHotel.address}, ` : ''}{mapHotel.area || mapHotel.location || 'Goa, India'}</span>
+                </div>
+              </div>
+              <div className="d-flex align-items-center gap-2">
+                <a 
+                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([mapHotel.name, mapHotel.area || mapHotel.location, 'Goa, India'].filter(Boolean).join(', '))}`} 
+                  target="_blank" 
+                  rel="noreferrer"
+                  className="btn btn-outline-primary btn-sm rounded-pill text-xs fw-bold d-flex align-items-center gap-1"
+                >
+                  <ExternalLink size={14} /> Open in Google Maps
+                </a>
+                <button 
+                  type="button" 
+                  onClick={() => setMapHotel(null)}
+                  className="btn btn-light rounded-circle p-2 border d-flex align-items-center justify-content-center"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            <div className="w-100 h-100 position-relative" style={{ height: 'calc(80vh - 70px)' }}>
+              <iframe
+                title="Hotel Map Location"
+                width="100%"
+                height="100%"
+                frameBorder="0"
+                scrolling="no"
+                marginHeight="0"
+                marginWidth="0"
+                src={`https://maps.google.com/maps?q=${encodeURIComponent([mapHotel.name, mapHotel.area || mapHotel.location, 'Goa, India'].filter(Boolean).join(', '))}&t=&z=15&ie=UTF8&iwloc=&output=embed`}
+              />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
