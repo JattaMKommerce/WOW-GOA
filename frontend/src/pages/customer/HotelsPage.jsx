@@ -1,8 +1,24 @@
 import React, { useState, useMemo } from 'react';
-import { Star, MapPin, Check, ChevronRight, AlertCircle, RotateCcw, Compass, ExternalLink, X } from 'lucide-react';
-import HotelImageGallery from '../../components/HotelImageGallery';
+import { 
+  Star, 
+  MapPin, 
+  Check, 
+  ChevronRight, 
+  Compass, 
+  ExternalLink, 
+  X, 
+  Sparkles, 
+  ShieldCheck, 
+  Utensils, 
+  Eye, 
+  SlidersHorizontal,
+  RotateCcw
+} from 'lucide-react';
 import ImageCarousel from '../../components/common/ImageCarousel';
 import UnifiedGalleryViewer from '../../components/UnifiedGalleryViewer';
+
+// Only these 3 approved hotels are allowed in the customer hotel inventory
+const APPROVED_HOTEL_IDS = ['hotel-3star', 'hotel-4star', 'hotel-5star'];
 
 export default function HotelsPage({
   handleOpenBooking,
@@ -21,7 +37,7 @@ export default function HotelsPage({
   appliedFilters = {},
   setAppliedFilters
 }) {
-  // Local state for advanced filters
+  // Local state for star filters
   const [selectedStars, setSelectedStars] = useState(() => appliedFilters?.hotelStars || []);
   const [galleryHotel, setGalleryHotel] = useState(null);
   const [mapHotel, setMapHotel] = useState(null);
@@ -32,9 +48,9 @@ export default function HotelsPage({
       setSelectedStars(appliedFilters.hotelStars);
     }
   }, [appliedFilters?.hotelStars]);
-  
-  // Calculate mock original prices (MakeMyTrip shows strikethrough prices)
-  const getOriginalPrice = (price) => Math.round(price * 1.35); // 35% markup
+
+  // Original price for strikethrough display (35% markup reference)
+  const getOriginalPrice = (price) => Math.round(price * 1.35);
 
   const handleStarToggle = (star) => {
     setSelectedStars(prev => {
@@ -56,19 +72,17 @@ export default function HotelsPage({
 
   const getMarkupPrice = (basePrice, vendorId, entityType, itemId = 'all') => {
     if (!markups) return basePrice;
-    
-    // 1. Item-specific markup for this vendor
+
     let applicableMarkup = markups.find(m => m.entity_type === entityType && m.vendor_id == vendorId && m.item_id == itemId);
-    
-    // 2. Global markup for this vendor (item_id = 'all')
+
     if (!applicableMarkup) {
       applicableMarkup = markups.find(m => m.entity_type === entityType && m.vendor_id == vendorId && (m.item_id === 'all' || !m.item_id));
     }
 
-    // 3. Global markup for all vendors
     if (!applicableMarkup) {
       applicableMarkup = markups.find(m => m.entity_type === entityType && m.vendor_id === 'global');
     }
+
     if (applicableMarkup) {
       const val = parseFloat(applicableMarkup.markup_value);
       if (applicableMarkup.markup_type === 'flat') {
@@ -80,7 +94,17 @@ export default function HotelsPage({
     return basePrice;
   };
 
-  const rawDisplayHotels = hotels;
+  // Strictly enforce only the 3 approved hotels for customer browsing
+  const rawDisplayHotels = useMemo(() => {
+    return (hotels || []).filter(h => {
+      // Must be one of the approved 3 hotels
+      if (!APPROVED_HOTEL_IDS.includes(String(h.id))) return false;
+      // Must be active and live
+      if (h.is_available === 0 || h.is_available === '0' || h.is_available === false) return false;
+      if (h.hotel_status === 'Archived' || h.hotel_status === 'Inactive') return false;
+      return true;
+    });
+  }, [hotels]);
 
   const displayHotels = useMemo(() => {
     return (rawDisplayHotels || []).map(h => ({
@@ -89,23 +113,16 @@ export default function HotelsPage({
     }));
   }, [rawDisplayHotels, markups]);
 
-  // Non-destructive, flexible filtering logic
+  // Filtering based on customer search query, star filters, price ranges, location
   const filteredHotels = useMemo(() => {
     const activeStars = appliedFilters?.hotelStars || selectedStars || [];
-    const activePropertyTypes = appliedFilters?.hotelPropertyType || [];
     const activePriceRanges = appliedFilters?.hotelPriceRanges || appliedFilters?.priceRanges || [];
-    const activeAreas = appliedFilters?.hotelAreas || [];
-    const activeAmenities = appliedFilters?.hotelAmenities || [];
 
     return displayHotels.filter(hotel => {
       const hotelName = (hotel.name || '').toLowerCase();
       const hotelArea = (hotel.area || '').toLowerCase();
       const hotelLoc = (hotel.location || '').toLowerCase();
       const hotelDesc = (hotel.description || '').toLowerCase();
-      const hotelType = (hotel.type || hotel.property_type || '').toLowerCase();
-      const hotelAmenitiesList = Array.isArray(hotel.amenities)
-        ? hotel.amenities.map(a => String(a).toLowerCase())
-        : String(hotel.amenities || '').toLowerCase().split(',').map(s => s.trim());
 
       // Search query filter
       const q = (searchQuery || '').toLowerCase().trim();
@@ -117,33 +134,19 @@ export default function HotelsPage({
                           hotelName.includes(q) || 
                           hotelArea.includes(q) || 
                           hotelLoc.includes(q);
-        
+
       // Star rating filter
       const hotelStarsStr = String(hotel.stars || hotel.star_rating || 3);
       let starsMatch = true;
       if (activeStars.length > 0) {
         starsMatch = activeStars.some(st => {
           if (st === 'boutique') {
-            return hotelDesc.includes('boutique') || hotelDesc.includes('heritage') || hotelName.includes('boutique') || hotelType.includes('boutique');
+            return hotelDesc.includes('boutique') || hotelDesc.includes('heritage') || hotelName.includes('boutique');
           }
           return hotelStarsStr === String(st);
         });
       }
 
-      // Property type filter
-      let propTypeMatch = true;
-      if (activePropertyTypes.length > 0) {
-        propTypeMatch = activePropertyTypes.some(pt => {
-          const s = pt.toLowerCase();
-          if (s.includes('resort')) return hotelType.includes('resort') || hotelName.includes('resort') || hotelDesc.includes('resort');
-          if (s.includes('villa')) return hotelType.includes('villa') || hotelName.includes('villa') || hotelDesc.includes('villa');
-          if (s.includes('boutique')) return hotelType.includes('boutique') || hotelName.includes('boutique') || hotelDesc.includes('boutique');
-          if (s.includes('budget')) return hotel.price < 4000 || hotelType.includes('budget') || hotelName.includes('inn') || hotelName.includes('stay');
-          if (s.includes('apartment')) return hotelType.includes('apartment') || hotelName.includes('apartment') || hotelDesc.includes('apartment') || hotelDesc.includes('suite');
-          return hotelType.includes(s) || hotelName.includes(s);
-        });
-      }
-      
       // Price filter from sidebar or appliedFilters
       let priceMatch = true;
       if (hotelPriceRange === 'under-10000') priceMatch = hotel.price < 10000;
@@ -152,306 +155,367 @@ export default function HotelsPage({
       else if (activePriceRanges.length > 0) {
         priceMatch = activePriceRanges.some(rangeId => {
           if (rangeId === '< 3000' || rangeId === '< 15000') return hotel.price < 3000 || (rangeId === '< 15000' && hotel.price < 15000);
-          if (rangeId === '3000-6000') return hotel.price >= 3000 && hotel.price <= 6000;
-          if (rangeId === '6000-10000') return hotel.price >= 6000 && hotel.price <= 10000;
-          if (rangeId === '> 10000' || rangeId === '> 25000') return hotel.price > 10000;
+          if (rangeId === '3000 - 7000' || rangeId === '15000 - 30000') return (hotel.price >= 3000 && hotel.price <= 7000) || (rangeId === '15000 - 30000' && hotel.price >= 15000 && hotel.price <= 30000);
+          if (rangeId === '> 7000' || rangeId === '> 30000') return hotel.price > 7000 || (rangeId === '> 30000' && hotel.price > 30000);
           return true;
         });
       }
 
-      // Goa Area filter
-      let areaMatch = true;
-      if (activeAreas.length > 0) {
-        areaMatch = activeAreas.some(area => {
-          const a = area.toLowerCase();
-          return hotelArea.includes(a) || hotelLoc.includes(a) || hotelName.includes(a);
-        });
-      }
-
-      // Amenities filter
-      let amenitiesMatch = true;
-      if (activeAmenities.length > 0) {
-        amenitiesMatch = activeAmenities.every(amenity => {
-          const am = amenity.toLowerCase();
-          if (am.includes('pool')) return hotelAmenitiesList.some(x => x.includes('pool')) || hotelDesc.includes('pool');
-          if (am.includes('beach') || am.includes('sea view')) return hotelAmenitiesList.some(x => x.includes('beach') || x.includes('sea')) || hotelDesc.includes('beach') || hotelDesc.includes('sea view');
-          if (am.includes('breakfast')) return hotelAmenitiesList.some(x => x.includes('breakfast') || x.includes('meal') || x.includes('dining')) || hotelDesc.includes('breakfast');
-          if (am.includes('spa')) return hotelAmenitiesList.some(x => x.includes('spa')) || hotelDesc.includes('spa') || hotelDesc.includes('wellness');
-          if (am.includes('wi-fi') || am.includes('wifi')) return hotelAmenitiesList.some(x => x.includes('wifi') || x.includes('wi-fi') || x.includes('internet')) || true; // standard hotel amenity
-          if (am.includes('bar') || am.includes('lounge')) return hotelAmenitiesList.some(x => x.includes('bar') || x.includes('lounge')) || hotelDesc.includes('bar');
-          if (am.includes('pet')) return hotelAmenitiesList.some(x => x.includes('pet')) || hotelDesc.includes('pet');
-          return true;
-        });
-      }
-
-      // Flexible Location matching:
-      const loc = (pickupLoc || '').toLowerCase().trim();
+      // Pickup/drop location filter
       let locMatch = true;
-      const genericCities = ['goa', 'all goa', 'india', 'all', '', 'hubli', 'delhi', 'new delhi', 'mumbai', 'bengaluru', 'bangalore', 'pune', 'hyderabad', 'chennai', 'kolkata', 'ahmedabad', 'jaipur', 'kochi'];
-      
-      if (loc && !genericCities.includes(loc)) {
-        const cleanLoc = loc.replace(/,.*$/, '').trim();
+      if (pickupLoc && !['goa', 'all goa', 'all', 'india'].includes(pickupLoc.toLowerCase().trim())) {
+        const cleanLoc = pickupLoc.toLowerCase().trim();
         locMatch = hotelArea.includes(cleanLoc) || 
                    cleanLoc.includes(hotelArea) || 
                    hotelName.includes(cleanLoc) || 
                    hotelLoc.includes(cleanLoc) ||
-                   loc.includes('goa') ||
-                   loc.includes('north') ||
-                   loc.includes('south');
+                   cleanLoc.includes('goa');
       }
 
-      // Guest / Room capacity check
-      let capacityMatch = true;
-      if (hotel.max_guests && parseInt(hotel.max_guests, 10) > 0 && hotelAdults) {
-        capacityMatch = parseInt(hotel.max_guests, 10) >= parseInt(hotelAdults, 10);
-      }
-
-      return searchMatch && starsMatch && propTypeMatch && priceMatch && areaMatch && amenitiesMatch && locMatch && capacityMatch;
+      return searchMatch && starsMatch && priceMatch && locMatch;
     });
-  }, [displayHotels, searchQuery, selectedStars, hotelPriceRange, appliedFilters, pickupLoc, hotelAdults]);
+  }, [displayHotels, searchQuery, selectedStars, hotelPriceRange, appliedFilters, pickupLoc]);
 
   const hotelsToRender = filteredHotels;
 
   return (
-    <div className="animate-fade-in-up">
-      <div className="section-header mb-4 text-start">
-        <h2 className="fs-3 fw-bold text-dark">Properties in Goa</h2>
-        <p className="text-muted small">
-          Showing {hotelsToRender.length} luxury stays for your dates.
-          {pickupLoc && <span className="ms-1 text-primary fw-semibold">({pickupLoc})</span>}
-        </p>
-      </div>
-
-      <div className="mmt-layout-container">
-        {/* Left Sidebar - Filters */}
-        <aside className="mmt-sidebar shadow-sm">
-          <div className="d-flex justify-content-between align-items-center mb-4">
-            <h4 className="fs-5 fw-bold mb-0">Select Filters</h4>
-            {(selectedStars.length > 0 || (hotelPriceRange && hotelPriceRange !== 'All')) && (
-              <button 
-                type="button" 
-                className="btn btn-sm btn-link p-0 text-decoration-none text-danger small fw-bold"
-                onClick={handleResetAllFilters}
-              >
-                Clear All
-              </button>
-            )}
+    <div className="wowgoa-hotels-container animate-fade-in-up pb-5" style={{ maxWidth: '1240px', margin: '0 auto' }}>
+      
+      {/* ─── 1. PAGE HEADER & QUICK FILTER CHIPS ─── */}
+      <div className="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 pt-2 pb-4 mb-4 border-bottom">
+        <div>
+          <div className="d-flex align-items-center gap-2 mb-1">
+            <span className="badge rounded-pill px-3 py-1 text-xs fw-bold" style={{ background: '#FEF3C7', color: '#92400E' }}>
+              ✨ Verified Customer Inventory
+            </span>
+            <span className="text-muted text-xs">
+              Showing {hotelsToRender.length} of {displayHotels.length} approved stays
+            </span>
           </div>
-          
-          {/* Price Filter */}
-          <div className="mmt-filter-group">
-            <h5 className="mmt-filter-title">Price per night</h5>
-            <div className="mmt-checkbox-wrapper" onClick={() => setHotelPriceRange('All')}>
-              <input type="radio" name="hotel_price" checked={!hotelPriceRange || hotelPriceRange === 'All'} readOnly />
-              <span className="mmt-checkbox-label">All Prices</span>
-            </div>
-            <div className="mmt-checkbox-wrapper" onClick={() => setHotelPriceRange('under-10000')}>
-              <input type="radio" name="hotel_price" checked={hotelPriceRange === 'under-10000'} readOnly />
-              <span className="mmt-checkbox-label">Under ₹10,000</span>
-            </div>
-            <div className="mmt-checkbox-wrapper" onClick={() => setHotelPriceRange('10000-20000')}>
-              <input type="radio" name="hotel_price" checked={hotelPriceRange === '10000-20000'} readOnly />
-              <span className="mmt-checkbox-label">₹10,000 - ₹20,000</span>
-            </div>
-            <div className="mmt-checkbox-wrapper" onClick={() => setHotelPriceRange('over-20000')}>
-              <input type="radio" name="hotel_price" checked={hotelPriceRange === 'over-20000'} readOnly />
-              <span className="mmt-checkbox-label">₹20,000+</span>
-            </div>
-          </div>
+          <h2 className="fs-3 fw-black text-dark mb-0 font-heading tracking-tight">
+            Handpicked Stays &amp; Beachfront Resorts in Goa
+          </h2>
+          <p className="text-muted text-xs mb-0 mt-1">
+            Exclusive 3-Star, 4-Star &amp; 5-Star properties with authoritative date-specific availability and meal plans.
+            {pickupLoc && <span className="ms-1 fw-bold text-primary">· Location: {pickupLoc}</span>}
+          </p>
+        </div>
 
-          {/* Star Rating Filter */}
-          <div className="mmt-filter-group">
-            <h5 className="mmt-filter-title">Star Category</h5>
-            <div className="mmt-checkbox-wrapper" onClick={() => handleStarToggle('5')}>
-              <input type="checkbox" checked={selectedStars.includes('5')} readOnly />
-              <span className="mmt-checkbox-label text-warning d-flex align-items-center">
-                5 Star <Star size={14} fill="currentColor" className="ms-1" />
-              </span>
-            </div>
-            <div className="mmt-checkbox-wrapper" onClick={() => handleStarToggle('4')}>
-              <input type="checkbox" checked={selectedStars.includes('4')} readOnly />
-              <span className="mmt-checkbox-label text-warning d-flex align-items-center">
-                4 Star <Star size={14} fill="currentColor" className="ms-1" />
-              </span>
-            </div>
-            <div className="mmt-checkbox-wrapper" onClick={() => handleStarToggle('3')}>
-              <input type="checkbox" checked={selectedStars.includes('3')} readOnly />
-              <span className="mmt-checkbox-label text-warning d-flex align-items-center">
-                3 Star <Star size={14} fill="currentColor" className="ms-1" />
-              </span>
-            </div>
-          </div>
-        </aside>
+        {/* Quick Star Filter Chips */}
+        <div className="d-flex flex-wrap align-items-center gap-1.5">
+          <button
+            type="button"
+            className={`btn btn-sm rounded-pill px-3 py-1.5 text-xs fw-bold transition-all ${
+              selectedStars.length === 0 
+                ? 'btn-dark text-white shadow-sm' 
+                : 'btn-outline-secondary bg-white text-dark'
+            }`}
+            onClick={handleResetAllFilters}
+          >
+            All Stays ({displayHotels.length})
+          </button>
 
-        {/* Right Content - Hotel List */}
-        <div className="mmt-hotel-list">
-          {hotelsToRender.length === 0 ? (
-            <div className="text-center py-5 bg-white rounded border">
-              <h4 className="text-muted">No hotels currently available in our system.</h4>
-              <button 
-                type="button"
-                className="btn btn-outline-primary mt-3" 
-                onClick={handleResetAllFilters}
-              >
-                Clear Filters
-              </button>
-            </div>
-          ) : (
-            hotelsToRender.map((hotel) => {
-              const starsCount = parseInt(hotel.stars || hotel.star_rating || 3, 10);
-              const amenities = Array.isArray(hotel.amenities)
-                ? hotel.amenities
-                : typeof hotel.amenities === 'string'
-                  ? hotel.amenities.split(',').map(s => s.trim()).filter(Boolean)
-                  : ['Free WiFi', 'Swimming Pool', 'Breakfast Included'];
+          <button
+            type="button"
+            className={`btn btn-sm rounded-pill px-3 py-1.5 text-xs fw-bold transition-all d-flex align-items-center gap-1 ${
+              selectedStars.includes('5') 
+                ? 'btn-warning text-dark shadow-sm' 
+                : 'btn-outline-secondary bg-white text-dark'
+            }`}
+            onClick={() => handleStarToggle('5')}
+          >
+            <Star size={13} fill="currentColor" /> 5-Star Luxury
+          </button>
 
-              // Parse all images for this hotel
-              const parsedHotelImages = [];
-              if (hotel.images_json) {
-                try {
-                  const p = typeof hotel.images_json === 'string' ? JSON.parse(hotel.images_json) : hotel.images_json;
-                  if (Array.isArray(p)) parsedHotelImages.push(...p);
-                } catch (e) {}
-              }
-              if (hotel.images && Array.isArray(hotel.images)) {
-                parsedHotelImages.push(...hotel.images);
-              }
-              if (hotel.additional_images && Array.isArray(hotel.additional_images)) {
-                parsedHotelImages.push(...hotel.additional_images);
-              }
-              if (hotel.image) parsedHotelImages.push(hotel.image);
-              if (hotel.image_url) parsedHotelImages.push(hotel.image_url);
+          <button
+            type="button"
+            className={`btn btn-sm rounded-pill px-3 py-1.5 text-xs fw-bold transition-all d-flex align-items-center gap-1 ${
+              selectedStars.includes('4') 
+                ? 'btn-warning text-dark shadow-sm' 
+                : 'btn-outline-secondary bg-white text-dark'
+            }`}
+            onClick={() => handleStarToggle('4')}
+          >
+            <Star size={13} fill="currentColor" /> 4-Star Premium
+          </button>
 
-              const finalHotelImages = Array.from(new Set(parsedHotelImages.filter(u => typeof u === 'string' && u.trim().length > 0)));
-              const validHotelImages = finalHotelImages.length > 0 ? finalHotelImages : [hotel.image || 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80'];
+          <button
+            type="button"
+            className={`btn btn-sm rounded-pill px-3 py-1.5 text-xs fw-bold transition-all d-flex align-items-center gap-1 ${
+              selectedStars.includes('3') 
+                ? 'btn-warning text-dark shadow-sm' 
+                : 'btn-outline-secondary bg-white text-dark'
+            }`}
+            onClick={() => handleStarToggle('3')}
+          >
+            <Star size={13} fill="currentColor" /> 3-Star Boutique
+          </button>
 
-              return (
-                <div key={hotel.id} className="mmt-hotel-card">
-                  <div className="mmt-hotel-img-wrapper p-2 bg-light">
-                    <div className="position-relative w-100 h-100">
-                      <ImageCarousel
-                        images={validHotelImages}
-                        height="190px"
-                        rounded="12px"
-                        alt={hotel.name}
-                      />
-                      <span className="position-absolute top-0 start-0 m-2 badge bg-dark text-white rounded-pill shadow-sm" style={{ zIndex: 6, pointerEvents: 'none' }}>
-                        {hotel.badge || 'Verified Stay'}
-                      </span>
-                    </div>
-                  </div>
-                  
-                  <div className="mmt-hotel-info">
-                    <div className="d-flex justify-content-between align-items-start">
-                      <div>
-                        <div className="d-flex align-items-center gap-2 mb-1">
-                          <div className="d-flex text-warning">
-                            {[...Array(Math.min(starsCount, 5))].map((_, i) => (
-                              <Star key={i} size={14} fill="currentColor" />
-                            ))}
-                          </div>
-                        </div>
-                        <h3 className="mmt-hotel-title">{hotel.name}</h3>
-                        <div className="mmt-hotel-location d-flex align-items-center flex-wrap">
-                          <MapPin size={14} className="me-1" />
-                          <span>{hotel.area || hotel.location || 'Goa'}</span>
-                          <button 
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setMapHotel(hotel);
-                            }}
-                            className="btn btn-link p-0 text-primary fw-bold ms-1.5 text-xs text-decoration-none d-inline-flex align-items-center gap-0.5"
-                          >
-                            <Compass size={12} /> View on Map
-                          </button>
-                        </div>
-                        {hotel.availability_badge && (
-                          <div className="mt-1">
-                            <span className={`badge ${hotel.is_available_for_dates === false ? 'bg-danger text-white' : 'bg-success bg-opacity-10 text-success border border-success border-opacity-25'} px-2 py-0.5 rounded-pill text-xxs fw-bold`}>
-                              {hotel.availability_badge}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                      
-                      <div className="d-flex flex-column align-items-end">
-                        <div className="d-flex align-items-center bg-success text-white px-2 py-1 rounded mb-1">
-                          <span className="fw-bold fs-6">{hotel.rating || 4.5}</span>
-                          <span className="ms-1 small">/ 5</span>
-                        </div>
-                        <span className="small text-muted fw-semibold">
-                          {parseFloat(hotel.rating || 4.5) >= 4.5 ? 'Exceptional' : 'Very Good'}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="mt-3">
-                      <span className="text-success small fw-bold d-flex align-items-center mb-1">
-                        <Check size={14} className="me-1" /> {hotel.policies_json ? 'Free cancellation available on select rate plans' : 'Free Cancellation up to 48 hrs before check-in'}
-                      </span>
-                      <span className="text-success small fw-bold d-flex align-items-center">
-                        <Check size={14} className="me-1" /> EP, CP, MAP &amp; AP Meal Plans Available
-                      </span>
-                    </div>
-
-                    <div className="mmt-hotel-amenities">
-                      {amenities.slice(0, 3).map((am, i) => (
-                        <span key={i} className="mmt-amenity-tag">
-                          {am}
-                        </span>
-                      ))}
-                      {amenities.length > 3 && (
-                        <span className="mmt-amenity-tag fw-bold text-primary bg-light border">
-                          +{amenities.length - 3} More
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  
-                  <div className="mmt-hotel-price-box">
-                    <div className="text-end mb-3">
-                      <div className="mmt-price-strikethrough">₹ {getOriginalPrice(hotel.price).toLocaleString('en-IN')}</div>
-                      <div className="mmt-price-final">₹ {hotel.price.toLocaleString('en-IN')}</div>
-                      <div className="mmt-price-taxes">+ ₹ {Math.round(hotel.price * 0.18).toLocaleString('en-IN')} taxes & fees</div>
-                      <div className="text-muted small">Per Night</div>
-                    </div>
-                    <button 
-                      type="button" 
-                      className="mmt-btn-book d-flex align-items-center justify-content-center"
-                      onClick={() => {
-                        if (document.activeElement && typeof document.activeElement.blur === 'function') {
-                          document.activeElement.blur();
-                        }
-                        onViewDetails(hotel);
-                      }}
-                    >
-                      View Details <ChevronRight size={18} className="ms-1" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })
+          {selectedStars.length > 0 && (
+            <button
+              type="button"
+              className="btn btn-sm btn-link p-1 text-danger text-xs fw-bold text-decoration-none d-flex align-items-center gap-1"
+              onClick={handleResetAllFilters}
+            >
+              <RotateCcw size={12} /> Clear
+            </button>
           )}
         </div>
       </div>
-      
+
+      {/* ─── 2. HOTEL RESULTS CARDS LIST ─── */}
+      {hotelsToRender.length === 0 ? (
+        <div className="text-center py-5 bg-white rounded-4 border p-4 shadow-sm">
+          <div className="rounded-circle bg-light p-3 d-inline-flex mb-3">
+            <SlidersHorizontal size={28} className="text-muted" />
+          </div>
+          <h4 className="fw-bold text-dark mb-1">No matching hotels found</h4>
+          <p className="text-muted text-xs mb-3">
+            Try adjusting your star rating or location search filters to view the approved stays.
+          </p>
+          <button 
+            type="button" 
+            className="btn btn-primary btn-sm rounded-pill px-4 py-2 fw-bold text-xs"
+            onClick={handleResetAllFilters}
+          >
+            Reset Filters
+          </button>
+        </div>
+      ) : (
+        <div className="d-flex flex-column gap-4">
+          {hotelsToRender.map((hotel) => {
+            const starsCount = parseInt(hotel.stars || hotel.star_rating || 3, 10);
+            
+            // Amenities array
+            const amenities = Array.isArray(hotel.amenities)
+              ? hotel.amenities
+              : typeof hotel.amenities === 'string'
+                ? hotel.amenities.split(',').map(s => s.trim()).filter(Boolean)
+                : ['Free WiFi', 'Swimming Pool', 'Breakfast Included', 'Air Conditioning'];
+
+            // Gather all valid photos
+            const parsedHotelImages = [];
+            if (hotel.images_json) {
+              try {
+                const p = typeof hotel.images_json === 'string' ? JSON.parse(hotel.images_json) : hotel.images_json;
+                if (Array.isArray(p)) parsedHotelImages.push(...p);
+              } catch (e) {}
+            }
+            if (hotel.images && Array.isArray(hotel.images)) {
+              parsedHotelImages.push(...hotel.images);
+            }
+            if (hotel.image) parsedHotelImages.push(hotel.image);
+            if (hotel.image_url) parsedHotelImages.push(hotel.image_url);
+
+            const finalHotelImages = Array.from(new Set(parsedHotelImages.filter(u => typeof u === 'string' && u.trim().length > 0)));
+            const validHotelImages = finalHotelImages.length > 0 
+              ? finalHotelImages 
+              : ['https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80'];
+
+            // Star category display label
+            const categoryBadgeLabel = starsCount === 5 
+              ? '5-Star Luxury Resort' 
+              : starsCount === 4 
+                ? '4-Star Beachfront Resort' 
+                : '3-Star Boutique Resort';
+
+            return (
+              <div 
+                key={hotel.id}
+                className="card border rounded-4 overflow-hidden shadow-sm bg-white transition-all"
+                style={{
+                  borderColor: '#E2E8F0',
+                  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)'
+                }}
+              >
+                <div className="row g-0">
+                  
+                  {/* Left Column: Image Carousel with Badges */}
+                  <div className="col-12 col-lg-5 p-3 bg-light bg-opacity-50">
+                    <div className="position-relative overflow-hidden rounded-3 shadow-sm h-100" style={{ minHeight: '230px', maxHeight: '280px' }}>
+                      <ImageCarousel
+                        images={validHotelImages}
+                        height="100%"
+                        rounded="12px"
+                        alt={hotel.name}
+                      />
+
+                      {/* Top Category Badge */}
+                      <span 
+                        className="position-absolute top-0 start-0 m-2.5 badge rounded-pill px-3 py-1.5 text-white fw-bold shadow"
+                        style={{ 
+                          zIndex: 6, 
+                          pointerEvents: 'none',
+                          background: starsCount === 5 
+                            ? 'linear-gradient(135deg, #0B192C 0%, #1E3E62 100%)' 
+                            : starsCount === 4 
+                              ? 'linear-gradient(135deg, #1E3E62 0%, #008080 100%)' 
+                              : 'linear-gradient(135deg, #D97706 0%, #B45309 100%)',
+                          fontSize: '11px',
+                          letterSpacing: '0.3px'
+                        }}
+                      >
+                        ⭐ {categoryBadgeLabel}
+                      </span>
+
+                      {/* Photo count button */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setGalleryHotel(hotel);
+                        }}
+                        className="position-absolute bottom-0 end-0 m-2.5 badge bg-dark bg-opacity-75 text-white border-0 px-2.5 py-1 rounded-pill text-xxs fw-bold d-flex align-items-center gap-1 shadow hover-scale"
+                        style={{ zIndex: 6, cursor: 'pointer' }}
+                      >
+                        <Eye size={12} /> {validHotelImages.length} Photos
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Right Column: Hotel Details, Highlights & Pricing */}
+                  <div className="col-12 col-lg-7 p-3 p-md-4 d-flex flex-column justify-content-between">
+                    <div>
+                      {/* Top Bar: Stars, Rating & Location */}
+                      <div className="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-2 mb-1.5">
+                        <div className="d-flex align-items-center gap-1.5">
+                          <div className="d-flex text-warning">
+                            {[...Array(Math.min(starsCount, 5))].map((_, i) => (
+                              <Star key={i} size={15} fill="#F59E0B" color="#F59E0B" />
+                            ))}
+                          </div>
+                          <span className="text-muted text-xxs fw-bold text-uppercase ms-1">
+                            {starsCount} Star Property
+                          </span>
+                        </div>
+
+                        {/* Verified Rating Pill */}
+                        <div className="d-flex align-items-center gap-1.5 bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-2.5 py-1 rounded-pill">
+                          <Star size={13} fill="currentColor" />
+                          <span className="fw-black text-xs">{hotel.rating || (starsCount === 5 ? '4.9' : starsCount === 4 ? '4.7' : '4.6')}</span>
+                          <span className="text-muted text-xxs">/ 5.0 · Verified Stay</span>
+                        </div>
+                      </div>
+
+                      {/* Hotel Name */}
+                      <h3 
+                        className="fw-black text-dark mb-1 font-heading cursor-pointer hover-text-primary"
+                        style={{ fontSize: '22px', lineHeight: '1.25' }}
+                        onClick={() => onViewDetails(hotel)}
+                      >
+                        {hotel.name}
+                      </h3>
+
+                      {/* Location with Map Trigger */}
+                      <div className="d-flex align-items-center flex-wrap text-muted text-xs mb-3">
+                        <MapPin size={14} className="text-warning me-1 flex-shrink-0" />
+                        <span className="fw-semibold text-dark">{hotel.area || hotel.location || 'Goa, India'}</span>
+                        <span className="mx-2 text-muted">·</span>
+                        <button 
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setMapHotel(hotel);
+                          }}
+                          className="btn btn-link p-0 text-primary fw-bold text-xs text-decoration-none d-inline-flex align-items-center gap-1"
+                        >
+                          <Compass size={13} /> View on Map
+                        </button>
+                      </div>
+
+                      {/* Key Amenities Badges */}
+                      <div className="d-flex flex-wrap gap-1.5 mb-3">
+                        {amenities.slice(0, 4).map((am, i) => (
+                          <span 
+                            key={i} 
+                            className="badge bg-light text-dark border px-2.5 py-1 rounded-pill text-xxs fw-semibold d-flex align-items-center gap-1"
+                          >
+                            <Check size={11} className="text-success" />
+                            {am}
+                          </span>
+                        ))}
+                        {amenities.length > 4 && (
+                          <span className="badge bg-light text-muted border px-2 py-1 rounded-pill text-xxs">
+                            +{amenities.length - 4} more
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Value Guarantees / Reassurance */}
+                      <div className="d-flex flex-wrap gap-x-4 gap-y-1 text-xs mb-3 pt-2 border-top">
+                        <span className="text-success fw-semibold d-flex align-items-center gap-1">
+                          <Check size={13} /> Free Cancellation Available
+                        </span>
+                        <span className="text-success fw-semibold d-flex align-items-center gap-1">
+                          <Utensils size={13} /> EP, CP, MAP &amp; AP Meal Plans
+                        </span>
+                        <span className="text-primary fw-semibold d-flex align-items-center gap-1">
+                          <ShieldCheck size={13} /> 10% WOW GOA Cashback
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Bottom Row: Price & Action CTA */}
+                    <div className="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-end gap-3 pt-3 border-top">
+                      <div>
+                        <span className="text-muted text-xxs text-uppercase fw-bold d-block">Starting from</span>
+                        <div className="d-flex align-items-baseline gap-2">
+                          <span className="text-muted text-decoration-line-through text-xs">
+                            ₹{getOriginalPrice(hotel.price).toLocaleString('en-IN')}
+                          </span>
+                          <span className="fw-black text-dark font-heading" style={{ fontSize: '26px', lineHeight: '1' }}>
+                            ₹{hotel.price.toLocaleString('en-IN')}
+                          </span>
+                          <span className="text-muted text-xs">/ night</span>
+                        </div>
+                        <span className="text-muted text-xxs d-block mt-0.5">
+                          + ₹{Math.round(hotel.price * 0.18).toLocaleString('en-IN')} (18% GST &amp; fees)
+                        </span>
+                      </div>
+
+                      <button 
+                        type="button"
+                        className="btn btn-warning text-dark fw-bold rounded-pill px-4 py-2.5 text-xs d-flex align-items-center justify-content-center gap-2 shadow-sm font-heading hover-scale w-100 w-sm-auto"
+                        onClick={() => {
+                          if (document.activeElement?.blur) document.activeElement.blur();
+                          onViewDetails(hotel);
+                        }}
+                      >
+                        <span>View Rooms &amp; Rates</span>
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
+
+                  </div>
+
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ─── 3. INTERACTIVE IMAGE GALLERY VIEWER MODAL ─── */}
       {galleryHotel && (
-        <HotelImageGallery 
-          hotel={galleryHotel} 
-          onClose={() => setGalleryHotel(null)} 
+        <UnifiedGalleryViewer
+          item={galleryHotel}
+          type="hotel"
+          onClose={() => setGalleryHotel(null)}
         />
       )}
 
+      {/* ─── 4. INTERACTIVE GOOGLE MAPS MODAL ─── */}
       {mapHotel && (
         <div className="position-fixed inset-0 bg-dark bg-opacity-75 d-flex align-items-center justify-content-center p-3" style={{ zIndex: 1060, top: 0, left: 0, right: 0, bottom: 0 }}>
-          <div className="bg-white rounded-4 shadow-lg overflow-hidden w-100 max-w-4xl border" style={{ maxWidth: '850px', height: '80vh' }}>
+          <div className="bg-white rounded-4 shadow-lg overflow-hidden w-100 border" style={{ maxWidth: '850px', height: '80vh' }}>
             <div className="d-flex justify-content-between align-items-center p-3 border-bottom bg-light">
               <div className="d-flex align-items-center gap-2">
-                <MapPin size={20} className="text-primary" />
+                <MapPin size={20} className="text-warning" />
                 <div>
-                  <h5 className="fw-bold text-dark mb-0">{mapHotel.name}</h5>
-                  <span className="text-muted text-xs">{mapHotel.address ? `${mapHotel.address}, ` : ''}{mapHotel.area || mapHotel.location || 'Goa, India'}</span>
+                  <h5 className="fw-bold text-dark mb-0 font-heading">{mapHotel.name}</h5>
+                  <span className="text-muted text-xs">
+                    {mapHotel.address ? `${mapHotel.address}, ` : ''}{mapHotel.area || mapHotel.location || 'Goa, India'}
+                  </span>
                 </div>
               </div>
               <div className="d-flex align-items-center gap-2">
@@ -459,7 +523,7 @@ export default function HotelsPage({
                   href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([mapHotel.name, mapHotel.area || mapHotel.location, 'Goa, India'].filter(Boolean).join(', '))}`} 
                   target="_blank" 
                   rel="noreferrer"
-                  className="btn btn-outline-primary btn-sm rounded-pill text-xs fw-bold d-flex align-items-center gap-1"
+                  className="btn btn-outline-dark btn-sm rounded-pill text-xs fw-bold d-flex align-items-center gap-1"
                 >
                   <ExternalLink size={14} /> Open in Google Maps
                 </a>
@@ -488,6 +552,7 @@ export default function HotelsPage({
           </div>
         </div>
       )}
+
     </div>
   );
 }

@@ -2927,8 +2927,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
             echo json_encode($data);
             exit;} elseif ($resource === 'hotels') {
-            $stmt = $pdo->prepare("SELECT * FROM hotels WHERE (admin_id = ? OR admin_id IS NULL OR admin_id = '' OR admin_id = 'admin' OR ? = 'superadmin' OR ? = 'admin') ORDER BY stars ASC, price ASC");
-            $stmt->execute([$tenant_id, $tenant_id, $tenant_id]);
+            $includeArchived = isset($_GET['include_archived']) && ($_GET['include_archived'] === '1' || $_GET['include_archived'] === 'true');
+            if ($includeArchived) {
+                $stmt = $pdo->prepare("SELECT * FROM hotels WHERE (admin_id = ? OR admin_id IS NULL OR admin_id = '' OR admin_id = 'admin' OR ? = 'superadmin' OR ? = 'admin') ORDER BY stars ASC, price ASC");
+                $stmt->execute([$tenant_id, $tenant_id, $tenant_id]);
+            } else {
+                $stmt = $pdo->prepare("SELECT * FROM hotels WHERE (admin_id = ? OR admin_id IS NULL OR admin_id = '' OR admin_id = 'admin' OR ? = 'superadmin' OR ? = 'admin') AND (is_available = 1 OR is_available IS NULL) AND (hotel_status = 'Live' OR hotel_status IS NULL OR hotel_status = '') ORDER BY stars ASC, price ASC");
+                $stmt->execute([$tenant_id, $tenant_id, $tenant_id]);
+            }
             $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
             $reqCheckIn = trim($_GET['check_in'] ?? ($_GET['pickup_date'] ?? ''));
@@ -3009,9 +3015,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $stmtH->execute([$hotel_id]);
             $hotel = $stmtH->fetch(PDO::FETCH_ASSOC);
 
-            if (!$hotel) {
+            if (!$hotel || (isset($hotel['is_available']) && intval($hotel['is_available']) === 0) || (isset($hotel['hotel_status']) && ($hotel['hotel_status'] === 'Archived' || $hotel['hotel_status'] === 'Inactive'))) {
                 http_response_code(404);
-                echo json_encode(['success' => false, 'error' => 'Hotel not found']);
+                echo json_encode(['success' => false, 'error' => 'This hotel is currently not available for reservations.']);
                 exit;
             }
 

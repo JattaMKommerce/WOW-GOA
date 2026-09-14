@@ -19,34 +19,74 @@ export default function HotelBookingModal({
   dropDate,
   bookingDays
 }) {
-  if (!selectedBookingItem) return null;
+  // Track if booking was opened with a preselected room from HotelDetailsPage
+  const [step, setStep] = useState(() => (selectedBookingItem?.preselected_room ? 2 : 1));
+  const openedWithPreselectedRef = React.useRef(Boolean(selectedBookingItem?.preselected_room));
+  const prevBookingItemIdRef = React.useRef(selectedBookingItem?.id);
+  const prevRoomIdRef = React.useRef(selectedBookingItem?.preselected_room?.id);
 
-  const [step, setStep] = useState(1);
   const [roomTypes, setRoomTypes] = useState([]);
   const [loadingRooms, setLoadingRooms] = useState(true);
   
-  // Stay Dates & Times State (Interactive Calendar & Timing)
-  const [modalCheckInDate, setModalCheckInDate] = useState(pickupDate || getTodayDateStr());
-  const [modalCheckOutDate, setModalCheckOutDate] = useState(dropDate || addDays(pickupDate || getTodayDateStr(), bookingDays || 2));
+  // Stay Dates & Times State (Synchronized with selectedBookingItem from HotelDetailsPage or defaults)
+  const initialCheckIn = selectedBookingItem?.check_in_date || pickupDate || getTodayDateStr();
+  const initialCheckOut = selectedBookingItem?.check_out_date || dropDate || addDays(initialCheckIn, selectedBookingItem?.booking_days || bookingDays || 2);
+  const initialNumRooms = selectedBookingItem?.num_rooms ? parseInt(selectedBookingItem.num_rooms, 10) : 1;
+  const initialAdults = selectedBookingItem?.adults ? parseInt(selectedBookingItem.adults, 10) : 2;
+  const initialChildren = (selectedBookingItem?.children !== undefined && selectedBookingItem?.children !== null)
+    ? parseInt(selectedBookingItem.children, 10)
+    : 0;
+
+  const [modalCheckInDate, setModalCheckInDate] = useState(initialCheckIn);
+  const [modalCheckOutDate, setModalCheckOutDate] = useState(initialCheckOut);
   const [checkInTime, setCheckInTime] = useState('02:00 PM');
   const [checkOutTime, setCheckOutTime] = useState('11:00 AM');
 
+  // Synchronize step and preselected room if selectedBookingItem changes while mounted
   useEffect(() => {
-    if (pickupDate) setModalCheckInDate(pickupDate);
-    if (dropDate) {
-      setModalCheckOutDate(dropDate);
-    } else if (pickupDate && bookingDays) {
-      setModalCheckOutDate(addDays(pickupDate, bookingDays));
+    const currentItemId = selectedBookingItem?.id;
+    const currentRoomId = selectedBookingItem?.preselected_room?.id;
+    if (currentItemId !== prevBookingItemIdRef.current || currentRoomId !== prevRoomIdRef.current) {
+      prevBookingItemIdRef.current = currentItemId;
+      prevRoomIdRef.current = currentRoomId;
+      const hasPre = Boolean(selectedBookingItem?.preselected_room);
+      openedWithPreselectedRef.current = hasPre;
+      if (hasPre) {
+        setStep(2);
+        if (selectedBookingItem.preselected_room) {
+          setSelectedRoom(selectedBookingItem.preselected_room);
+        }
+        if (selectedBookingItem.preselected_rate_plan) {
+          setSelectedRatePlan(selectedBookingItem.preselected_rate_plan);
+        }
+      } else {
+        setStep(1);
+      }
     }
-  }, [pickupDate, dropDate, bookingDays]);
+  }, [selectedBookingItem?.id, selectedBookingItem?.preselected_room?.id]);
+
+  useEffect(() => {
+    if (selectedBookingItem?.check_in_date) {
+      setModalCheckInDate(selectedBookingItem.check_in_date);
+    } else if (pickupDate) {
+      setModalCheckInDate(pickupDate);
+    }
+    if (selectedBookingItem?.check_out_date) {
+      setModalCheckOutDate(selectedBookingItem.check_out_date);
+    } else if (dropDate) {
+      setModalCheckOutDate(dropDate);
+    } else if (pickupDate && (selectedBookingItem?.booking_days || bookingDays)) {
+      setModalCheckOutDate(addDays(pickupDate, selectedBookingItem?.booking_days || bookingDays));
+    }
+  }, [selectedBookingItem?.check_in_date, selectedBookingItem?.check_out_date, selectedBookingItem?.booking_days, pickupDate, dropDate, bookingDays]);
 
   const nights = useMemo(() => {
-    if (!modalCheckInDate || !modalCheckOutDate) return Math.max(1, parseInt(bookingDays) || 1);
+    if (!modalCheckInDate || !modalCheckOutDate) return Math.max(1, parseInt(selectedBookingItem?.booking_days || bookingDays) || 1);
     const d1 = new Date(modalCheckInDate);
     const d2 = new Date(modalCheckOutDate);
     const diff = Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
     return isNaN(diff) || diff < 1 ? 1 : diff;
-  }, [modalCheckInDate, modalCheckOutDate, bookingDays]);
+  }, [modalCheckInDate, modalCheckOutDate, selectedBookingItem?.booking_days, bookingDays]);
 
   const handleCheckInChange = (newIn) => {
     setModalCheckInDate(newIn);
@@ -63,10 +103,10 @@ export default function HotelBookingModal({
     }
   };
   
-  // Selection State
+  // Selection State (Preserve selected room and rate plan from HotelDetailsPage)
   const [selectedRoom, setSelectedRoom] = useState(selectedBookingItem.preselected_room || null);
   const [selectedRatePlan, setSelectedRatePlan] = useState(selectedBookingItem.preselected_rate_plan || null);
-  const [numRooms, setNumRooms] = useState(1);
+  const [numRooms, setNumRooms] = useState(initialNumRooms);
   
   // Guest Details State
   const [guestName, setGuestName] = useState('');
@@ -75,10 +115,33 @@ export default function HotelBookingModal({
   const [guestDob, setGuestDob] = useState('');
   const [isDobSaved, setIsDobSaved] = useState(false);
   const [dobChecking, setDobChecking] = useState(false);
-  const [adults, setAdults] = useState(2);
-  const [children, setChildren] = useState(0);
+  const [adults, setAdults] = useState(initialAdults);
+  const [children, setChildren] = useState(initialChildren);
   const [arrivalTime, setArrivalTime] = useState('14:00');
   const [specialRequests, setSpecialRequests] = useState('');
+
+  // Keep guest configuration & room/plan synced with selectedBookingItem if it changes
+  useEffect(() => {
+    if (selectedBookingItem) {
+      if (selectedBookingItem.num_rooms) setNumRooms(parseInt(selectedBookingItem.num_rooms, 10));
+      if (selectedBookingItem.adults) setAdults(parseInt(selectedBookingItem.adults, 10));
+      if (selectedBookingItem.children !== undefined && selectedBookingItem.children !== null) {
+        setChildren(parseInt(selectedBookingItem.children, 10));
+      }
+      if (selectedBookingItem.preselected_room) {
+        setSelectedRoom(selectedBookingItem.preselected_room);
+      }
+      if (selectedBookingItem.preselected_rate_plan) {
+        setSelectedRatePlan(selectedBookingItem.preselected_rate_plan);
+      }
+    }
+  }, [
+    selectedBookingItem?.num_rooms,
+    selectedBookingItem?.adults,
+    selectedBookingItem?.children,
+    selectedBookingItem?.preselected_room,
+    selectedBookingItem?.preselected_rate_plan
+  ]);
 
   // Customer Wallet Cashback State
   const [walletBalance, setWalletBalance] = useState(0);
@@ -159,6 +222,7 @@ export default function HotelBookingModal({
   }, [selectedBookingItem]);
 
   useEffect(() => {
+    if (!selectedBookingItem?.id) return;
     // Fetch Payment Settings
     if (selectedBookingItem.vendor_id && selectedBookingItem.vendor_id !== 'admin') {
       api.getVendorPaymentMethods(selectedBookingItem.vendor_id).then(res => {
@@ -182,36 +246,48 @@ export default function HotelBookingModal({
       if (res && res.success && Array.isArray(res.room_types) && res.room_types.length > 0) {
         setRoomTypes(res.room_types);
         
-        // Find matching pre-selected room or default to first
+        // Find matching pre-selected room, preserve preselected_room, or default to first
         let targetRoom = null;
         if (selectedBookingItem.preselected_room) {
-          targetRoom = res.room_types.find(r => r.id === selectedBookingItem.preselected_room.id);
-        }
-        if (!targetRoom) {
+          targetRoom = res.room_types.find(r => 
+            r.id === selectedBookingItem.preselected_room.id || 
+            String(r.id) === String(selectedBookingItem.preselected_room.id) ||
+            r.name === selectedBookingItem.preselected_room.name
+          ) || selectedBookingItem.preselected_room;
+        } else {
           targetRoom = res.room_types[0];
         }
         setSelectedRoom(targetRoom);
 
-        // Find matching pre-selected rate plan or default to EP / first plan
+        // Find matching pre-selected rate plan, preserve preselected_rate_plan, or default to EP / first plan
         let targetPlan = null;
-        if (selectedBookingItem.preselected_rate_plan && targetRoom.rate_plans) {
-          targetPlan = targetRoom.rate_plans.find(p => p.id === selectedBookingItem.preselected_rate_plan.id);
-        }
-        if (!targetPlan && targetRoom.rate_plans && targetRoom.rate_plans.length > 0) {
+        if (selectedBookingItem.preselected_rate_plan && targetRoom?.rate_plans) {
+          targetPlan = targetRoom.rate_plans.find(p => 
+            p.id === selectedBookingItem.preselected_rate_plan.id || 
+            String(p.id) === String(selectedBookingItem.preselected_rate_plan.id) ||
+            p.meal_plan === selectedBookingItem.preselected_rate_plan.meal_plan
+          ) || selectedBookingItem.preselected_rate_plan;
+        } else if (selectedBookingItem.preselected_rate_plan) {
+          targetPlan = selectedBookingItem.preselected_rate_plan;
+        } else if (targetRoom?.rate_plans && targetRoom.rate_plans.length > 0) {
           targetPlan = targetRoom.rate_plans.find(p => p.meal_plan === 'EP') || targetRoom.rate_plans[0];
         }
         setSelectedRatePlan(targetPlan);
       } else {
-        // No fake room fallback! Show proper empty state.
+        // No fake room fallback! Only clear room selection if there was no preselected room
         setRoomTypes([]);
-        setSelectedRoom(null);
-        setSelectedRatePlan(null);
+        if (!selectedBookingItem.preselected_room) {
+          setSelectedRoom(null);
+          setSelectedRatePlan(null);
+        }
       }
     }).catch(err => {
       console.error('[HotelBookingModal] Error loading room types:', err);
       setRoomTypes([]);
-      setSelectedRoom(null);
-      setSelectedRatePlan(null);
+      if (!selectedBookingItem.preselected_room) {
+        setSelectedRoom(null);
+        setSelectedRatePlan(null);
+      }
     }).finally(() => {
       setLoadingRooms(false);
     });
@@ -661,9 +737,46 @@ export default function HotelBookingModal({
   const renderStep2 = () => (
     <div className="animate-fade-in">
         <div className="d-flex align-items-center mb-3 border-bottom pb-2">
-            <button className="btn btn-sm btn-link text-muted p-0 me-2" onClick={() => setStep(1)}><ArrowLeft size={20}/></button>
+            <button 
+              type="button"
+              className="btn btn-sm btn-link text-muted p-0 me-2" 
+              onClick={() => {
+                if (openedWithPreselectedRef.current) {
+                  // Return to HotelDetailsPage so the customer can change room / rates
+                  setSelectedBookingItem(null);
+                } else {
+                  setStep(1);
+                }
+              }}
+              title={openedWithPreselectedRef.current ? "Back to Hotel Details" : "Back to Room Selection"}
+            >
+              <ArrowLeft size={20}/>
+            </button>
             <h5 className="fw-bold mb-0">Step 2: Guest Details</h5>
         </div>
+
+        {/* Selected Room & Rate Plan Confirmation Card */}
+        {selectedRoom && (
+          <div className="p-3 mb-3 rounded-3 border d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2" style={{ background: '#f8fafc', borderColor: '#e2e8f0' }}>
+            <div>
+              <div className="d-flex align-items-center gap-2">
+                <span className="badge bg-primary text-white text-xxs px-2 py-0.5 rounded">Selected Room</span>
+                <strong className="text-dark fs-6 font-heading">{selectedRoom.name}</strong>
+              </div>
+              <div className="text-muted text-xs mt-1 d-flex flex-wrap gap-2 align-items-center">
+                <span>Plan: <strong className="text-dark">{selectedRatePlan?.name || selectedRatePlan?.meal_plan_label || selectedRatePlan?.meal_plan || 'EP Room Only'}</strong></span>
+                <span>•</span>
+                <span>{nights} {nights === 1 ? 'Night' : 'Nights'} ({formatDisplayDate ? formatDisplayDate(modalCheckInDate) : modalCheckInDate} – {formatDisplayDate ? formatDisplayDate(modalCheckOutDate) : modalCheckOutDate})</span>
+                <span>•</span>
+                <span>{numRooms} {numRooms === 1 ? 'Room' : 'Rooms'}</span>
+              </div>
+            </div>
+            <div className="text-sm-end">
+              <span className="text-muted text-xxs text-uppercase d-block">Room Rate</span>
+              <span className="fw-bold text-dark fs-6 font-heading">₹{nightlyRoomRate.toLocaleString('en-IN')}<small className="text-muted fw-normal text-xxs"> / night</small></span>
+            </div>
+          </div>
+        )}
         
         <div className="row g-3 mb-4">
             <div className="col-md-12">
@@ -1106,6 +1219,8 @@ export default function HotelBookingModal({
         </button>
     </div>
   );
+
+  if (!selectedBookingItem) return null;
 
   return (
     <div className="checkout-modal-backdrop" onClick={() => setSelectedBookingItem(null)}>

@@ -19,8 +19,9 @@ export default function HotelDetailsPage({
 }) {
   // Navigation & View Mode
   const [galleryOpen, setGalleryOpen] = useState(false);
-  const [galleryTab, setGalleryTab] = useState('property'); // 'property' or 'rooms'
+  const [galleryTab, setGalleryTab] = useState('all'); // 'all', 'property', or 'rooms'
   const [activeLightboxImg, setActiveLightboxImg] = useState(null);
+  const [activeLightboxIdx, setActiveLightboxIdx] = useState(0);
   const [mapModalOpen, setMapModalOpen] = useState(false);
 
   // Search & Stay Configuration State
@@ -136,7 +137,7 @@ export default function HotelDetailsPage({
     return list.length > 0 ? list : ['https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1200&q=80'];
   }, [hotel]);
 
-  // Collect all room images across real room types (Phase 5: Rooms Gallery)
+  // Collect all room images across real room types
   const roomGalleryItems = useMemo(() => {
     const items = [];
     roomTypes.forEach(rt => {
@@ -144,6 +145,7 @@ export default function HotelDetailsPage({
       rImgs.forEach((imgUrl, i) => {
         items.push({
           url: imgUrl,
+          category: 'rooms',
           roomName: rt.name,
           caption: `${rt.name} - Photo ${i + 1}`,
           roomType: rt
@@ -153,27 +155,95 @@ export default function HotelDetailsPage({
     return items;
   }, [roomTypes]);
 
-  // Escape to close modals
+  // Combined all photos (Property + Rooms)
+  const allGalleryItems = useMemo(() => {
+    const list = [];
+    propertyImages.forEach((img, i) => {
+      list.push({
+        url: img,
+        category: 'property',
+        roomName: 'Property & Grounds',
+        caption: `${hotel.name} - Photo ${i + 1}`,
+        type: 'Property'
+      });
+    });
+    roomGalleryItems.forEach((item) => {
+      list.push({
+        url: item.url,
+        category: 'rooms',
+        roomName: item.roomName,
+        caption: item.caption,
+        type: item.roomName || 'Room'
+      });
+    });
+    return list;
+  }, [propertyImages, roomGalleryItems, hotel.name]);
+
+  // Current list to display based on galleryTab
+  const currentGalleryList = useMemo(() => {
+    if (galleryTab === 'property') {
+      return propertyImages.map((img, i) => ({
+        url: img,
+        category: 'property',
+        roomName: 'Property & Grounds',
+        caption: `${hotel.name} - Photo ${i + 1}`,
+        type: 'Property'
+      }));
+    }
+    if (galleryTab === 'rooms') {
+      return roomGalleryItems;
+    }
+    return allGalleryItems;
+  }, [galleryTab, propertyImages, roomGalleryItems, allGalleryItems, hotel.name]);
+
+  const openLightbox = (index) => {
+    const list = currentGalleryList;
+    if (!list || list.length === 0) return;
+    const safeIdx = Math.max(0, Math.min(index, list.length - 1));
+    setActiveLightboxIdx(safeIdx);
+    setActiveLightboxImg(list[safeIdx]?.url || null);
+  };
+
+  const nextLightboxImg = (e) => {
+    if (e) e.stopPropagation();
+    const list = currentGalleryList;
+    if (!list || list.length === 0) return;
+    const nextIdx = (activeLightboxIdx + 1) % list.length;
+    setActiveLightboxIdx(nextIdx);
+    setActiveLightboxImg(list[nextIdx]?.url || null);
+  };
+
+  const prevLightboxImg = (e) => {
+    if (e) e.stopPropagation();
+    const list = currentGalleryList;
+    if (!list || list.length === 0) return;
+    const prevIdx = (activeLightboxIdx - 1 + list.length) % list.length;
+    setActiveLightboxIdx(prevIdx);
+    setActiveLightboxImg(list[prevIdx]?.url || null);
+  };
+
+  // Keyboard navigation & escape to close modals
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
         if (activeLightboxImg) setActiveLightboxImg(null);
         else if (galleryOpen) setGalleryOpen(false);
         else if (mapModalOpen) setMapModalOpen(false);
-        else onBack();
+      } else if (activeLightboxImg) {
+        if (e.key === 'ArrowRight') nextLightboxImg();
+        else if (e.key === 'ArrowLeft') prevLightboxImg();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeLightboxImg, galleryOpen, mapModalOpen, onBack]);
+  }, [activeLightboxImg, activeLightboxIdx, currentGalleryList, galleryOpen, mapModalOpen]);
 
-  // Hotel Base Details
-  const starsCount = parseInt(hotel.stars || hotel.rating || 4, 10);
-  const basePricePerNight = parseInt(hotel.price) || 0;
+  const starsCount = parseInt(hotel.stars || hotel.star_rating || 3, 10);
+  const basePricePerNight = Math.round(parseFloat(hotel.price || 3500));
   const checkinTime = hotel.checkin_time || '02:00 PM';
   const checkoutTime = hotel.checkout_time || '11:00 AM';
 
-  // Parse policies
+  // Policies parser
   const hotelPolicies = useMemo(() => {
     if (!hotel.policies_json) return null;
     try {
@@ -224,7 +294,7 @@ export default function HotelDetailsPage({
           <button 
             type="button"
             onClick={() => { if (document.activeElement?.blur) document.activeElement.blur(); onBack(); }} 
-            className="btn btn-light rounded-circle p-2 d-flex align-items-center justify-content-center border"
+            className="btn btn-light rounded-circle p-2 d-flex align-items-center justify-content-center border hover-scale"
             title="Back to Hotel Listings"
           >
             <ArrowLeft size={18} />
@@ -233,56 +303,55 @@ export default function HotelDetailsPage({
             <div className="text-muted text-xxs text-uppercase fw-semibold" style={{ letterSpacing: '0.5px' }}>
               Hotels &gt; {hotel.location || hotel.area || 'Goa'} &gt; {hotel.name}
             </div>
-            <h5 className="mb-0 fw-bold text-dark">{hotel.name}</h5>
+            <h5 className="mb-0 fw-bold text-dark font-heading">{hotel.name}</h5>
           </div>
         </div>
-        <div className="d-flex align-items-center gap-3">
+
+        <div className="d-flex align-items-center gap-2">
           <button 
             type="button"
             onClick={scrollToRooms}
-            className="btn btn-primary btn-sm rounded-pill px-3 py-1.5 fw-bold d-none d-md-flex align-items-center gap-1 shadow-sm"
+            className="btn btn-warning text-dark btn-sm rounded-pill px-3.5 py-1.5 fw-bold d-none d-md-flex align-items-center gap-1.5 shadow-sm font-heading hover-scale"
           >
-            <span>Reserve a Room</span>
-            <ChevronRight size={16} />
+            <span>View Rooms</span>
+            <ChevronRight size={15} />
           </button>
           <button 
             type="button"
             onClick={() => { if (document.activeElement?.blur) document.activeElement.blur(); onBack(); }} 
             className="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1.5 rounded-pill px-3 py-1"
           >
-            <X size={16} /> Close
+            <X size={15} /> Back
           </button>
         </div>
       </div>
 
-      <div className="container py-4">
+      <div className="container py-4" style={{ maxWidth: '1200px' }}>
 
         {/* ─── 2. PROPERTY HEADER ─── */}
-        <div className="bg-white rounded-4 shadow-sm p-4 mb-4 border">
+        <div className="bg-white rounded-4 shadow-sm p-4 mb-4 border" style={{ borderColor: '#E2E8F0' }}>
           <div className="d-flex flex-column flex-md-row justify-content-between align-items-start gap-3">
             <div>
-              <div className="d-flex align-items-center gap-2 mb-1 flex-wrap">
-                <span className="badge bg-dark text-white rounded-pill px-2.5 py-1 text-xs fw-bold">
-                  {hotel.stars ? `${hotel.stars} Star Hotel` : 'Verified Stay'}
+              <div className="d-flex align-items-center gap-2 mb-1.5 flex-wrap">
+                <span className="badge rounded-pill px-3 py-1 text-xs fw-bold" style={{ background: '#0B192C', color: '#FFFFFF' }}>
+                  ⭐ {starsCount}-Star {starsCount === 5 ? 'Luxury Resort' : starsCount === 4 ? 'Beachfront Resort' : 'Boutique Resort'}
                 </span>
                 <div className="d-flex text-warning">
                   {[...Array(Math.min(starsCount, 5))].map((_, i) => (
-                    <Star key={i} size={15} fill="currentColor" />
+                    <Star key={i} size={15} fill="#F59E0B" color="#F59E0B" />
                   ))}
                 </div>
-                {hotel.status === 'Active' && (
-                  <span className="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 rounded-pill px-2 py-0.5 text-xxs fw-bold">
-                    ✓ Verified Available
-                  </span>
-                )}
+                <span className="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 rounded-pill px-2.5 py-1 text-xxs fw-bold">
+                  ✓ WOW GOA Certified
+                </span>
               </div>
 
-              <h1 className="fw-black text-dark mb-1 fs-2 font-heading">{hotel.name}</h1>
+              <h1 className="fw-black text-dark mb-1 fs-2 font-heading tracking-tight">{hotel.name}</h1>
               
               <div className="d-flex align-items-center gap-2 text-muted text-sm flex-wrap mt-1">
                 <div className="d-flex align-items-center gap-1">
-                  <MapPin size={15} className="text-primary" />
-                  <span>{hotel.address ? `${hotel.address}, ` : ''}{hotel.area || hotel.location}, Goa</span>
+                  <MapPin size={15} className="text-warning" />
+                  <span>{hotel.address ? `${hotel.address}, ` : ''}{hotel.area || hotel.location || 'Goa'}, India</span>
                 </div>
                 <span>•</span>
                 <button 
@@ -296,17 +365,17 @@ export default function HotelDetailsPage({
             </div>
 
             {/* Quick Pricing & Reserve Anchor */}
-            <div className="d-flex flex-column align-items-start align-items-md-end bg-light p-3 rounded-3 border flex-shrink-0">
+            <div className="d-flex flex-column align-items-start align-items-md-end bg-light p-3.5 rounded-3 border flex-shrink-0" style={{ minWidth: '220px' }}>
               <span className="text-muted text-xxs text-uppercase fw-bold">Starting from</span>
               <div className="d-flex align-items-baseline gap-1">
-                <h3 className="fw-black text-primary mb-0">₹{basePricePerNight.toLocaleString('en-IN')}</h3>
+                <h3 className="fw-black text-dark mb-0 font-heading" style={{ fontSize: '26px' }}>₹{basePricePerNight.toLocaleString('en-IN')}</h3>
                 <span className="text-muted text-xs">/ night</span>
               </div>
               <span className="text-muted text-xxs">+ 18% GST &amp; fees</span>
               <button 
                 type="button"
                 onClick={scrollToRooms}
-                className="btn btn-primary rounded-pill px-4 py-2 fw-bold text-xs mt-2 w-100 shadow-sm"
+                className="btn btn-warning text-dark rounded-pill px-4 py-2 fw-bold text-xs mt-2 w-100 shadow-sm font-heading hover-scale"
               >
                 View Available Rooms
               </button>
@@ -315,7 +384,7 @@ export default function HotelDetailsPage({
         </div>
 
         {/* ─── 3. HERO PHOTO GALLERY & LIGHTBOX TRIGGER ─── */}
-        <div className="bg-white rounded-4 shadow-sm p-3 mb-4 border position-relative">
+        <div className="bg-white rounded-4 shadow-sm p-3 mb-4 border position-relative" style={{ borderColor: '#E2E8F0' }}>
           <div className="row g-2">
             <div className="col-12 col-md-8">
               <div className="position-relative overflow-hidden rounded-3" style={{ height: '400px' }}>
@@ -331,7 +400,7 @@ export default function HotelDetailsPage({
               <div 
                 className="position-relative overflow-hidden rounded-3 cursor-pointer hover-scale flex-fill" 
                 style={{ height: '196px' }}
-                onClick={() => { setGalleryTab('property'); setGalleryOpen(true); }}
+                onClick={() => { setGalleryTab('all'); setGalleryOpen(true); }}
               >
                 <img 
                   src={propertyImages[1] || propertyImages[0]} 
@@ -342,7 +411,7 @@ export default function HotelDetailsPage({
               <div 
                 className="position-relative overflow-hidden rounded-3 cursor-pointer hover-scale flex-fill" 
                 style={{ height: '196px' }}
-                onClick={() => { setGalleryTab('rooms'); setGalleryOpen(true); }}
+                onClick={() => { setGalleryTab('all'); setGalleryOpen(true); }}
               >
                 <img 
                   src={propertyImages[2] || propertyImages[0]} 
@@ -350,9 +419,9 @@ export default function HotelDetailsPage({
                   className="w-100 h-100 object-fit-cover"
                 />
                 <div className="position-absolute inset-0 bg-dark bg-opacity-50 d-flex flex-column align-items-center justify-content-center text-white p-2 text-center" style={{ top: 0, left: 0, right: 0, bottom: 0 }}>
-                  <Eye size={22} className="mb-1" />
+                  <Eye size={22} className="mb-1 text-warning" />
                   <span className="fw-bold text-xs">View All Photos</span>
-                  <span className="text-xxs text-white-50">Property &amp; Rooms</span>
+                  <span className="text-xxs text-white-50">{allGalleryItems.length} Property &amp; Rooms</span>
                 </div>
               </div>
             </div>
@@ -360,23 +429,23 @@ export default function HotelDetailsPage({
 
           <div className="d-flex justify-content-between align-items-center mt-2 px-1">
             <span className="text-muted text-xs">
-              📸 Showing property &amp; active room photos
+              📸 Showing property &amp; active room photos ({allGalleryItems.length} total)
             </span>
             <button 
               type="button"
-              onClick={() => { setGalleryTab('property'); setGalleryOpen(true); }}
-              className="btn btn-outline-dark btn-sm rounded-pill px-3 py-1 text-xs fw-bold d-flex align-items-center gap-1"
+              onClick={() => { setGalleryTab('all'); setGalleryOpen(true); }}
+              className="btn btn-outline-dark btn-sm rounded-pill px-3 py-1 text-xs fw-bold d-flex align-items-center gap-1 hover-scale"
             >
-              <Eye size={14} /> Open Full Gallery ({propertyImages.length + roomGalleryItems.length} Photos)
+              <Eye size={14} className="text-warning" /> Open Full Gallery ({allGalleryItems.length} Photos)
             </button>
           </div>
         </div>
 
         {/* ─── 4. INTERACTIVE STAY DATES & GUEST BAR ─── */}
-        <div className="bg-white rounded-4 shadow-sm p-4 mb-4 border">
+        <div className="bg-white rounded-4 shadow-sm p-4 mb-4 border" style={{ borderColor: '#E2E8F0' }}>
           <div className="d-flex align-items-center gap-2 mb-3">
-            <Calendar size={18} className="text-primary" />
-            <h5 className="mb-0 fw-bold text-dark">Check Availability &amp; Rates for Your Stay</h5>
+            <Calendar size={18} className="text-warning" />
+            <h5 className="mb-0 fw-bold text-dark font-heading">Check Availability &amp; Rates for Your Stay</h5>
           </div>
 
           <div className="row g-3 align-items-end">
@@ -438,7 +507,7 @@ export default function HotelDetailsPage({
               <button 
                 type="button"
                 onClick={loadRooms}
-                className="btn btn-primary w-100 rounded-3 py-2 fw-bold text-xs d-flex align-items-center justify-content-center gap-1 shadow-sm"
+                className="btn btn-warning text-dark w-100 rounded-3 py-2 fw-bold text-xs d-flex align-items-center justify-content-center gap-1 shadow-sm font-heading hover-scale"
               >
                 <Sparkles size={14} /> Update Rates
               </button>
@@ -450,18 +519,18 @@ export default function HotelDetailsPage({
               Stay Duration: <strong className="text-dark">{nights} {nights === 1 ? 'Night' : 'Nights'}</strong> ({formatDisplayDate(checkInDate)} to {formatDisplayDate(checkOutDate)})
             </span>
             <span className="text-success fw-semibold">
-              ✓ Prices update in real time with date-specific calendar &amp; weekend rates
+              ✓ Live calendar rates &amp; instant room confirmation
             </span>
           </div>
         </div>
 
-        {/* ─── 5. MAIN CONTENT SPLIT (About, Amenities, Policies) ─── */}
+        {/* ─── 5. MAIN CONTENT SPLIT (About, Amenities, Policies, Map) ─── */}
         <div className="row g-4 mb-4">
           <div className="col-12 col-lg-8">
             
             {/* About Property */}
-            <div className="bg-white rounded-4 shadow-sm p-4 mb-4 border">
-              <h4 className="fw-bold text-dark mb-3">About This Property</h4>
+            <div className="bg-white rounded-4 shadow-sm p-4 mb-4 border" style={{ borderColor: '#E2E8F0' }}>
+              <h4 className="fw-bold text-dark mb-3 font-heading">About This Property</h4>
               <p className="text-muted lh-lg mb-4" style={{ whiteSpace: 'pre-line' }}>
                 {hotel.description || `Welcome to ${hotel.name}, an exceptional accommodation located in ${hotel.area || hotel.location || 'Goa'}. Offering comfortable living spaces, authentic hospitality, and convenient access to Goa's top attractions.`}
               </p>
@@ -470,7 +539,7 @@ export default function HotelDetailsPage({
               <div className="row g-3 pt-2 border-top">
                 <div className="col-12 col-sm-4">
                   <div className="d-flex align-items-center gap-2">
-                    <Clock size={16} className="text-primary flex-shrink-0" />
+                    <Clock size={16} className="text-warning flex-shrink-0" />
                     <div>
                       <span className="text-muted text-xxs d-block">Check-In / Out</span>
                       <strong className="text-dark text-xs">{checkinTime} / {checkoutTime}</strong>
@@ -479,7 +548,7 @@ export default function HotelDetailsPage({
                 </div>
                 <div className="col-12 col-sm-4">
                   <div className="d-flex align-items-center gap-2">
-                    <MapPin size={16} className="text-primary flex-shrink-0" />
+                    <MapPin size={16} className="text-warning flex-shrink-0" />
                     <div>
                       <span className="text-muted text-xxs d-block">Location</span>
                       <strong className="text-dark text-xs">{hotel.area || hotel.location || 'Goa'}</strong>
@@ -491,7 +560,7 @@ export default function HotelDetailsPage({
                     <ShieldCheck size={16} className="text-success flex-shrink-0" />
                     <div>
                       <span className="text-muted text-xxs d-block">Safety &amp; Hygiene</span>
-                      <strong className="text-dark text-xs">WOW GOA Certified</strong>
+                      <strong className="text-dark text-xs">WOW GOA Verified</strong>
                     </div>
                   </div>
                 </div>
@@ -499,8 +568,8 @@ export default function HotelDetailsPage({
             </div>
 
             {/* Property Amenities */}
-            <div className="bg-white rounded-4 shadow-sm p-4 mb-4 border">
-              <h4 className="fw-bold text-dark mb-3">Property Amenities</h4>
+            <div className="bg-white rounded-4 shadow-sm p-4 mb-4 border" style={{ borderColor: '#E2E8F0' }}>
+              <h4 className="fw-bold text-dark mb-3 font-heading">Property Amenities</h4>
               <div className="d-flex flex-wrap gap-2">
                 {(hotel.amenities 
                   ? (Array.isArray(hotel.amenities) ? hotel.amenities : hotel.amenities.split(',')) 
@@ -514,9 +583,9 @@ export default function HotelDetailsPage({
               </div>
             </div>
 
-            {/* Dynamic Hotel Policies (Phase 6) */}
-            <div className="bg-white rounded-4 shadow-sm p-4 mb-4 border">
-              <h4 className="fw-bold text-dark mb-3">Hotel Policies &amp; Guidelines</h4>
+            {/* Dynamic Hotel Policies */}
+            <div className="bg-white rounded-4 shadow-sm p-4 mb-4 border" style={{ borderColor: '#E2E8F0' }}>
+              <h4 className="fw-bold text-dark mb-3 font-heading">Hotel Policies &amp; Guidelines</h4>
               
               <div className="row g-3">
                 <div className="col-12 col-sm-6">
@@ -548,16 +617,6 @@ export default function HotelDetailsPage({
                     <ul className="text-xs text-muted mb-0 ps-3 lh-lg">
                       <li>Valid government-issued photo ID (Aadhaar, Passport, Driving License, Voter ID) is mandatory for all adults at check-in.</li>
                       <li>Couples and families are welcome. Standard visitor rules apply.</li>
-                      {hotelPolicies?.pet_friendly ? (
-                        <li className="text-success">Pets are welcome at this property (subject to property guidelines).</li>
-                      ) : (
-                        <li>Pets are not allowed on property premises.</li>
-                      )}
-                      {hotelPolicies?.smoking_allowed ? (
-                        <li>Designated smoking areas are available.</li>
-                      ) : (
-                        <li>This is a non-smoking property in all guest rooms.</li>
-                      )}
                     </ul>
                   </div>
                 </div>
@@ -566,33 +625,22 @@ export default function HotelDetailsPage({
 
           </div>
 
-          {/* Right Sidebar: Location Snapshot & Reviews Overview */}
+          {/* Right Column: Rating Box & Mini Map */}
           <div className="col-12 col-lg-4">
             
-            {/* Reviews Snapshot Box (Phase 7) */}
-            <div className="bg-white rounded-4 shadow-sm p-4 mb-4 border">
-              <div className="d-flex justify-content-between align-items-center mb-3">
-                <h5 className="fw-bold text-dark mb-0">Guest Reviews</h5>
-                <span className="badge bg-primary text-white rounded-pill px-2 py-0.5 text-xxs">
-                  {reviewSummary?.total_reviews || reviews.length} Verified
-                </span>
-              </div>
-
-              <div className="d-flex align-items-center gap-3 mb-3 p-3 bg-light rounded-3 border">
-                <div className="d-flex align-items-center justify-content-center bg-success text-white rounded-3 px-3 py-2 fw-black fs-4">
-                  {reviewSummary?.average_rating || (reviews.length > 0 ? (reviews.reduce((acc, r) => acc + parseFloat(r.rating || 0), 0) / reviews.length).toFixed(1) : (hotel.rating || '4.8'))}
-                </div>
+            {/* Review Score Summary Box */}
+            <div className="bg-white rounded-4 shadow-sm p-4 mb-4 border" style={{ borderColor: '#E2E8F0' }}>
+              <div className="d-flex justify-content-between align-items-start mb-3">
                 <div>
-                  <h6 className="fw-bold text-dark mb-0">
-                    {parseFloat(reviewSummary?.average_rating || hotel.rating || 4.8) >= 4.5 ? 'Exceptional' : 'Very Good'}
-                  </h6>
-                  <span className="text-muted text-xs">
-                    Based on {reviewSummary?.total_reviews || reviews.length || 1} verified guest stays
-                  </span>
+                  <h5 className="fw-bold text-dark mb-0 font-heading">Guest Rating</h5>
+                  <span className="text-muted text-xs">Based on verified WOW GOA stays</span>
+                </div>
+                <div className="badge bg-success text-white px-2.5 py-1.5 rounded-3 fs-6 fw-bold">
+                  {reviewSummary?.average_rating || (starsCount === 5 ? '4.9' : starsCount === 4 ? '4.7' : '4.6')}
                 </div>
               </div>
 
-              {/* Sub-ratings Breakdown */}
+              {/* Sub-Ratings */}
               <div className="space-y-2 mb-3">
                 <div className="mb-2">
                   <div className="d-flex justify-content-between text-xs mb-1">
@@ -636,10 +684,10 @@ export default function HotelDetailsPage({
               )}
             </div>
 
-            {/* Location & Map Card (Phase 8) */}
-            <div className="bg-white rounded-4 shadow-sm p-4 mb-4 border">
+            {/* Location & Map Card */}
+            <div className="bg-white rounded-4 shadow-sm p-4 mb-4 border" style={{ borderColor: '#E2E8F0' }}>
               <div className="d-flex justify-content-between align-items-center mb-2">
-                <h5 className="fw-bold text-dark mb-0">Location</h5>
+                <h5 className="fw-bold text-dark mb-0 font-heading">Location</h5>
                 <button 
                   type="button"
                   onClick={() => setMapModalOpen(true)}
@@ -650,11 +698,11 @@ export default function HotelDetailsPage({
               </div>
 
               <div className="text-muted text-xs mb-3">
-                <MapPin size={14} className="text-primary me-1 inline" />
+                <MapPin size={14} className="text-warning me-1 inline" />
                 {hotel.address || hotel.location || hotel.area || 'Goa, India'}
               </div>
 
-              {/* Interactive Mini-Map Preview iframe */}
+              {/* Mini-Map Preview iframe */}
               <div 
                 className="position-relative rounded-3 overflow-hidden border mb-3 cursor-pointer shadow-sm" 
                 style={{ height: '180px' }}
@@ -680,7 +728,7 @@ export default function HotelDetailsPage({
               <button 
                 type="button"
                 onClick={() => setMapModalOpen(true)}
-                className="btn btn-outline-primary btn-sm w-100 rounded-pill fw-bold text-xs d-flex align-items-center justify-content-center gap-1.5"
+                className="btn btn-outline-dark btn-sm w-100 rounded-pill fw-bold text-xs d-flex align-items-center justify-content-center gap-1.5"
               >
                 <Compass size={14} /> View Location on Map
               </button>
@@ -689,13 +737,13 @@ export default function HotelDetailsPage({
           </div>
         </div>
 
-        {/* ─── 6. AVAILABLE ROOMS & RATES SECTION (OTA-Style Inline) ─── */}
-        <div id="available-rooms-section" className="bg-white rounded-4 shadow-sm p-4 mb-4 border">
+        {/* ─── 6. AVAILABLE ROOMS & RATES SECTION ─── */}
+        <div id="available-rooms-section" className="bg-white rounded-4 shadow-sm p-4 mb-4 border" style={{ borderColor: '#E2E8F0' }}>
           <div className="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 pb-3 mb-4 border-bottom">
             <div>
               <div className="d-flex align-items-center gap-2">
-                <BedDouble size={22} className="text-primary" />
-                <h3 className="fw-black text-dark mb-0 font-heading">Available Rooms &amp; Rate Plans</h3>
+                <BedDouble size={22} className="text-warning" />
+                <h3 className="fw-black text-dark mb-0 font-heading">Available Room Types &amp; Meal Plans</h3>
               </div>
               <p className="text-muted text-xs mb-0 mt-1">
                 Real database inventory for {nights} {nights === 1 ? 'Night' : 'Nights'} ({formatDisplayDate(checkInDate)} – {formatDisplayDate(checkOutDate)}) for {numRooms} {numRooms === 1 ? 'Room' : 'Rooms'}
@@ -728,7 +776,7 @@ export default function HotelDetailsPage({
                   setCheckInDate(addDays(getTodayDateStr(), 3));
                   setCheckOutDate(addDays(getTodayDateStr(), 5));
                 }}
-                className="btn btn-outline-primary btn-sm rounded-pill px-4"
+                className="btn btn-primary btn-sm rounded-pill px-4"
               >
                 Try Later Dates
               </button>
@@ -749,7 +797,7 @@ export default function HotelDetailsPage({
                   >
                     <div className="row g-0">
                       
-                      {/* Left: Room Images & Specs */}
+                      {/* Left: Room Images & Specifications */}
                       <div className="col-12 col-lg-4 p-3 border-end bg-light bg-opacity-50">
                         <div className="position-relative overflow-hidden rounded-3 mb-3 shadow-sm" style={{ height: '220px' }}>
                           <ImageCarousel
@@ -763,29 +811,29 @@ export default function HotelDetailsPage({
                           </span>
                         </div>
 
-                        <h4 className="fw-bold text-dark mb-1 fs-5">{room.name}</h4>
+                        <h4 className="fw-bold text-dark mb-1 fs-5 font-heading">{room.name}</h4>
                         
                         {/* Room Specifications */}
                         <div className="d-flex flex-wrap gap-2 text-xs text-muted mb-3">
                           {room.room_size && (
                             <span className="d-flex align-items-center gap-1 bg-white border px-2 py-1 rounded">
-                              <Maximize2 size={12} className="text-primary" /> {room.room_size} {room.room_size_unit || 'sq.ft'}
+                              <Maximize2 size={12} className="text-warning" /> {room.room_size} {room.room_size_unit || 'sq.ft'}
                             </span>
                           )}
                           <span className="d-flex align-items-center gap-1 bg-white border px-2 py-1 rounded">
-                            <BedDouble size={12} className="text-primary" /> {room.bed_type || 'King Bed'}
+                            <BedDouble size={12} className="text-warning" /> {room.bed_type || 'King Bed'}
                           </span>
                           <span className="d-flex align-items-center gap-1 bg-white border px-2 py-1 rounded">
-                            <Users size={12} className="text-primary" /> Max {room.max_occupancy || 3} Guests
+                            <Users size={12} className="text-warning" /> Max {room.max_occupancy || 3} Guests
                           </span>
                           {room.view_type && (
                             <span className="d-flex align-items-center gap-1 bg-white border px-2 py-1 rounded">
-                              <Compass size={12} className="text-primary" /> {room.view_type}
+                              <Compass size={12} className="text-warning" /> {room.view_type}
                             </span>
                           )}
                         </div>
 
-                        {/* Room Amenities */}
+                        {/* Room Amenities Highlights */}
                         <div className="mb-2">
                           <span className="text-muted text-xxs fw-bold text-uppercase d-block mb-1">Room Highlights:</span>
                           <div className="d-flex flex-wrap gap-1">
@@ -805,11 +853,11 @@ export default function HotelDetailsPage({
                         )}
                       </div>
 
-                      {/* Right: Meal Plan & Rate Plans Selection (Phase 3) */}
+                      {/* Right: Meal Plan & Rate Plans Selection */}
                       <div className="col-12 col-lg-8 p-3 p-md-4 d-flex flex-column justify-content-between">
                         <div>
                           <div className="d-flex justify-content-between align-items-center mb-3">
-                            <h6 className="fw-bold text-dark text-uppercase text-xs tracking-wider mb-0">
+                            <h6 className="fw-bold text-dark text-uppercase text-xs tracking-wider mb-0 font-heading">
                               Select Meal Plan &amp; Rate Policy
                             </h6>
                             <span className="text-muted text-xxs">
@@ -835,7 +883,7 @@ export default function HotelDetailsPage({
                                   }}
                                   className={`p-3 rounded-3 border transition-all cursor-pointer ${
                                     isSelected 
-                                      ? 'border-primary bg-primary bg-opacity-10 shadow-sm' 
+                                      ? 'border-warning bg-warning bg-opacity-10 shadow-sm' 
                                       : 'border-slate-200 bg-white hover-border-slate-300'
                                   } ${isRoomSoldOut ? 'pointer-events-none' : ''}`}
                                   style={{ borderWidth: isSelected ? '2px' : '1px' }}
@@ -867,7 +915,7 @@ export default function HotelDetailsPage({
                                           ))}
                                         </div>
 
-                                        {/* Cancellation Policy (Phase 6) */}
+                                        {/* Cancellation Policy */}
                                         <div className="mt-1 text-xs">
                                           {plan.cancellation_policy ? (
                                             <span className="text-primary fw-medium d-flex align-items-center gap-1">
@@ -883,7 +931,7 @@ export default function HotelDetailsPage({
                                     {/* Pricing Box */}
                                     <div className="text-start text-sm-end ps-4 ps-sm-0 flex-shrink-0">
                                       <div className="text-muted text-xxs text-uppercase">Per Night</div>
-                                      <div className="fw-black fs-5 text-dark">
+                                      <div className="fw-black fs-5 text-dark font-heading">
                                         ₹{nightlyPrice.toLocaleString('en-IN')}
                                       </div>
                                       <div className="text-muted text-xxs">
@@ -898,23 +946,23 @@ export default function HotelDetailsPage({
                           </div>
                         </div>
 
-                        {/* Room Card Bottom Action */}
+                        {/* Room Card Bottom Action: Clear Select Room Button */}
                         <div className="pt-3 mt-3 border-top d-flex flex-column flex-sm-row justify-content-between align-items-center gap-3">
                           <div className="text-muted text-xs">
-                            Selected: <strong className="text-dark">{currentSelectedPlan?.name || 'EP Room Only'}</strong> for <strong className="text-dark">{nights} {nights === 1 ? 'Night' : 'Nights'}</strong>
+                            Selected Plan: <strong className="text-dark">{currentSelectedPlan?.name || 'EP Room Only'}</strong> ({nights} {nights === 1 ? 'Night' : 'Nights'})
                           </div>
 
                           <button 
                             type="button"
                             disabled={isRoomSoldOut}
                             onClick={() => handleReserveRoom(room, currentSelectedPlan)}
-                            className={`btn ${isRoomSoldOut ? 'btn-secondary' : 'btn-primary'} rounded-pill px-4 py-2.5 fw-bold text-xs d-flex align-items-center gap-2 shadow-sm`}
+                            className={`btn ${isRoomSoldOut ? 'btn-secondary' : 'btn-warning text-dark'} rounded-pill px-4 py-2.5 fw-bold text-xs d-flex align-items-center gap-2 shadow-sm font-heading hover-scale`}
                           >
                             {isRoomSoldOut ? (
                               <span>Sold Out for Dates</span>
                             ) : (
                               <>
-                                <span>Reserve {room.name}</span>
+                                <span>Select Room &amp; Book</span>
                                 <ChevronRight size={16} />
                               </>
                             )}
@@ -931,12 +979,12 @@ export default function HotelDetailsPage({
           )}
         </div>
 
-        {/* ─── 7. GUEST REVIEWS FULL SECTION (Phase 7) ─── */}
-        <div className="bg-white rounded-4 shadow-sm p-4 mb-4 border">
+        {/* ─── 7. GUEST REVIEWS FULL SECTION ─── */}
+        <div className="bg-white rounded-4 shadow-sm p-4 mb-4 border" style={{ borderColor: '#E2E8F0' }}>
           <div className="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
             <div>
               <div className="d-flex align-items-center gap-2">
-                <MessageSquare size={20} className="text-primary" />
+                <MessageSquare size={20} className="text-warning" />
                 <h4 className="fw-bold text-dark mb-0 font-heading">Verified Guest Reviews</h4>
               </div>
               <span className="text-muted text-xs">
@@ -965,7 +1013,7 @@ export default function HotelDetailsPage({
                     <div>
                       <div className="d-flex justify-content-between align-items-center mb-2">
                         <div className="d-flex align-items-center gap-2">
-                          <div className="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center fw-bold text-xs" style={{ width: '32px', height: '32px' }}>
+                          <div className="bg-dark text-white rounded-circle d-flex align-items-center justify-content-center fw-bold text-xs" style={{ width: '32px', height: '32px' }}>
                             {(rev.guest_name || 'G')[0]}
                           </div>
                           <div>
@@ -998,15 +1046,15 @@ export default function HotelDetailsPage({
 
       </div>
 
-      {/* ─── 8. INTERACTIVE LOCATION & MAP MODAL (Phase 8) ─── */}
+      {/* ─── 8. INTERACTIVE LOCATION & MAP MODAL ─── */}
       {mapModalOpen && (
         <div className="position-fixed inset-0 bg-dark bg-opacity-75 d-flex align-items-center justify-content-center p-3" style={{ zIndex: 1060, top: 0, left: 0, right: 0, bottom: 0 }}>
           <div className="bg-white rounded-4 shadow-lg overflow-hidden w-100 max-w-4xl border" style={{ maxWidth: '900px', height: '85vh' }}>
             <div className="d-flex justify-content-between align-items-center p-3 border-bottom bg-light">
               <div className="d-flex align-items-center gap-2">
-                <MapPin size={20} className="text-primary" />
+                <MapPin size={20} className="text-warning" />
                 <div>
-                  <h5 className="fw-bold text-dark mb-0">{hotel.name} Location</h5>
+                  <h5 className="fw-bold text-dark mb-0 font-heading">{hotel.name} Location</h5>
                   <span className="text-muted text-xs">{hotel.address ? `${hotel.address}, ` : ''}{hotel.area || hotel.location || 'Goa, India'}</span>
                 </div>
               </div>
@@ -1015,7 +1063,7 @@ export default function HotelDetailsPage({
                   href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapSearchQuery)}`} 
                   target="_blank" 
                   rel="noreferrer"
-                  className="btn btn-outline-primary btn-sm rounded-pill text-xs fw-bold d-flex align-items-center gap-1"
+                  className="btn btn-outline-dark btn-sm rounded-pill text-xs fw-bold d-flex align-items-center gap-1"
                 >
                   <ExternalLink size={14} /> Open in Google Maps
                 </a>
@@ -1045,26 +1093,45 @@ export default function HotelDetailsPage({
         </div>
       )}
 
-      {/* ─── 9. FULL PHOTO GALLERY & LIGHTBOX MODAL (Phase 5) ─── */}
+      {/* ─── 9. FULL PHOTO GALLERY & LIGHTBOX MODAL ─── */}
       {galleryOpen && (
-        <div className="position-fixed inset-0 bg-dark bg-opacity-90 d-flex flex-column" style={{ zIndex: 1070, top: 0, left: 0, right: 0, bottom: 0 }}>
-          
+        <div 
+          className="position-fixed d-flex flex-column" 
+          style={{ 
+            zIndex: 1070, 
+            top: 0, 
+            left: 0, 
+            right: 0, 
+            bottom: 0, 
+            width: '100vw', 
+            height: '100vh', 
+            backgroundColor: 'rgba(15, 23, 42, 0.97)', 
+            backdropFilter: 'blur(10px)' 
+          }}
+        >
           {/* Gallery Modal Top Bar */}
-          <div className="d-flex justify-content-between align-items-center p-3 text-white border-bottom border-secondary bg-dark bg-opacity-50">
-            <div className="d-flex align-items-center gap-3">
-              <h5 className="mb-0 fw-bold">{hotel.name} Photos</h5>
+          <div className="d-flex flex-wrap justify-content-between align-items-center p-3 text-white border-bottom border-secondary bg-dark bg-opacity-75">
+            <div className="d-flex flex-wrap align-items-center gap-2 gap-sm-3">
+              <h5 className="mb-0 fw-bold font-heading text-truncate" style={{ maxWidth: '280px' }}>{hotel.name} Gallery</h5>
               <div className="btn-group rounded-pill p-1 bg-secondary bg-opacity-25">
                 <button 
-                  type="button"
-                  onClick={() => setGalleryTab('property')}
-                  className={`btn btn-sm rounded-pill px-3 fw-bold text-xs ${galleryTab === 'property' ? 'btn-primary' : 'text-white'}`}
+                  type="button" 
+                  onClick={() => setGalleryTab('all')}
+                  className={`btn btn-sm rounded-pill px-3 fw-bold text-xs ${galleryTab === 'all' ? 'btn-warning text-dark' : 'text-white'}`}
                 >
-                  Property Photos ({propertyImages.length})
+                  All Photos ({allGalleryItems.length})
                 </button>
                 <button 
-                  type="button"
+                  type="button" 
+                  onClick={() => setGalleryTab('property')}
+                  className={`btn btn-sm rounded-pill px-3 fw-bold text-xs ${galleryTab === 'property' ? 'btn-warning text-dark' : 'text-white'}`}
+                >
+                  Property ({propertyImages.length})
+                </button>
+                <button 
+                  type="button" 
                   onClick={() => setGalleryTab('rooms')}
-                  className={`btn btn-sm rounded-pill px-3 fw-bold text-xs ${galleryTab === 'rooms' ? 'btn-primary' : 'text-white'}`}
+                  className={`btn btn-sm rounded-pill px-3 fw-bold text-xs ${galleryTab === 'rooms' ? 'btn-warning text-dark' : 'text-white'}`}
                 >
                   Rooms ({roomGalleryItems.length})
                 </button>
@@ -1074,63 +1141,56 @@ export default function HotelDetailsPage({
               type="button" 
               onClick={() => setGalleryOpen(false)} 
               className="btn btn-outline-light rounded-circle p-2 d-flex align-items-center justify-content-center"
+              title="Close Gallery (Esc)"
             >
               <X size={20} />
             </button>
           </div>
 
           {/* Gallery Content Grid */}
-          <div className="flex-fill overflow-auto p-4">
-            <div className="container">
-              {galleryTab === 'property' ? (
+          <div className="flex-fill overflow-auto p-3 p-md-4">
+            <div className="container-fluid" style={{ maxWidth: '1400px' }}>
+              {currentGalleryList.length === 0 ? (
+                <div className="text-center py-5 text-white-50">
+                  <BedDouble size={48} className="mb-2 opacity-50" />
+                  <h5>No Photos in this Section</h5>
+                  <p className="text-xs">Select &quot;All Photos&quot; to see all uploaded property and room pictures.</p>
+                </div>
+              ) : (
                 <div className="row g-3">
-                  {propertyImages.map((img, idx) => (
+                  {currentGalleryList.map((item, idx) => (
                     <div key={idx} className="col-12 col-sm-6 col-md-4 col-lg-3">
                       <div 
-                        className="rounded-3 overflow-hidden shadow cursor-pointer hover-scale border border-secondary"
-                        style={{ height: '220px' }}
-                        onClick={() => setActiveLightboxImg(img)}
+                        className="rounded-3 overflow-hidden shadow cursor-pointer hover-scale border border-secondary border-opacity-50 position-relative"
+                        style={{ height: '240px', backgroundColor: '#0f172a' }}
+                        onClick={() => openLightbox(idx)}
                       >
                         <img 
-                          src={img} 
-                          alt={`Property ${idx + 1}`} 
-                          className="w-100 h-100 object-fit-cover"
+                          src={item.url} 
+                          alt={item.caption || `${hotel.name} Photo ${idx + 1}`} 
+                          className="w-100 h-100 object-fit-cover transition"
+                          onError={(e) => {
+                            e.currentTarget.src = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80';
+                          }}
                         />
+
+                        {/* Top Category Badge */}
+                        <div className="position-absolute top-0 start-0 m-2">
+                          <span className={`badge ${item.category === 'property' ? 'bg-dark bg-opacity-80 text-warning border border-warning border-opacity-40' : 'bg-primary bg-opacity-90 text-white'} text-xxs px-2 py-1 rounded-pill shadow-sm`}>
+                            {item.category === 'property' ? '🏨 Property' : `🛏️ ${item.roomName}`}
+                          </span>
+                        </div>
+
+                        {/* Bottom Information Overlay */}
+                        <div className="position-absolute bottom-0 start-0 end-0 p-2.5 text-white bg-dark bg-opacity-80 d-flex justify-content-between align-items-center text-xxs">
+                          <span className="text-truncate me-2 fw-medium">{item.caption || item.roomName}</span>
+                          <span className="badge bg-secondary bg-opacity-60 text-white text-xxs d-flex align-items-center gap-1">
+                            <Maximize2 size={10} /> Full Photo
+                          </span>
+                        </div>
                       </div>
                     </div>
                   ))}
-                </div>
-              ) : (
-                <div>
-                  {roomGalleryItems.length === 0 ? (
-                    <div className="text-center py-5 text-white-50">
-                      <BedDouble size={48} className="mb-2 opacity-50" />
-                      <h5>No Dedicated Room Photos Uploaded</h5>
-                      <p className="text-xs">Property photos are used as standard preview.</p>
-                    </div>
-                  ) : (
-                    <div className="row g-3">
-                      {roomGalleryItems.map((item, idx) => (
-                        <div key={idx} className="col-12 col-sm-6 col-md-4 col-lg-3">
-                          <div 
-                            className="rounded-3 overflow-hidden shadow cursor-pointer hover-scale border border-secondary position-relative"
-                            style={{ height: '220px' }}
-                            onClick={() => setActiveLightboxImg(item.url)}
-                          >
-                            <img 
-                              src={item.url} 
-                              alt={item.caption} 
-                              className="w-100 h-100 object-fit-cover"
-                            />
-                            <div className="position-absolute bottom-0 start-0 end-0 bg-dark bg-opacity-75 text-white p-2 text-xxs text-truncate">
-                              <strong className="d-block text-truncate">{item.roomName}</strong>
-                              <span>{item.caption}</span>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
               )}
             </div>
@@ -1138,26 +1198,119 @@ export default function HotelDetailsPage({
         </div>
       )}
 
-      {/* ─── 10. LIGHTBOX FULLSCREEN PREVIEW ─── */}
+      {/* ─── 10. LIGHTBOX FULLSCREEN PREVIEW WITH NAVIGATION & THUMBNAILS ─── */}
       {activeLightboxImg && (
         <div 
-          className="position-fixed inset-0 bg-black bg-opacity-95 d-flex align-items-center justify-content-center p-3" 
-          style={{ zIndex: 1080, top: 0, left: 0, right: 0, bottom: 0 }}
+          className="position-fixed d-flex flex-column align-items-center justify-content-between p-3" 
+          style={{ 
+            zIndex: 1080, 
+            top: 0, 
+            left: 0, 
+            right: 0, 
+            bottom: 0, 
+            width: '100vw', 
+            height: '100vh', 
+            backgroundColor: 'rgba(0, 0, 0, 0.96)', 
+            backdropFilter: 'blur(12px)' 
+          }}
           onClick={() => setActiveLightboxImg(null)}
         >
-          <button 
-            type="button" 
-            onClick={() => setActiveLightboxImg(null)} 
-            className="position-absolute top-0 end-0 m-4 btn btn-outline-light rounded-circle p-2"
+          {/* Lightbox Header Bar */}
+          <div 
+            className="w-100 d-flex justify-content-between align-items-center px-3 py-2 text-white" 
+            style={{ zIndex: 1090 }}
+            onClick={(e) => e.stopPropagation()}
           >
-            <X size={24} />
-          </button>
-          <img 
-            src={activeLightboxImg} 
-            alt="Fullscreen Preview" 
-            className="max-w-full max-h-full object-fit-contain rounded-3 shadow-lg"
-            style={{ maxHeight: '90vh', maxWidth: '90vw' }}
-          />
+            <div className="d-flex align-items-center gap-2">
+              <span className="badge bg-warning text-dark fw-bold px-2.5 py-1 text-xs rounded-pill">
+                Photo {activeLightboxIdx + 1} of {currentGalleryList.length}
+              </span>
+              <span className="text-white-50 text-xs d-none d-sm-inline">
+                {currentGalleryList[activeLightboxIdx]?.caption || currentGalleryList[activeLightboxIdx]?.roomName}
+              </span>
+            </div>
+            <button 
+              type="button" 
+              onClick={() => setActiveLightboxImg(null)} 
+              className="btn btn-outline-light rounded-circle p-2 d-flex align-items-center justify-content-center"
+              title="Close Fullscreen (Esc)"
+            >
+              <X size={22} />
+            </button>
+          </div>
+
+          {/* Main Photo with Previous / Next Arrows */}
+          <div 
+            className="position-relative d-flex align-items-center justify-content-center flex-fill w-100 my-2" 
+            style={{ overflow: 'hidden' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {currentGalleryList.length > 1 && (
+              <button 
+                type="button"
+                onClick={prevLightboxImg}
+                className="position-absolute start-0 ms-2 ms-md-4 btn btn-dark bg-opacity-75 text-white rounded-circle p-3 d-flex align-items-center justify-content-center border border-white border-opacity-25 hover-scale shadow"
+                style={{ zIndex: 1090 }}
+                title="Previous Photo (Left Arrow)"
+              >
+                <ChevronLeft size={28} />
+              </button>
+            )}
+
+            <img 
+              src={activeLightboxImg} 
+              alt={currentGalleryList[activeLightboxIdx]?.caption || "Fullscreen Preview"} 
+              className="rounded-3 shadow-lg"
+              style={{ 
+                maxHeight: '75vh', 
+                maxWidth: '85vw', 
+                objectFit: 'contain',
+                boxShadow: '0 20px 50px rgba(0,0,0,0.8)'
+              }}
+              onError={(e) => {
+                e.currentTarget.src = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1200&q=80';
+              }}
+            />
+
+            {currentGalleryList.length > 1 && (
+              <button 
+                type="button"
+                onClick={nextLightboxImg}
+                className="position-absolute end-0 me-2 me-md-4 btn btn-dark bg-opacity-75 text-white rounded-circle p-3 d-flex align-items-center justify-content-center border border-white border-opacity-25 hover-scale shadow"
+                style={{ zIndex: 1090 }}
+                title="Next Photo (Right Arrow)"
+              >
+                <ChevronRight size={28} />
+              </button>
+            )}
+          </div>
+
+          {/* Bottom Thumbnail Strip */}
+          {currentGalleryList.length > 1 && (
+            <div 
+              className="d-flex align-items-center gap-2 overflow-auto py-2 px-3 w-100 justify-content-center" 
+              style={{ maxHeight: '70px', zIndex: 1090 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {currentGalleryList.map((thumb, tIdx) => (
+                <button
+                  key={tIdx}
+                  type="button"
+                  onClick={() => openLightbox(tIdx)}
+                  className={`border-0 p-0 rounded-2 overflow-hidden transition-all flex-shrink-0 ${tIdx === activeLightboxIdx ? 'ring-2' : 'opacity-50'}`}
+                  style={{ 
+                    width: '60px', 
+                    height: '42px', 
+                    cursor: 'pointer',
+                    outline: tIdx === activeLightboxIdx ? '2px solid #F59E0B' : 'none',
+                    opacity: tIdx === activeLightboxIdx ? 1 : 0.5
+                  }}
+                >
+                  <img src={thumb.url} alt="" className="w-100 h-100 object-fit-cover" />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

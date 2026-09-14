@@ -82,7 +82,13 @@ export default function App() {
       if (p.startsWith('/dashboard')) return 'dashboard';
       if (p.startsWith('/activities')) return 'activities';
       if (p.startsWith('/craft')) return 'craftmytrip';
-      if (p.startsWith('/hotels')) return 'hotels';
+      if (p.startsWith('/hotels')) {
+        const savedTab = sessionStorage.getItem('tg_activeTab');
+        if (savedTab === 'hotel-details' && sessionStorage.getItem('tg_selectedDetailItem')) {
+          return 'hotel-details';
+        }
+        return 'hotels';
+      }
       if (p.startsWith('/cars')) return 'cars';
       if (p.startsWith('/bikes')) return 'bikes';
       if (p.startsWith('/flights')) return 'flights';
@@ -129,7 +135,13 @@ export default function App() {
   // Checkout Modal state
   const [selectedBookingItem, setSelectedBookingItem] = useState(null);
   const [selectedPackageModal, setSelectedPackageModal] = useState(null);
-  const [selectedDetailItem, setSelectedDetailItem] = useState(null);
+  const [selectedDetailItem, setSelectedDetailItem] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('tg_selectedDetailItem');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return null;
+  });
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [bookingDays, setBookingDays] = useState(2);
   const [userName, setUserName] = useState('');
@@ -356,7 +368,14 @@ export default function App() {
       let newTab = null;
       if (cleanPath === 'packages') newTab = 'packages';
       else if (cleanPath === 'self-drive' || cleanPath === 'selfdrive' || cleanPath === '') newTab = 'selfdrive';
-      else if (cleanPath === 'hotels') newTab = 'hotels';
+      else if (cleanPath === 'hotels') {
+        const savedTab = sessionStorage.getItem('tg_activeTab');
+        if (savedTab === 'hotel-details' && sessionStorage.getItem('tg_selectedDetailItem')) {
+          newTab = 'hotel-details';
+        } else {
+          newTab = 'hotels';
+        }
+      }
       else if (cleanPath === 'cars') newTab = 'cars';
       else if (cleanPath === 'bikes') newTab = 'bikes';
       else if (cleanPath === 'flights') newTab = 'flights';
@@ -389,6 +408,9 @@ export default function App() {
 
     if (activeTab === 'customize' && normalizedTab !== 'customize') {
       setSelectedBookingItem(null);
+    }
+    if (normalizedTab !== 'hotel-details') {
+      try { sessionStorage.removeItem('tg_selectedDetailItem'); } catch (e) {}
     }
     setActiveTab(normalizedTab);
     // Persist active tab to sessionStorage so browser refresh restores the correct portal
@@ -472,12 +494,12 @@ export default function App() {
     }
     const bookingItem = {
       ...hotel,
-      preselected_room: selectedRoom,
-      preselected_rate_plan: selectedRatePlan
+      preselected_room: selectedRoom || hotel?.preselected_room || null,
+      preselected_rate_plan: selectedRatePlan || hotel?.preselected_rate_plan || null
     };
     setSelectedBookingItem(bookingItem);
-    let days = 2;
-    if (pickupDate && dropDate) {
+    let days = hotel?.booking_days || 2;
+    if (!hotel?.booking_days && pickupDate && dropDate) {
       const diff = Math.round((new Date(dropDate) - new Date(pickupDate)) / (1000 * 60 * 60 * 24));
       if (diff > 0) days = diff;
     }
@@ -503,8 +525,15 @@ export default function App() {
     } else {
       setSelectedDetailItem(item);
       setSearchTriggered(true);
-      if (type === 'hotel') setActiveTab('hotel-details');
-      else if (type === 'vehicle') setActiveTab('vehicle-details');
+      if (type === 'hotel') {
+        setActiveTab('hotel-details');
+        try {
+          sessionStorage.setItem('tg_activeTab', 'hotel-details');
+          sessionStorage.setItem('tg_selectedDetailItem', JSON.stringify(item));
+        } catch (e) {}
+      } else if (type === 'vehicle') {
+        setActiveTab('vehicle-details');
+      }
       setTimeout(() => {
         document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
       }, 50);
@@ -1529,6 +1558,10 @@ export default function App() {
                 }
                 setSelectedDetailItem(null);
                 setActiveTab('hotels');
+                try {
+                  sessionStorage.removeItem('tg_selectedDetailItem');
+                  sessionStorage.setItem('tg_activeTab', 'hotels');
+                } catch (e) {}
                 setTimeout(() => {
                   document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
                 }, 50);
