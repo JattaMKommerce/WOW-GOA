@@ -14,6 +14,7 @@ export default function FlightsPage({
   flightInfants,
   flightClass,
   onSelectFlight,
+  onViewDetails,
   markups = [],
   appliedFilters = {},
   setAppliedFilters
@@ -362,8 +363,46 @@ export default function FlightsPage({
                   const durationHours = offer.duration ? parseInt(offer.duration.split('h')[0]) : 2;
                   const durationMins = offer.duration ? parseInt(offer.duration.split('h')[1]?.replace('m', '')) : 30;
 
+                  const handleFlightAction = () => {
+                    const fromIata = offer.departure?.iata || offer.from || (pickupLoc ? pickupLoc.split(' - ')[0].trim() : 'DEL');
+                    const toIata = offer.arrival?.iata || offer.to || (dropLoc ? dropLoc.split(' - ')[0].trim() : 'GOI');
+                    const depTime = formatTime(offer.departure?.scheduled || offer.departure || '10:00');
+                    const arrTimeVal = formatTime(offer.arrival?.scheduled || offer.arrival || '12:30');
+                    
+                    const formattedFlight = {
+                      ...offer,
+                      id: offer.id ? (String(offer.id).startsWith('fl-') || String(offer.id).startsWith('FL-') ? String(offer.id) : `FL-${offer.id}`) : `FL-${Date.now()}`,
+                      type: 'flight',
+                      airline: airlineName,
+                      from: fromIata,
+                      to: toIata,
+                      departure: depTime,
+                      arrival: arrTimeVal,
+                      departureDate: pickupDate || new Date().toISOString().split('T')[0],
+                      duration: `${durationHours}h ${durationMins}m`,
+                      stops: stops,
+                      price: offer.price,
+                      name: `${airlineName} Flight (${fromIata} → ${toIata})`,
+                      image: airlineLogo,
+                      cabin_class: flightClass || offer.cabin_class || 'economy',
+                      adults: flightAdults || 1,
+                      children: flightChildren || 0,
+                      infants: flightInfants || 0
+                    };
+                    if (onViewDetails) {
+                      onViewDetails(formattedFlight);
+                    } else if (onSelectFlight) {
+                      onSelectFlight(formattedFlight);
+                    }
+                  };
+
                   return (
-                    <div key={offer.id} className="card border-0 shadow-sm rounded transition-all hover-scale" style={{ overflow: 'hidden' }}>
+                    <div 
+                      key={offer.id} 
+                      className="card border-0 shadow-sm rounded transition-all hover-scale" 
+                      style={{ overflow: 'hidden', cursor: 'pointer' }}
+                      onClick={handleFlightAction}
+                    >
                       <div className="card-body p-4 d-flex flex-column flex-md-row align-items-center justify-content-between">
                         <div className="d-flex align-items-center gap-3" style={{ width: '25%' }}>
                           <img src={airlineLogo} alt={airlineName} className="rounded bg-light" style={{ width: '40px', height: '40px', objectFit: 'contain' }} onError={(e)=>{e.target.src='https://images.unsplash.com/photo-1436491865332-7a61a109cc05?w=50&q=80'}} />
@@ -393,45 +432,28 @@ export default function FlightsPage({
                           </div>
                         </div>
                         
-                        <div className="d-flex flex-column align-items-end justify-content-center ps-4" style={{ width: '25%', borderLeft: '1px solid #eee' }}>
+                        <div className="d-flex flex-column align-items-end justify-content-center ps-4" style={{ width: '25%', borderLeft: '1px solid #eee' }} onClick={(e) => e.stopPropagation()}>
                           <h3 className="fw-bold text-dark mb-2">{currency} {price}</h3>
                           
-                             <button 
-                              className="btn btn-primary rounded-pill px-4 py-2 fw-bold w-100"
-                              style={{ fontSize: '14px', letterSpacing: '0.5px' }}
-                              onClick={() => {
-                                const fromIata = offer.departure?.iata || offer.from || (pickupLoc ? pickupLoc.split(' - ')[0].trim() : 'DEL');
-                                const toIata = offer.arrival?.iata || offer.to || (dropLoc ? dropLoc.split(' - ')[0].trim() : 'GOI');
-                                const depTime = formatTime(offer.departure?.scheduled || offer.departure || '10:00');
-                                const arrTimeVal = formatTime(offer.arrival?.scheduled || offer.arrival || '12:30');
-                                
-                                const formattedFlight = {
-                                  ...offer,
-                                  id: offer.id ? (String(offer.id).startsWith('fl-') || String(offer.id).startsWith('FL-') ? String(offer.id) : `FL-${offer.id}`) : `FL-${Date.now()}`,
-                                  type: 'flight',
-                                  airline: airlineName,
-                                  from: fromIata,
-                                  to: toIata,
-                                  departure: depTime,
-                                  arrival: arrTimeVal,
-                                  duration: `${durationHours}h ${durationMins}m`,
-                                  stops: stops,
-                                  price: offer.price,
-                                  name: `${airlineName} Flight (${fromIata} → ${toIata})`,
-                                  image: airlineLogo,
-                                };
-                                if (onSelectFlight) onSelectFlight(formattedFlight);
-                              }}
-                            >
-                              Book Now
-                            </button>
+                          <button 
+                            type="button"
+                            className="btn btn-primary rounded-pill px-4 py-2 fw-bold w-100 d-flex align-items-center justify-content-center gap-1.5 shadow-sm"
+                            style={{ fontSize: '14px', letterSpacing: '0.5px', background: '#FF6333', borderColor: '#FF6333' }}
+                            onClick={handleFlightAction}
+                          >
+                            <span>Book Now</span>
+                            <ChevronRight size={16} />
+                          </button>
                         </div>
                       </div>
                       <div className="bg-light px-4 py-2 d-flex justify-content-between text-muted" style={{ fontSize: '12px' }}>
                         <span>
-                               <><Check size={12} className="text-success me-1"/> Refundable</>
+                          <Check size={12} className="text-success me-1"/> Refundable Flight
                         </span>
-                        <span className="text-primary cursor-pointer">View Flight Details</span>
+                        <span className="text-primary cursor-pointer fw-semibold d-flex align-items-center gap-1" onClick={handleFlightAction}>
+                          <span>View Flight Details</span>
+                          <ChevronRight size={13} />
+                        </span>
                       </div>
                     </div>
                   );

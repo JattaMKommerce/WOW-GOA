@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Star, Users, TrendingUp, ShieldCheck, Award, Filter, AlertCircle, RotateCcw } from 'lucide-react';
+import { Star, Users, TrendingUp, ShieldCheck, Award, Filter, AlertCircle, RotateCcw, ChevronRight } from 'lucide-react';
 
 const BIKE_CATEGORIES = new Set([
   'scooter', 'scooter / moped', 'sports bike', 'cruiser', 'tourer / adventure',
@@ -242,7 +242,14 @@ export default function CarsPage({
 
             return (
               <div key={car.id} className="col-md-6 col-lg-4">
-                <div className="card h-100 border-0 shadow-sm rounded-4 overflow-hidden position-relative">
+                <div 
+                  className="card h-100 border-0 shadow-sm rounded-4 overflow-hidden position-relative hover-scale"
+                  style={{ cursor: 'pointer', transition: 'all 0.25s ease' }}
+                  onClick={() => {
+                    if (document.activeElement?.blur) document.activeElement.blur();
+                    if (onViewDetails) onViewDetails(car);
+                  }}
+                >
                   <div className="position-relative bg-dark" style={{ height: '200px' }}>
                     <img 
                       src={currentImg} 
@@ -259,10 +266,7 @@ export default function CarsPage({
                           type="button"
                           className="btn btn-sm btn-dark position-absolute start-0 top-50 translate-middle-y ms-2 rounded-circle d-flex align-items-center justify-content-center opacity-75 shadow"
                           style={{ width: '26px', height: '26px', padding: 0, zIndex: 2 }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleMediaNav(car.id, -1, mediaList.length);
-                          }}
+                          onClick={(e) => handlePrevMedia(car.id, mediaList.length, e)}
                         >
                           ‹
                         </button>
@@ -270,10 +274,7 @@ export default function CarsPage({
                           type="button"
                           className="btn btn-sm btn-dark position-absolute end-0 top-50 translate-middle-y me-2 rounded-circle d-flex align-items-center justify-content-center opacity-75 shadow"
                           style={{ width: '26px', height: '26px', padding: 0, zIndex: 2 }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleMediaNav(car.id, 1, mediaList.length);
-                          }}
+                          onClick={(e) => handleNextMedia(car.id, mediaList.length, e)}
                         >
                           ›
                         </button>
@@ -286,7 +287,7 @@ export default function CarsPage({
 
                   <div className="card-body p-3 d-flex flex-column justify-content-between">
                     <div>
-                      <h5 className="fw-bold text-dark mb-1">{car.name}</h5>
+                      <h5 className="fw-bold text-dark mb-1 font-heading">{car.name}</h5>
                       <div className="d-flex align-items-center gap-2 text-muted small mb-3">
                         <span>👥 {car.seating || 5} Seats</span>
                         <span>•</span>
@@ -299,35 +300,21 @@ export default function CarsPage({
                     <div className="d-flex justify-content-between align-items-center pt-2 border-top">
                       <div>
                         <span className="text-muted small d-block">per day</span>
-                        <h4 className="fw-black text-primary mb-0">₹{Number(car.price).toLocaleString('en-IN')}</h4>
+                        <h4 className="fw-black text-primary mb-0 font-heading">₹{Number(car.price).toLocaleString('en-IN')}</h4>
                       </div>
-                      <div className="d-flex gap-2">
-                        {onViewDetails && (
-                          <button 
-                            type="button" 
-                            className="btn btn-outline-secondary btn-sm rounded-pill px-3"
-                            onClick={() => {
-                              if (document.activeElement && typeof document.activeElement.blur === 'function') {
-                                document.activeElement.blur();
-                              }
-                              onViewDetails(car);
-                            }}
-                          >
-                            Details
-                          </button>
-                        )}
+                      <div>
                         <button 
                           type="button" 
-                          className="btn btn-primary btn-sm rounded-pill px-3 fw-bold"
-                          style={{ background: '#FF6333', borderColor: '#FF6333' }}
-                          onClick={() => {
-                            if (document.activeElement && typeof document.activeElement.blur === 'function') {
-                              document.activeElement.blur();
-                            }
-                            handleOpenBooking(car);
+                          className="btn btn-primary btn-sm rounded-pill px-3 py-1.5 fw-bold font-heading d-flex align-items-center gap-1 hover-scale shadow-sm"
+                          style={{ background: '#FF6333', borderColor: '#FF6333', color: '#FFFFFF' }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (document.activeElement?.blur) document.activeElement.blur();
+                            if (onViewDetails) onViewDetails(car);
                           }}
                         >
-                          Book Now
+                          <span>View Details &amp; Book</span>
+                          <ChevronRight size={15} />
                         </button>
                       </div>
                     </div>

@@ -500,8 +500,8 @@ function CategoryRow({
                   e.preventDefault();
                   return;
                 }
-                if (onBookVehicle) onBookVehicle(v);
-                else if (onViewVehicle) onViewVehicle(v);
+                if (onViewVehicle) onViewVehicle(v);
+                else if (onBookVehicle) onBookVehicle(v);
               }}
             >
               {/* Vehicle Image */}

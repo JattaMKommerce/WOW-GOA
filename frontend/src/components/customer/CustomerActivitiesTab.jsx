@@ -10,6 +10,9 @@ import DobPicker from '../common/DobPicker';
 import TourDatePicker from '../common/TourDatePicker';
 import BookingVoucher from '../common/BookingVoucher';
 
+const filterActiveActivities = (items) => (Array.isArray(items) ? items : [])
+  .filter(item => item.is_active !== 0 && item.is_active !== '0' && item.is_active !== false);
+
 export default function CustomerActivitiesTab({
   currentUser,
   activities = [],
@@ -19,9 +22,10 @@ export default function CustomerActivitiesTab({
   appliedFilters = {},
   setAppliedFilters,
   searchQuery: parentSearchQuery = '',
-  setSearchQuery: setParentSearchQuery
+  setSearchQuery: setParentSearchQuery,
+  onViewDetails
 }) {
-  const [items, setItems] = useState(activities || []);
+  const [items, setItems] = useState(filterActiveActivities(activities));
   const [loading, setLoading] = useState(false);
   const [typeFilter, setTypeFilter] = useState('all'); // 'all' | 'sightseeing' | 'activity'
   const [searchQuery, setSearchQuery] = useState(parentSearchQuery || '');
@@ -101,13 +105,13 @@ export default function CustomerActivitiesTab({
       api.fetchActivities()
         .then(data => {
           if (Array.isArray(data) && data.length > 0) {
-            setItems(data);
+            setItems(filterActiveActivities(data));
           }
         })
         .catch(err => console.warn('Failed to load activities:', err))
         .finally(() => setLoading(false));
     } else {
-      setItems(activities);
+      setItems(filterActiveActivities(activities));
     }
   }, [activities]);
 
@@ -561,14 +565,24 @@ export default function CustomerActivitiesTab({
 
             return (
               <div key={item.id} className="col-12 col-md-6 col-lg-6">
-                <div className="card border-0 shadow-sm rounded-4 h-100 bg-white overflow-hidden d-flex flex-column hover-shadow transition-all" style={{ border: '1px solid #eef2f6' }}>
+                <div 
+                  className="card border-0 shadow-sm rounded-4 h-100 bg-white overflow-hidden d-flex flex-column hover-shadow transition-all" 
+                  style={{ border: '1px solid #eef2f6', cursor: 'pointer' }}
+                  onClick={() => onViewDetails ? onViewDetails(item) : handleOpenBooking(item)}
+                >
                   {/* Card Image */}
                   <div className="position-relative" style={{ height: '200px', overflow: 'hidden', background: '#f1f5f9' }}>
-                    <img 
-                      src={item.image_url || (isSightseeing ? 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=800' : 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=800')} 
-                      alt={item.title || item.name}
-                      className="w-100 h-100 object-fit-cover"
-                    />
+                    {item.image_url || item.image ? (
+                      <img 
+                        src={item.image_url || item.image} 
+                        alt={item.title || item.name}
+                        className="w-100 h-100 object-fit-cover"
+                      />
+                    ) : (
+                      <div className="w-100 h-100 d-flex align-items-center justify-content-center text-muted text-xs">
+                        Image not available
+                      </div>
+                    )}
                     <div className="position-absolute top-0 start-0 m-3">
                       <span className={`badge px-2.5 py-1 rounded-pill fw-bold text-xxs shadow-sm ${
                         isSightseeing ? 'bg-primary text-white' : 'bg-success text-white'
@@ -609,22 +623,42 @@ export default function CustomerActivitiesTab({
                     </h5>
 
                     <p className="text-muted text-xs mb-3 flex-grow-1" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                      {item.description || 'Experience the best of Goa with verified safety standards and expert local guides.'}
+                      {item.description || 'Not specified'}
                     </p>
 
-                    <div className="d-flex align-items-center justify-content-between pt-2 border-top mt-auto">
-                      <div className="d-flex align-items-center gap-1 text-xxs text-success fw-bold">
-                        <ShieldCheck size={13} />
-                        <span>Instant Confirmation</span>
+                    <div className="d-flex align-items-center justify-content-between pt-2 border-top mt-auto gap-2">
+                      <div className="d-flex align-items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onViewDetails) {
+                              onViewDetails(item);
+                            } else {
+                              handleOpenBooking(item);
+                            }
+                          }}
+                          className="btn btn-sm btn-outline-dark fw-bold rounded-pill px-3 py-1.5 text-xs d-flex align-items-center gap-1"
+                        >
+                          <Eye size={13} />
+                          <span>View Details</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onViewDetails) {
+                              onViewDetails(item);
+                            } else {
+                              handleOpenBooking(item);
+                            }
+                          }}
+                          className="btn btn-sm btn-warning text-dark fw-bold rounded-pill px-3 py-1.5 shadow-sm text-xs d-flex align-items-center gap-1"
+                        >
+                          <span>Book Experience</span>
+                          <ArrowRight size={13} />
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => handleOpenBooking(item)}
-                        className="btn btn-sm btn-warning text-dark fw-bold rounded-pill px-3 py-1.5 shadow-sm text-xs d-flex align-items-center gap-1"
-                      >
-                        <span>Book Experience</span>
-                        <ArrowRight size={13} />
-                      </button>
                     </div>
                   </div>
                 </div>
@@ -729,8 +763,7 @@ export default function CustomerActivitiesTab({
           bookingModalItem.image ||
           bookingModalItem.thumbnail ||
           (Array.isArray(bookingModalItem.images) && bookingModalItem.images[0]) ||
-          (Array.isArray(bookingModalItem.mediaList) && bookingModalItem.mediaList[0]?.url) ||
-          'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=600&q=80';
+          (Array.isArray(bookingModalItem.mediaList) && bookingModalItem.mediaList[0]?.url);
 
         return (
           <div
@@ -1323,14 +1356,17 @@ export default function CustomerActivitiesTab({
                               className="position-relative rounded-3 overflow-hidden mb-3 shadow-xs"
                               style={{ height: '140px', background: '#e2e8f0' }}
                             >
-                              <img
-                                src={itemThumbnail}
-                                alt={bookingModalItem.title || bookingModalItem.name}
-                                className="w-100 h-100 object-fit-cover"
-                                onError={(e) => {
-                                  e.currentTarget.src = 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=600&q=80';
-                                }}
-                              />
+                              {itemThumbnail ? (
+                                <img
+                                  src={itemThumbnail}
+                                  alt={bookingModalItem.title || bookingModalItem.name}
+                                  className="w-100 h-100 object-fit-cover"
+                                />
+                              ) : (
+                                <div className="w-100 h-100 d-flex align-items-center justify-content-center text-muted text-xs">
+                                  Image not available
+                                </div>
+                              )}
                               <div className="position-absolute top-2 start-2">
                                 <span className="badge bg-dark bg-opacity-80 backdrop-blur text-white text-xxs px-2.5 py-1 rounded-pill fw-bold">
                                   {bookingModalItem.type === 'sightseeing' ? '🏛️ Sightseeing' : '⚡ Adventure'}
@@ -1411,19 +1447,10 @@ export default function CustomerActivitiesTab({
                               <div className="d-flex justify-content-between align-items-center pt-2.5 border-top border-slate-200">
                                 <div>
                                   <span className="text-xxs text-uppercase fw-bold text-muted d-block">Final Total Payable</span>
-                                  <span className="text-xxs text-success fw-semibold">All taxes included</span>
                                 </div>
                                 <div className="fs-4 fw-black text-dark font-heading">
                                   ₹{finalTotal.toLocaleString('en-IN')}
                                 </div>
-                              </div>
-                            </div>
-
-                            {/* Trust badge */}
-                            <div className="p-2.5 rounded-3 bg-success bg-opacity-10 border border-success border-opacity-25 mb-3 text-center">
-                              <div className="d-flex align-items-center justify-content-center gap-1.5 text-success fw-bold" style={{ fontSize: '0.74rem' }}>
-                                <ShieldCheck size={14} className="flex-shrink-0" />
-                                <span>Instant Confirmation | Mobile Voucher Accepted</span>
                               </div>
                             </div>
 

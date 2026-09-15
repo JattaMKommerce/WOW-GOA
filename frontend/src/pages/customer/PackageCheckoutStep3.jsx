@@ -1,8 +1,11 @@
 import React from 'react';
-import { ArrowLeft, CheckCircle2, ShieldCheck, CreditCard, ChevronRight } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, ShieldCheck, CreditCard, ChevronRight, Calendar } from 'lucide-react';
+import { formatDisplayDate } from '../../utils/dateUtils';
 
 export default function PackageCheckoutStep3({
   pkg,
+  departureDate,
+  returnDate,
   serverPriceData,
   paymentMode,
   setPaymentMode,
@@ -53,7 +56,14 @@ export default function PackageCheckoutStep3({
                       <CheckCircle2 size={18} className="text-success"/> Booking Summary
                   </h6>
                   <h5 className="fw-bold text-primary mb-1">{pkg.name}</h5>
-                  <p className="text-muted small mb-3">{pkg.duration} • {pkg.destination || 'Goa'}</p>
+                  <p className="text-muted small mb-2">{pkg.duration} • {pkg.destination || 'Goa'}</p>
+                  
+                  {(departureDate || returnDate) && (
+                    <div className="d-flex align-items-center gap-1.5 small text-dark fw-bold mb-3 p-2 bg-light rounded border">
+                      <Calendar size={14} className="text-danger" />
+                      <span>Dates: {departureDate ? (formatDisplayDate ? formatDisplayDate(departureDate) : departureDate) : 'Flexible'} → {returnDate ? (formatDisplayDate ? formatDisplayDate(returnDate) : returnDate) : 'Flexible'}</span>
+                    </div>
+                  )}
                   
                   <div className="bg-light p-3 rounded small mb-3">
                      <span className="fw-bold d-block text-dark mb-1">Cancellation Policy:</span>

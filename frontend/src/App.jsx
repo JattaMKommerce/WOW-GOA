@@ -24,7 +24,9 @@ import SelfDriveCategoryShowcase from './components/widgets/SelfDriveCategorySho
 
 // Import Pages
 import {
+  ActivityDetailsPage,
   FlightBookingFlow,
+  FlightDetailsPage,
   AdminPortalPage,
   VendorPortalPage,
   FlightVendorPortalPage,
@@ -32,6 +34,8 @@ import {
   SuperAdminPortalPage,
   HotelsPage,
   CarsPage,
+  CarDetailsPage,
+  BikeDetailsPage,
   BikesPage,
   FlightsPage,
   HotelDetailsPage,
@@ -66,6 +70,7 @@ import {
 } from './data/mockData';
 import * as api from './services/api';
 import { getTodayDateStr, addDays, validateBookingDates } from './utils/dateUtils';
+import { normalizeVehicleType } from './utils/vehicleHelper';
 
 export default function App() {
   const { liveConfig } = useSiteConfig();
@@ -80,7 +85,14 @@ export default function App() {
       if (p.startsWith('/driver')) return 'driver';
       if (p.startsWith('/customer')) return 'customer';
       if (p.startsWith('/dashboard')) return 'dashboard';
-      if (p.startsWith('/activities')) return 'activities';
+      if (p.startsWith('/activities')) {
+        const urlParams = new URLSearchParams(window.location.search);
+        const activityId = urlParams.get('activity') || urlParams.get('id');
+        if (activityId) {
+          return 'activity-details';
+        }
+        return 'activities';
+      }
       if (p.startsWith('/craft')) return 'craftmytrip';
       if (p.startsWith('/hotels')) {
         const savedTab = sessionStorage.getItem('tg_activeTab');
@@ -89,11 +101,52 @@ export default function App() {
         }
         return 'hotels';
       }
-      if (p.startsWith('/cars')) return 'cars';
-      if (p.startsWith('/bikes')) return 'bikes';
-      if (p.startsWith('/flights')) return 'flights';
-      if (p.startsWith('/packages')) return 'packages';
-      if (p.startsWith('/self-drive') || p.startsWith('/selfdrive')) return 'selfdrive';
+      if (p.startsWith('/cars')) {
+        const savedTab = sessionStorage.getItem('tg_activeTab');
+        if (savedTab === 'car-details' && sessionStorage.getItem('tg_selectedDetailItem')) {
+          return 'car-details';
+        }
+        return 'cars';
+      }
+      if (p.startsWith('/bikes')) {
+        const savedTab = sessionStorage.getItem('tg_activeTab');
+        if (savedTab === 'bike-details' && sessionStorage.getItem('tg_selectedDetailItem')) {
+          return 'bike-details';
+        }
+        return 'bikes';
+      }
+      if (p.startsWith('/flights')) {
+        const urlParams = new URLSearchParams(window.location.search);
+        const flightId = urlParams.get('flight') || urlParams.get('id');
+        if (flightId) {
+          return 'flight-details';
+        }
+        return 'flights';
+      }
+      if (p.startsWith('/packages')) {
+        const urlParams = new URLSearchParams(window.location.search);
+        const packageId = urlParams.get('package') || urlParams.get('id');
+        const step = urlParams.get('step');
+        if (step === 'customize') {
+          return 'customize';
+        }
+        if (packageId) {
+          return 'package-details';
+        }
+        return 'packages';
+      }
+      if (p.startsWith('/self-drive') || p.startsWith('/selfdrive')) {
+        const urlParams = new URLSearchParams(window.location.search);
+        const packageId = urlParams.get('package') || urlParams.get('id');
+        const step = urlParams.get('step');
+        if (step === 'customize') {
+          return 'customize';
+        }
+        if (packageId) {
+          return 'package-details';
+        }
+        return 'selfdrive';
+      }
       // Fall back to sessionStorage if path is just '/'
       const saved = sessionStorage.getItem('tg_activeTab');
       if (saved) return saved;
@@ -133,7 +186,13 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
 
   // Checkout Modal state
-  const [selectedBookingItem, setSelectedBookingItem] = useState(null);
+  const [selectedBookingItem, setSelectedBookingItem] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('tg_selectedBookingItem') || sessionStorage.getItem('tg_selectedDetailItem');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return null;
+  });
   const [selectedPackageModal, setSelectedPackageModal] = useState(null);
   const [selectedDetailItem, setSelectedDetailItem] = useState(() => {
     try {
@@ -142,6 +201,13 @@ export default function App() {
     } catch (e) {}
     return null;
   });
+  const [detailOriginTab, setDetailOriginTab] = useState(() => {
+    try {
+      return sessionStorage.getItem('tg_detailOriginTab') || 'cars';
+    } catch (e) {
+      return 'cars';
+    }
+  });
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [bookingDays, setBookingDays] = useState(2);
   const [userName, setUserName] = useState('');
@@ -149,6 +215,7 @@ export default function App() {
   const [userLicense, setUserLicense] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
   const [lastConfirmedBooking, setLastConfirmedBooking] = useState(null);
+  const [enquiryPrefillPackage, setEnquiryPrefillPackage] = useState(null);
 
   // Users & Role-Based Auth States
   const [currentUser, setCurrentUser] = useState(() => {
@@ -359,6 +426,158 @@ export default function App() {
     };
   }, []);
 
+  // Auto-hydrate car details if direct URL or query parameter has ?car=id or ?id=id
+  useEffect(() => {
+    if (cars && cars.length > 0 && typeof window !== 'undefined') {
+      const p = window.location.pathname.toLowerCase();
+      const urlParams = new URLSearchParams(window.location.search);
+      const carId = urlParams.get('car') || urlParams.get('id');
+      if (carId && p.startsWith('/cars')) {
+        const matchedCar = cars.find(c => String(c.id) === String(carId));
+        if (matchedCar && (!selectedDetailItem || String(selectedDetailItem.id) !== String(carId))) {
+          setSelectedDetailItem(matchedCar);
+          setActiveTab('car-details');
+          try {
+            sessionStorage.setItem('tg_activeTab', 'car-details');
+            sessionStorage.setItem('tg_selectedDetailItem', JSON.stringify(matchedCar));
+          } catch (e) {}
+        }
+      }
+    }
+  }, [cars]);
+
+  // Auto-hydrate bike details if direct URL or query parameter has ?bike=id or ?id=id
+  useEffect(() => {
+    if (bikes && bikes.length > 0 && typeof window !== 'undefined') {
+      const p = window.location.pathname.toLowerCase();
+      const urlParams = new URLSearchParams(window.location.search);
+      const bikeId = urlParams.get('bike') || urlParams.get('id');
+      if (bikeId && p.startsWith('/bikes')) {
+        const matchedBike = bikes.find(b => String(b.id) === String(bikeId));
+        if (matchedBike && (!selectedDetailItem || String(selectedDetailItem.id) !== String(bikeId))) {
+          setSelectedDetailItem(matchedBike);
+          setActiveTab('bike-details');
+          try {
+            sessionStorage.setItem('tg_activeTab', 'bike-details');
+            sessionStorage.setItem('tg_selectedDetailItem', JSON.stringify(matchedBike));
+          } catch (e) {}
+        }
+      }
+    }
+  }, [bikes]);
+
+  // Auto-hydrate package details or customization if direct URL or query parameter has ?package=id or ?id=id
+  useEffect(() => {
+    if (packages && packages.length > 0 && typeof window !== 'undefined') {
+      const p = window.location.pathname.toLowerCase();
+      const urlParams = new URLSearchParams(window.location.search);
+      const packageId = urlParams.get('package') || urlParams.get('id');
+      const step = urlParams.get('step');
+      if (packageId && (p.startsWith('/packages') || p.startsWith('/self-drive') || p.startsWith('/selfdrive'))) {
+        const matchedPkg = packages.find(pkg => String(pkg.id) === String(packageId));
+        if (step === 'customize') {
+          if (matchedPkg && (!selectedBookingItem || String(selectedBookingItem.id) !== String(packageId))) {
+            setSelectedBookingItem(matchedPkg);
+            setActiveTab('customize');
+            try {
+              sessionStorage.setItem('tg_activeTab', 'customize');
+              sessionStorage.setItem('tg_selectedBookingItem', JSON.stringify(matchedPkg));
+              sessionStorage.setItem('tg_selectedDetailItem', JSON.stringify(matchedPkg));
+            } catch (e) {}
+          }
+        } else {
+          if (matchedPkg && (!selectedDetailItem || String(selectedDetailItem.id) !== String(packageId))) {
+            setSelectedDetailItem(matchedPkg);
+            setActiveTab('package-details');
+            try {
+              sessionStorage.setItem('tg_activeTab', 'package-details');
+              sessionStorage.setItem('tg_selectedDetailItem', JSON.stringify(matchedPkg));
+            } catch (e) {}
+          }
+        }
+      }
+    }
+  }, [packages]);
+
+  // Auto-hydrate flight details if direct URL or query parameter has ?flight=id or ?id=id
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const p = window.location.pathname.toLowerCase();
+      const urlParams = new URLSearchParams(window.location.search);
+      const flightId = urlParams.get('flight') || urlParams.get('id');
+      if (flightId && p.startsWith('/flights')) {
+        // First check if selectedDetailItem already matches
+        if (selectedDetailItem && (String(selectedDetailItem.id) === String(flightId) || String(selectedDetailItem.flight_number) === String(flightId))) {
+          if (activeTab !== 'flight-details') setActiveTab('flight-details');
+          return;
+        }
+        // Check session storage
+        try {
+          const raw = sessionStorage.getItem('tg_selectedDetailItem');
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && (String(parsed.id) === String(flightId) || String(parsed.flight_number) === String(flightId) || parsed.type === 'flight')) {
+              setSelectedDetailItem(parsed);
+              setActiveTab('flight-details');
+              return;
+            }
+          }
+        } catch (e) {}
+
+        // Check loaded flights inventory
+        if (flights && flights.length > 0) {
+          const matchedFlight = flights.find(f => String(f.id) === String(flightId) || String(f.flight_number) === String(flightId) || `FL-${f.id}` === String(flightId));
+          if (matchedFlight) {
+            setSelectedDetailItem(matchedFlight);
+            setActiveTab('flight-details');
+            try {
+              sessionStorage.setItem('tg_activeTab', 'flight-details');
+              sessionStorage.setItem('tg_selectedDetailItem', JSON.stringify(matchedFlight));
+            } catch (e) {}
+          }
+        }
+      }
+    }
+  }, [flights]);
+
+  // Auto-hydrate activity details if direct URL or query parameter has ?activity=id or ?id=id
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const p = window.location.pathname.toLowerCase();
+      const urlParams = new URLSearchParams(window.location.search);
+      const activityId = urlParams.get('activity') || urlParams.get('id');
+      if (activityId && p.startsWith('/activities')) {
+        if (selectedDetailItem && String(selectedDetailItem.id) === String(activityId)) {
+          if (activeTab !== 'activity-details') setActiveTab('activity-details');
+          return;
+        }
+        try {
+          const raw = sessionStorage.getItem('tg_selectedDetailItem');
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && String(parsed.id) === String(activityId)) {
+              setSelectedDetailItem(parsed);
+              setActiveTab('activity-details');
+              return;
+            }
+          }
+        } catch (e) {}
+
+        if (activities && activities.length > 0) {
+          const matchedActivity = activities.find(a => String(a.id) === String(activityId));
+          if (matchedActivity) {
+            setSelectedDetailItem(matchedActivity);
+            setActiveTab('activity-details');
+            try {
+              sessionStorage.setItem('tg_activeTab', 'activity-details');
+              sessionStorage.setItem('tg_selectedDetailItem', JSON.stringify(matchedActivity));
+            } catch (e) {}
+          }
+        }
+      }
+    }
+  }, [activities]);
+
   // Sync tab with browser URL and history navigation
   useEffect(() => {
     const syncTabFromUrl = () => {
@@ -366,8 +585,58 @@ export default function App() {
       setCurrentPath(p);
       const cleanPath = p.replace(/^\//, '').split('/')[0];
       let newTab = null;
-      if (cleanPath === 'packages') newTab = 'packages';
-      else if (cleanPath === 'self-drive' || cleanPath === 'selfdrive' || cleanPath === '') newTab = 'selfdrive';
+      if (cleanPath === 'packages') {
+        const urlParams = new URLSearchParams(window.location.search);
+        const packageId = urlParams.get('package') || urlParams.get('id');
+        const step = urlParams.get('step');
+        if (step === 'customize') {
+          newTab = 'customize';
+          try {
+            const raw = sessionStorage.getItem('tg_selectedBookingItem') || sessionStorage.getItem('tg_selectedDetailItem');
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (parsed) setSelectedBookingItem(parsed);
+            }
+          } catch (e) {}
+        } else if (packageId) {
+          newTab = 'package-details';
+          try {
+            const raw = sessionStorage.getItem('tg_selectedDetailItem') || sessionStorage.getItem('tg_selectedBookingItem');
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (parsed) setSelectedDetailItem(parsed);
+            }
+          } catch (e) {}
+        } else {
+          newTab = 'packages';
+        }
+      }
+      else if (cleanPath === 'self-drive' || cleanPath === 'selfdrive' || cleanPath === '') {
+        const urlParams = new URLSearchParams(window.location.search);
+        const packageId = urlParams.get('package') || urlParams.get('id');
+        const step = urlParams.get('step');
+        if (step === 'customize') {
+          newTab = 'customize';
+          try {
+            const raw = sessionStorage.getItem('tg_selectedBookingItem') || sessionStorage.getItem('tg_selectedDetailItem');
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (parsed) setSelectedBookingItem(parsed);
+            }
+          } catch (e) {}
+        } else if (packageId) {
+          newTab = 'package-details';
+          try {
+            const raw = sessionStorage.getItem('tg_selectedDetailItem') || sessionStorage.getItem('tg_selectedBookingItem');
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (parsed) setSelectedDetailItem(parsed);
+            }
+          } catch (e) {}
+        } else {
+          newTab = 'selfdrive';
+        }
+      }
       else if (cleanPath === 'hotels') {
         const savedTab = sessionStorage.getItem('tg_activeTab');
         if (savedTab === 'hotel-details' && sessionStorage.getItem('tg_selectedDetailItem')) {
@@ -376,10 +645,54 @@ export default function App() {
           newTab = 'hotels';
         }
       }
-      else if (cleanPath === 'cars') newTab = 'cars';
-      else if (cleanPath === 'bikes') newTab = 'bikes';
-      else if (cleanPath === 'flights') newTab = 'flights';
-      else if (cleanPath === 'activities') newTab = 'activities';
+      else if (cleanPath === 'cars') {
+        const savedTab = sessionStorage.getItem('tg_activeTab');
+        if (savedTab === 'car-details' && sessionStorage.getItem('tg_selectedDetailItem')) {
+          newTab = 'car-details';
+        } else {
+          newTab = 'cars';
+        }
+      }
+      else if (cleanPath === 'bikes') {
+        const savedTab = sessionStorage.getItem('tg_activeTab');
+        if (savedTab === 'bike-details' && sessionStorage.getItem('tg_selectedDetailItem')) {
+          newTab = 'bike-details';
+        } else {
+          newTab = 'bikes';
+        }
+      }
+      else if (cleanPath === 'flights') {
+        const urlParams = new URLSearchParams(window.location.search);
+        const flightId = urlParams.get('flight') || urlParams.get('id');
+        if (flightId) {
+          newTab = 'flight-details';
+          try {
+            const raw = sessionStorage.getItem('tg_selectedDetailItem');
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (parsed) setSelectedDetailItem(parsed);
+            }
+          } catch (e) {}
+        } else {
+          newTab = 'flights';
+        }
+      }
+      else if (cleanPath === 'activities') {
+        const urlParams = new URLSearchParams(window.location.search);
+        const activityId = urlParams.get('activity') || urlParams.get('id');
+        if (activityId) {
+          newTab = 'activity-details';
+          try {
+            const raw = sessionStorage.getItem('tg_selectedDetailItem');
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (parsed) setSelectedDetailItem(parsed);
+            }
+          } catch (e) {}
+        } else {
+          newTab = 'activities';
+        }
+      }
       else if (cleanPath === 'craft' || cleanPath === 'craftmytrip') newTab = 'craftmytrip';
       else if (cleanPath === 'custom-trip') newTab = 'custom-trip';
       else if (cleanPath === 'customer' || cleanPath.startsWith('customer') || cleanPath === 'my-bookings') newTab = 'customer';
@@ -408,8 +721,12 @@ export default function App() {
 
     if (activeTab === 'customize' && normalizedTab !== 'customize') {
       setSelectedBookingItem(null);
+      try {
+        sessionStorage.removeItem('tg_customization_step');
+        sessionStorage.removeItem('tg_selectedBookingItem');
+      } catch (e) {}
     }
-    if (normalizedTab !== 'hotel-details') {
+    if (normalizedTab !== 'hotel-details' && normalizedTab !== 'car-details' && normalizedTab !== 'bike-details' && normalizedTab !== 'package-details' && normalizedTab !== 'flight-details') {
       try { sessionStorage.removeItem('tg_selectedDetailItem'); } catch (e) {}
     }
     setActiveTab(normalizedTab);
@@ -470,9 +787,28 @@ export default function App() {
       if (diff > 0) days = diff;
     }
 
-    if (item.package_type || item.duration || isCustomization) {
+    const isFlightItem = item.type === 'flight' || !!item.airline || !!item.flight_number || (!!item.from && !!item.to);
+    const isActivityItem = String(item?.id || '').startsWith('act-') || String(item?.id || '').startsWith('sight-') || item.type === 'activity' || item.type === 'sightseeing' || item.item_type === 'activity' || item.item_type === 'sightseeing';
+    const isPackageItem = !isFlightItem && !isActivityItem && (
+      isCustomization ||
+      item.type === 'package' ||
+      !!item.package_type ||
+      (item.duration && (typeof item.duration === 'string') && (item.duration.toLowerCase().includes('day') || item.duration.toLowerCase().includes('night')))
+    );
+
+    if (isPackageItem) {
       setSelectedBookingItem(item);
       setActiveTab('customize');
+      try {
+        sessionStorage.setItem('tg_activeTab', 'customize');
+        sessionStorage.setItem('tg_selectedBookingItem', JSON.stringify(item));
+        sessionStorage.setItem('tg_selectedDetailItem', JSON.stringify(item));
+      } catch (e) {}
+      const isSelfDrivePkg = item.package_type === 'Self Drive Package' || (item.name && item.name.toLowerCase().includes('self drive'));
+      const basePath = isSelfDrivePkg ? '/self-drive' : '/packages';
+      const targetUrl = item?.id ? `${basePath}?package=${encodeURIComponent(item.id)}&step=customize` : `${basePath}?step=customize`;
+      window.history.pushState({}, '', targetUrl);
+      setCurrentPath(targetUrl);
     } else {
       setSelectedBookingItem(item);
       setBookingDays(days);
@@ -506,7 +842,7 @@ export default function App() {
     setBookingDays(days);
   };
 
-  const handleOpenDetails = (item, type = 'hotel') => {
+  const handleOpenDetails = (item, type = 'hotel', originTab = null) => {
     if (document.activeElement && typeof document.activeElement.blur === 'function') {
       document.activeElement.blur();
     }
@@ -520,24 +856,77 @@ export default function App() {
       });
     }
 
+    const resolvedOrigin = originTab || (activeTab === 'selfdrive' ? 'selfdrive' : (type === 'bike' ? 'bikes' : (type === 'car' ? 'cars' : (type === 'package' ? (activeTab === 'selfdrive' ? 'selfdrive' : 'packages') : activeTab))));
+    setDetailOriginTab(resolvedOrigin);
+    try {
+      sessionStorage.setItem('tg_detailOriginTab', resolvedOrigin);
+    } catch (e) {}
+
+    setSelectedDetailItem(item);
+    setSearchTriggered(true);
+
     if (type === 'package') {
-      setSelectedPackageModal(item);
+      setActiveTab('package-details');
+      try {
+        sessionStorage.setItem('tg_activeTab', 'package-details');
+        sessionStorage.setItem('tg_selectedDetailItem', JSON.stringify(item));
+      } catch (e) {}
+      const targetUrl = item?.id ? `/packages?package=${encodeURIComponent(item.id)}` : '/packages';
+      window.history.pushState({}, '', targetUrl);
+      setCurrentPath('/packages');
     } else {
-      setSelectedDetailItem(item);
-      setSearchTriggered(true);
-      if (type === 'hotel') {
+      let resolvedType = type;
+      if (type === 'vehicle' || type === 'car' || type === 'bike') {
+        resolvedType = normalizeVehicleType(item);
+      }
+
+      if (resolvedType === 'hotel') {
         setActiveTab('hotel-details');
         try {
           sessionStorage.setItem('tg_activeTab', 'hotel-details');
           sessionStorage.setItem('tg_selectedDetailItem', JSON.stringify(item));
         } catch (e) {}
-      } else if (type === 'vehicle') {
-        setActiveTab('vehicle-details');
+      } else if (resolvedType === 'car') {
+        setActiveTab('car-details');
+        try {
+          sessionStorage.setItem('tg_activeTab', 'car-details');
+          sessionStorage.setItem('tg_selectedDetailItem', JSON.stringify(item));
+        } catch (e) {}
+        const targetUrl = item?.id ? `/cars?car=${encodeURIComponent(item.id)}` : '/cars';
+        window.history.pushState({}, '', targetUrl);
+        setCurrentPath('/cars');
+      } else if (resolvedType === 'bike') {
+        setActiveTab('bike-details');
+        try {
+          sessionStorage.setItem('tg_activeTab', 'bike-details');
+          sessionStorage.setItem('tg_selectedDetailItem', JSON.stringify(item));
+        } catch (e) {}
+        const targetUrl = item?.id ? `/bikes?bike=${encodeURIComponent(item.id)}` : '/bikes';
+        window.history.pushState({}, '', targetUrl);
+        setCurrentPath('/bikes');
+      } else if (resolvedType === 'flight' || type === 'flight') {
+        setActiveTab('flight-details');
+        try {
+          sessionStorage.setItem('tg_activeTab', 'flight-details');
+          sessionStorage.setItem('tg_selectedDetailItem', JSON.stringify(item));
+        } catch (e) {}
+        const targetUrl = item?.id ? `/flights?flight=${encodeURIComponent(item.id)}` : '/flights';
+        window.history.pushState({}, '', targetUrl);
+        setCurrentPath('/flights');
+      } else if (resolvedType === 'activity' || resolvedType === 'sightseeing' || type === 'activity' || type === 'sightseeing') {
+        setActiveTab('activity-details');
+        try {
+          sessionStorage.setItem('tg_activeTab', 'activity-details');
+          sessionStorage.setItem('tg_selectedDetailItem', JSON.stringify(item));
+        } catch (e) {}
+        const targetUrl = item?.id ? `/activities?activity=${encodeURIComponent(item.id)}` : '/activities';
+        window.history.pushState({}, '', targetUrl);
+        setCurrentPath('/activities');
       }
-      setTimeout(() => {
-        document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
-      }, 50);
     }
+    setTimeout(() => {
+      document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+    }, 50);
   };
 
   const resolveTargetRoute = (user) => {
@@ -855,17 +1244,22 @@ export default function App() {
       const days = extraDetails.bookingDays || bookingDays || val.days || 1;
       const totalCost = extraDetails.total || ((selectedBookingItem.price || 0) * days);
       
-      const isSelfDrivePkg = selectedBookingItem.package_type === 'Self Drive Package' || selectedBookingItem.type === 'selfdrive' || (selectedBookingItem.name && selectedBookingItem.name.toLowerCase().includes('self drive'));
-      const isTripPkg = !isSelfDrivePkg && (selectedBookingItem.package_type === 'Trip Package' || selectedBookingItem.type === 'package' || String(selectedBookingItem.id || '').startsWith('pkg-') || String(selectedBookingItem.id || '').startsWith('package-') || Boolean(selectedBookingItem.duration && !selectedBookingItem.seating && !selectedBookingItem.engine));
-      const isHotel = selectedBookingItem.type === 'hotel' || Boolean(selectedBookingItem.stars || selectedBookingItem.hotel_name);
-      const isFlight = selectedBookingItem.type === 'flight' || Boolean(selectedBookingItem.airline);
-      const isCar = !isTripPkg && !isSelfDrivePkg && (selectedBookingItem.type === 'car' || String(selectedBookingItem.id || '').startsWith('car-') || Boolean(selectedBookingItem.seating));
-      const isBike = !isTripPkg && !isSelfDrivePkg && (selectedBookingItem.type === 'bike' || String(selectedBookingItem.id || '').startsWith('bike-') || Boolean(selectedBookingItem.engine));
+      const isActivity = String(selectedBookingItem.id || '').startsWith('act-') || String(selectedBookingItem.id || '').startsWith('sight-') || selectedBookingItem.type === 'activity' || selectedBookingItem.type === 'sightseeing' || selectedBookingItem.item_type === 'activity' || selectedBookingItem.item_type === 'sightseeing';
+      const isSelfDrivePkg = !isActivity && (selectedBookingItem.package_type === 'Self Drive Package' || selectedBookingItem.type === 'selfdrive' || (selectedBookingItem.name && selectedBookingItem.name.toLowerCase().includes('self drive')));
+      const isTripPkg = !isActivity && !isSelfDrivePkg && (selectedBookingItem.package_type === 'Trip Package' || selectedBookingItem.type === 'package' || String(selectedBookingItem.id || '').startsWith('pkg-') || String(selectedBookingItem.id || '').startsWith('package-') || Boolean(selectedBookingItem.duration && !selectedBookingItem.seating && !selectedBookingItem.engine));
+      const isHotel = !isActivity && (selectedBookingItem.type === 'hotel' || Boolean(selectedBookingItem.stars || selectedBookingItem.hotel_name));
+      const isFlight = !isActivity && (selectedBookingItem.type === 'flight' || Boolean(selectedBookingItem.airline));
+      const vType = normalizeVehicleType(selectedBookingItem);
+      const isCar = !isActivity && !isTripPkg && !isSelfDrivePkg && (vType === 'car');
+      const isBike = !isActivity && !isTripPkg && !isSelfDrivePkg && (vType === 'bike');
 
       let detectedType = 'selfdrive';
       let detectedPkgType = 'Self Drive Package';
 
-      if (isTripPkg) {
+      if (isActivity) {
+        detectedType = (selectedBookingItem.type || selectedBookingItem.item_type || 'activity').toLowerCase();
+        detectedPkgType = detectedType === 'sightseeing' ? 'Sightseeing' : 'Activity';
+      } else if (isTripPkg) {
         detectedType = 'package';
         detectedPkgType = selectedBookingItem.package_type || 'Trip Package';
       } else if (isSelfDrivePkg) {
@@ -905,14 +1299,15 @@ export default function App() {
         drop_location: extraDetails.pickupLoc || pickupLoc || 'Goa Airport',
         drop_time: extraDetails.dropTime || dropTime || '10:00 AM',
         item_id: selectedBookingItem.id || 'custom',
-        item_name: selectedBookingItem.name || (isTripPkg ? 'Trip Package' : 'Trip Booking'),
-        package_name: selectedBookingItem.name || (isTripPkg ? 'Trip Package' : 'Self Drive Holiday'),
+        item_name: selectedBookingItem.name || selectedBookingItem.title || (isTripPkg ? 'Trip Package' : isActivity ? 'Goa Experience' : 'Trip Booking'),
+        package_name: selectedBookingItem.name || selectedBookingItem.title || (isTripPkg ? 'Trip Package' : isActivity ? 'Goa Experience' : 'Self Drive Holiday'),
         package_type: detectedPkgType,
         type: detectedType,
-        vehicle_name: selectedBookingItem.car_included || selectedBookingItem.name || (isTripPkg ? '' : 'Self Drive Vehicle'),
+        vehicle_name: isActivity ? '' : (selectedBookingItem.car_included || selectedBookingItem.name || (isTripPkg ? '' : 'Self Drive Vehicle')),
         vehicle_image: selectedBookingItem.image || selectedBookingItem.image_url || '',
         booking_days: days,
-        duration: (isTripPkg || isSelfDrivePkg) ? (selectedBookingItem.duration || `${days} Days / ${Math.max(1, days - 1)} Nights`) : `${days} Days`,
+        duration: isActivity ? (selectedBookingItem.duration || 'Flexible') : ((isTripPkg || isSelfDrivePkg) ? (selectedBookingItem.duration || `${days} Days / ${Math.max(1, days - 1)} Nights`) : `${days} Days`),
+        total_members: extraDetails.total_members || extraDetails.guests || selectedBookingItem.guests || selectedBookingItem.totalMembers || 1,
         total_amount: totalCost,
         amount_paid: typeof extraDetails.amount_paid === 'number' ? extraDetails.amount_paid : totalCost,
         total_paid: totalCost,
@@ -1373,7 +1768,7 @@ export default function App() {
                 packageFilterDuration={packageFilterDuration}
                 setPackageFilterDuration={setPackageFilterDuration}
                 handleOpenBooking={handleOpenBooking}
-                onViewDetails={(item) => handleOpenDetails(item, 'package')}
+                onViewDetails={(item) => handleOpenDetails(item, 'package', 'packages')}
                 packages={packages.filter(p => p.package_type !== 'Self Drive Package').length > 0
                   ? packages.filter(p => p.package_type !== 'Self Drive Package')
                   : packages}
@@ -1394,9 +1789,9 @@ export default function App() {
                 cars={cars}
                 bikes={bikes}
                 onBookVehicle={handleOpenBooking}
-                onViewVehicle={(veh) => handleOpenDetails(veh, 'vehicle')}
+                onViewVehicle={(veh) => handleOpenDetails(veh, normalizeVehicleType(veh))}
                 onBook={handleOpenBooking}
-                onViewDetails={(veh) => handleOpenDetails(veh, 'vehicle')}
+                onViewDetails={(veh) => handleOpenDetails(veh, normalizeVehicleType(veh))}
               />
               <FeaturesGrid />
             </>
@@ -1409,7 +1804,10 @@ export default function App() {
                 cars={cars}
                 bikes={bikes}
                 onBookVehicle={handleOpenBooking}
-                onViewVehicle={(veh) => handleOpenDetails(veh, 'vehicle')}
+                onViewVehicle={(veh) => {
+                  const vType = normalizeVehicleType(veh);
+                  handleOpenDetails(veh, vType, 'selfdrive');
+                }}
                 setActiveTab={handleTabChange}
                 searchQuery={dropLoc || searchQuery}
                 appliedFilters={appliedFilters}
@@ -1421,7 +1819,7 @@ export default function App() {
                 packageFilterDuration={packageFilterDuration}
                 setPackageFilterDuration={setPackageFilterDuration}
                 handleOpenBooking={handleOpenBooking}
-                onViewDetails={(item) => handleOpenDetails(item, 'package')}
+                onViewDetails={(item) => handleOpenDetails(item, 'package', 'selfdrive')}
                 packages={packages.filter(p => p.package_type === 'Self Drive Package').length > 0
                   ? packages.filter(p => p.package_type === 'Self Drive Package')
                   : packages}
@@ -1442,7 +1840,7 @@ export default function App() {
               carFilterTrans={carFilterTrans}
               setCarFilterTrans={setCarFilterTrans}
               handleOpenBooking={handleOpenBooking}
-              onViewDetails={(item) => handleOpenDetails(item, 'vehicle')}
+              onViewDetails={(item) => handleOpenDetails(item, 'car', 'cars')}
               cars={cars}
               pickupDate={pickupDate}
               dropDate={dropDate}
@@ -1459,7 +1857,7 @@ export default function App() {
               bikeFilterType={bikeFilterType}
               setBikeFilterType={setBikeFilterType}
               handleOpenBooking={handleOpenBooking}
-              onViewDetails={(item) => handleOpenDetails(item, 'vehicle')}
+              onViewDetails={(item) => handleOpenDetails(item, 'bike', 'bikes')}
               bikes={bikes}
               pickupDate={pickupDate}
               dropDate={dropDate}
@@ -1472,7 +1870,12 @@ export default function App() {
           )}
 
           {activeTab === 'custom-trip' && (
-            <CustomTripEnquiryPage setActiveTab={setActiveTab} currentUser={currentUser} />
+            <CustomTripEnquiryPage 
+              setActiveTab={setActiveTab} 
+              currentUser={currentUser} 
+              prefilledPackage={enquiryPrefillPackage}
+              onClearPrefilledPackage={() => setEnquiryPrefillPackage(null)}
+            />
           )}
 
           {activeTab === 'customize' && (
@@ -1483,6 +1886,7 @@ export default function App() {
               pickupDate={pickupDate}
               dropDate={dropDate}
               bookings={bookings}
+              markups={markups}
               onBack={() => {
                 if (document.activeElement && typeof document.activeElement.blur === 'function') {
                   document.activeElement.blur();
@@ -1496,14 +1900,36 @@ export default function App() {
                     });
                   });
                 }
-                if (selectedBookingItem?.package_type === 'Self Drive Package') {
-                  setActiveTab('selfdrive');
+                try {
+                  sessionStorage.removeItem('tg_customization_step');
+                } catch (e) {}
+
+                // Return to the SAME Package Details page!
+                if (selectedBookingItem) {
+                  setSelectedDetailItem(selectedBookingItem);
+                  setActiveTab('package-details');
+                  try {
+                    sessionStorage.setItem('tg_activeTab', 'package-details');
+                    sessionStorage.setItem('tg_selectedDetailItem', JSON.stringify(selectedBookingItem));
+                  } catch (e) {}
+                  const isSelfDrivePkg = selectedBookingItem.package_type === 'Self Drive Package' || (selectedBookingItem.name && selectedBookingItem.name.toLowerCase().includes('self drive'));
+                  const basePath = isSelfDrivePkg ? '/self-drive' : '/packages';
+                  const targetUrl = selectedBookingItem.id ? `${basePath}?package=${encodeURIComponent(selectedBookingItem.id)}` : basePath;
+                  window.history.pushState({}, '', targetUrl);
+                  setCurrentPath(targetUrl);
                 } else {
-                  setActiveTab('packages');
+                  const origin = sessionStorage.getItem('tg_detailOriginTab') || 'packages';
+                  setActiveTab(origin);
                 }
-                setSelectedBookingItem(null);
+                setTimeout(() => {
+                  document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+                }, 50);
               }}
               onConfirmBooking={(createdRecord) => {
+                try {
+                  sessionStorage.removeItem('tg_customization_step');
+                  sessionStorage.removeItem('tg_customization_draft');
+                } catch (e) {}
                 api.fetchBookings().then(fresh => {
                   if (Array.isArray(fresh) && fresh.length > 0) setBookingsList(fresh);
                 }).catch(console.error);
@@ -1570,6 +1996,90 @@ export default function App() {
             />
           )}
 
+          {activeTab === 'car-details' && selectedDetailItem && (
+            <CarDetailsPage
+              car={selectedDetailItem}
+              pickupDate={pickupDate}
+              dropDate={dropDate}
+              bookingDays={
+                (pickupDate && dropDate)
+                  ? Math.max(1, Math.round((new Date(dropDate) - new Date(pickupDate)) / (1000 * 60 * 60 * 24)))
+                  : (bookingDays || 2)
+              }
+              onBack={() => {
+                if (document.activeElement?.blur) document.activeElement.blur();
+                const sec = document.getElementById('results-section');
+                if (sec && sec.offsetHeight > 0) {
+                  sec.style.minHeight = `${sec.offsetHeight}px`;
+                  requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                      if (sec) sec.style.minHeight = '';
+                    });
+                  });
+                }
+                const origin = sessionStorage.getItem('tg_detailOriginTab') || detailOriginTab || 'cars';
+                const returnTab = origin === 'selfdrive' ? 'selfdrive' : 'cars';
+                setSelectedDetailItem(null);
+                setActiveTab(returnTab);
+                try {
+                  sessionStorage.removeItem('tg_selectedDetailItem');
+                  sessionStorage.setItem('tg_activeTab', returnTab);
+                } catch (e) {}
+                const targetPath = returnTab === 'selfdrive' ? '/selfdrive' : '/cars';
+                window.history.pushState({}, '', targetPath);
+                setCurrentPath(targetPath);
+                setTimeout(() => {
+                  document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+                }, 50);
+              }}
+              onBook={(carItem) => {
+                handleOpenBooking(carItem || selectedDetailItem);
+              }}
+            />
+          )}
+
+          {activeTab === 'bike-details' && selectedDetailItem && (
+            <BikeDetailsPage
+              bike={selectedDetailItem}
+              pickupDate={pickupDate}
+              dropDate={dropDate}
+              bookingDays={
+                (pickupDate && dropDate)
+                  ? Math.max(1, Math.round((new Date(dropDate) - new Date(pickupDate)) / (1000 * 60 * 60 * 24)))
+                  : (bookingDays || 2)
+              }
+              onBack={() => {
+                if (document.activeElement?.blur) document.activeElement.blur();
+                const sec = document.getElementById('results-section');
+                if (sec && sec.offsetHeight > 0) {
+                  sec.style.minHeight = `${sec.offsetHeight}px`;
+                  requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                      if (sec) sec.style.minHeight = '';
+                    });
+                  });
+                }
+                const origin = sessionStorage.getItem('tg_detailOriginTab') || detailOriginTab || 'bikes';
+                const returnTab = origin === 'selfdrive' ? 'selfdrive' : 'bikes';
+                setSelectedDetailItem(null);
+                setActiveTab(returnTab);
+                try {
+                  sessionStorage.removeItem('tg_selectedDetailItem');
+                  sessionStorage.setItem('tg_activeTab', returnTab);
+                } catch (e) {}
+                const targetPath = returnTab === 'selfdrive' ? '/selfdrive' : '/bikes';
+                window.history.pushState({}, '', targetPath);
+                setCurrentPath(targetPath);
+                setTimeout(() => {
+                  document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+                }, 50);
+              }}
+              onBook={(bikeItem) => {
+                handleOpenBooking(bikeItem || selectedDetailItem);
+              }}
+            />
+          )}
+
           {activeTab === 'vehicle-details' && selectedDetailItem && (
             <VehicleDetailsPage
               vehicle={selectedDetailItem}
@@ -1601,6 +2111,7 @@ export default function App() {
           {activeTab === 'package-details' && selectedDetailItem && (
             <PackageDetailsPage
               pkg={selectedDetailItem}
+              markups={markups}
               onBack={() => {
                 if (document.activeElement && typeof document.activeElement.blur === 'function') {
                   document.activeElement.blur();
@@ -1614,14 +2125,37 @@ export default function App() {
                     });
                   });
                 }
-                const returnTab = selectedDetailItem.package_type === 'Self Drive Package' ? 'selfdrive' : 'packages';
+                const origin = sessionStorage.getItem('tg_detailOriginTab') || detailOriginTab || (selectedDetailItem.package_type === 'Self Drive Package' ? 'selfdrive' : 'packages');
+                const returnTab = origin === 'selfdrive' ? 'selfdrive' : 'packages';
                 setSelectedDetailItem(null);
                 setActiveTab(returnTab);
+                try {
+                  sessionStorage.removeItem('tg_selectedDetailItem');
+                  sessionStorage.setItem('tg_activeTab', returnTab);
+                } catch (e) {}
+                const targetPath = returnTab === 'selfdrive' ? '/self-drive' : '/packages';
+                window.history.pushState({}, '', targetPath);
+                setCurrentPath(targetPath);
                 setTimeout(() => {
                   document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
                 }, 50);
               }}
               onBook={handleOpenBooking}
+              onEnquire={(pkgItem, dates) => {
+                const prefilled = {
+                  ...pkgItem,
+                  ...(dates?.departureDate ? { departureDate: dates.departureDate, pickupDate: dates.departureDate } : {}),
+                  ...(dates?.returnDate ? { returnDate: dates.returnDate, dropDate: dates.returnDate } : {})
+                };
+                setEnquiryPrefillPackage(prefilled);
+                setActiveTab('custom-trip');
+                try { sessionStorage.setItem('tg_activeTab', 'custom-trip'); } catch (e) {}
+                window.history.pushState({}, '', '/custom-trip');
+                setCurrentPath('/custom-trip');
+                setTimeout(() => {
+                  document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+                }, 50);
+              }}
             />
           )}
 
@@ -1637,11 +2171,67 @@ export default function App() {
               flightChildren={flightChildren}
               flightInfants={flightInfants}
               flightClass={flightClass}
-              onSelectFlight={handleOpenBooking}
+              onViewDetails={(flight) => handleOpenDetails(flight, 'flight')}
+              onSelectFlight={(flight) => handleOpenDetails(flight, 'flight')}
               markups={markups}
               appliedFilters={appliedFilters}
               setAppliedFilters={setAppliedFilters}
             />
+          )}
+
+          {activeTab === 'flight-details' && (
+            selectedDetailItem ? (
+              <FlightDetailsPage
+                flight={selectedDetailItem}
+                flightAdults={flightAdults}
+                flightChildren={flightChildren}
+                flightInfants={flightInfants}
+                flightClass={flightClass}
+                pickupDate={pickupDate}
+                onBack={() => {
+                  if (document.activeElement?.blur) document.activeElement.blur();
+                  const sec = document.getElementById('results-section');
+                  if (sec && sec.offsetHeight > 0) {
+                    sec.style.minHeight = `${sec.offsetHeight}px`;
+                    requestAnimationFrame(() => {
+                      requestAnimationFrame(() => {
+                        if (sec) sec.style.minHeight = '';
+                      });
+                    });
+                  }
+                  setSelectedDetailItem(null);
+                  setActiveTab('flights');
+                  try {
+                    sessionStorage.removeItem('tg_selectedDetailItem');
+                    sessionStorage.setItem('tg_activeTab', 'flights');
+                  } catch (e) {}
+                  window.history.pushState({}, '', '/flights');
+                  setCurrentPath('/flights');
+                  setTimeout(() => {
+                    document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+                  }, 50);
+                }}
+                onBook={(flightItem) => {
+                  handleOpenBooking(flightItem || selectedDetailItem);
+                }}
+              />
+            ) : (
+              <div className="container py-5 text-center bg-white rounded shadow-sm my-4">
+                <div className="spinner-border text-primary mb-3" role="status" />
+                <h5 className="fw-bold">Loading flight details...</h5>
+                <p className="text-muted small">Please wait while we retrieve the latest flight details.</p>
+                <button 
+                  className="btn btn-outline-primary btn-sm rounded-pill mt-2"
+                  onClick={() => {
+                    setActiveTab('flights');
+                    window.history.pushState({}, '', '/flights');
+                    setCurrentPath('/flights');
+                  }}
+                >
+                  Return to Flights
+                </button>
+              </div>
+            )
           )}
 
           {activeTab === 'flight-booking' && selectedFlightOffer && (
@@ -1691,8 +2281,59 @@ export default function App() {
                 setAppliedFilters={setAppliedFilters}
                 searchQuery={searchQuery}
                 setSearchQuery={setSearchQuery}
+                onViewDetails={(item) => handleOpenDetails(item, item.type || 'activity', 'activities')}
               />
             </div>
+          )}
+
+          {activeTab === 'activity-details' && (
+            selectedDetailItem ? (
+              <ActivityDetailsPage
+                activity={selectedDetailItem}
+                onBack={() => {
+                  if (document.activeElement?.blur) document.activeElement.blur();
+                  const sec = document.getElementById('results-section');
+                  if (sec && sec.offsetHeight > 0) {
+                    sec.style.minHeight = `${sec.offsetHeight}px`;
+                    requestAnimationFrame(() => {
+                      requestAnimationFrame(() => {
+                        if (sec) sec.style.minHeight = '';
+                      });
+                    });
+                  }
+                  setSelectedDetailItem(null);
+                  setActiveTab('activities');
+                  try {
+                    sessionStorage.removeItem('tg_selectedDetailItem');
+                    sessionStorage.setItem('tg_activeTab', 'activities');
+                  } catch (e) {}
+                  window.history.pushState({}, '', '/activities');
+                  setCurrentPath('/activities');
+                  setTimeout(() => {
+                    document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+                  }, 50);
+                }}
+                onBook={(itemToBook) => {
+                  handleOpenBooking(itemToBook || selectedDetailItem);
+                }}
+              />
+            ) : (
+              <div className="container py-5 text-center bg-white rounded shadow-sm my-4">
+                <div className="spinner-border text-warning mb-3" role="status" />
+                <h5 className="fw-bold">Loading experience details...</h5>
+                <p className="text-muted small">Please wait while we retrieve the latest experience details.</p>
+                <button 
+                  className="btn btn-outline-dark btn-sm rounded-pill mt-2"
+                  onClick={() => {
+                    setActiveTab('activities');
+                    window.history.pushState({}, '', '/activities');
+                    setCurrentPath('/activities');
+                  }}
+                >
+                  Return to Sightseeing & Activities
+                </button>
+              </div>
+            )
           )}
 
           </div>

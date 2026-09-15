@@ -3,7 +3,7 @@ import { Send, Upload, MapPin, Calendar, Users, DollarSign, Hotel, Utensils, Pla
 import * as api from '../../services/api';
 import { getTodayDateStr, addDays, formatDisplayDate } from '../../utils/dateUtils';
 
-export default function CustomTripEnquiryPage({ setActiveTab, currentUser }) {
+export default function CustomTripEnquiryPage({ setActiveTab, currentUser, prefilledPackage, onClearPrefilledPackage }) {
   const [formData, setFormData] = useState({
     customer_name: currentUser?.name || currentUser?.username || '',
     phone: currentUser?.phone || '',
@@ -89,6 +89,36 @@ export default function CustomTripEnquiryPage({ setActiveTab, currentUser }) {
       }));
     }
   }, [currentUser]);
+
+  useEffect(() => {
+    if (prefilledPackage) {
+      const dest = prefilledPackage.destinations || prefilledPackage.destination || prefilledPackage.places_included || 'Goa';
+      const pkgName = prefilledPackage.name || prefilledPackage.package_name || 'Trip Package';
+      const duration = prefilledPackage.duration ? ` (${prefilledPackage.duration})` : '';
+      const priceStr = prefilledPackage.price ? ` — Starting ₹${Number(prefilledPackage.price).toLocaleString('en-IN')}/person` : '';
+      
+      setFormData(prev => ({
+        ...prev,
+        destinations: prev.destinations || dest,
+        budget_range: prev.budget_range || (prefilledPackage.price ? `₹${Number(prefilledPackage.price).toLocaleString('en-IN')}` : ''),
+        hotel_category: prev.hotel_category || (prefilledPackage.hotel_included ? '4-Star' : ''),
+        req_car: prev.req_car || Boolean(prefilledPackage.car_included || prefilledPackage.self_drive_included),
+        req_flight: prev.req_flight || Boolean(prefilledPackage.flights_included || prefilledPackage.price_with_flight),
+        req_sightseeing: prev.req_sightseeing || Boolean(prefilledPackage.places_included),
+        special_requests: prev.special_requests || `Inquiring about package: "${pkgName}"${duration}${priceStr}. Please provide availability and customized quote.`
+      }));
+
+      if (prefilledPackage.departureDate) {
+        setStartDate(prefilledPackage.departureDate);
+        if (prefilledPackage.returnDate) {
+          setEndDate(prefilledPackage.returnDate);
+          updateTravelDatesString(prefilledPackage.departureDate, prefilledPackage.returnDate, false);
+        } else {
+          updateTravelDatesString(prefilledPackage.departureDate, '', false);
+        }
+      }
+    }
+  }, [prefilledPackage]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -228,6 +258,36 @@ export default function CustomTripEnquiryPage({ setActiveTab, currentUser }) {
               <div className="alert alert-danger d-flex align-items-center gap-2 rounded-3 mb-4 py-2.5 px-3" role="alert">
                 <AlertCircle size={18} className="text-danger flex-shrink-0" />
                 <span className="small fw-semibold">{validationError}</span>
+              </div>
+            )}
+            
+            {/* Contextual Package Enquiry Banner */}
+            {prefilledPackage && (
+              <div className="alert alert-info border-0 rounded-3 p-3 mb-4 d-flex align-items-center justify-content-between shadow-xs" style={{ background: '#e0f2fe', color: '#0369a1' }}>
+                <div className="d-flex align-items-center gap-2.5">
+                  <Sparkles size={20} className="text-primary flex-shrink-0" />
+                  <div>
+                    <span className="fw-bold d-block" style={{ fontSize: '0.9rem' }}>
+                      Enquiry For Package: {prefilledPackage.name || prefilledPackage.package_name}
+                    </span>
+                    <span className="text-muted" style={{ fontSize: '0.78rem' }}>
+                      {prefilledPackage.duration && <span className="me-2">⏱ {prefilledPackage.duration}</span>}
+                      {prefilledPackage.price && <span className="me-2">💰 Starting ₹{Number(prefilledPackage.price).toLocaleString('en-IN')}/person</span>}
+                      {prefilledPackage.departureDate && <span>📅 Departure: {formatDisplayDate(prefilledPackage.departureDate)}</span>}
+                    </span>
+                  </div>
+                </div>
+                {onClearPrefilledPackage && (
+                  <button 
+                    type="button" 
+                    onClick={onClearPrefilledPackage}
+                    className="btn btn-sm btn-outline-secondary rounded-pill px-2.5 py-1"
+                    style={{ fontSize: '0.72rem' }}
+                    title="Clear package pre-fill"
+                  >
+                    <X size={12} className="me-1" /> Clear
+                  </button>
+                )}
               </div>
             )}
             

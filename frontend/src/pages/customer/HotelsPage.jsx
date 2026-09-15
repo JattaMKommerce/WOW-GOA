@@ -499,6 +499,7 @@ export default function HotelsPage({
       {galleryHotel && (
         <UnifiedGalleryViewer
           item={galleryHotel}
+          title={galleryHotel.name}
           type="hotel"
           onClose={() => setGalleryHotel(null)}
         />

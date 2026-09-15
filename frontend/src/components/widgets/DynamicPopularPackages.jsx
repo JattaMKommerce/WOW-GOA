@@ -65,12 +65,15 @@ export default function DynamicPopularPackages({ config, packages = [], onBook, 
                       <div className="text-muted" style={{ fontSize: '0.75rem' }}>Price starts at</div>
                       <div className="fw-bold text-dark" style={{ fontSize: '1.3rem' }}>₹{parseFloat(pkg.price).toLocaleString()}</div>
                     </div>
-                    <div className="d-flex gap-2">
-                      <button className="btn btn-outline-primary btn-sm rounded-pill px-3 fw-bold" onClick={() => handleView(pkg)}>
-                        View Details
-                      </button>
-                      <button className="btn btn-primary btn-sm rounded-pill px-3 fw-bold" onClick={() => handleBook(pkg)}>
-                        Book Now
+                    <div>
+                      <button 
+                        className="btn btn-primary btn-sm rounded-pill px-3.5 py-1.5 fw-bold d-inline-flex align-items-center gap-1.5 shadow-sm" 
+                        style={{ background: 'linear-gradient(135deg, #FF6333 0%, #FF8A00 100%)', borderColor: '#FF6333' }} 
+                        onClick={() => handleView(pkg)}
+                        title={`View details of ${pkg.name}`}
+                      >
+                        <span>View Details &amp; Book</span>
+                        <ArrowRight size={14} />
                       </button>
                     </div>
                   </div>

@@ -1,8 +1,11 @@
 import React from 'react';
-import { ArrowLeft, Users, User, Mail, Phone, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Users, User, Mail, Phone, ShieldCheck, Calendar } from 'lucide-react';
+import { formatDisplayDate } from '../../utils/dateUtils';
 
 export default function PackageCheckoutStep2({
   pkg,
+  departureDate,
+  returnDate,
   travellers,
   setTravellers,
   numAdults,
@@ -111,6 +114,26 @@ export default function PackageCheckoutStep2({
           <div className="mb-4">
             <h2 className="fw-extrabold text-dark mb-1">Traveller Details</h2>
             <p className="text-muted small">Please enter details exactly as they appear on your government ID.</p>
+          </div>
+
+          {/* Confirmed Trip & Travel Dates Summary Card */}
+          <div className="bg-white border rounded-3 p-3 mb-4 shadow-sm d-flex flex-wrap align-items-center justify-content-between gap-3" style={{ borderLeft: '4px solid #FF6333' }}>
+            <div>
+              <span className="text-muted text-uppercase fw-bold d-block" style={{ fontSize: '0.68rem', letterSpacing: '0.5px' }}>Selected Package</span>
+              <h5 className="fw-bold text-dark mb-0">{pkg?.name}</h5>
+              <span className="text-muted small">{pkg?.duration} • {pkg?.destination || 'Goa, India'}</span>
+            </div>
+            {(departureDate || returnDate) && (
+              <div className="bg-light p-2.5 px-3 rounded-3 border text-start text-md-end">
+                <span className="text-muted text-uppercase fw-bold d-block" style={{ fontSize: '0.65rem' }}>Travel Dates</span>
+                <span className="fw-bold text-primary small d-flex align-items-center gap-1.5">
+                  <Calendar size={14} className="text-danger" /> 
+                  <span>{departureDate ? (formatDisplayDate ? formatDisplayDate(departureDate) : departureDate) : 'Flexible'}</span>
+                  <span>→</span>
+                  <span>{returnDate ? (formatDisplayDate ? formatDisplayDate(returnDate) : returnDate) : 'Flexible'}</span>
+                </span>
+              </div>
+            )}
           </div>
 
           <div className="bg-white border rounded shadow-sm mb-4">

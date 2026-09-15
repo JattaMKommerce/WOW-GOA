@@ -24,6 +24,8 @@ export { default as SubAdminPortalPage } from './subadmin/SubAdminPortalPage';
 export { default as AIPlannerPage } from './customer/AIPlannerPage';
 export { default as BikesPage } from './customer/BikesPage';
 export { default as CarsPage } from './customer/CarsPage';
+export { default as CarDetailsPage } from './customer/CarDetailsPage';
+export { default as BikeDetailsPage } from './customer/BikeDetailsPage';
 export { default as CraftMyTripPage } from './customer/CraftMyTripPage';
 export { default as HotelDetailsPage } from './customer/HotelDetailsPage';
 export { default as VehicleDetailsPage } from './customer/VehicleDetailsPage';
@@ -31,6 +33,7 @@ export { default as PackageDetailsPage } from './customer/PackageDetailsPage';
 export { default as CustomerDashboard } from './customer/CustomerDashboard';
 export { default as ExplorePage } from './customer/ExplorePage';
 export { default as FlightBookingFlow } from './customer/FlightBookingFlow';
+export { default as FlightDetailsPage } from './customer/FlightDetailsPage';
 export { default as FlightsPage } from './customer/FlightsPage';
 export { default as HotelsPage } from './customer/HotelsPage';
 export { default as PackageCheckoutStep2 } from './customer/PackageCheckoutStep2';
@@ -41,4 +44,5 @@ export { default as AdminDriverManagement } from './admin/AdminDriverManagement'
 export { default as DriverPortalPage } from './driver/DriverPortalPage';
 export { default as DriverLoginPage } from './driver/DriverLoginPage';
 export { default as CustomerPortalPage } from './customer/CustomerPortalPage';
+export { default as ActivityDetailsPage } from './customer/ActivityDetailsPage';
 

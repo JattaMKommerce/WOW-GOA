@@ -3,72 +3,111 @@ import { ChevronLeft, ChevronRight, X, Maximize2, Layers } from 'lucide-react';
 
 /**
  * UnifiedGalleryViewer
- * A self-contained, responsive media gallery with compact & bento modes,
- * and a high-performance square lightbox zoom.
- * 
+ * A self-contained, responsive media gallery supporting:
+ * 1. Fullscreen Modal Viewer (when onClose is provided or variant === 'modal')
+ * 2. Compact View with Lightbox Zoom
+ * 3. Bento Grid View
+ *
  * Works seamlessly with Bootstrap 5, Tailwind CSS, or Vanilla CSS.
  */
 export default function UnifiedGalleryViewer({
   images = [],
+  item = null,
+  title = '',
+  type = '',
   variant = 'compact',
   alt = 'Gallery image',
   className = '',
-  compactHeight = '180px'
+  compactHeight = '180px',
+  onClose = null
 }) {
-  // 1. Normalize input image list
+  // 1. Normalize input image list (from images prop OR item object)
   const normalizedImages = useMemo(() => {
     let list = [];
-    if (typeof images === 'string') {
-      try {
-        const parsed = JSON.parse(images);
-        if (Array.isArray(parsed)) list = parsed;
-        else list = [images];
-      } catch {
-        list = images.split(',').map(s => s.trim()).filter(Boolean);
+    if (images && (Array.isArray(images) ? images.length > 0 : Boolean(images))) {
+      if (typeof images === 'string') {
+        try {
+          const parsed = JSON.parse(images);
+          if (Array.isArray(parsed)) list = parsed;
+          else list = [images];
+        } catch {
+          list = images.split(',').map(s => s.trim()).filter(Boolean);
+        }
+      } else if (Array.isArray(images)) {
+        list = images;
       }
-    } else if (Array.isArray(images)) {
-      list = images;
+    } else if (item) {
+      if (item.images_json) {
+        try {
+          const parsed = typeof item.images_json === 'string' ? JSON.parse(item.images_json) : item.images_json;
+          if (Array.isArray(parsed)) list.push(...parsed);
+        } catch (e) {}
+      }
+      if (Array.isArray(item.images)) list.push(...item.images);
+      if (item.image) list.push(item.image);
+      if (item.image_url) list.push(item.image_url);
+      if (item.gallery) {
+        if (Array.isArray(item.gallery)) list.push(...item.gallery);
+        else if (typeof item.gallery === 'string') list.push(item.gallery);
+      }
+      if (Array.isArray(item.room_types)) {
+        item.room_types.forEach(rt => {
+          if (Array.isArray(rt.images)) list.push(...rt.images);
+        });
+      }
+      if (Array.isArray(item.rooms)) {
+        item.rooms.forEach(r => {
+          if (Array.isArray(r.images)) list.push(...r.images);
+        });
+      }
     }
 
     const cleaned = list
-      .map(item => {
-        if (!item) return null;
-        if (typeof item === 'string') return item.trim();
-        if (typeof item === 'object') return item.url || item.src || item.image || null;
+      .map(entry => {
+        if (!entry) return null;
+        if (typeof entry === 'string') return entry.trim();
+        if (typeof entry === 'object') return entry.url || entry.src || entry.image || null;
         return null;
       })
       .filter(Boolean);
 
     return cleaned.length > 0
       ? Array.from(new Set(cleaned))
-      : ['https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=800&q=80'];
-  }, [images]);
+      : ['https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=1200&q=80'];
+  }, [images, item]);
 
   // State
   const [activeIdx, setActiveIdx] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIdx, setLightboxIdx] = useState(0);
 
+  // Determine if this viewer is operating as a modal overlay
+  const isModal = Boolean(onClose) || variant === 'modal';
+
+  const total = normalizedImages.length;
+  const currentMainImage = normalizedImages[activeIdx] || normalizedImages[0];
+  const displayTitle = title || item?.name || item?.package_name || alt || 'Photo Gallery';
+
   // Handlers
   const prevImage = useCallback((e) => {
     if (e) e.stopPropagation();
-    setActiveIdx((prev) => (prev - 1 + normalizedImages.length) % normalizedImages.length);
-  }, [normalizedImages.length]);
+    setActiveIdx((prev) => (prev - 1 + total) % total);
+  }, [total]);
 
   const nextImage = useCallback((e) => {
     if (e) e.stopPropagation();
-    setActiveIdx((prev) => (prev + 1) % normalizedImages.length);
-  }, [normalizedImages.length]);
+    setActiveIdx((prev) => (prev + 1) % total);
+  }, [total]);
 
   const prevLightboxImage = useCallback((e) => {
     if (e) e.stopPropagation();
-    setLightboxIdx((prev) => (prev - 1 + normalizedImages.length) % normalizedImages.length);
-  }, [normalizedImages.length]);
+    setLightboxIdx((prev) => (prev - 1 + total) % total);
+  }, [total]);
 
   const nextLightboxImage = useCallback((e) => {
     if (e) e.stopPropagation();
-    setLightboxIdx((prev) => (prev + 1) % normalizedImages.length);
-  }, [normalizedImages.length]);
+    setLightboxIdx((prev) => (prev + 1) % total);
+  }, [total]);
 
   const openLightboxAt = useCallback((index) => {
     setLightboxIdx(index);
@@ -81,26 +120,278 @@ export default function UnifiedGalleryViewer({
 
   // Keyboard accessibility
   useEffect(() => {
-    if (!lightboxOpen) return;
-
     const handleKeyDown = (e) => {
-      if (e.key === 'Escape') closeLightbox();
-      if (e.key === 'ArrowLeft') prevLightboxImage();
-      if (e.key === 'ArrowRight') nextLightboxImage();
+      if (e.key === 'Escape') {
+        if (lightboxOpen) closeLightbox();
+        else if (onClose) onClose();
+      }
+      if (e.key === 'ArrowLeft') {
+        if (lightboxOpen) prevLightboxImage();
+        else if (isModal) prevImage();
+      }
+      if (e.key === 'ArrowRight') {
+        if (lightboxOpen) nextLightboxImage();
+        else if (isModal) nextImage();
+      }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    const originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    if (lightboxOpen || isModal) {
+      window.addEventListener('keydown', handleKeyDown);
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
 
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = originalOverflow;
-    };
-  }, [lightboxOpen, closeLightbox, prevLightboxImage, nextLightboxImage]);
+      return () => {
+        window.removeEventListener('keydown', handleKeyDown);
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [lightboxOpen, isModal, onClose, closeLightbox, prevLightboxImage, nextLightboxImage, prevImage, nextImage]);
 
-  const total = normalizedImages.length;
-  const currentMainImage = normalizedImages[activeIdx] || normalizedImages[0];
+  // ─────────────────────────────────────────────────────────────
+  // MODE 0: FULLSCREEN MODAL VIEWER (When onClose or variant === 'modal')
+  // ─────────────────────────────────────────────────────────────
+  if (isModal) {
+    return (
+      <div
+        role="dialog"
+        aria-modal="true"
+        onClick={onClose}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 9999,
+          backgroundColor: 'rgba(10, 15, 30, 0.96)',
+          backdropFilter: 'blur(12px)',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          padding: '16px',
+          boxSizing: 'border-box'
+        }}
+      >
+        {/* Header Bar */}
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            width: '100%',
+            maxWidth: '1200px',
+            margin: '0 auto',
+            paddingBottom: '12px',
+            borderBottom: '1px solid rgba(255,255,255,0.12)'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <h5 style={{ margin: 0, color: '#ffffff', fontWeight: 'bold', fontSize: '18px' }}>
+              {displayTitle}
+            </h5>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                backgroundColor: 'rgba(255,255,255,0.12)',
+                color: '#fff',
+                padding: '4px 12px',
+                borderRadius: '20px',
+                fontSize: '12px',
+                fontWeight: '600'
+              }}
+            >
+              <Layers size={13} color="#f59e0b" />
+              <span>Photo {activeIdx + 1} of {total}</span>
+            </div>
+          </div>
+
+          {onClose && (
+            <button
+              type="button"
+              aria-label="Close Gallery"
+              onClick={onClose}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '40px',
+                height: '40px',
+                borderRadius: '50%',
+                backgroundColor: 'rgba(255,255,255,0.15)',
+                color: '#fff',
+                border: '1px solid rgba(255,255,255,0.25)',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#ef4444'; }}
+              onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.15)'; }}
+            >
+              <X size={22} />
+            </button>
+          )}
+        </div>
+
+        {/* Center Stage: Image Display with Contain (NEVER CROPPED) */}
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: 'relative',
+            flex: 1,
+            width: '100%',
+            maxWidth: '1200px',
+            margin: '12px auto',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden'
+          }}
+        >
+          {total > 1 && (
+            <button
+              type="button"
+              aria-label="Previous photo"
+              onClick={prevImage}
+              style={{
+                position: 'absolute',
+                left: '12px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                zIndex: 10,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '48px',
+                height: '48px',
+                borderRadius: '50%',
+                backgroundColor: 'rgba(15, 23, 42, 0.85)',
+                color: '#fff',
+                border: '1.5px solid rgba(255,255,255,0.4)',
+                cursor: 'pointer',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+                backdropFilter: 'blur(6px)',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseOver={(e) => { e.currentTarget.style.transform = 'translateY(-50%) scale(1.1)'; e.currentTarget.style.backgroundColor = '#00B8D9'; }}
+              onMouseOut={(e) => { e.currentTarget.style.transform = 'translateY(-50%) scale(1)'; e.currentTarget.style.backgroundColor = 'rgba(15, 23, 42, 0.85)'; }}
+            >
+              <ChevronLeft size={28} />
+            </button>
+          )}
+
+          <img
+            src={currentMainImage}
+            alt={`${alt} - ${activeIdx + 1}`}
+            style={{
+              maxWidth: '100%',
+              maxHeight: '68vh',
+              objectFit: 'contain',
+              borderRadius: '12px',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.85)',
+              display: 'block',
+              userSelect: 'none'
+            }}
+            onError={(e) => {
+              e.currentTarget.src = 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=1200&q=80';
+            }}
+          />
+
+          {total > 1 && (
+            <button
+              type="button"
+              aria-label="Next photo"
+              onClick={nextImage}
+              style={{
+                position: 'absolute',
+                right: '12px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                zIndex: 10,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '48px',
+                height: '48px',
+                borderRadius: '50%',
+                backgroundColor: 'rgba(15, 23, 42, 0.85)',
+                color: '#fff',
+                border: '1.5px solid rgba(255,255,255,0.4)',
+                cursor: 'pointer',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+                backdropFilter: 'blur(6px)',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseOver={(e) => { e.currentTarget.style.transform = 'translateY(-50%) scale(1.1)'; e.currentTarget.style.backgroundColor = '#00B8D9'; }}
+              onMouseOut={(e) => { e.currentTarget.style.transform = 'translateY(-50%) scale(1)'; e.currentTarget.style.backgroundColor = 'rgba(15, 23, 42, 0.85)'; }}
+            >
+              <ChevronRight size={28} />
+            </button>
+          )}
+        </div>
+
+        {/* Bottom Thumbnail Strip & Navigation Hint */}
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            width: '100%',
+            maxWidth: '1200px',
+            margin: '0 auto',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
+          {total > 1 && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                maxWidth: '100%',
+                overflowX: 'auto',
+                padding: '6px 12px',
+                backgroundColor: 'rgba(255,255,255,0.08)',
+                borderRadius: '14px',
+                backdropFilter: 'blur(8px)',
+                border: '1px solid rgba(255,255,255,0.12)'
+              }}
+            >
+              {normalizedImages.map((img, i) => {
+                const isActive = activeIdx === i;
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setActiveIdx(i)}
+                    style={{
+                      flexShrink: 0,
+                      width: '64px',
+                      height: '44px',
+                      borderRadius: '8px',
+                      overflow: 'hidden',
+                      padding: 0,
+                      border: isActive ? '2.5px solid #f59e0b' : '2px solid transparent',
+                      opacity: isActive ? 1 : 0.5,
+                      boxShadow: isActive ? '0 0 0 2px rgba(245,158,11,0.4)' : 'none',
+                      cursor: 'pointer',
+                      background: '#000',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <img src={img} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <div style={{ color: '#94a3b8', fontSize: '11px' }}>
+            Use <strong>←</strong> <strong>→</strong> keys to navigate • Press <strong>ESC</strong> to close
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`unified-gallery-wrapper ${className}`} style={{ position: 'relative', width: '100%', boxSizing: 'border-box' }}>
@@ -458,7 +749,7 @@ export default function UnifiedGalleryViewer({
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          SQUARE LIGHTBOX / MODAL ZOOM OVERLAY
+          RESPONSIVE LIGHTBOX ZOOM OVERLAY (FOR COMPACT / BENTO MODES)
       ────────────────────────────────────────────────────────────── */}
       {lightboxOpen && (
         <div
@@ -537,13 +828,13 @@ export default function UnifiedGalleryViewer({
             </button>
           </div>
 
-          {/* Centered Strict Square Container */}
+          {/* Centered Responsive Container (NO SQUEEZING / NO CUTTING PHOTOS) */}
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
               position: 'relative',
-              width: 'min(82vw, 540px)',
-              height: 'min(82vw, 540px)',
+              maxWidth: '92vw',
+              maxHeight: '76vh',
               borderRadius: '20px',
               overflow: 'hidden',
               backgroundColor: '#0a0a0a',
@@ -558,8 +849,8 @@ export default function UnifiedGalleryViewer({
               src={normalizedImages[lightboxIdx]}
               alt={`${alt} zoom - ${lightboxIdx + 1}`}
               style={{
-                width: '100%',
-                height: '100%',
+                maxWidth: '90vw',
+                maxHeight: '74vh',
                 objectFit: 'contain',
                 display: 'block',
                 userSelect: 'none'

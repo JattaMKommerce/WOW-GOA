@@ -4,18 +4,21 @@ import * as api from '../../services/api';
 import PackageCheckoutStep2 from './PackageCheckoutStep2';
 import PackageCheckoutStep3 from './PackageCheckoutStep3';
 import PackageCheckoutStep4 from './PackageCheckoutStep4';
+import { formatDisplayDate, getTodayDateStr, addDays } from '../../utils/dateUtils';
+import { resolvePackagePrices, findBaselineVehicle, calculateVehicleUpgradeCost } from '../../utils/pricingHelper';
 
 export default function PackageCustomizationPage({
   pkg,
-  allCars,
-  allBikes,
+  allCars = [],
+  allBikes = [],
   onBack,
   onConfirmBooking,
   pickupDate,
   dropDate,
-  bookings = []
+  bookings = [],
+  markups = []
 }) {
-  const isSelfDrivePackage = pkg?.package_type === 'Self Drive Package';
+  const isSelfDrivePackage = pkg?.package_type === 'Self Drive Package' || (pkg?.name && pkg?.name.toLowerCase().includes('self drive'));
   const [cabType, setCabType] = useState(isSelfDrivePackage ? 'self-drive' : 'company');
   const [selectedSelfDriveVehicle, setSelectedSelfDriveVehicle] = useState(null);
   const [withFlight, setWithFlight] = useState(pkg?.selectedWithFlight || false);
@@ -50,32 +53,81 @@ export default function PackageCustomizationPage({
   const [selectedTransfers, setSelectedTransfers] = useState({}); // { [dayIndex]: carObject }
   const [showTransferModalForDay, setShowTransferModalForDay] = useState(null);
 
-  const [totalPrice, setTotalPrice] = useState(pkg?.price || 0);
+  // Canonical package pricing from helper
+  const resolvedPricing = useMemo(() => resolvePackagePrices(pkg, markups), [pkg, markups]);
+  const [totalPrice, setTotalPrice] = useState(resolvedPricing.price || 0);
 
-  // Booking Flow State
-  const [currentStep, setCurrentStep] = useState(1); // 1 = Customize, 2 = Travellers, 3 = Review & Pay
+  // Draft state hydration from sessionStorage
+  const savedDraft = useMemo(() => {
+    try {
+      const d = sessionStorage.getItem('tg_customization_draft');
+      return d ? JSON.parse(d) : null;
+    } catch (e) {
+      return null;
+    }
+  }, []);
+
+  // Booking Flow Step State - restored from sessionStorage upon refresh
+  const [currentStep, setCurrentStep] = useState(() => {
+    try {
+      const saved = parseInt(sessionStorage.getItem('tg_customization_step'), 10);
+      if (saved && saved >= 1 && saved <= 3) return saved;
+    } catch (e) {}
+    return 1;
+  });
   const flowContainerRef = useRef(null);
+
+  // Save currentStep to sessionStorage
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('tg_customization_step', String(currentStep));
+    } catch (e) {}
+  }, [currentStep]);
   
-  // Traveller Details State
-  const [numAdults, setNumAdults] = useState(2);
-  const [numChildren, setNumChildren] = useState(0);
-  const [travellers, setTravellers] = useState([{ type: 'Adult', firstName: '', lastName: '', gender: '', age: '', idType: 'Aadhaar' }, { type: 'Adult', firstName: '', lastName: '', gender: '', age: '', idType: 'Aadhaar' }]);
-  const [contactEmail, setContactEmail] = useState('');
-  const [contactPhone, setContactPhone] = useState('');
+  // Traveller Details State - restored from draft if present
+  const [numAdults, setNumAdults] = useState(() => savedDraft?.numAdults || 2);
+  const [numChildren, setNumChildren] = useState(() => savedDraft?.numChildren || 0);
+  const [travellers, setTravellers] = useState(() => savedDraft?.travellers || [
+    { type: 'Adult', firstName: '', lastName: '', gender: '', age: '', idType: 'Aadhaar' },
+    { type: 'Adult', firstName: '', lastName: '', gender: '', age: '', idType: 'Aadhaar' }
+  ]);
+  const [contactEmail, setContactEmail] = useState(() => savedDraft?.contactEmail || '');
+  const [contactPhone, setContactPhone] = useState(() => savedDraft?.contactPhone || '');
   
-  // Self-Drive Extra Details State
-  const [drivingLicense, setDrivingLicense] = useState('');
-  const [vehiclePickupLoc, setVehiclePickupLoc] = useState('');
-  const [vehicleDropLoc, setVehicleDropLoc] = useState('');
+  // Self-Drive Extra Details State - restored from draft if present
+  const [drivingLicense, setDrivingLicense] = useState(() => savedDraft?.drivingLicense || '');
+  const [vehiclePickupLoc, setVehiclePickupLoc] = useState(() => savedDraft?.vehiclePickupLoc || '');
+  const [vehicleDropLoc, setVehicleDropLoc] = useState(() => savedDraft?.vehicleDropLoc || '');
 
   // Payment Options State
   const [paymentMode, setPaymentMode] = useState('full'); // 'full' or 'advance'
   const [serverPriceData, setServerPriceData] = useState(null);
 
+  // Persist non-sensitive draft state to sessionStorage
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('tg_customization_draft', JSON.stringify({
+        numAdults,
+        numChildren,
+        travellers,
+        contactEmail,
+        contactPhone,
+        drivingLicense,
+        vehiclePickupLoc,
+        vehicleDropLoc
+      }));
+    } catch (e) {}
+  }, [numAdults, numChildren, travellers, contactEmail, contactPhone, drivingLicense, vehiclePickupLoc, vehicleDropLoc]);
+
   // Vehicle Filtering Logic
-  const availableCars = allCars.filter(c => Number(c.is_available) !== 0);
-  const availableBikes = allBikes.filter(b => Number(b.is_available) !== 0);
+  const availableCars = (allCars || []).filter(c => Number(c.is_available) !== 0);
+  const availableBikes = (allBikes || []).filter(b => Number(b.is_available) !== 0);
   const allAvailableVehicles = [...availableCars, ...availableBikes];
+
+  // Baseline vehicle identification strictly from package data
+  const baselineVehicle = useMemo(() => {
+    return findBaselineVehicle(pkg, allAvailableVehicles);
+  }, [pkg, allAvailableVehicles]);
   
   const isDateOverlap = (start1, end1, start2, end2) => {
     if (!start1 || !end1 || !start2 || !end2) return false;
@@ -116,14 +168,21 @@ export default function PackageCustomizationPage({
     return match;
   });
 
-  // Default select vehicle if list is available
+  // Default select vehicle if list is available: prefer baseline vehicle if available
   useEffect(() => {
     if (cabType === 'self-drive' && !selectedSelfDriveVehicle && filteredVehicles.length > 0) {
+      if (baselineVehicle) {
+        const found = filteredVehicles.find(v => String(v.id) === String(baselineVehicle.id));
+        if (found) {
+          setSelectedSelfDriveVehicle(found);
+          return;
+        }
+      }
       setSelectedSelfDriveVehicle(filteredVehicles[0]);
     }
-  }, [cabType, filteredVehicles, selectedSelfDriveVehicle]);
+  }, [cabType, filteredVehicles, selectedSelfDriveVehicle, baselineVehicle]);
 
-  // Itinerary Parsing with complete default fallback
+  // Itinerary Parsing: strictly parse from package data, NO fake hardcoded fallback data
   const getResolvedItinerary = () => {
     const rawItinerary = pkg?.day_wise_itinerary || pkg?.itinerary || pkg?.day_plan || pkg?.dayPlan || pkg?.dayWiseItinerary;
     let parsed = [];
@@ -145,9 +204,9 @@ export default function PackageCustomizationPage({
         title: item.title || item.heading || `Day ${index + 1}: ${item.location || pkg?.destination || 'Goa Discovery'}`,
         description: item.description || item.desc || '',
         location: item.location || pkg?.destination || 'Goa',
-        hotel: item.hotel || pkg?.hotel_included || 'Luxury Beach Resort',
-        meals: item.meals || pkg?.food_included || 'Breakfast Included',
-        transfers: item.transfers || pkg?.car_included || 'Dedicated Transfer',
+        hotel: item.hotel || pkg?.hotel_included || '',
+        meals: item.meals || pkg?.food_included || '',
+        transfers: item.transfers || pkg?.car_included || '',
         morning: item.morning || '',
         afternoon: item.afternoon || '',
         evening: item.evening || '',
@@ -155,105 +214,15 @@ export default function PackageCustomizationPage({
         activities: item.activities || '',
         tips: item.tips || '',
         images: Array.isArray(item.images) ? item.images : [],
-        inclusions: Array.isArray(item.inclusions) ? item.inclusions : [item.hotel || 'Resort Stay', item.meals || 'Breakfast Included', 'Sightseeing Pass'].filter(Boolean),
+        inclusions: Array.isArray(item.inclusions) ? item.inclusions : [item.hotel, item.meals, 'Sightseeing Pass'].filter(Boolean),
         sightseeing_locations: Array.isArray(item.sightseeing_locations) 
           ? item.sightseeing_locations 
-          : (item.location ? [{ name: item.location, tips: item.tips || 'Beach exploration & sunset views' }] : [{ name: 'Coastal Goa', tips: 'Sightseeing & relaxation' }])
+          : (item.location ? [{ name: item.location, tips: item.tips || '' }] : [])
       }));
     }
 
-    // Determine duration
-    let nights = 3;
-    if (pkg?.duration) {
-      const nMatch = String(pkg.duration).match(/(\d+)\s*Nights?/i);
-      if (nMatch) nights = parseInt(nMatch[1]);
-      else {
-        const dMatch = String(pkg.duration).match(/(\d+)\s*Days?/i);
-        if (dMatch) nights = Math.max(1, parseInt(dMatch[1]) - 1);
-        else {
-          const shortMatch = String(pkg.duration).match(/(\d+)\s*N/i);
-          if (shortMatch) nights = parseInt(shortMatch[1]);
-        }
-      }
-    }
-    const daysCount = nights + 1;
-    const destName = pkg?.destination || 'Goa';
-    const hotelName = pkg?.hotel_included || '4-Star Candolim Beach Resort';
-    const carName = pkg?.car_included || 'Dedicated Vehicle / Self-Drive';
-    const places = (pkg?.places_included || 'Calangute, Baga, Fort Aguada, Panaji Latin Quarter, Vagator, Miramar').split(',').map(s => s.trim()).filter(Boolean);
-
-    const defaultDays = [
-      {
-        day: 1,
-        title: `Arrival in ${destName}, Private Airport Transfer & Hotel Check-in`,
-        description: `Welcome greeting by your private chauffeur at ${destName} Airport / Railway Station. Enjoy a scenic private transfer to ${hotelName}, welcome drinks on arrival, and evening leisure by the beach or pool.`,
-        location: places[0] || `${destName} Coast`,
-        hotel: hotelName,
-        meals: 'Welcome Drink & Buffet Dinner',
-        transfers: carName,
-        inclusions: ['Airport Pickup', 'Resort Check-in', 'Welcome Drink', 'Buffet Dinner'],
-        sightseeing_locations: [{ name: places[0] || 'Beachfront Check-in', tips: 'Relax and unwind after your arrival' }]
-      },
-      {
-        day: 2,
-        title: `North ${destName} Coastal Tour, Fort Aguada & Water Sports`,
-        description: `Embark on an exciting coastal tour visiting ${places[1] || 'Calangute'}, ${places[2] || 'Baga Beach'}, and historical Fort Aguada lighthouse with sweeping sea panoramas. Enjoy thrilling water sport activities.`,
-        location: places[1] || 'North Goa Beaches',
-        hotel: hotelName,
-        meals: 'Buffet Breakfast & Dinner',
-        transfers: carName,
-        inclusions: ['Breakfast', carName, 'Fort Aguada Pass', 'Water Sports Pass'],
-        sightseeing_locations: [
-          { name: places[1] || 'Calangute Beach', tips: 'Bustling beach with beach shacks and shopping' },
-          { name: places[2] || 'Fort Aguada', tips: '17th-century Portuguese fort and lighthouse' }
-        ]
-      },
-      {
-        day: 3,
-        title: `South ${destName} Heritage Trail, Latin Quarter & Sunset River Cruise`,
-        description: `Discover the colorful Portuguese villas of Fontainhas Latin Quarter, visit the historic Basilica of Bom Jesus, and embark on a mesmerizing 1-hour sunset cruise along the Mandovi river with cultural performances.`,
-        location: places[3] || 'South Goa & Heritage',
-        hotel: hotelName,
-        meals: 'Buffet Breakfast & Dinner',
-        transfers: carName,
-        inclusions: ['Breakfast', 'Heritage Guide Pass', 'Sunset Cruise Ticket', 'Dinner'],
-        sightseeing_locations: [
-          { name: places[3] || 'Fontainhas Latin Quarter', tips: 'Picturesque colorful Portuguese heritage lanes' },
-          { name: 'Mandovi River Sunset Cruise', tips: 'Scenic 1-hour river cruise with Goan folk dance' }
-        ]
-      }
-    ];
-
-    if (daysCount >= 4) {
-      defaultDays.push({
-        day: 4,
-        title: `Leisure Morning, Souvenir Shopping & Departure Transfer`,
-        description: `Savor a leisurely breakfast by the pool. Enjoy last-minute shopping at local markets before your private drop-off transfer to ${destName} Airport or Railway Station with memorable experiences.`,
-        location: `${destName} Departure`,
-        hotel: hotelName,
-        meals: 'Buffet Breakfast',
-        transfers: 'Airport Drop Transfer',
-        inclusions: ['Buffet Breakfast', 'Airport Drop Transfer', '24x7 Assistance'],
-        sightseeing_locations: [{ name: 'Goa Flea Market', tips: 'Local spices, handicrafts, and souvenirs' }]
-      });
-    }
-
-    while (defaultDays.length < daysCount) {
-      const dNum = defaultDays.length + 1;
-      defaultDays.splice(defaultDays.length - 1, 0, {
-        day: dNum,
-        title: `Day ${dNum}: Island Excursion & Coastal Exploration`,
-        description: `Take a scenic day excursion along tropical coastal shores with dolphin sighting and local cuisine experience.`,
-        location: places[dNum % places.length] || 'Goa Excursions',
-        hotel: hotelName,
-        meals: 'Buffet Breakfast & Lunch',
-        transfers: carName,
-        inclusions: ['Breakfast', 'Sightseeing Pass', 'Lunch'],
-        sightseeing_locations: [{ name: 'Coastal Waters & Shacks', tips: 'Stunning natural scenery & relaxation' }]
-      });
-    }
-
-    return defaultDays.slice(0, daysCount).map((d, i) => ({ ...d, day: i + 1 }));
+    // Return empty array when no real day-wise itinerary exists in package data
+    return [];
   };
 
   const parsedItinerary = useMemo(() => getResolvedItinerary(), [pkg]);
@@ -293,8 +262,27 @@ export default function PackageCustomizationPage({
   const numHotels = Math.max(1, parsedItinerary.filter(d => d.hotel).length || 1);
   const numTransfers = Math.max(1, parsedItinerary.length > 1 ? 2 : 1);
   const numActivities = Math.max(2, parsedItinerary.reduce((acc, d) => acc + (d.inclusions?.length || 2), 0));
-  const numMeals = Math.max(1, parsedItinerary.filter(d => d.meals).length || parsedItinerary.length);
-  const durationDisplay = pkg?.duration || `${Math.max(1, parsedItinerary.length - 1)}N / ${parsedItinerary.length}D`;
+  const numMeals = Math.max(1, parsedItinerary.filter(d => d.meals).length || parsedItinerary.length || 1);
+
+  // Nights and days calculation strictly respecting package duration or itinerary
+  const nights = useMemo(() => {
+    if (pkg?.duration_nights) return Number(pkg.duration_nights);
+    if (parsedItinerary.length > 0) return Math.max(1, parsedItinerary.length - 1);
+    if (pkg?.duration) {
+      const nMatch = String(pkg.duration).match(/(\d+)\s*Nights?/i);
+      if (nMatch) return parseInt(nMatch[1], 10);
+      const dMatch = String(pkg.duration).match(/(\d+)\s*Days?/i);
+      if (dMatch) return Math.max(1, parseInt(dMatch[1], 10) - 1);
+      const shortMatch = String(pkg.duration).match(/(\d+)\s*N/i);
+      if (shortMatch) return parseInt(shortMatch[1], 10);
+    }
+    return 3;
+  }, [pkg, parsedItinerary]);
+
+  const days = nights + 1;
+  const durationDisplay = pkg?.duration || `${nights}N / ${days}D`;
+  const activeDepDate = pkg?.departureDate || pkg?.pickup_date || pkg?.pickupDate || pickupDate || getTodayDateStr();
+  const activeRetDate = pkg?.returnDate || pkg?.drop_date || pkg?.dropDate || dropDate || addDays(activeDepDate, nights);
 
   // Timeline Scroll Logic
   const handleScrollToDay = (dayNum) => {
@@ -323,14 +311,15 @@ export default function PackageCustomizationPage({
     else alert('Invalid Coupon Code');
   };
 
-  // Pricing
+  // Pricing calculation strictly using resolved canonical package prices and baseline upgrade logic
   useEffect(() => {
     if (!pkg) return;
-    let price = withFlight ? (Number(pkg.price_with_flight) || Number(pkg.price)) : Number(pkg.price);
+    let price = withFlight ? (Number(resolvedPricing.price_with_flight) || Number(resolvedPricing.price)) : Number(resolvedPricing.price);
     if (cabType === 'company') {
       if (isSelfDrivePackage) price += Number(pkg.company_cab_price) || 0;
     } else if (cabType === 'self-drive' && selectedSelfDriveVehicle) {
-      price += Number(selectedSelfDriveVehicle.price);
+      const upgradeCost = calculateVehicleUpgradeCost(selectedSelfDriveVehicle, baselineVehicle, isSelfDrivePackage);
+      price += upgradeCost;
     } else if (cabType === 'none' && !isSelfDrivePackage) {
       price -= Number(pkg.company_cab_price) || 0;
     }
@@ -379,7 +368,7 @@ export default function PackageCustomizationPage({
     }
 
     setTotalPrice(Math.max(0, price));
-  }, [cabType, selectedSelfDriveVehicle, airportTransit, pkg, selectedAddOns, appliedCoupon, availableAddOns, withFlight, sightseeingPrefs, selectedHotels, selectedTransfers]);
+  }, [cabType, selectedSelfDriveVehicle, baselineVehicle, airportTransit, pkg, resolvedPricing, isSelfDrivePackage, selectedAddOns, appliedCoupon, availableAddOns, withFlight, sightseeingPrefs, selectedHotels, selectedTransfers, parsedItinerary]);
 
   const customizations = {
     withFlight: withFlight,
@@ -433,7 +422,7 @@ export default function PackageCustomizationPage({
     }
 
     const priceRes = {
-      base_price: pkg.price,
+      base_price: resolvedPricing.price,
       total_price: totalPrice,
       breakdown: customizations,
       advance_percentage: pkg.advance_percentage || 25,
@@ -455,7 +444,7 @@ export default function PackageCustomizationPage({
     setIsSubmitting(true);
 
     const priceData = serverPriceData || {
-      base_price: pkg.price,
+      base_price: resolvedPricing.price,
       total_price: totalPrice,
       breakdown: customizations,
       advance_percentage: pkg.advance_percentage || 25,
@@ -464,15 +453,11 @@ export default function PackageCustomizationPage({
 
     const lead = travellers[0] || {};
     const leadName = `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || 'Valued Guest';
-    const actualTotal = Number(priceData.total_price || totalPrice || pkg.price || 0);
+    const actualTotal = Number(priceData.total_price || totalPrice || resolvedPricing.price || 0);
     const isAdvance = paymentMode === 'advance';
     const actualPaid = isAdvance ? Number(priceData.advance_amount || Math.round((actualTotal * 25) / 100)) : actualTotal;
 
-    const activeNights = Math.max(1, (parsedItinerary?.length || 4) - 1);
-    const activeDays = activeNights + 1;
-    const activeDepDate = pkg?.departureDate || pkg?.pickup_date || pkg?.pickupDate || pickupDate || new Date().toISOString().slice(0, 10);
-    const activeRetDate = pkg?.returnDate || pkg?.drop_date || pkg?.dropDate || dropDate || new Date(Date.now() + 86400000 * activeNights).toISOString().slice(0, 10);
-    const durationStr = pkg?.duration || `${activeNights} Nights / ${activeDays} Days`;
+    const durationStr = pkg?.duration || `${nights} Nights / ${days} Days`;
 
     const cleanPhone = String(contactPhone || '9876543210').replace(/\D/g, '');
     const isSelfDrive = cabType === 'self-drive' || (pkg.name && pkg.name.toLowerCase().includes('self drive')) || (pkg.package_type === 'Self Drive Package');
@@ -506,7 +491,7 @@ export default function PackageCustomizationPage({
       vehicle_image: customizations?.cab?.image || pkg.image || pkg.image_url || '',
       image: pkg.image || pkg.image_url || '',
       hotel_name: customizations?.hotel?.name || pkg.hotel_included || '',
-      booking_days: activeNights,
+      booking_days: nights,
       total_paid: actualPaid,
       total_amount: actualTotal,
       amount_paid: actualPaid,
@@ -528,6 +513,8 @@ export default function PackageCustomizationPage({
       setConfirmedBooking(createdRecord);
 
       try {
+        sessionStorage.removeItem('tg_customization_step');
+        sessionStorage.removeItem('tg_customization_draft');
         sessionStorage.setItem('customer_login_phone', contactPhone);
         sessionStorage.setItem('last_created_booking', JSON.stringify(createdRecord));
       } catch (e) {}
@@ -541,6 +528,8 @@ export default function PackageCustomizationPage({
       const fallbackRecord = { ...bookingPayload, id: `TG-${Math.floor(100000 + Math.random() * 900000)}` };
       setConfirmedBooking(fallbackRecord);
       try {
+        sessionStorage.removeItem('tg_customization_step');
+        sessionStorage.removeItem('tg_customization_draft');
         sessionStorage.setItem('customer_login_phone', contactPhone);
         sessionStorage.setItem('last_created_booking', JSON.stringify(fallbackRecord));
       } catch (e) {}
@@ -567,11 +556,6 @@ export default function PackageCustomizationPage({
 
   if (!pkg) return null;
 
-  const activeNights = Math.max(1, (parsedItinerary?.length || 4) - 1);
-  const activeDays = activeNights + 1;
-  const activeDepDate = pkg?.departureDate || pkg?.pickup_date || pkg?.pickupDate || pickupDate || new Date().toISOString().slice(0, 10);
-  const activeRetDate = pkg?.returnDate || pkg?.drop_date || pkg?.dropDate || dropDate || new Date(Date.now() + 86400000 * activeNights).toISOString().slice(0, 10);
-
   return (
     <div ref={flowContainerRef} className="package-customization-flow">
       {currentStep === 1 && (
@@ -582,6 +566,9 @@ export default function PackageCustomizationPage({
               if (document.activeElement && typeof document.activeElement.blur === 'function') {
                 document.activeElement.blur();
               }
+              try {
+                sessionStorage.removeItem('tg_customization_step');
+              } catch (err) {}
               if (onBack) onBack(e);
             }} 
             className="btn btn-link text-dark text-decoration-none p-0 mb-4 d-flex align-items-center gap-2 fw-bold"
@@ -592,23 +579,27 @@ export default function PackageCustomizationPage({
           {/* Package Header */}
           <div className="mb-4">
             <h2 className="fw-extrabold text-dark mb-2">{pkg.name}</h2>
-        <div className="d-flex flex-wrap gap-2 align-items-center text-muted small fw-bold">
-          <span className="border rounded-pill px-3 py-1 bg-light text-dark d-flex align-items-center gap-1">
-            <Plane size={14} className="text-primary" /> {withFlight ? 'With Flight' : 'Without Flight'}
-          </span>
-          <span className="border rounded-pill px-3 py-1 bg-light text-dark fw-bold" style={{ color: '#FF6333' }}>
-            <Clock size={14} className="me-1 text-primary d-inline" /> {durationDisplay}
-          </span>
-          <span className="badge bg-light text-dark border px-3 py-1.5 rounded-pill d-flex align-items-center gap-1">
-            <MapPin size={13} className="text-danger" /> {pkg.destination || 'Goa, India'}
-          </span>
-          {parsedItinerary.slice(0, 3).map((d, i) => (
-             <span key={i} className="text-muted small">
-               Day {d.day}: {d.location || 'Goa'} {i < Math.min(2, parsedItinerary.length - 1) && '•'}
-             </span>
-          ))}
-        </div>
-      </div>
+            <div className="d-flex flex-wrap gap-2 align-items-center text-muted small fw-bold">
+              <span className="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 px-3 py-1.5 rounded-pill d-flex align-items-center gap-1.5">
+                <Calendar size={13} className="text-primary" />
+                <span>Travel Dates: <strong>{formatDisplayDate(activeDepDate)}</strong> → <strong>{formatDisplayDate(activeRetDate)}</strong> ({nights}N / {days}D)</span>
+              </span>
+              <span className="border rounded-pill px-3 py-1 bg-light text-dark d-flex align-items-center gap-1">
+                <Plane size={14} className="text-primary" /> {withFlight ? 'With Flight' : 'Without Flight'}
+              </span>
+              <span className="border rounded-pill px-3 py-1 bg-light text-dark fw-bold" style={{ color: '#FF6333' }}>
+                <Clock size={14} className="me-1 text-primary d-inline" /> {durationDisplay}
+              </span>
+              <span className="badge bg-light text-dark border px-3 py-1.5 rounded-pill d-flex align-items-center gap-1">
+                <MapPin size={13} className="text-danger" /> {pkg.destination || 'Goa, India'}
+              </span>
+              {parsedItinerary.slice(0, 3).map((d, i) => (
+                <span key={i} className="text-muted small">
+                  Day {d.day}: {d.location || 'Goa'} {i < Math.min(2, parsedItinerary.length - 1) && '•'}
+                </span>
+              ))}
+            </div>
+          </div>
 
       <div className="row g-4 text-start">
         {/* Left Column: Itinerary Details */}
@@ -619,7 +610,7 @@ export default function PackageCustomizationPage({
             <div className="d-flex gap-3 gap-md-4 flex-wrap align-items-center">
               <div className="text-center">
                 <span className="d-block fw-bold text-primary px-3 py-1 bg-white border rounded-pill shadow-xs" style={{ fontSize: '0.85rem' }}>
-                  {parsedItinerary.length} DAY PLAN
+                  {parsedItinerary.length > 0 ? parsedItinerary.length : days} DAY PLAN
                 </span>
               </div>
               <div className="text-center text-muted small fw-bold d-flex flex-column justify-content-center">
@@ -681,54 +672,108 @@ export default function PackageCustomizationPage({
             </div>
             {cabType === 'self-drive' && (
                <div className="mt-2 border-top pt-3">
-                 <label className="fw-bold small text-muted mb-2 d-block">Select Self-Drive Vehicle</label>
+                 <div className="d-flex justify-content-between align-items-center mb-2">
+                   <label className="fw-bold small text-muted mb-0">Select Self-Drive Vehicle</label>
+                   {baselineVehicle && (
+                     <span className="text-muted small" style={{ fontSize: '11px' }}>
+                       Included in Package: <strong className="text-dark">{baselineVehicle.name}</strong>
+                     </span>
+                   )}
+                 </div>
                  {filteredVehicles.length === 0 ? (
                     <p className="text-danger small">No self-drive vehicles available.</p>
                  ) : (
                     <div className="d-flex gap-2 overflow-auto pb-2" style={{ whiteSpace: 'nowrap' }}>
-                      {filteredVehicles.map(veh => (
-                        <div key={veh.id} className={`p-2 border rounded cursor-pointer d-inline-block ${selectedSelfDriveVehicle?.id === veh.id ? 'border-primary bg-primary bg-opacity-10 shadow-sm' : ''}`} style={{ minWidth: '200px' }} onClick={() => setSelectedSelfDriveVehicle(veh)}>
-                          <div className="d-flex align-items-center gap-2">
-                            <img src={veh.image} style={{ width: '60px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} alt={veh.name} />
-                            <div>
-                              <div className="fw-bold small text-truncate" style={{ maxWidth: '120px' }}>{veh.name}</div>
-                              <div className="text-success fw-bold text-xxs">+₹{veh.price}</div>
+                      {filteredVehicles.map(veh => {
+                        const upgradeDiff = calculateVehicleUpgradeCost(veh, baselineVehicle, isSelfDrivePackage);
+                        const isBaseline = baselineVehicle && (String(veh.id) === String(baselineVehicle.id) || (veh.name && baselineVehicle.name && veh.name.toLowerCase() === baselineVehicle.name.toLowerCase()));
+                        const isSelected = selectedSelfDriveVehicle?.id === veh.id;
+
+                        return (
+                          <div 
+                            key={veh.id} 
+                            className={`p-2 border rounded cursor-pointer d-inline-block ${isSelected ? 'border-primary bg-primary bg-opacity-10 shadow-sm' : 'hover-bg-light'}`} 
+                            style={{ minWidth: '220px' }} 
+                            onClick={() => setSelectedSelfDriveVehicle(veh)}
+                          >
+                            <div className="d-flex align-items-center gap-2">
+                              <img src={veh.image} style={{ width: '60px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} alt={veh.name} />
+                              <div>
+                                <div className="fw-bold small text-truncate" style={{ maxWidth: '140px' }}>{veh.name}</div>
+                                {isSelfDrivePackage ? (
+                                  (isBaseline || upgradeDiff <= 0) ? (
+                                    <div className="text-success fw-bold text-xxs">✓ Included in Package</div>
+                                  ) : (
+                                    <div className="text-primary fw-bold text-xxs">+₹{upgradeDiff.toLocaleString('en-IN')} (Upgrade)</div>
+                                  )
+                                ) : (
+                                  <div className="text-success fw-bold text-xxs">+₹{Number(veh.price).toLocaleString('en-IN')}</div>
+                                )}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                  )}
                </div>
             )}
           </div>
 
-          <div className="bg-white border border-top-0 d-flex" style={{ minHeight: '600px' }}>
-            {/* Timeline Sidebar */}
-            <div className="bg-light border-end" style={{ width: '120px', padding: '20px 0' }}>
-              <div className="position-sticky" style={{ top: '20px' }}>
-                <div className="text-center mb-3">
-                  <span className="fw-bold d-block">Day Plan</span>
-                </div>
-                <div className="d-flex flex-column position-relative" style={{ paddingLeft: '20px' }}>
-                  {parsedItinerary.map((day, idx) => (
-                    <div 
-                      key={idx} 
-                      className="mb-3 cursor-pointer d-flex align-items-center gap-2"
-                      onClick={() => handleScrollToDay(day.day)}
-                    >
-                      <div className="rounded-circle bg-dark" style={{ width: '8px', height: '8px' }}></div>
-                      <span className="small fw-bold text-dark">Day {day.day}</span>
-                    </div>
-                  ))}
-                </div>
+          {parsedItinerary.length === 0 ? (
+            <div className="bg-white border border-top-0 p-5 text-center shadow-xs">
+              <div className="d-inline-flex p-3 rounded-circle bg-primary bg-opacity-10 text-primary mb-3">
+                <Sparkles size={32} />
+              </div>
+              <h5 className="fw-bold text-dark mb-2">Detailed Day-Wise Schedule</h5>
+              <p className="text-muted mx-auto mb-4" style={{ maxWidth: '540px', lineHeight: '1.6', fontSize: '0.92rem' }}>
+                Your dedicated tour coordinator will finalize and provide your complete day-wise sightseeing schedule, timing, and route details upon booking confirmation, tailored to your travel dates and preferences.
+              </p>
+              <div className="d-flex flex-wrap justify-content-center gap-2 text-muted small">
+                {pkg?.hotel_included && (
+                  <span className="badge bg-light text-dark border px-3 py-2 rounded-pill">
+                    🏨 Stay: {pkg.hotel_included}
+                  </span>
+                )}
+                {pkg?.car_included && (
+                  <span className="badge bg-light text-dark border px-3 py-2 rounded-pill">
+                    🚗 Vehicle: {pkg.car_included}
+                  </span>
+                )}
+                {pkg?.food_included && (
+                  <span className="badge bg-light text-dark border px-3 py-2 rounded-pill">
+                    🍽️ Dining: {pkg.food_included}
+                  </span>
+                )}
               </div>
             </div>
+          ) : (
+            <div className="bg-white border border-top-0 d-flex" style={{ minHeight: '600px' }}>
+              {/* Timeline Sidebar */}
+              <div className="bg-light border-end" style={{ width: '120px', padding: '20px 0' }}>
+                <div className="position-sticky" style={{ top: '20px' }}>
+                  <div className="text-center mb-3">
+                    <span className="fw-bold d-block">Day Plan</span>
+                  </div>
+                  <div className="d-flex flex-column position-relative" style={{ paddingLeft: '20px' }}>
+                    {parsedItinerary.map((day, idx) => (
+                      <div 
+                        key={idx} 
+                        className="mb-3 cursor-pointer d-flex align-items-center gap-2"
+                        onClick={() => handleScrollToDay(day.day)}
+                      >
+                        <div className="rounded-circle bg-dark" style={{ width: '8px', height: '8px' }}></div>
+                        <span className="small fw-bold text-dark">Day {day.day}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
 
-            {/* Itinerary Blocks Area */}
-            <div className="flex-grow-1 p-4">
-              {parsedItinerary.map((day, idx) => {
-                const dayActivityCount = (() => {
+              {/* Itinerary Blocks Area */}
+              <div className="flex-grow-1 p-4">
+                {parsedItinerary.map((day, idx) => {
+                  const dayActivityCount = (() => {
                   let cnt = 0;
                   if (day.morning) cnt++;
                   if (day.afternoon) cnt++;
@@ -1029,17 +1074,18 @@ export default function PackageCustomizationPage({
             })}
             </div>
           </div>
+          )}
         </div>
 
         {/* Right Column: Pricing & Checkout */}
         <div className="col-lg-4">
           <div className="card border-0 shadow-sm rounded position-sticky" style={{ top: '20px' }}>
             <div className="p-4 border-bottom">
-              <span className="text-danger small fw-bold d-block text-decoration-line-through mb-1">₹{Math.round(totalPrice * 1.15)}</span>
+              <span className="text-danger small fw-bold d-block text-decoration-line-through mb-1">₹{Math.round(totalPrice * 1.15).toLocaleString('en-IN')}</span>
               <h3 className="fw-extrabold text-dark d-flex align-items-baseline gap-1 mb-1">
-                ₹{totalPrice} <span className="small text-muted fw-normal" style={{ fontSize: '14px' }}>/Adult</span>
+                ₹{totalPrice.toLocaleString('en-IN')}
               </h3>
-              <span className="text-muted text-xxs d-block">Excluding applicable taxes</span>
+              <span className="text-muted text-xxs d-block">All-Inclusive Bundled Package Price</span>
               
               <button 
                 type="button"
@@ -1118,6 +1164,8 @@ export default function PackageCustomizationPage({
           setVehiclePickupLoc={setVehiclePickupLoc}
           vehicleDropLoc={vehicleDropLoc}
           setVehicleDropLoc={setVehicleDropLoc}
+          departureDate={activeDepDate}
+          returnDate={activeRetDate}
           onBack={() => {
             if (document.activeElement && typeof document.activeElement.blur === 'function') {
               document.activeElement.blur();
@@ -1138,6 +1186,8 @@ export default function PackageCustomizationPage({
           serverPriceData={serverPriceData || { total_price: totalPrice, advance_percentage: 25, advance_amount: Math.round(totalPrice * 0.25) }} 
           paymentMode={paymentMode} 
           setPaymentMode={setPaymentMode} 
+          departureDate={activeDepDate}
+          returnDate={activeRetDate}
           onBack={() => {
             if (document.activeElement && typeof document.activeElement.blur === 'function') {
               document.activeElement.blur();
