@@ -6,11 +6,14 @@ import {
 } from 'lucide-react';
 import ImageCarousel from '../../components/common/ImageCarousel';
 import { getTodayDateStr, addDays, formatDisplayDate } from '../../utils/dateUtils';
+import { resolvePackagePrices } from '../../utils/pricingHelper';
 
-export default function PackageDetailsPage({ pkg, onBack, onBook }) {
+export default function PackageDetailsPage({ pkg, onBack, onBook, onEnquire, markups = [] }) {
   if (!pkg) return null;
 
-  const price = parseFloat(pkg.price) || 0;
+  const pricing = useMemo(() => resolvePackagePrices(pkg, markups), [pkg, markups]);
+  const price = pricing.price;
+  const flightPrice = pricing.price_with_flight;
   
   // Collect gallery photos
   const defaultImages = [
@@ -69,7 +72,7 @@ export default function PackageDetailsPage({ pkg, onBack, onBook }) {
   const [departureDate, setDepartureDate] = useState(pkg.pickupDate || pkg.departureDate || getTodayDateStr());
   const returnDate = useMemo(() => addDays(departureDate, nights), [departureDate, nights]);
 
-  // Itinerary parsing with full fallbacks
+  // Itinerary parsing strictly from package data
   let itinerary = [];
   const rawItinerary = pkg.day_wise_itinerary || pkg.itinerary || pkg.day_plan || pkg.dayPlan || pkg.dayWiseItinerary;
   if (rawItinerary) {
@@ -81,72 +84,56 @@ export default function PackageDetailsPage({ pkg, onBack, onBook }) {
       itinerary = [];
     }
   }
+  if (!Array.isArray(itinerary)) itinerary = [];
 
-  if (!Array.isArray(itinerary) || itinerary.length === 0) {
-    const destName = pkg.destination || 'Goa';
-    const hotelName = pkg.hotel_included || '4-Star Beach Resort';
-    const carName = pkg.car_included || 'Mahindra Thar 4x4 / Self-Drive Cab';
-    const places = (pkg.places_included || 'Calangute, Baga, Fort Aguada, Panaji Latin Quarter, Vagator, Miramar').split(',').map(s => s.trim()).filter(Boolean);
-
-    itinerary = [
-      {
-        day: 1,
-        title: `Day 1: Arrival in ${destName} & Private Transfer`,
-        description: `Airport/Railway station greeting by your private driver. Transfer to ${hotelName}, welcome drink on arrival, and evening leisure at the beach.`,
-        inclusions: ['Airport Transfer', 'Welcome Drinks', 'Dinner']
-      },
-      {
-        day: 2,
-        title: `Day 2: North ${destName} Coastal Tour & Water Sports`,
-        description: `Explore scenic North Goa beaches: ${places[0] || 'Calangute'}, ${places[1] || 'Baga'}, and Anjuna. Visit historical Fort Aguada and enjoy thrilling water sport activities.`,
-        inclusions: ['Breakfast', carName, 'Sightseeing Pass', 'Water Sports']
-      },
-      {
-        day: 3,
-        title: `Day 3: South ${destName} Heritage, Churches & Sunset River Cruise`,
-        description: `Experience the rich Latin Quarter of Fontainhas, ancient Old Goa basilicas, Miramar Beach, and a 1-hour sunset cruise along Mandovi river.`,
-        inclusions: ['Breakfast', 'Heritage Guide', 'River Cruise Ticket', 'Dinner']
-      },
-      {
-        day: days,
-        title: `Day ${days}: Leisure Morning & Departure Transfer`,
-        description: `Enjoy a lavish breakfast by the poolside. Last-minute souvenir shopping before your private transfer to ${destName} Airport / Railway Station.`,
-        inclusions: ['Breakfast', 'Airport Drop Transfer']
+  // Inclusions & Exclusions parsing strictly from package data
+  let inclusions = [];
+  let exclusions = [];
+  if (pkg.inclusions_exclusions_json) {
+    try {
+      const parsed = typeof pkg.inclusions_exclusions_json === 'string'
+        ? JSON.parse(pkg.inclusions_exclusions_json)
+        : pkg.inclusions_exclusions_json;
+      if (parsed && typeof parsed === 'object') {
+        if (Array.isArray(parsed.inclusions)) inclusions = parsed.inclusions;
+        if (Array.isArray(parsed.exclusions)) exclusions = parsed.exclusions;
+      } else if (Array.isArray(parsed)) {
+        inclusions = parsed;
       }
-    ];
+    } catch (e) {}
   }
 
-  // Inclusions parsing
-  let inclusions = [];
-  try {
-    inclusions = typeof pkg.inclusions === 'string' ? JSON.parse(pkg.inclusions) : (pkg.inclusions || []);
-    if (!Array.isArray(inclusions)) inclusions = [];
-  } catch (e) { inclusions = []; }
+  if (inclusions.length === 0 && pkg.inclusions) {
+    try {
+      inclusions = typeof pkg.inclusions === 'string' ? JSON.parse(pkg.inclusions) : pkg.inclusions;
+      if (!Array.isArray(inclusions)) inclusions = [];
+    } catch (e) { inclusions = []; }
+  }
   
   if (inclusions.length === 0) {
-    inclusions = [
-      `Stay for ${nights} Nights / ${days} Days in ${pkg.hotel_included || '5-Star Beach Resort'}`,
-      `Dedicated Vehicle: ${pkg.car_included || 'Mahindra Thar 4x4 / Self-Drive Cab'}`,
-      pkg.food_included || 'Daily Buffet Breakfast & Gourmet Dinners',
-      pkg.pickup_drop_included || 'Airport / Railway Station Pickup & Drop Included',
-      'All Sightseeing Tours as per detailed Itinerary',
-      'Mandovi River Sunset Cruise Tickets Included',
-      'All Tolls, Parking Charges, and Fuel Included',
-      '24x7 Dedicated Local Tour Assistant'
+    if (pkg.hotel_included) inclusions.push(`Accommodation: ${pkg.hotel_included} (${nights}N / ${days}D)`);
+    if (pkg.car_included) inclusions.push(`Vehicle: ${pkg.car_included}`);
+    if (pkg.food_included) inclusions.push(`Dining Plan: ${pkg.food_included}`);
+    if (pkg.pickup_drop_included) inclusions.push(`Airport / Station Transfers: ${pkg.pickup_drop_included}`);
+    if (pkg.places_included) inclusions.push(`Sightseeing coverage for: ${pkg.places_included}`);
+    if (pkg.price_with_flight) inclusions.push(`Flight inclusive option available`);
+    inclusions.push('24x7 Dedicated Local Tour Manager');
+    inclusions.push('All Driver Allowances, Tolls & Parking Charges Included');
+  }
+
+  if (exclusions.length === 0) {
+    exclusions = [
+      'Personal expenses & shopping',
+      'Optional adventure activities not explicitly specified in package',
+      'Tips, gratuities & porter charges',
+      pkg.price_with_flight ? 'Flight upgrades and excess baggage allowance' : 'Airfare / Train tickets (unless booked with flight option)'
     ];
   }
 
-  const exclusions = [
-    'Personal expenses & shopping',
-    'Optional water sports not specified',
-    'Tips & porter charges',
-    'Airfare (unless booked with flight option)'
-  ];
-
-  // Places parsing
+  // Places parsing strictly from package data
   const placesList = pkg.places_included 
-    ? pkg.places_included.split(',').map(p => p.trim())
-    : ['Calangute Beach', 'Baga Beach', 'Fort Aguada', 'Panaji Latin Quarter', 'Vagator Beach'];
+    ? pkg.places_included.split(',').map(p => p.trim()).filter(Boolean)
+    : [];
 
   return (
     <div className="package-details-page animate-fade-in pb-5" style={{ background: '#f8fafc', minHeight: '100vh' }}>
@@ -183,9 +170,34 @@ export default function PackageDetailsPage({ pkg, onBack, onBook }) {
           >
             Back
           </button>
+          {onEnquire && (
+            <button 
+              type="button" 
+              onClick={() => onEnquire(pkg, { departureDate, returnDate })} 
+              className="btn btn-outline-primary rounded-pill px-3 py-1.5 fw-bold" 
+              style={{ fontSize: '0.82rem' }}
+            >
+              Enquire
+            </button>
+          )}
           <button 
             type="button" 
-            onClick={() => onBook(pkg)} 
+            onClick={() => onBook({
+              ...pkg,
+              price: pricing.price,
+              price_with_flight: pricing.price_with_flight,
+              originalPrice: pricing.originalPrice,
+              originalFlightPrice: pricing.originalFlightPrice,
+              departureDate,
+              returnDate,
+              pickupDate: departureDate,
+              dropDate: returnDate,
+              pickup_date: departureDate,
+              drop_date: returnDate,
+              duration: `${nights} Nights / ${days} Days`,
+              duration_nights: nights,
+              duration_days: days
+            })} 
             className="btn btn-primary rounded-pill px-4 py-1.5 fw-bold shadow-sm"
             style={{ background: '#FF6333', borderColor: '#FF6333', fontSize: '0.85rem' }}
           >
@@ -219,7 +231,7 @@ export default function PackageDetailsPage({ pkg, onBack, onBook }) {
                     <Clock size={13} className="text-primary" /> {nights} Nights / {days} Days
                   </span>
                   <span className="badge bg-light text-dark border px-2.5 py-1.5 rounded-pill d-flex align-items-center gap-1">
-                    <MapPin size={13} className="text-danger" /> {pkg.destinations || pkg.location || 'Goa, India'}
+                    <MapPin size={13} className="text-danger" /> {pkg.destinations || pkg.destination || pkg.location || 'Goa, India'}
                   </span>
                 </div>
 
@@ -232,19 +244,30 @@ export default function PackageDetailsPage({ pkg, onBack, onBook }) {
                 </div>
 
                 <p className="text-secondary small lh-base mb-4">
-                  {pkg.description || `Experience the ultimate Goan vacation with our ${nights} Nights / ${days} Days curated package with luxury stay, dedicated vehicle, and sightseeing.`}
+                  {pkg.description || `Experience the ultimate vacation with our ${nights} Nights / ${days} Days curated package.`}
                 </p>
               </div>
 
               <div className="p-3 bg-light rounded-3 border">
                 <div className="text-muted small mb-1">Starting Price per person</div>
                 <div className="d-flex align-items-baseline gap-2">
-                  <h3 className="fw-black text-primary mb-0">₹{price.toLocaleString()}</h3>
-                  <span className="text-decoration-line-through text-muted small">₹{Math.round(price * 1.25).toLocaleString()}</span>
+                  <h3 className="fw-black text-primary mb-0">₹{price.toLocaleString('en-IN')}</h3>
+                  <span className="text-decoration-line-through text-muted small">₹{Math.round(price * 1.25).toLocaleString('en-IN')}</span>
                 </div>
                 <button 
                   type="button" 
-                  onClick={() => onBook(pkg)} 
+                  onClick={() => onBook({
+                    ...pkg,
+                    departureDate,
+                    returnDate,
+                    pickupDate: departureDate,
+                    dropDate: returnDate,
+                    pickup_date: departureDate,
+                    drop_date: returnDate,
+                    duration: `${nights} Nights / ${days} Days`,
+                    duration_nights: nights,
+                    duration_days: days
+                  })} 
                   className="btn btn-primary w-100 mt-3 py-2.5 rounded-pill fw-bold shadow-sm"
                   style={{ background: 'linear-gradient(135deg, #FF6333 0%, #FF8A00 100%)', borderColor: '#FF6333' }}
                 >
@@ -260,164 +283,195 @@ export default function PackageDetailsPage({ pkg, onBack, onBook }) {
           {/* Left Column: Details */}
           <div className="col-12 col-lg-8">
             
-            {/* Included in this package highlights */}
-            <div className="card border-0 shadow-sm rounded-4 p-4 mb-4 bg-white">
-              <h5 className="fw-bold mb-3 d-flex align-items-center gap-2" style={{ color: '#0D1B2E' }}>
-                <Sparkles size={18} className="text-warning" /> Included in This Holiday Package
-              </h5>
-              
-              <div className="row g-3">
-                {/* Hotel Card */}
-                <div className="col-md-6">
-                  <div className="p-3 rounded-3 border bg-light h-100 d-flex gap-3 align-items-center">
-                    <div className="rounded-3 bg-white p-3 text-primary shadow-sm">
-                      <Hotel size={26} />
+            {/* Included in this package highlights - strictly using real fields */}
+            {(pkg.hotel_included || pkg.car_included || pkg.self_drive_included || pkg.food_included || pkg.price_with_flight || pkg.flights_included) && (
+              <div className="card border-0 shadow-sm rounded-4 p-4 mb-4 bg-white">
+                <h5 className="fw-bold mb-3 d-flex align-items-center gap-2" style={{ color: '#0D1B2E' }}>
+                  <Sparkles size={18} className="text-warning" /> Included in This Holiday Package
+                </h5>
+                
+                <div className="row g-3">
+                  {/* Hotel Card */}
+                  {pkg.hotel_included && (
+                    <div className="col-md-6">
+                      <div className="p-3 rounded-3 border bg-light h-100 d-flex gap-3 align-items-center">
+                        <div className="rounded-3 bg-white p-3 text-primary shadow-sm">
+                          <Hotel size={26} />
+                        </div>
+                        <div>
+                          <span className="text-muted text-uppercase fw-bold" style={{ fontSize: '0.68rem' }}>Accommodation</span>
+                          <h6 className="fw-bold mb-0 text-dark">{pkg.hotel_included}</h6>
+                          <small className="text-muted">{nights} Nights Stay Included</small>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-muted text-uppercase fw-bold" style={{ fontSize: '0.68rem' }}>Accommodation</span>
-                      <h6 className="fw-bold mb-0 text-dark">{pkg.hotel_included || 'JW Marriott Goa (5-Star)'}</h6>
-                      <small className="text-muted">{nights} Nights with Breakfast Included</small>
-                    </div>
-                  </div>
-                </div>
+                  )}
 
-                {/* Vehicle Card */}
-                <div className="col-md-6">
-                  <div className="p-3 rounded-3 border bg-light h-100 d-flex gap-3 align-items-center">
-                    <div className="rounded-3 bg-white p-3 text-success shadow-sm">
-                      <Car size={26} />
+                  {/* Vehicle Card */}
+                  {(pkg.car_included || pkg.self_drive_included) && (
+                    <div className="col-md-6">
+                      <div className="p-3 rounded-3 border bg-light h-100 d-flex gap-3 align-items-center">
+                        <div className="rounded-3 bg-white p-3 text-success shadow-sm">
+                          <Car size={26} />
+                        </div>
+                        <div>
+                          <span className="text-muted text-uppercase fw-bold" style={{ fontSize: '0.68rem' }}>Vehicle &amp; Transfers</span>
+                          <h6 className="fw-bold mb-0 text-dark">{pkg.car_included || 'Dedicated Tour Vehicle'}</h6>
+                          <small className="text-muted">{pkg.pickup_drop_included || 'Dedicated Sightseeing Transit'}</small>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-muted text-uppercase fw-bold" style={{ fontSize: '0.68rem' }}>Vehicle & Transfers</span>
-                      <h6 className="fw-bold mb-0 text-dark">{pkg.car_included || 'Mahindra Thar 4x4 / Self-Drive'}</h6>
-                      <small className="text-muted">Free Airport Pickup & Drop</small>
-                    </div>
-                  </div>
-                </div>
+                  )}
 
-                {/* Meals Card */}
-                <div className="col-md-6">
-                  <div className="p-3 rounded-3 border bg-light h-100 d-flex gap-3 align-items-center">
-                    <div className="rounded-3 bg-white p-3 text-warning shadow-sm">
-                      <Utensils size={26} />
+                  {/* Meals Card */}
+                  {(pkg.food_included || pkg.meals_included) && (
+                    <div className="col-md-6">
+                      <div className="p-3 rounded-3 border bg-light h-100 d-flex gap-3 align-items-center">
+                        <div className="rounded-3 bg-white p-3 text-warning shadow-sm">
+                          <Utensils size={26} />
+                        </div>
+                        <div>
+                          <span className="text-muted text-uppercase fw-bold" style={{ fontSize: '0.68rem' }}>Dining &amp; Meals</span>
+                          <h6 className="fw-bold mb-0 text-dark">{pkg.food_included || 'Meal Plan Included'}</h6>
+                          <small className="text-muted">Inclusive dining schedule</small>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-muted text-uppercase fw-bold" style={{ fontSize: '0.68rem' }}>Dining & Meals</span>
-                      <h6 className="fw-bold mb-0 text-dark">{pkg.food_included || 'Buffet Breakfast & Dinner'}</h6>
-                      <small className="text-muted">Inclusive gourmet meal plan</small>
-                    </div>
-                  </div>
-                </div>
+                  )}
 
-                {/* Flights Card */}
-                <div className="col-md-6">
-                  <div className="p-3 rounded-3 border bg-light h-100 d-flex gap-3 align-items-center">
-                    <div className="rounded-3 bg-white p-3 text-info shadow-sm">
-                      <Plane size={26} />
+                  {/* Flights Card */}
+                  {(flightPrice || pkg.price_with_flight || pkg.flights_included) && (
+                    <div className="col-md-6">
+                      <div className="p-3 rounded-3 border bg-light h-100 d-flex gap-3 align-items-center">
+                        <div className="rounded-3 bg-white p-3 text-info shadow-sm">
+                          <Plane size={26} />
+                        </div>
+                        <div>
+                          <span className="text-muted text-uppercase fw-bold" style={{ fontSize: '0.68rem' }}>Flight Option</span>
+                          <h6 className="fw-bold mb-0 text-dark">
+                            {(flightPrice || pkg.price_with_flight) ? `Flights Available (₹${parseFloat(flightPrice || pkg.price_with_flight).toLocaleString('en-IN')})` : 'Flight inclusive option available'}
+                          </h6>
+                          <small className="text-muted">Round-trip airport transit</small>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-muted text-uppercase fw-bold" style={{ fontSize: '0.68rem' }}>Flight Option</span>
-                      <h6 className="fw-bold mb-0 text-dark">
-                        {pkg.price_with_flight ? `Flights Available (₹${parseFloat(pkg.price_with_flight).toLocaleString()})` : 'Optional Flight Addon'}
-                      </h6>
-                      <small className="text-muted">Round-trip airport transit</small>
-                    </div>
-                  </div>
+                  )}
                 </div>
               </div>
-            </div>
+            )}
 
-            {/* Places to Visit */}
-            <div className="card border-0 shadow-sm rounded-4 p-4 mb-4 bg-white">
-              <h5 className="fw-bold mb-3 d-flex align-items-center gap-2" style={{ color: '#0D1B2E' }}>
-                <MapPin size={18} className="text-danger" /> Sightseeing & Key Attractions Covered
-              </h5>
-              <div className="d-flex flex-wrap gap-2">
-                {placesList.map((place, idx) => (
-                  <span key={idx} className="badge bg-light text-dark border px-3 py-2 rounded-pill fw-bold" style={{ fontSize: '0.78rem' }}>
-                    📍 {place}
-                  </span>
-                ))}
+            {/* Places to Visit - strictly shown if places_included exists */}
+            {placesList.length > 0 && (
+              <div className="card border-0 shadow-sm rounded-4 p-4 mb-4 bg-white">
+                <h5 className="fw-bold mb-3 d-flex align-items-center gap-2" style={{ color: '#0D1B2E' }}>
+                  <MapPin size={18} className="text-danger" /> Sightseeing &amp; Key Attractions Covered
+                </h5>
+                <div className="d-flex flex-wrap gap-2">
+                  {placesList.map((place, idx) => (
+                    <span key={idx} className="badge bg-light text-dark border px-3 py-2 rounded-pill fw-bold" style={{ fontSize: '0.78rem' }}>
+                      📍 {place}
+                    </span>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Day Wise Itinerary */}
             <div className="card border-0 shadow-sm rounded-4 p-4 mb-4 bg-white">
-              <h5 className="fw-bold mb-4 d-flex align-items-center gap-2" style={{ color: '#0D1B2E' }}>
+              <h5 className="fw-bold mb-3 d-flex align-items-center gap-2" style={{ color: '#0D1B2E' }}>
                 <Calendar size={18} className="text-primary" /> Detailed Day-by-Day Itinerary
               </h5>
               
-              <div className="d-flex flex-column gap-3">
-                {itinerary.map((day, idx) => (
-                  <div key={idx} className="p-3.5 rounded-3 border bg-light">
-                    <div className="d-flex align-items-center justify-content-between mb-2">
-                      <h6 className="fw-bold mb-0 text-dark d-flex align-items-center gap-2">
-                        <span className="badge bg-primary rounded-circle" style={{ width: '24px', height: '24px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                          {idx + 1}
-                        </span>
-                        {day.title || `Day ${idx + 1}`}
-                      </h6>
+              {itinerary.length > 0 ? (
+                <div className="d-flex flex-column gap-3">
+                  {itinerary.map((day, idx) => (
+                    <div key={idx} className="p-3.5 rounded-3 border bg-light">
+                      <div className="d-flex align-items-center justify-content-between mb-2">
+                        <h6 className="fw-bold mb-0 text-dark d-flex align-items-center gap-2">
+                          <span className="badge bg-primary rounded-circle" style={{ width: '24px', height: '24px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                            {idx + 1}
+                          </span>
+                          {day.title || `Day ${idx + 1}`}
+                        </h6>
+                      </div>
+                      {day.description && <p className="text-muted small mb-2 lh-base">{day.description}</p>}
+                      
+                      {/* Time of day activities */}
+                      {(day.morning || day.afternoon || day.evening || day.night || day.activities) && (
+                        <div className="d-flex flex-column gap-2 my-2.5">
+                          {day.morning && (
+                            <div className="p-2.5 bg-white rounded border-start border-4 border-warning shadow-xs">
+                              <span className="badge bg-warning text-dark fw-bold me-1.5" style={{ fontSize: '9px' }}>MORNING</span>
+                              <span className="text-dark small">{day.morning}</span>
+                            </div>
+                          )}
+                          {day.afternoon && (
+                            <div className="p-2.5 bg-white rounded border-start border-4 border-primary shadow-xs">
+                              <span className="badge bg-primary text-white fw-bold me-1.5" style={{ fontSize: '9px' }}>AFTERNOON</span>
+                              <span className="text-dark small">{day.afternoon}</span>
+                            </div>
+                          )}
+                          {day.evening && (
+                            <div className="p-2.5 bg-white rounded border-start border-4 border-info shadow-xs">
+                              <span className="badge bg-info text-dark fw-bold me-1.5" style={{ fontSize: '9px' }}>EVENING</span>
+                              <span className="text-dark small">{day.evening}</span>
+                            </div>
+                          )}
+                          {day.night && (
+                            <div className="p-2.5 bg-white rounded border-start border-4 border-dark shadow-xs">
+                              <span className="badge bg-dark text-white fw-bold me-1.5" style={{ fontSize: '9px' }}>NIGHT</span>
+                              <span className="text-dark small">{day.night}</span>
+                            </div>
+                          )}
+                          {day.activities && !day.morning && !day.afternoon && (
+                            <div className="p-2.5 bg-white rounded border-start border-4 border-success shadow-xs">
+                              <span className="badge bg-success text-white fw-bold me-1.5" style={{ fontSize: '9px' }}>ACTIVITIES</span>
+                              <span className="text-dark small">{day.activities}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {day.sightseeing_locations && day.sightseeing_locations.length > 0 && (
+                        <div className="d-flex flex-wrap gap-1.5 my-2">
+                          {day.sightseeing_locations.map((loc, i) => (
+                            <span key={i} className="badge bg-white text-dark border px-2 py-1" style={{ fontSize: '0.72rem' }}>
+                              📍 {typeof loc === 'string' ? loc : loc.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {day.inclusions && day.inclusions.length > 0 && (
+                        <div className="d-flex flex-wrap gap-1.5 mt-2">
+                          {day.inclusions.map((inc, i) => (
+                            <span key={i} className="badge bg-white text-secondary border px-2 py-1" style={{ fontSize: '0.68rem' }}>
+                              ✓ {inc}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    {day.description && <p className="text-muted small mb-2 lh-base">{day.description}</p>}
-                    
-                    {/* Time of day activities */}
-                    {(day.morning || day.afternoon || day.evening || day.night || day.activities) && (
-                      <div className="d-flex flex-column gap-2 my-2.5">
-                        {day.morning && (
-                          <div className="p-2.5 bg-white rounded border-start border-4 border-warning shadow-xs">
-                            <span className="badge bg-warning text-dark fw-bold me-1.5" style={{ fontSize: '9px' }}>MORNING</span>
-                            <span className="text-dark small">{day.morning}</span>
-                          </div>
-                        )}
-                        {day.afternoon && (
-                          <div className="p-2.5 bg-white rounded border-start border-4 border-primary shadow-xs">
-                            <span className="badge bg-primary text-white fw-bold me-1.5" style={{ fontSize: '9px' }}>AFTERNOON</span>
-                            <span className="text-dark small">{day.afternoon}</span>
-                          </div>
-                        )}
-                        {day.evening && (
-                          <div className="p-2.5 bg-white rounded border-start border-4 border-info shadow-xs">
-                            <span className="badge bg-info text-dark fw-bold me-1.5" style={{ fontSize: '9px' }}>EVENING</span>
-                            <span className="text-dark small">{day.evening}</span>
-                          </div>
-                        )}
-                        {day.night && (
-                          <div className="p-2.5 bg-white rounded border-start border-4 border-dark shadow-xs">
-                            <span className="badge bg-dark text-white fw-bold me-1.5" style={{ fontSize: '9px' }}>NIGHT</span>
-                            <span className="text-dark small">{day.night}</span>
-                          </div>
-                        )}
-                        {day.activities && !day.morning && !day.afternoon && (
-                          <div className="p-2.5 bg-white rounded border-start border-4 border-success shadow-xs">
-                            <span className="badge bg-success text-white fw-bold me-1.5" style={{ fontSize: '9px' }}>ACTIVITIES</span>
-                            <span className="text-dark small">{day.activities}</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {day.sightseeing_locations && day.sightseeing_locations.length > 0 && (
-                      <div className="d-flex flex-wrap gap-1.5 my-2">
-                        {day.sightseeing_locations.map((loc, i) => (
-                          <span key={i} className="badge bg-white text-dark border px-2 py-1" style={{ fontSize: '0.72rem' }}>
-                            📍 {typeof loc === 'string' ? loc : loc.name}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-
-                    {day.inclusions && day.inclusions.length > 0 && (
-                      <div className="d-flex flex-wrap gap-1.5 mt-2">
-                        {day.inclusions.map((inc, i) => (
-                          <span key={i} className="badge bg-white text-secondary border px-2 py-1" style={{ fontSize: '0.68rem' }}>
-                            ✓ {inc}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-4 rounded-3 border bg-light text-center py-4">
+                  <Clock size={28} className="text-primary mb-2 opacity-75" />
+                  <h6 className="fw-bold text-dark mb-1">Tailored Day-Wise Itinerary</h6>
+                  <p className="text-muted small mb-3 mx-auto" style={{ maxWidth: '500px' }}>
+                    {pkg.description || `This ${nights} Nights / ${days} Days package itinerary is customized according to your travel preferences and attraction choices upon booking or enquiry.`}
+                  </p>
+                  {onEnquire && (
+                    <button 
+                      type="button" 
+                      onClick={() => onEnquire(pkg, { departureDate, returnDate })}
+                      className="btn btn-outline-primary btn-sm rounded-pill px-3 py-1.5 fw-bold"
+                    >
+                      Enquire for Custom Itinerary
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Inclusions & Exclusions */}
@@ -451,6 +505,22 @@ export default function PackageDetailsPage({ pkg, onBack, onBook }) {
               </div>
             </div>
 
+            {/* Cancellation Policy & Guarantee */}
+            <div className="card border-0 shadow-sm rounded-4 p-4 mt-4 bg-white">
+              <h5 className="fw-bold mb-3 d-flex align-items-center gap-2" style={{ color: '#0D1B2E' }}>
+                <Shield size={18} className="text-success" /> Cancellation Policy &amp; Terms
+              </h5>
+              <div className="p-3 bg-light rounded-3 border text-secondary small lh-base">
+                {pkg.cancellation_policy ? (
+                  <p className="mb-0">{pkg.cancellation_policy}</p>
+                ) : (
+                  <p className="mb-0">
+                    <strong>Flexible Cancellation:</strong> Free cancellation up to 48 hours before your scheduled departure date. 100% full refund on eligible cancellations. Verified hotels, sanitized vehicles, and 24/7 dedicated local tour support.
+                  </p>
+                )}
+              </div>
+            </div>
+
           </div>
 
           {/* Right Column: Pricing & Booking Sidebar */}
@@ -471,9 +541,9 @@ export default function PackageDetailsPage({ pkg, onBack, onBook }) {
                   </h2>
                   <span className="text-muted small">/ per person</span>
                 </div>
-                {pkg.price_with_flight && (
+                {(flightPrice || pkg.price_with_flight) && (
                   <div className="small text-success mt-2 pt-2 border-top">
-                    ✈️ With Flight: <strong>₹{parseFloat(pkg.price_with_flight).toLocaleString('en-IN')}</strong> / person
+                    ✈️ With Flight: <strong>₹{parseFloat(flightPrice || pkg.price_with_flight).toLocaleString('en-IN')}</strong> / person
                   </div>
                 )}
               </div>
@@ -531,16 +601,20 @@ export default function PackageDetailsPage({ pkg, onBack, onBook }) {
                 </div>
                 <div className="d-flex justify-content-between">
                   <span>Destination:</span>
-                  <span className="fw-bold text-dark">Goa, India</span>
+                  <span className="fw-bold text-dark">{pkg.destinations || pkg.destination || 'Goa, India'}</span>
                 </div>
-                <div className="d-flex justify-content-between">
-                  <span>Hotel Stay:</span>
-                  <span className="fw-bold text-dark">{pkg.hotel_included || 'Luxury Resort'}</span>
-                </div>
-                <div className="d-flex justify-content-between">
-                  <span>Vehicle:</span>
-                  <span className="fw-bold text-dark">{pkg.car_included || 'Self-Drive Car'}</span>
-                </div>
+                {pkg.hotel_included && (
+                  <div className="d-flex justify-content-between">
+                    <span>Hotel Stay:</span>
+                    <span className="fw-bold text-dark text-truncate ms-2" title={pkg.hotel_included}>{pkg.hotel_included}</span>
+                  </div>
+                )}
+                {pkg.car_included && (
+                  <div className="d-flex justify-content-between">
+                    <span>Vehicle:</span>
+                    <span className="fw-bold text-dark text-truncate ms-2" title={pkg.car_included}>{pkg.car_included}</span>
+                  </div>
+                )}
               </div>
 
               <div className="d-flex flex-column gap-2">
@@ -552,6 +626,10 @@ export default function PackageDetailsPage({ pkg, onBack, onBook }) {
                     }
                     onBook({
                       ...pkg,
+                      price: pricing.price,
+                      price_with_flight: pricing.price_with_flight,
+                      originalPrice: pricing.originalPrice,
+                      originalFlightPrice: pricing.originalFlightPrice,
                       departureDate,
                       returnDate,
                       pickupDate: departureDate,
@@ -569,6 +647,27 @@ export default function PackageDetailsPage({ pkg, onBack, onBook }) {
                   <span>Proceed to Book</span>
                   <ChevronRight size={18} />
                 </button>
+
+                {onEnquire && (
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      if (document.activeElement && typeof document.activeElement.blur === 'function') {
+                        document.activeElement.blur();
+                      }
+                      onEnquire(pkg, {
+                        departureDate,
+                        returnDate,
+                        pickupDate: departureDate,
+                        dropDate: returnDate
+                      });
+                    }}
+                    className="btn btn-outline-secondary w-100 py-2.5 rounded-pill fw-bold d-flex align-items-center justify-content-center gap-2 mt-1"
+                    style={{ fontSize: '0.88rem' }}
+                  >
+                    <span>Enquire About This Package</span>
+                  </button>
+                )}
               </div>
 
               <div className="p-3 bg-light rounded-3 mt-4 text-muted" style={{ fontSize: '0.72rem' }}>

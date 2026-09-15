@@ -127,6 +127,9 @@ export default function BookingModal({
 
   useEffect(() => {
     setActiveImageIdx(0);
+    if (selectedBookingItem?.totalMembers || selectedBookingItem?.guests) {
+      setTotalMembers(parseInt(selectedBookingItem.totalMembers || selectedBookingItem.guests, 10) || 1);
+    }
   }, [selectedBookingItem]);
 
   const [addonPackageId, setAddonPackageId] = useState('');
@@ -216,7 +219,8 @@ export default function BookingModal({
   const isCar = String(selectedBookingItem?.id).startsWith('car-') || selectedBookingItem.type === 'car';
   const isBike = String(selectedBookingItem?.id).startsWith('bike-') || selectedBookingItem.type === 'bike';
   const isFlight = String(selectedBookingItem?.id).startsWith('FL-') || String(selectedBookingItem?.id).startsWith('fl-') || String(selectedBookingItem?.id).startsWith('flt-') || selectedBookingItem.type === 'flight' || Boolean(selectedBookingItem.airline) || Boolean(selectedBookingItem.flight_number);
-  const isPackage = !isCar && !isBike && !isFlight && !isHotel;
+  const isActivity = String(selectedBookingItem?.id).startsWith('act-') || String(selectedBookingItem?.id).startsWith('sight-') || selectedBookingItem.type === 'activity' || selectedBookingItem.type === 'sightseeing' || selectedBookingItem.item_type === 'activity' || selectedBookingItem.item_type === 'sightseeing';
+  const isPackage = !isCar && !isBike && !isFlight && !isHotel && !isActivity;
   
   const calculatedDays = useMemo(() => {
     if (!modalPickupDate || !modalDropDate) return bookingDays || 1;
@@ -238,9 +242,9 @@ export default function BookingModal({
     itemCost = baseRate; // packages are flat price
   }
 
-  if (isFlight) {
-    // If flight multiply base rate by members
-    itemCost = baseRate * totalMembers;
+  if (isFlight || isActivity) {
+    // If flight or activity multiply base rate by members / guests
+    itemCost = baseRate * (totalMembers || 1);
   }
 
   // Calculate Full-Day Driver Days automatically
@@ -376,6 +380,9 @@ export default function BookingModal({
       dropTime: modalDropTime,
       pickupLoc: modalPickupLoc,
       bookingDays: calculatedDays,
+      total_members: totalMembers,
+      guests: totalMembers,
+      totalMembers: totalMembers,
       driver_required: driverRequired ? 1 : 0,
       driver_service_type: driverRequired ? driverServiceType : null,
       driver_charge: driverTotalCharge,
@@ -619,6 +626,44 @@ export default function BookingModal({
 
                   {/* Customization options removed as requested */}
 
+                  {isActivity && (
+                    <div className="mb-3 p-3 rounded-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                      <label className="form-label small fw-bold d-flex align-items-center justify-content-between mb-2">
+                        <span className="d-flex align-items-center gap-1.5">
+                          <Users size={15} className="text-warning" /> Number of Guests / Travellers
+                        </span>
+                        <span className="badge bg-dark text-white rounded-pill px-2.5 py-0.5" style={{ fontSize: '11px' }}>
+                          ₹{baseRate} / person
+                        </span>
+                      </label>
+                      <div className="d-flex align-items-center gap-3">
+                        <div className="btn-group" role="group">
+                          <button
+                            type="button"
+                            className="btn btn-outline-secondary btn-sm px-3 fw-bold"
+                            onClick={() => setTotalMembers(prev => Math.max(1, prev - 1))}
+                            disabled={totalMembers <= 1}
+                          >
+                            -
+                          </button>
+                          <span className="btn btn-light btn-sm px-4 fw-bold text-dark border-top border-bottom border-secondary border-opacity-25" style={{ minWidth: '48px', cursor: 'default' }}>
+                            {totalMembers}
+                          </span>
+                          <button
+                            type="button"
+                            className="btn btn-outline-secondary btn-sm px-3 fw-bold"
+                            onClick={() => setTotalMembers(prev => Math.min(20, prev + 1))}
+                          >
+                            +
+                          </button>
+                        </div>
+                        <span className="text-muted text-xs">
+                          {totalMembers === 1 ? '1 Guest' : `${totalMembers} Guests`}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Interactive Date, Time & Pickup Location Picker */}
                   <div className="p-3 rounded mb-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
                     <div className="d-flex align-items-center justify-content-between mb-2 pb-1 border-bottom">
@@ -626,7 +671,7 @@ export default function BookingModal({
                         <Calendar size={15} className="text-warning" /> Trip Dates & Location
                       </span>
                       <span className="badge bg-primary bg-opacity-10 text-primary fw-bold" style={{ fontSize: '0.72rem' }}>
-                        {calculatedDays} {calculatedDays === 1 ? (isHotel ? 'Night' : 'Day') : (isHotel ? 'Nights' : 'Days')} Duration
+                        {isActivity ? (selectedBookingItem.duration || 'Full Day') : `${calculatedDays} ${calculatedDays === 1 ? (isHotel ? 'Night' : 'Day') : (isHotel ? 'Nights' : 'Days')} Duration`}
                       </span>
                     </div>
 
@@ -634,7 +679,7 @@ export default function BookingModal({
                       {/* Pickup Date & Drop Date */}
                       <div className="col-sm-6">
                         <label className="form-label small fw-bold text-secondary mb-1">
-                          {isFlight ? 'Departure Date' : isHotel ? 'Check-in Date' : 'Pickup Date'}
+                          {isFlight ? 'Departure Date' : isHotel ? 'Check-in Date' : isActivity ? 'Tour Date' : 'Pickup Date'}
                         </label>
                         <input
                           type="date"
@@ -654,7 +699,7 @@ export default function BookingModal({
 
                       <div className="col-sm-6">
                         <label className="form-label small fw-bold text-secondary mb-1">
-                          {isFlight ? 'Return Date' : isHotel ? 'Check-out Date' : 'Drop / Return Date'}
+                          {isFlight ? 'Return Date' : isHotel ? 'Check-out Date' : isActivity ? 'Tour Date / Drop' : 'Drop / Return Date'}
                         </label>
                         <input
                           type="date"
@@ -1148,11 +1193,11 @@ export default function BookingModal({
                     <div className="billing-summary-card mt-2 small">
                       <div className="d-flex justify-content-between mb-2">
                         <span>Base Price{isPackage && includeFlight ? ' (With Flight)' : ''}:</span>
-                        <span>₹{baseRate} {isPackage ? '' : isFlight ? `× ${totalMembers} pax` : '/ day'}</span>
+                        <span>₹{baseRate} {isPackage ? '' : (isFlight || isActivity) ? `× ${totalMembers} pax` : '/ day'}</span>
                       </div>
                       <div className="d-flex justify-content-between mb-2">
-                        <span>{isFlight ? 'Flight Info:' : 'Duration:'}</span>
-                        <span className="fw-semibold">{isFlight ? `${selectedBookingItem.stops || 'Direct'} (${selectedBookingItem.duration || '2h'})` : `${calculatedDays} ${isHotel ? (calculatedDays === 1 ? 'Night' : 'Nights') : (calculatedDays === 1 ? 'Day' : 'Days')}${isHotel ? ` (${calculatedDays}N)` : ''}`}</span>
+                        <span>{isFlight ? 'Flight Info:' : isActivity ? 'Tour Duration:' : 'Duration:'}</span>
+                        <span className="fw-semibold">{isFlight ? `${selectedBookingItem.stops || 'Direct'} (${selectedBookingItem.duration || '2h'})` : isActivity ? (selectedBookingItem.duration || 'Flexible') : `${calculatedDays} ${isHotel ? (calculatedDays === 1 ? 'Night' : 'Nights') : (calculatedDays === 1 ? 'Day' : 'Days')}${isHotel ? ` (${calculatedDays}N)` : ''}`}</span>
                       </div>
 
                       {addonPackage && (

@@ -171,3 +171,33 @@ export function formatDateShort(dateStr) {
   return formatBookingDateTime(dateStr, '');
 }
 
+/**
+ * Safely parses human, formatted or ISO travel date strings into a valid Date object
+ * Handles DD/MM/YYYY, DD-MM-YYYY, YYYY-MM-DD, and English month strings (e.g. "15 Sep 2026", "Wed, 26 Aug 2026")
+ */
+export function parseTravelDate(str) {
+  if (!str) return null;
+  const s = String(str).trim();
+  // Check DD/MM/YYYY or DD-MM-YYYY
+  const dmyMatch = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (dmyMatch) {
+    const day = parseInt(dmyMatch[1], 10);
+    const month = parseInt(dmyMatch[2], 10) - 1;
+    const year = parseInt(dmyMatch[3], 10);
+    const d = new Date(year, month, day);
+    if (!isNaN(d.getTime())) return d;
+  }
+  // Check YYYY-MM-DD
+  const ymdMatch = s.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/);
+  if (ymdMatch) {
+    const year = parseInt(ymdMatch[1], 10);
+    const month = parseInt(ymdMatch[2], 10) - 1;
+    const day = parseInt(ymdMatch[3], 10);
+    const d = new Date(year, month, day);
+    if (!isNaN(d.getTime())) return d;
+  }
+  // Standard parse (e.g. "Wed, 26 Aug 2026", "15 Sep 2026")
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return d;
+  return null;
+}

@@ -1757,7 +1757,7 @@ function extractLeadRequirements($chatHistory, $currentNotes = '') {
  * Authoritative Server-Side Inventory Availability & Anti-Double-Booking Engine.
  * Shared by D2C Storefront, B2B Partner Portal, and Hotel/Vehicle PMS.
  */
-function checkInventoryAvailability($pdo, $serviceType, $itemId, $pickupDate, $dropDate, $excludeBookingId = null) {
+function checkInventoryAvailability($pdo, $serviceType, $itemId, $pickupDate, $dropDate, $excludeBookingId = null, $roomTypeId = null, $requestedRooms = 1) {
     if (empty($itemId) || empty($pickupDate) || empty($dropDate)) {
         return ['available' => true];
     }
@@ -1883,11 +1883,19 @@ function checkInventoryAvailability($pdo, $serviceType, $itemId, $pickupDate, $d
 
     if ($isHotel) {
         // 1. Availability flag in hotels table
-        $stmtH = $pdo->prepare("SELECT id, name, is_available, blocked_dates FROM hotels WHERE id = ?");
+        $stmtH = $pdo->prepare("SELECT id, name, is_available, blocked_dates, vendor_id FROM hotels WHERE id = ?");
         $stmtH->execute([$itemId]);
         $hRow = $stmtH->fetch(PDO::FETCH_ASSOC);
 
-        if ($hRow && isset($hRow['is_available']) && intval($hRow['is_available']) === 0) {
+        if (!$hRow) {
+            return [
+                'available' => false,
+                'reason' => "The selected hotel property was not found.",
+                'item_name' => 'Hotel'
+            ];
+        }
+
+        if (isset($hRow['is_available']) && intval($hRow['is_available']) === 0) {
             return [
                 'available' => false,
                 'reason' => "The selected hotel ({$hRow['name']}) is currently marked as unavailable.",
@@ -1896,8 +1904,8 @@ function checkInventoryAvailability($pdo, $serviceType, $itemId, $pickupDate, $d
         }
 
         // 2. Blocked dates in hotels
-        if ($hRow && !empty($hRow['blocked_dates'])) {
-            $blockedArr = json_decode($hRow['blocked_dates'], true);
+        if (!empty($hRow['blocked_dates'])) {
+            $blockedArr = is_string($hRow['blocked_dates']) ? json_decode($hRow['blocked_dates'], true) : $hRow['blocked_dates'];
             if (is_array($blockedArr)) {
                 $cur = strtotime($pickup);
                 $end = strtotime($drop);
@@ -1906,7 +1914,7 @@ function checkInventoryAvailability($pdo, $serviceType, $itemId, $pickupDate, $d
                     if (in_array($dStr, $blockedArr)) {
                         return [
                             'available' => false,
-                            'reason' => "The hotel ({$hRow['name']}) has blocked dates within your selected period ($dStr).",
+                            'reason' => "The hotel ({$hRow['name']}) has blocked dates within your selected stay period ($dStr).",
                             'item_name' => $hRow['name']
                         ];
                     }
@@ -1915,20 +1923,122 @@ function checkInventoryAvailability($pdo, $serviceType, $itemId, $pickupDate, $d
             }
         }
 
-        // 3. Check hotel_availability_calendar stop sell
+        // 3. Check hotel_availability_calendar: stop_sale, available_rooms, min_stay
         try {
-            $stmtCal = $pdo->prepare("SELECT date, is_stop_sell, available_rooms FROM hotel_availability_calendar 
-                                      WHERE hotel_id = ? AND date >= ? AND date < ? AND (is_stop_sell = 1 OR available_rooms <= 0) LIMIT 1");
-            $stmtCal->execute([$itemId, $pickup, $drop]);
-            $stopRow = $stmtCal->fetch(PDO::FETCH_ASSOC);
-            if ($stopRow) {
-                return [
-                    'available' => false,
-                    'reason' => "Rooms are not available at {$hRow['name']} on {$stopRow['date']}.",
-                    'item_name' => $hRow['name']
-                ];
+            $calQuery = "SELECT date, room_type_id, available_rooms, stop_sale, min_stay, price_override 
+                         FROM hotel_availability_calendar 
+                         WHERE hotel_id = ? AND date >= ? AND date < ?";
+            $calParams = [$itemId, $pickup, $drop];
+            if (!empty($roomTypeId)) {
+                $calQuery .= " AND (room_type_id = ? OR room_type_id IS NULL OR room_type_id = '')";
+                $calParams[] = $roomTypeId;
             }
-        } catch (Exception $e) {}
+
+            $stmtCal = $pdo->prepare($calQuery);
+            $stmtCal->execute($calParams);
+            $calRows = $stmtCal->fetchAll(PDO::FETCH_ASSOC);
+
+            $diffDays = max(1, (int)round((strtotime($drop) - strtotime($pickup)) / 86400));
+            $reqRooms = max(1, intval($requestedRooms));
+
+            foreach ($calRows as $cal) {
+                if (isset($cal['stop_sale']) && intval($cal['stop_sale']) === 1) {
+                    return [
+                        'available' => false,
+                        'reason' => "Stop-sale is in effect for {$hRow['name']} on {$cal['date']}. Rooms are closed for reservations on this date.",
+                        'item_name' => $hRow['name']
+                    ];
+                }
+                if (isset($cal['available_rooms']) && intval($cal['available_rooms']) < $reqRooms) {
+                    $availCnt = intval($cal['available_rooms']);
+                    return [
+                        'available' => false,
+                        'reason' => $availCnt <= 0 
+                            ? "Rooms are completely sold out at {$hRow['name']} on {$cal['date']}."
+                            : "Only {$availCnt} room(s) available at {$hRow['name']} on {$cal['date']}, but {$reqRooms} requested.",
+                        'item_name' => $hRow['name']
+                    ];
+                }
+                if (!empty($cal['min_stay']) && intval($cal['min_stay']) > $diffDays) {
+                    return [
+                        'available' => false,
+                        'reason' => "Minimum stay requirement of {$cal['min_stay']} nights is required for {$hRow['name']} covering {$cal['date']}.",
+                        'item_name' => $hRow['name']
+                    ];
+                }
+            }
+        } catch (PDOException $e) {
+            error_log("[HotelAvailability] Calendar check warning: " . $e->getMessage());
+            // Do not silently swallow if the query failed completely
+            throw $e;
+        }
+
+        // 4. Room capacity check against active bookings if room_type_id specified
+        if (!empty($roomTypeId)) {
+            $stmtRt = $pdo->prepare("SELECT id, name, total_rooms, stop_sell, min_stay, max_stay FROM hotel_room_types WHERE id = ?");
+            $stmtRt->execute([$roomTypeId]);
+            $rtRow = $stmtRt->fetch(PDO::FETCH_ASSOC);
+
+            if ($rtRow) {
+                if (isset($rtRow['stop_sell']) && intval($rtRow['stop_sell']) === 1) {
+                    return [
+                        'available' => false,
+                        'reason' => "The selected room type ({$rtRow['name']}) is currently on stop-sell.",
+                        'item_name' => $rtRow['name']
+                    ];
+                }
+
+                $diffDays = max(1, (int)round((strtotime($drop) - strtotime($pickup)) / 86400));
+                if (!empty($rtRow['min_stay']) && intval($rtRow['min_stay']) > $diffDays) {
+                    return [
+                        'available' => false,
+                        'reason' => "Minimum stay of {$rtRow['min_stay']} nights is required for {$rtRow['name']}.",
+                        'item_name' => $rtRow['name']
+                    ];
+                }
+
+                $totalRoomsAvailable = isset($rtRow['total_rooms']) ? intval($rtRow['total_rooms']) : 10;
+                if ($totalRoomsAvailable <= 0) {
+                    return [
+                        'available' => false,
+                        'reason' => "Zero rooms are currently available for room type '{$rtRow['name']}'.",
+                        'item_name' => $rtRow['name']
+                    ];
+                }
+
+                $reqRooms = max(1, intval($requestedRooms));
+                $sqlBookings = "SELECT COUNT(*) FROM bookings 
+                                WHERE item_id = ? 
+                                  AND type = 'hotel'
+                                  AND status NOT IN ('Cancelled', 'Rejected')
+                                  AND (customizations LIKE ? OR customizations LIKE ?)
+                                  AND (pickup_date < ? AND drop_date > ?)";
+                $paramsBookings = [
+                    $itemId,
+                    '%"selected_room_type":"' . $roomTypeId . '"%',
+                    '%"room_type_id":"' . $roomTypeId . '"%',
+                    $drop,
+                    $pickup
+                ];
+                if (!empty($excludeBookingId)) {
+                    $sqlBookings .= " AND id != ?";
+                    $paramsBookings[] = $excludeBookingId;
+                }
+                $stmtBks = $pdo->prepare($sqlBookings);
+                $stmtBks->execute($paramsBookings);
+                $alreadyBooked = intval($stmtBks->fetchColumn());
+                $remainingRooms = $totalRoomsAvailable - $alreadyBooked;
+                if ($remainingRooms < $reqRooms) {
+                    return [
+                        'available' => false,
+                        'reason' => $remainingRooms <= 0
+                            ? "Room type '{$rtRow['name']}' is completely sold out for the selected dates."
+                            : "Only {$remainingRooms} room(s) of type '{$rtRow['name']}' available for the selected dates, but {$reqRooms} requested.",
+                        'item_name' => $rtRow['name']
+                    ];
+                }
+            }
+        }
 
         return ['available' => true, 'item' => $hRow, 'vendor_id' => $hRow['vendor_id'] ?? null];
     }
@@ -2817,9 +2927,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
             echo json_encode($data);
             exit;} elseif ($resource === 'hotels') {
-            $stmt = $pdo->prepare("SELECT * FROM hotels WHERE (admin_id = ? OR admin_id IS NULL OR admin_id = '' OR admin_id = 'admin' OR ? = 'superadmin' OR ? = 'admin') ORDER BY stars ASC, price ASC");
-            $stmt->execute([$tenant_id, $tenant_id, $tenant_id]);
+            $includeArchived = isset($_GET['include_archived']) && ($_GET['include_archived'] === '1' || $_GET['include_archived'] === 'true');
+            if ($includeArchived) {
+                $stmt = $pdo->prepare("SELECT * FROM hotels WHERE (admin_id = ? OR admin_id IS NULL OR admin_id = '' OR admin_id = 'admin' OR ? = 'superadmin' OR ? = 'admin') ORDER BY stars ASC, price ASC");
+                $stmt->execute([$tenant_id, $tenant_id, $tenant_id]);
+            } else {
+                $stmt = $pdo->prepare("SELECT * FROM hotels WHERE (admin_id = ? OR admin_id IS NULL OR admin_id = '' OR admin_id = 'admin' OR ? = 'superadmin' OR ? = 'admin') AND (is_available = 1 OR is_available IS NULL) AND (hotel_status = 'Live' OR hotel_status IS NULL OR hotel_status = '') ORDER BY stars ASC, price ASC");
+                $stmt->execute([$tenant_id, $tenant_id, $tenant_id]);
+            }
             $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            $reqCheckIn = trim($_GET['check_in'] ?? ($_GET['pickup_date'] ?? ''));
+            $reqCheckOut = trim($_GET['check_out'] ?? ($_GET['drop_date'] ?? ''));
+
             foreach ($data as &$hotel) {
                 if (isset($hotel['amenities']) && is_string($hotel['amenities'])) {
                     $hotel['amenities'] = array_map('trim', explode(',', str_replace(['[', ']', '"'], '', $hotel['amenities'])));
@@ -2836,8 +2956,339 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 if (empty($hotel['images']) && !empty($hotel['image'])) {
                     $hotel['images'] = [$hotel['image']];
                 }
+
+                // Date-specific availability evaluation
+                $hotel['is_available_for_dates'] = true;
+                $hotel['availability_badge'] = 'Available';
+
+                if (isset($hotel['is_available']) && intval($hotel['is_available']) === 0) {
+                    $hotel['is_available_for_dates'] = false;
+                    $hotel['availability_badge'] = 'Unavailable';
+                } elseif (!empty($reqCheckIn) && !empty($reqCheckOut)) {
+                    $pDate = substr($reqCheckIn, 0, 10);
+                    $dDate = substr($reqCheckOut, 0, 10);
+
+                    // Check blocked dates
+                    if (!empty($hotel['blocked_dates'])) {
+                        $blockedArr = is_string($hotel['blocked_dates']) ? json_decode($hotel['blocked_dates'], true) : $hotel['blocked_dates'];
+                        if (is_array($blockedArr)) {
+                            $cur = strtotime($pDate);
+                            $end = strtotime($dDate);
+                            while ($cur < $end) {
+                                if (in_array(date('Y-m-d', $cur), $blockedArr)) {
+                                    $hotel['is_available_for_dates'] = false;
+                                    $hotel['availability_badge'] = 'Blocked for Dates';
+                                    break;
+                                }
+                                $cur = strtotime('+1 day', $cur);
+                            }
+                        }
+                    }
+
+                    // Check stop-sale in calendar
+                    if ($hotel['is_available_for_dates']) {
+                        try {
+                            $stmtStop = $pdo->prepare("SELECT COUNT(*) FROM hotel_availability_calendar WHERE hotel_id = ? AND date >= ? AND date < ? AND (stop_sale = 1 OR available_rooms <= 0)");
+                            $stmtStop->execute([$hotel['id'], $pDate, $dDate]);
+                            if (intval($stmtStop->fetchColumn()) > 0) {
+                                $hotel['is_available_for_dates'] = false;
+                                $hotel['availability_badge'] = 'Sold Out for Dates';
+                            }
+                        } catch (PDOException $e) {}
+                    }
+                }
             }
             echo json_encode($data);
+            exit;} elseif ($resource === 'hotel_rooms_public') {
+            $hotel_id = trim($_GET['hotel_id'] ?? '');
+            $check_in = trim($_GET['check_in'] ?? ($_GET['pickup_date'] ?? ''));
+            $check_out = trim($_GET['check_out'] ?? ($_GET['drop_date'] ?? ''));
+            $requested_rooms = max(1, intval($_GET['rooms'] ?? 1));
+
+            if (empty($hotel_id)) {
+                http_response_code(400);
+                echo json_encode(['success' => false, 'error' => 'Missing hotel_id parameter']);
+                exit;
+            }
+
+            $stmtH = $pdo->prepare("SELECT id, name, area, location, price, stars, rating, badge, image, images_json, description, is_available, blocked_dates, checkin_time, checkout_time, policies_json, address, city, state, pincode FROM hotels WHERE id = ?");
+            $stmtH->execute([$hotel_id]);
+            $hotel = $stmtH->fetch(PDO::FETCH_ASSOC);
+
+            if (!$hotel || (isset($hotel['is_available']) && intval($hotel['is_available']) === 0) || (isset($hotel['hotel_status']) && ($hotel['hotel_status'] === 'Archived' || $hotel['hotel_status'] === 'Inactive'))) {
+                http_response_code(404);
+                echo json_encode(['success' => false, 'error' => 'This hotel is currently not available for reservations.']);
+                exit;
+            }
+
+            $hotelImages = [];
+            if (!empty($hotel['images_json'])) {
+                $p = is_string($hotel['images_json']) ? json_decode($hotel['images_json'], true) : $hotel['images_json'];
+                if (is_array($p)) $hotelImages = array_merge($hotelImages, $p);
+            }
+            if (!empty($hotel['image'])) $hotelImages[] = $hotel['image'];
+            $hotelImages = array_values(array_unique(array_filter($hotelImages)));
+
+            // Fetch room types for this hotel
+            $stmtRt = $pdo->prepare("SELECT id, hotel_id, name, description, total_rooms, max_adults, max_children, max_occupancy, bed_type, num_beds, room_size, room_size_unit, view_type, amenities_json, images_json, price, base_price, selling_price, weekend_price, extra_adult_charge, extra_child_charge, extra_bed_charge, min_stay, max_stay, stop_sell, status FROM hotel_room_types WHERE hotel_id = ? AND (status IS NULL OR status = 'Active' OR status = '') ORDER BY price ASC, selling_price ASC");
+            $stmtRt->execute([$hotel_id]);
+            $roomTypes = $stmtRt->fetchAll(PDO::FETCH_ASSOC);
+
+            // Fetch rate plans for this hotel
+            $stmtRp = $pdo->prepare("SELECT id, hotel_id, room_type_id, name, meal_plan, price_type, base_price, weekend_price, extra_adult_rate, extra_child_rate, cancellation_policy, is_active FROM hotel_rate_plans WHERE hotel_id = ? AND (is_active = 1 OR is_active IS NULL) ORDER BY base_price ASC");
+            $stmtRp->execute([$hotel_id]);
+            $allRatePlans = $stmtRp->fetchAll(PDO::FETCH_ASSOC);
+
+            // Fetch availability calendar overrides for date range if provided
+            $calRows = [];
+            if (!empty($check_in) && !empty($check_out)) {
+                try {
+                    $stmtCal = $pdo->prepare("SELECT date, room_type_id, available_rooms, stop_sale, min_stay, price_override FROM hotel_availability_calendar WHERE hotel_id = ? AND date >= ? AND date < ?");
+                    $stmtCal->execute([$hotel_id, substr($check_in, 0, 10), substr($check_out, 0, 10)]);
+                    $calRows = $stmtCal->fetchAll(PDO::FETCH_ASSOC);
+                } catch (PDOException $e) {}
+            }
+
+            $processedRooms = [];
+            foreach ($roomTypes as $rt) {
+                // Room images
+                $rtImgs = [];
+                if (!empty($rt['images_json'])) {
+                    $parsed = is_string($rt['images_json']) ? json_decode($rt['images_json'], true) : $rt['images_json'];
+                    if (is_array($parsed)) $rtImgs = array_merge($rtImgs, $parsed);
+                }
+                $rtImgs = array_values(array_unique(array_filter($rtImgs)));
+                if (empty($rtImgs)) {
+                    $rtImgs = !empty($hotelImages) ? array_slice($hotelImages, 0, 3) : ['https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=800&q=80'];
+                }
+
+                // Room amenities
+                $rtAmenities = [];
+                if (!empty($rt['amenities_json'])) {
+                    $parsedAm = is_string($rt['amenities_json']) ? json_decode($rt['amenities_json'], true) : $rt['amenities_json'];
+                    if (is_array($parsedAm)) $rtAmenities = $parsedAm;
+                }
+                if (empty($rtAmenities)) {
+                    $rtAmenities = ['Air Conditioning', 'Free Wi-Fi', 'Private Bathroom', 'Flat-screen TV', 'Electric Kettle'];
+                }
+
+                $effPrice = intval($rt['selling_price'] ?: ($rt['price'] ?: ($rt['base_price'] ?: $hotel['price'])));
+                $effWeekendPrice = intval($rt['weekend_price'] ?: round($effPrice * 1.15));
+
+                $isAvailable = true;
+                $availStatus = 'Available';
+                $minAvailableRooms = intval($rt['total_rooms'] ?: 10);
+
+                if (!empty($check_in) && !empty($check_out)) {
+                    $cur = strtotime(substr($check_in, 0, 10));
+                    $end = strtotime(substr($check_out, 0, 10));
+                    $nights = max(1, (int)round(($end - $cur) / 86400));
+
+                    if (!empty($rt['min_stay']) && intval($rt['min_stay']) > $nights) {
+                        $isAvailable = false;
+                        $availStatus = "Min {$rt['min_stay']} nights stay required";
+                    }
+                    if (isset($rt['stop_sell']) && intval($rt['stop_sell']) === 1) {
+                        $isAvailable = false;
+                        $availStatus = 'Stop-Sell in effect';
+                    }
+
+                    foreach ($calRows as $cal) {
+                        if (empty($cal['room_type_id']) || $cal['room_type_id'] === $rt['id']) {
+                            if (isset($cal['stop_sale']) && intval($cal['stop_sale']) === 1) {
+                                $isAvailable = false;
+                                $availStatus = "Sold out on {$cal['date']}";
+                                break;
+                            }
+                            if (isset($cal['available_rooms'])) {
+                                $minAvailableRooms = min($minAvailableRooms, intval($cal['available_rooms']));
+                                if (intval($cal['available_rooms']) < $requested_rooms) {
+                                    $isAvailable = false;
+                                    $availStatus = "Sold out for selected dates";
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if ($isAvailable && $minAvailableRooms <= 3 && $minAvailableRooms > 0) {
+                    $availStatus = "Only {$minAvailableRooms} room" . ($minAvailableRooms > 1 ? "s" : "") . " left!";
+                }
+
+                // Match rate plans
+                $roomRatePlans = array_values(array_filter($allRatePlans, function($rp) use ($rt) {
+                    return empty($rp['room_type_id']) || $rp['room_type_id'] === $rt['id'];
+                }));
+
+                if (empty($roomRatePlans)) {
+                    $roomRatePlans = [
+                        [
+                            'id' => 'rp-' . $rt['id'] . '-ep',
+                            'hotel_id' => $hotel_id,
+                            'room_type_id' => $rt['id'],
+                            'name' => 'Room Only (EP)',
+                            'meal_plan' => 'EP - Room Only',
+                            'base_price' => $effPrice,
+                            'weekend_price' => $effWeekendPrice,
+                            'extra_adult_rate' => intval($rt['extra_adult_charge'] ?: 800),
+                            'extra_child_rate' => intval($rt['extra_child_charge'] ?: 400),
+                            'cancellation_policy' => 'Free cancellation till 24 hrs before check-in',
+                            'inclusions' => ['Room Stay Only', 'Free High-Speed Wi-Fi', 'Complimentary Mineral Water']
+                        ],
+                        [
+                            'id' => 'rp-' . $rt['id'] . '-cp',
+                            'hotel_id' => $hotel_id,
+                            'room_type_id' => $rt['id'],
+                            'name' => 'Breakfast Included (CP)',
+                            'meal_plan' => 'CP - Breakfast Included',
+                            'base_price' => $effPrice + 500,
+                            'weekend_price' => $effWeekendPrice + 500,
+                            'extra_adult_rate' => intval($rt['extra_adult_charge'] ?: 800) + 300,
+                            'extra_child_rate' => intval($rt['extra_child_charge'] ?: 400) + 200,
+                            'cancellation_policy' => 'Free cancellation till 24 hrs before check-in',
+                            'inclusions' => ['Daily Buffet Breakfast', 'Room Stay', 'Free High-Speed Wi-Fi']
+                        ],
+                        [
+                            'id' => 'rp-' . $rt['id'] . '-map',
+                            'hotel_id' => $hotel_id,
+                            'room_type_id' => $rt['id'],
+                            'name' => 'Breakfast + Dinner (MAP)',
+                            'meal_plan' => 'MAP - Breakfast + Dinner',
+                            'base_price' => $effPrice + 1400,
+                            'weekend_price' => $effWeekendPrice + 1400,
+                            'extra_adult_rate' => intval($rt['extra_adult_charge'] ?: 800) + 700,
+                            'extra_child_rate' => intval($rt['extra_child_charge'] ?: 400) + 400,
+                            'cancellation_policy' => 'Free cancellation till 48 hrs before check-in',
+                            'inclusions' => ['Daily Buffet Breakfast', 'Chef Special Dinner Buffet', 'Free High-Speed Wi-Fi']
+                        ],
+                        [
+                            'id' => 'rp-' . $rt['id'] . '-ap',
+                            'hotel_id' => $hotel_id,
+                            'room_type_id' => $rt['id'],
+                            'name' => 'All Meals Included (AP)',
+                            'meal_plan' => 'AP - All Meals',
+                            'base_price' => $effPrice + 2200,
+                            'weekend_price' => $effWeekendPrice + 2200,
+                            'extra_adult_rate' => intval($rt['extra_adult_charge'] ?: 800) + 1100,
+                            'extra_child_rate' => intval($rt['extra_child_charge'] ?: 400) + 600,
+                            'cancellation_policy' => 'Free cancellation till 48 hrs before check-in',
+                            'inclusions' => ['Breakfast, Lunch & Dinner Buffet', 'Free High-Speed Wi-Fi', 'Evening Tea / Snacks']
+                        ]
+                    ];
+                } else {
+                    foreach ($roomRatePlans as &$dbRp) {
+                        $dbRp['inclusions'] = [];
+                        $mp = strtoupper($dbRp['meal_plan'] ?? '');
+                        if (str_contains($mp, 'EP') || str_contains($mp, 'ROOM ONLY')) {
+                            $dbRp['inclusions'] = ['Room Stay Only', 'Free High-Speed Wi-Fi'];
+                        } elseif (str_contains($mp, 'CP') || str_contains($mp, 'BREAKFAST')) {
+                            $dbRp['inclusions'] = ['Daily Buffet Breakfast', 'Room Stay', 'Free High-Speed Wi-Fi'];
+                        } elseif (str_contains($mp, 'MAP') || str_contains($mp, 'DINNER')) {
+                            $dbRp['inclusions'] = ['Daily Buffet Breakfast', 'Chef Special Dinner Buffet', 'Free High-Speed Wi-Fi'];
+                        } elseif (str_contains($mp, 'AP') || str_contains($mp, 'ALL MEALS')) {
+                            $dbRp['inclusions'] = ['All Meals Included (Breakfast, Lunch & Dinner)', 'Free High-Speed Wi-Fi'];
+                        } else {
+                            $dbRp['inclusions'] = ['Room Stay', 'Free Wi-Fi'];
+                        }
+                    }
+                }
+
+                $processedRooms[] = [
+                    'id' => $rt['id'],
+                    'hotel_id' => $hotel_id,
+                    'name' => $rt['name'],
+                    'description' => $rt['description'] ?: "Spacious {$rt['name']} equipped with modern amenities for a relaxing stay in Goa.",
+                    'room_size' => intval($rt['room_size'] ?: 350),
+                    'room_size_unit' => $rt['room_size_unit'] ?: 'sqft',
+                    'bed_type' => $rt['bed_type'] ?: 'King / Twin',
+                    'max_occupancy' => intval($rt['max_occupancy'] ?: 3),
+                    'max_adults' => intval($rt['max_adults'] ?: 2),
+                    'max_children' => intval($rt['max_children'] ?: 1),
+                    'view_type' => $rt['view_type'] ?: 'Garden View',
+                    'amenities' => $rtAmenities,
+                    'images' => $rtImgs,
+                    'price' => $effPrice,
+                    'selling_price' => $effPrice,
+                    'weekend_price' => $effWeekendPrice,
+                    'extra_adult_charge' => intval($rt['extra_adult_charge'] ?: 800),
+                    'extra_child_charge' => intval($rt['extra_child_charge'] ?: 400),
+                    'available_rooms' => $minAvailableRooms,
+                    'is_available' => $isAvailable,
+                    'availability_status' => $availStatus,
+                    'rate_plans' => $roomRatePlans
+                ];
+            }
+
+            echo json_encode([
+                'success' => true,
+                'hotel_id' => $hotel_id,
+                'hotel' => [
+                    'id' => $hotel['id'],
+                    'name' => $hotel['name'],
+                    'area' => $hotel['area'],
+                    'location' => $hotel['location'],
+                    'address' => $hotel['address'] ?: "{$hotel['name']}, {$hotel['area']}, Goa",
+                    'city' => $hotel['city'] ?: 'Goa',
+                    'state' => $hotel['state'] ?: 'Goa',
+                    'pincode' => $hotel['pincode'] ?: '403516',
+                    'checkin_time' => $hotel['checkin_time'] ?: '14:00',
+                    'checkout_time' => $hotel['checkout_time'] ?: '12:00',
+                    'policies_json' => $hotel['policies_json'],
+                    'rating' => floatval($hotel['rating'] ?: 4.5),
+                    'stars' => intval($hotel['stars'] ?: 4),
+                    'badge' => $hotel['badge'] ?: 'Verified Stay'
+                ],
+                'room_types' => $processedRooms
+            ]);
+            exit;} elseif ($resource === 'hotel_public_reviews') {
+            $hotel_id = trim($_GET['hotel_id'] ?? '');
+            if (empty($hotel_id)) {
+                http_response_code(400);
+                echo json_encode(['success' => false, 'error' => 'Missing hotel_id']);
+                exit;
+            }
+
+            $stmtR = $pdo->prepare("SELECT id, hotel_id, guest_name, rating, cleanliness, service, location_rating, comment, reply, replied_at, created_at 
+                                   FROM hotel_reviews 
+                                   WHERE (hotel_id = ? OR hotel_id = 'hotel-1') AND (status = 'Approved' OR status IS NULL OR status = '')
+                                   ORDER BY created_at DESC");
+            $stmtR->execute([$hotel_id]);
+            $reviews = $stmtR->fetchAll(PDO::FETCH_ASSOC);
+
+            $count = count($reviews);
+            $avgRating = 4.8;
+            $avgClean = 4.9;
+            $avgServ = 4.8;
+            $avgLoc = 4.7;
+
+            if ($count > 0) {
+                $sumR = 0; $sumC = 0; $sumS = 0; $sumL = 0;
+                foreach ($reviews as $rev) {
+                    $sumR += floatval($rev['rating'] ?: 5);
+                    $sumC += floatval($rev['cleanliness'] ?: 5);
+                    $sumS += floatval($rev['service'] ?: 5);
+                    $sumL += floatval($rev['location_rating'] ?: 5);
+                }
+                $avgRating = round($sumR / $count, 1);
+                $avgClean = round($sumC / $count, 1);
+                $avgServ = round($sumS / $count, 1);
+                $avgLoc = round($sumL / $count, 1);
+            }
+
+            echo json_encode([
+                'success' => true,
+                'hotel_id' => $hotel_id,
+                'summary' => [
+                    'overall_rating' => $avgRating,
+                    'total_reviews' => $count,
+                    'cleanliness' => $avgClean,
+                    'service' => $avgServ,
+                    'location' => $avgLoc,
+                    'label' => $avgRating >= 4.5 ? 'Exceptional' : ($avgRating >= 4.0 ? 'Very Good' : 'Good')
+                ],
+                'reviews' => $reviews
+            ]);
             exit;} elseif ($resource === 'destinations') {
             $stmt = $pdo->prepare("SELECT * FROM destinations WHERE (admin_id = ? OR admin_id IS NULL OR admin_id = '' OR admin_id = 'admin' OR ? = 'superadmin' OR ? = 'admin')");
             $stmt->execute([$tenant_id, $tenant_id, $tenant_id]);
@@ -3532,8 +3983,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $pickupDate = $_GET['pickup_date'] ?? ($_GET['check_in_date'] ?? '');
             $dropDate = $_GET['drop_date'] ?? ($_GET['check_out_date'] ?? '');
             $excludeId = $_GET['exclude_booking_id'] ?? null;
+            $roomTypeId = $_GET['room_type_id'] ?? null;
+            $requestedRooms = max(1, intval($_GET['num_rooms'] ?? ($_GET['rooms'] ?? 1)));
 
-            $avail = checkInventoryAvailability($pdo, $serviceType, $itemId, $pickupDate, $dropDate, $excludeId);
+            $avail = checkInventoryAvailability($pdo, $serviceType, $itemId, $pickupDate, $dropDate, $excludeId, $roomTypeId, $requestedRooms);
             echo json_encode(array_merge(['success' => true], $avail));
             exit;} elseif ($resource === 'check_customer_booking_exists') {
             $mobile = $_GET['mobile'] ?? ($_GET['phone'] ?? '');
@@ -7185,6 +7638,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception("Missing messages.");
             }
             $messages = $payload['messages'];
+            $incomingContext = isset($payload['context']) && is_array($payload['context']) ? $payload['context'] : [];
+
             $latestUserMsg = '';
             for ($i = count($messages) - 1; $i >= 0; $i--) {
                 if (isset($messages[$i]['role']) && $messages[$i]['role'] === 'user') {
@@ -7206,100 +7661,228 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } catch(Exception $e) {}
 
             $msgClean = strtolower(trim($latestUserMsg));
-            $cleanKeywords = preg_replace('/[^a-z0-9\s]/', ' ', $msgClean);
-            $words = array_filter(explode(' ', $cleanKeywords), function($w) {
-                return strlen($w) >= 3 && !in_array($w, ['the', 'and', 'for', 'with', 'you', 'have', 'are', 'what', 'how', 'rent', 'rental', 'price', 'rate', 'cost', 'available', 'avaible', 'availble', 'avail', 'there', 'want', 'need', 'give', 'tell', 'show']);
-            });
 
-            // 1. Check for specific car match in DB
-            $matchedCar = null;
-            foreach ($dbCars as $car) {
-                $carNameLower = strtolower(trim($car['name']));
-                if (strpos($msgClean, $carNameLower) !== false) {
-                    $matchedCar = $car;
-                    break;
-                }
-                // Check key words in car name (e.g. "fortuner", "ertiga", "thar", "defender", "swift", "creta", "innova", "scorpio", "baleno")
-                $carWords = preg_split('/[\s\-\/\(\)]+/', $carNameLower);
-                foreach ($carWords as $cw) {
-                    $cw = trim($cw);
-                    if (strlen($cw) >= 3 && !in_array($cw, ['car', 'top', 'soft', 'seater', 'automatic', 'manual', '4x4', 'petrol', 'diesel', 'luxury', 'maruti', 'suzuki', 'hyundai', 'toyota', 'mahindra'])) {
-                        if (strpos($msgClean, $cw) !== false) {
-                            $matchedCar = $car;
-                            break 2;
-                        }
-                    }
-                }
-                foreach ($words as $w) {
-                    if (strlen($w) >= 3 && strpos($carNameLower, $w) !== false) {
-                        $matchedCar = $car;
-                        break 2;
-                    }
-                }
-            }
+            // Safe word-boundary inventory matcher (handles short tokens like GT, i10, i20, R15, Defender)
+            $matchInventory = function($text) use ($dbBikes, $dbCars, $dbHotels, $dbPackages) {
+                $t = strtolower(trim($text));
+                if (empty($t)) return null;
 
-            // 2. Check for specific bike match in DB
-            $matchedBike = null;
-            if (!$matchedCar) {
+                // 1. Check bikes with word boundary
                 foreach ($dbBikes as $bike) {
-                    $bikeNameLower = strtolower(trim($bike['name']));
-                    if (strpos($msgClean, $bikeNameLower) !== false) {
-                        $matchedBike = $bike;
-                        break;
+                    $bName = strtolower(trim($bike['name']));
+                    if (preg_match('/\b' . preg_quote($bName, '/') . '\b/i', $t)) {
+                        return ['item' => $bike, 'type' => 'bike'];
                     }
-                    $bikeWords = preg_split('/[\s\-\/\(\)]+/', $bikeNameLower);
-                    foreach ($bikeWords as $bw) {
+                    $bWords = preg_split('/[\s\-\/\(\)]+/', $bName);
+                    foreach ($bWords as $bw) {
                         $bw = trim($bw);
-                        if (strlen($bw) >= 3 && !in_array($bw, ['bike', 'scooter', 'moped', 'motorcycle', 'royal', 'enfield', 'honda', 'yamaha', 'tvs', 'hero', 'reborn'])) {
-                            if (strpos($msgClean, $bw) !== false) {
-                                $matchedBike = $bike;
-                                break 2;
+                        if (strlen($bw) >= 2 && !in_array($bw, ['bike', 'scooter', 'moped', 'motorcycle', 'royal', 'enfield', 'honda', 'yamaha', 'tvs', 'hero', 'reborn', 'and', 'the', 'for'])) {
+                            if (preg_match('/\b' . preg_quote($bw, '/') . '\b/i', $t)) {
+                                return ['item' => $bike, 'type' => 'bike'];
                             }
                         }
                     }
-                    foreach ($words as $w) {
-                        if (strlen($w) >= 3 && strpos($bikeNameLower, $w) !== false) {
-                            $matchedBike = $bike;
-                            break 2;
+                }
+
+                // 2. Check cars with word boundary
+                foreach ($dbCars as $car) {
+                    $cName = strtolower(trim($car['name']));
+                    if (preg_match('/\b' . preg_quote($cName, '/') . '\b/i', $t)) {
+                        return ['item' => $car, 'type' => 'car'];
+                    }
+                    if (strpos($cName, 'defend') !== false && preg_match('/\bdefend[ae]r\b/i', $t)) {
+                        return ['item' => $car, 'type' => 'car'];
+                    }
+                    $cWords = preg_split('/[\s\-\/\(\)]+/', $cName);
+                    foreach ($cWords as $cw) {
+                        $cw = trim($cw);
+                        if (strlen($cw) >= 2 && !in_array($cw, ['car', 'top', 'soft', 'seater', 'automatic', 'manual', '4x4', 'petrol', 'diesel', 'luxury', 'maruti', 'suzuki', 'hyundai', 'toyota', 'mahindra', 'and', 'the', 'for'])) {
+                            if (preg_match('/\b' . preg_quote($cw, '/') . '\b/i', $t)) {
+                                return ['item' => $car, 'type' => 'car'];
+                            }
                         }
                     }
                 }
-            }
 
-            // 3. Check for specific hotel match in DB
-            $matchedHotel = null;
-            if (!$matchedCar && !$matchedBike) {
+                // 3. Check hotels
                 foreach ($dbHotels as $hotel) {
-                    $hotelNameLower = strtolower($hotel['name']);
-                    if (strpos($msgClean, $hotelNameLower) !== false) {
-                        $matchedHotel = $hotel;
-                        break;
+                    $hName = strtolower(trim($hotel['name']));
+                    if (preg_match('/\b' . preg_quote($hName, '/') . '\b/i', $t)) {
+                        return ['item' => $hotel, 'type' => 'hotel'];
                     }
-                    foreach ($words as $w) {
-                        if (strlen($w) >= 4 && strpos($hotelNameLower, $w) !== false) {
-                            $matchedHotel = $hotel;
-                            break 2;
+                    $hWords = preg_split('/[\s\-\/\(\)]+/', $hName);
+                    foreach ($hWords as $hw) {
+                        $hw = trim($hw);
+                        if (strlen($hw) >= 4 && !in_array($hw, ['hotel', 'resort', 'stay', 'beach', 'luxury', 'spa', 'suites', 'grand'])) {
+                            if (preg_match('/\b' . preg_quote($hw, '/') . '\b/i', $t)) {
+                                return ['item' => $hotel, 'type' => 'hotel'];
+                            }
                         }
+                    }
+                }
+
+                // 4. Check packages
+                foreach ($dbPackages as $pkg) {
+                    $pName = strtolower(trim($pkg['name']));
+                    if (preg_match('/\b' . preg_quote($pName, '/') . '\b/i', $t)) {
+                        return ['item' => $pkg, 'type' => 'package'];
+                    }
+                    $pWords = preg_split('/[\s\-\/\(\)]+/', $pName);
+                    foreach ($pWords as $pw) {
+                        $pw = trim($pw);
+                        if (strlen($pw) >= 4 && !in_array($pw, ['package', 'tour', 'trip', 'holiday', 'escape', 'explorer'])) {
+                            if (preg_match('/\b' . preg_quote($pw, '/') . '\b/i', $t)) {
+                                return ['item' => $pkg, 'type' => 'package'];
+                            }
+                        }
+                    }
+                }
+
+                return null;
+            };
+
+            // Detect if latest user message specifically mentions an item
+            $directMatch = $matchInventory($latestUserMsg);
+
+            // Resolve active item from incoming context OR conversation history
+            $activeItem = null;
+            $activeType = null;
+            $activeDates = $incomingContext['travel_dates'] ?? '';
+            $activeBookingIntent = !empty($incomingContext['booking_intent']);
+            $activeStage = $incomingContext['stage'] ?? 'idle';
+
+            if ($directMatch) {
+                $activeItem = $directMatch['item'];
+                $activeType = $directMatch['type'];
+                $activeStage = 'item_selected';
+            } elseif (!empty($incomingContext['active_item_id'])) {
+                $cId = $incomingContext['active_item_id'];
+                $cType = $incomingContext['active_item_type'] ?? '';
+                if ($cType === 'bike') {
+                    foreach ($dbBikes as $b) { if ($b['id'] == $cId) { $activeItem = $b; $activeType = 'bike'; break; } }
+                } elseif ($cType === 'car') {
+                    foreach ($dbCars as $c) { if ($c['id'] == $cId) { $activeItem = $c; $activeType = 'car'; break; } }
+                } elseif ($cType === 'hotel') {
+                    foreach ($dbHotels as $h) { if ($h['id'] == $cId) { $activeItem = $h; $activeType = 'hotel'; break; } }
+                } elseif ($cType === 'package') {
+                    foreach ($dbPackages as $p) { if ($p['id'] == $cId) { $activeItem = $p; $activeType = 'package'; break; } }
+                }
+            }
+
+            // Fallback scan: backwards through earlier messages if activeItem is still not resolved
+            if (!$activeItem) {
+                for ($i = count($messages) - 2; $i >= 0; $i--) {
+                    $histText = $messages[$i]['content'] ?? '';
+                    $histMatch = $matchInventory($histText);
+                    if ($histMatch) {
+                        $activeItem = $histMatch['item'];
+                        $activeType = $histMatch['type'];
+                        $activeStage = 'item_selected';
+                        break;
                     }
                 }
             }
 
-            // 4. Check for specific package match in DB
-            $matchedPackage = null;
-            if (!$matchedCar && !$matchedBike && !$matchedHotel) {
-                foreach ($dbPackages as $pkg) {
-                    $pkgNameLower = strtolower($pkg['name']);
-                    if (strpos($msgClean, $pkgNameLower) !== false) {
-                        $matchedPackage = $pkg;
-                        break;
-                    }
-                    foreach ($words as $w) {
-                        if (strlen($w) >= 4 && strpos($pkgNameLower, $w) !== false) {
-                            $matchedPackage = $pkg;
-                            break 2;
-                        }
-                    }
+            // Detect booking intent
+            $isBookingIntent = preg_match('/\b(book|booking|reserve|reservation|confirm|take it|lock it|rent it|hire it|want to book|like to book|want this|need this|block this|proceed|i want it|yes please|sure|ok book|book this)\b/i', $latestUserMsg);
+            if ($isBookingIntent) {
+                $activeBookingIntent = true;
+            }
+
+            // Detect travel dates in latest message
+            $detectedDates = '';
+            if (preg_match('/\b(\d{1,2}(?:st|nd|rd|th)?(?:\s+[a-z]+)?(?:\s*\d{4})?\s*(?:to|-|till|until)\s*\d{1,2}(?:st|nd|rd|th)?(?:\s+[a-z]+)?(?:\s*\d{4})?)\b/i', $latestUserMsg, $dMatches)) {
+                $detectedDates = trim($dMatches[1]);
+            } elseif (preg_match('/\b(tomorrow|today|day after tomorrow|this weekend|next week|from tomorrow)\b/i', $latestUserMsg, $dMatches)) {
+                $detectedDates = trim($dMatches[1]);
+            } elseif (preg_match('/\b(for\s+\d+\s+days?|\d+\s+days?)\b/i', $latestUserMsg, $dMatches)) {
+                $detectedDates = trim($dMatches[1]);
+            }
+
+            if (!empty($detectedDates)) {
+                $activeDates = $detectedDates;
+            }
+
+            $isConfirmationWord = preg_match('/\b(yes|yeah|sure|confirm|confirmed|proceed|ok|okay|yep|lock it|done|go ahead|please do)\b/i', $msgClean);
+
+            // Robust Travel Dates Normalizer
+            $parseTravelDates = function($text) {
+                $now = time();
+                $curYear = intval(date('Y', $now));
+                $curMonth = intval(date('m', $now));
+
+                // ISO dates: '2026-09-15 to 2026-09-17'
+                if (preg_match('/(\d{4}-\d{2}-\d{2})\s*(?:to|-|till|until)\s*(\d{4}-\d{2}-\d{2})/i', $text, $m)) {
+                    $pickup = $m[1];
+                    $drop = $m[2];
+                    $days = max(1, (int)round((strtotime($drop) - strtotime($pickup)) / 86400));
+                    return ['pickup_date' => $pickup, 'drop_date' => $drop, 'days' => $days];
                 }
+
+                // '15th to 17th Sep' or '15 to 17 Sep' or '15th to 17th'
+                if (preg_match('/(\d{1,2})(?:st|nd|rd|th)?\s*(?:to|-|till|until)\s*(\d{1,2})(?:st|nd|rd|th)?(?:\s+([a-zA-Z]+))?(?:\s+(\d{4}))?/i', $text, $m)) {
+                    $d1 = intval($m[1]);
+                    $d2 = intval($m[2]);
+                    $monthStr = !empty($m[3]) ? trim($m[3]) : date('M', $now);
+                    $year = !empty($m[4]) ? intval($m[4]) : $curYear;
+
+                    $mTime = strtotime("$monthStr 1, $year");
+                    $mNum = $mTime ? date('m', $mTime) : sprintf('%02d', $curMonth);
+
+                    $pickup = sprintf('%04d-%02d-%02d', $year, $mNum, $d1);
+                    $drop = sprintf('%04d-%02d-%02d', $year, $mNum, $d2);
+                    if (strtotime($drop) <= strtotime($pickup)) {
+                        $drop = date('Y-m-d', strtotime('+1 day', strtotime($pickup)));
+                    }
+                    $days = max(1, (int)round((strtotime($drop) - strtotime($pickup)) / 86400));
+                    return ['pickup_date' => $pickup, 'drop_date' => $drop, 'days' => $days];
+                }
+
+                // 'tomorrow' or 'day after tomorrow'
+                if (stripos($text, 'day after tomorrow') !== false) {
+                    $pickup = date('Y-m-d', strtotime('+2 days', $now));
+                    $drop = date('Y-m-d', strtotime('+3 days', $now));
+                    return ['pickup_date' => $pickup, 'drop_date' => $drop, 'days' => 1];
+                } elseif (stripos($text, 'tomorrow') !== false) {
+                    $pickup = date('Y-m-d', strtotime('+1 day', $now));
+                    $drop = date('Y-m-d', strtotime('+2 days', $now));
+                    return ['pickup_date' => $pickup, 'drop_date' => $drop, 'days' => 1];
+                }
+
+                // 'for 3 days' or '3 days'
+                if (preg_match('/(?:for\s+)?(\d+)\s*days?/i', $text, $m)) {
+                    $days = max(1, intval($m[1]));
+                    $pickup = date('Y-m-d', strtotime('+1 day', $now));
+                    $drop = date('Y-m-d', strtotime("+$days days", strtotime($pickup)));
+                    return ['pickup_date' => $pickup, 'drop_date' => $drop, 'days' => $days];
+                }
+
+                $pickup = date('Y-m-d', strtotime('+1 day', $now));
+                $drop = date('Y-m-d', strtotime('+3 days', $now));
+                return ['pickup_date' => $pickup, 'drop_date' => $drop, 'days' => 2];
+            };
+
+            // Structure authoritative booking preview
+            $bookingPreview = null;
+            if ($activeItem && !empty($activeDates)) {
+                $parsedDates = $parseTravelDates($activeDates);
+                $days = $parsedDates['days'];
+                $rate = floatval($activeItem['price'] ?? 0);
+                $total = $days * $rate;
+                $activeStage = 'ready_to_confirm';
+
+                $bookingPreview = [
+                    'item_id' => $activeItem['id'],
+                    'item_name' => $activeItem['name'],
+                    'item_type' => $activeType,
+                    'price_per_day' => $rate,
+                    'pickup_date' => $parsedDates['pickup_date'],
+                    'drop_date' => $parsedDates['drop_date'],
+                    'days' => $days,
+                    'duration' => "{$days} Days",
+                    'estimated_total' => $total,
+                    'travel_dates' => $activeDates
+                ];
             }
 
             // Try Groq first if real API key configured
@@ -7312,7 +7895,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $inventoryContext .= "Bikes: " . implode(', ', array_map(function($b) { return "{$b['name']} (₹{$b['price']}/day)"; }, $dbBikes)) . "\n";
                 $inventoryContext .= "Hotels: " . implode(', ', array_map(function($h) { return "{$h['name']} ({$h['stars']}★, ₹{$h['price']}/night in {$h['location']})"; }, $dbHotels)) . "\n";
 
-                $system_prompt = "You are Sophia, the expert AI travel assistant for TripGalileo (Goa travel platform). You help customers rent self-drive cars, bikes, book hotels, and customize holiday packages. Answer clearly, accurately, and enthusiastically with exact prices and details from our inventory. If a car like Defender or Swift is asked, say YES immediately and give full details (rate, transmission, seating, airport/doorstep delivery, 25% advance token). Be warm, concise, and helpful. Use emojis. Stick to plain text.\n\n" . $inventoryContext;
+                $system_prompt = "You are Sophia, the expert AI travel assistant for TripGalileo (Goa travel platform). Follow this critical rule: Answer strictly the customer's current intent — do not proactively dump unrelated information. For simple greetings (Hi, Hello, Hey, Good morning), reply with a short natural greeting ('Hi! 👋 How can I help you today?'). For casual conversation (Thanks, Ok, Bye), respond naturally and briefly. If asked about a specific vehicle (e.g. Defender, Swift, GT bike), answer only about that vehicle. If asked about hotels, answer only about hotels. Do NOT list all services unless the customer explicitly asks 'What services do you provide?'. Maintain conversation context when the user asks to book or provides dates. Be warm, concise, and helpful. Use emojis. Stick to plain text.\n\n" . $inventoryContext;
 
                 $groqMessages = $messages;
                 array_unshift($groqMessages, ["role" => "system", "content" => $system_prompt]);
@@ -7342,53 +7925,99 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // High-Intelligence Dynamic Database-Backed Knowledge Engine Fallback
             if (!$reply) {
-                if ($matchedCar) {
-                    $carName = $matchedCar['name'];
-                    $price = number_format(floatval($matchedCar['price']));
-                    $trans = !empty($matchedCar['transmission']) ? $matchedCar['transmission'] : 'Automatic / Manual';
-                    $seating = !empty($matchedCar['seating']) ? $matchedCar['seating'] : '5 Seater';
-                    $fuel = !empty($matchedCar['fuel']) ? $matchedCar['fuel'] : 'Petrol / Diesel';
-                    $cat = !empty($matchedCar['category']) ? $matchedCar['category'] : 'Self-Drive Car';
+                // Multi-Turn Context Flow:
+                // Flow Step 1: Active item exists and user provides travel dates
+                if ($activeItem && !empty($detectedDates)) {
+                    $itemName = $activeItem['name'];
+                    $itemPrice = number_format(floatval($activeItem['price']));
+                    $itemEmoji = ($activeType === 'bike') ? '🛵' : (($activeType === 'car') ? '🚙' : (($activeType === 'hotel') ? '🏨' : '🌴'));
+                    $activeStage = 'ready_to_confirm';
+                    $activeBookingIntent = true;
 
-                    $reply = "Yes! We have the {$carName} available for self-drive rent in Goa! 🚙✨\n\n📋 Vehicle Details:\n• Model: {$carName}\n• Category: {$cat}\n• Rental Price: ₹{$price} / day\n• Transmission: {$trans}\n• Seating Capacity: {$seating}\n• Fuel Type: {$fuel}\n• Air Conditioning: Yes (AC)\n\n✨ Rental Benefits & Inclusions:\n• Free Doorstep Delivery across North & South Goa\n• Airport Handover at Dabolim (GOI) & Mopa (GOX)\n• 24/7 On-Road Assistance & Sanitized Car\n• Just 25% Advance Token to reserve dates, balance on delivery\n\nWould you like to reserve the {$carName} for your trip dates?";
-                } elseif ($matchedBike) {
-                    $bikeName = $matchedBike['name'];
-                    $price = number_format(floatval($matchedBike['price']));
-                    $cat = !empty($matchedBike['category']) ? $matchedBike['category'] : 'Scooter / Bike';
-                    $engine = !empty($matchedBike['engine']) ? $matchedBike['engine'] : 'Standard';
+                    $reply = "Got it! Dates noted: {$activeDates} for your {$itemName} rental. {$itemEmoji}✨\n\nI have generated your **Booking Summary** below. Please review the details and click **Confirm & Book** to secure your booking.";
+                }
+                // Flow Step 2: Active item exists, user expresses booking intent without dates
+                elseif ($activeItem && $isBookingIntent && empty($activeDates)) {
+                    $itemName = $activeItem['name'];
+                    $itemPrice = number_format(floatval($activeItem['price']));
+                    $itemEmoji = ($activeType === 'bike') ? '🛵' : (($activeType === 'car') ? '🚙' : (($activeType === 'hotel') ? '🏨' : '🌴'));
+                    $activeStage = 'awaiting_dates';
 
-                    $reply = "Yes! We have the {$bikeName} available for rent in Goa! 🛵✨\n\n📋 Bike Details:\n• Model: {$bikeName}\n• Category: {$cat}\n• Rental Price: ₹{$price} / day\n• Engine / Specs: {$engine}\n\n✨ Inclusions:\n• 2 Sanitized Helmets included\n• Valid commercial road tax & permits\n• Delivery at airport or your hotel\n\nWould you like to book the {$bikeName}?";
-                } elseif ($matchedHotel) {
-                    $hotelName = $matchedHotel['name'];
-                    $price = number_format(floatval($matchedHotel['price']));
-                    $stars = $matchedHotel['stars'] ?? '4';
-                    $loc = $matchedHotel['location'] ?? 'Goa Beachfront';
+                    $reply = "Great! I can help you reserve the {$itemName} {$itemEmoji} (₹{$itemPrice}/day) right away!\n\nWhat travel dates do you need it for? (For example: '15th to 17th Sep' or 'tomorrow for 2 days')";
+                }
+                // Flow Step 3: Active item & dates exist, user confirms
+                elseif ($activeItem && !empty($activeDates) && $isConfirmationWord) {
+                    $itemName = $activeItem['name'];
+                    $itemPrice = number_format(floatval($activeItem['price']));
+                    $itemEmoji = ($activeType === 'bike') ? '🛵' : (($activeType === 'car') ? '🚙' : (($activeType === 'hotel') ? '🏨' : '🌴'));
+                    $activeStage = 'ready_to_confirm';
 
-                    $reply = "Yes! We have {$hotelName} available for booking in Goa! 🏨✨\n\n⭐ Rating: {$stars}★ Luxury Resort / Stay\n📍 Location: {$loc}\n💵 Price: Starting from ₹{$price} / night\n🍽️ Inclusions: Daily Buffet Breakfast, Swimming Pool Access, Free High-Speed Wi-Fi\n\nWould you like to check room availability for your dates?";
-                } elseif ($matchedPackage) {
-                    $pkgName = $matchedPackage['name'];
-                    $price = number_format(floatval($matchedPackage['price']));
-                    $dur = $matchedPackage['duration'] ?? '3N / 4D';
-                    $dest = $matchedPackage['destination'] ?? 'Goa';
+                    $reply = "Your reservation request for the {$itemName} ({$activeDates}) is ready! {$itemEmoji}📋\n\nPlease check the Booking Summary below and tap **Confirm & Book** to finalize your booking with our official booking system.";
+                }
+                // Flow Step 4: Direct query matching a specific inventory item (e.g. GT bike, Defender)
+                elseif ($directMatch) {
+                    if ($directMatch['type'] === 'car') {
+                        $carName = $directMatch['item']['name'];
+                        $price = number_format(floatval($directMatch['item']['price']));
+                        $trans = !empty($directMatch['item']['transmission']) ? $directMatch['item']['transmission'] : 'Automatic / Manual';
+                        $seating = !empty($directMatch['item']['seating']) ? $directMatch['item']['seating'] : '5 Seater';
+                        $fuel = !empty($directMatch['item']['fuel']) ? $directMatch['item']['fuel'] : 'Petrol / Diesel';
+                        $cat = !empty($directMatch['item']['category']) ? $directMatch['item']['category'] : 'Self-Drive Car';
+                        $activeStage = 'item_selected';
 
-                    $reply = "Yes! We offer the \"{$pkgName}\" holiday package! 🌴✨\n\n⏱️ Duration: {$dur}\n📍 Destination: {$dest}\n💵 Price: Starting from ₹{$price} / person\n✨ Inclusions: Hotel Stay with Breakfast, Private Transfer or Self-Drive Car, Airport Pickup/Drop, and Day-by-Day Sightseeing Activities.\n\nWould you like to customize this package for your travel dates?";
+                        $reply = "Yes! We have the {$carName} available for self-drive rent in Goa! 🚙✨\n\n📋 Vehicle Details:\n• Model: {$carName}\n• Category: {$cat}\n• Rental Price: ₹{$price} / day\n• Transmission: {$trans}\n• Seating Capacity: {$seating}\n• Fuel Type: {$fuel}\n• Air Conditioning: Yes (AC)\n\n✨ Rental Benefits & Inclusions:\n• Free Doorstep Delivery across North & South Goa\n• Airport Handover at Dabolim (GOI) & Mopa (GOX)\n• 24/7 On-Road Assistance & Sanitized Car\n• Just 25% Advance Token to reserve dates, balance on delivery\n\nWould you like to reserve the {$carName} for your trip dates?";
+                    } elseif ($directMatch['type'] === 'bike') {
+                        $bikeName = $directMatch['item']['name'];
+                        $price = number_format(floatval($directMatch['item']['price']));
+                        $cat = !empty($directMatch['item']['category']) ? $directMatch['item']['category'] : 'Scooter / Bike';
+                        $engine = !empty($directMatch['item']['engine']) ? $directMatch['item']['engine'] : 'Standard';
+                        $activeStage = 'item_selected';
+
+                        $reply = "Yes! We have the {$bikeName} available for rent in Goa! 🛵✨\n\n📋 Bike Details:\n• Model: {$bikeName}\n• Category: {$cat}\n• Rental Price: ₹{$price} / day\n• Engine / Specs: {$engine}\n\n✨ Inclusions:\n• 2 Sanitized Helmets included\n• Valid commercial road tax & permits\n• Delivery at airport or your hotel\n\nWould you like to book the {$bikeName}?";
+                    } elseif ($directMatch['type'] === 'hotel') {
+                        $hotelName = $directMatch['item']['name'];
+                        $price = number_format(floatval($directMatch['item']['price']));
+                        $stars = $directMatch['item']['stars'] ?? '4';
+                        $loc = $directMatch['item']['location'] ?? 'Goa Beachfront';
+                        $activeStage = 'item_selected';
+
+                        $reply = "Yes! We have {$hotelName} available for booking in Goa! 🏨✨\n\n⭐ Rating: {$stars}★ Luxury Resort / Stay\n📍 Location: {$loc}\n💵 Price: Starting from ₹{$price} / night\n🍽️ Inclusions: Daily Buffet Breakfast, Swimming Pool Access, Free High-Speed Wi-Fi\n\nWould you like to check room availability for your dates?";
+                    } elseif ($directMatch['type'] === 'package') {
+                        $pkgName = $directMatch['item']['name'];
+                        $price = number_format(floatval($directMatch['item']['price']));
+                        $dur = $directMatch['item']['duration'] ?? '3N / 4D';
+                        $dest = $directMatch['item']['destination'] ?? 'Goa';
+                        $activeStage = 'item_selected';
+
+                        $reply = "Yes! We offer the \"{$pkgName}\" holiday package! 🌴✨\n\n⏱️ Duration: {$dur}\n📍 Destination: {$dest}\n💵 Price: Starting from ₹{$price} / person\n✨ Inclusions: Hotel Stay with Breakfast, Private Transfer or Self-Drive Car, Airport Pickup/Drop, and Day-by-Day Sightseeing Activities.\n\nWould you like to customize this package for your travel dates?";
+                    }
                 } elseif (preg_match('/\b[6-9]\d{9}\b/', $latestUserMsg, $phoneMatches)) {
                     $reply = "🎉 Thank you! I have saved your contact (" . $phoneMatches[0] . "). Our dedicated TripGalileo holiday specialist will reach out shortly to customize your dream Goa itinerary and apply exclusive discount rates! 🌴✨";
-                } elseif (strpos($msgClean, 'self drive') !== false || strpos($msgClean, 'self-drive') !== false) {
-                    $carLines = [];
-                    foreach ($dbCars as $c) {
-                        $carLines[] = "• " . $c['name'] . " — ₹" . number_format($c['price']) . "/day (" . ($c['transmission'] ?? 'Automatic') . ", " . ($c['seating'] ?? '5 Seater') . ")";
-                    }
-                    $carListText = !empty($carLines) ? implode("\n", $carLines) : "• Land Rover Defender — ₹10,000/day\n• Maruti Swift — ₹2,000/day\n• Mahindra Thar 4x4 — ₹3,200/day";
-                    
-                    $bikeLines = [];
-                    foreach ($dbBikes as $b) {
-                        $bikeLines[] = "• " . $b['name'] . " — ₹" . number_format($b['price']) . "/day";
-                    }
-                    $bikeListText = !empty($bikeLines) ? implode("\n", $bikeLines) : "• Honda Activa 6G — ₹450/day\n• Royal Enfield Classic 350 — ₹800/day";
 
-                    $reply = "🚗 Explore Goa on your own terms with TripGalileo Self-Drive Packages & Rentals!\n\n🚙 Available Cars in Fleet:\n{$carListText}\n\n🛵 Available Bikes & Scooters:\n{$bikeListText}\n\n✨ All self-drive rentals include doorstep delivery across Goa, airport handover at Dabolim (GOI) & Mopa (GOX), and 24/7 road assistance. What dates are you traveling?";
-                } elseif (strpos($msgClean, 'car') !== false || strpos($msgClean, 'cars') !== false || strpos($msgClean, 'suv') !== false || strpos($msgClean, 'vehicle') !== false) {
+                // Flow Step 5: Simple Greetings (Hi, Hello, Hey, Good morning, etc.)
+                // Short natural greeting only — NO listing of services
+                } elseif (preg_match('/^(hi|hello|hey|hiya|howdy|good\s+(morning|afternoon|evening|day)|greetings)(\s+there|\s+sophia)?$/i', $msgClean) ||
+                    (preg_match('/^(hi|hello|hey|good\s+(morning|afternoon|evening))\b/i', $msgClean) && !preg_match('/\b(book|rent|hotel|car|bike|package|service|sightseeing|activity|activities|cruise|tour|stay|resort|price|cost)\b/i', $msgClean))) {
+                    $reply = "Hi! 👋 How can I help you today?";
+
+                // Flow Step 6: Casual conversation & closing (Thanks, Okay, Great, Nice, Bye)
+                } elseif (preg_match('/\b(thanks|thank\s+you|thx|tq|ty|appreciate\s+it)\b/i', $msgClean)) {
+                    $reply = "You're welcome! Let me know if you need anything else for your Goa trip. 😊";
+                } elseif (preg_match('/^(ok|okay|k|great|nice|cool|awesome|perfect|sounds\s+good|got\s+it)$/i', $msgClean)) {
+                    $reply = "Great! Let me know what you'd like to check next.";
+                } elseif (preg_match('/\b(bye|goodbye|see\s+you|cya|take\s+care)\b/i', $msgClean)) {
+                    $reply = "Goodbye! Have a fantastic time in Goa! 🌴 Reach out anytime you need assistance.";
+
+                // Flow Step 7: General service question (ONLY if explicitly asked)
+                } elseif (preg_match('/\b(what\s+(services?|options?|do\s+you\s+(offer|provide|have)|can\s+you\s+(do|help(\s+me)?\s+with))|services?\s+(offered|provided|available)|tell\s+me\s+about\s+your\s+services|what\s+can\s+you\s+do|how\s+can\s+you\s+help)\b/i', $msgClean)) {
+                    $reply = "We provide complete Goa travel solutions:\n• 🚗 Self-Drive Cars & SUVs\n• 🛵 Bike & Scooter Rentals\n• 🏨 Handpicked Hotels & Luxury Resorts\n• 🏖️ Custom Holiday Packages\n• 🤿 Sightseeing, Watersports & Cruises\n\nWhich service would you like to explore?";
+
+                // Flow Step 8: Specific questions — Sightseeing & Activities only
+                } elseif (strpos($msgClean, 'sightseeing') !== false || strpos($msgClean, 'watersport') !== false || strpos($msgClean, 'scuba') !== false || strpos($msgClean, 'activit') !== false || strpos($msgClean, 'cruise') !== false || strpos($msgClean, 'dudhsagar') !== false) {
+                    $reply = "🤿 Top Goa Experiences with TripGalileo:\n\n1. 5-in-1 Watersports Combo: Jet Ski, Parasailing, Banana & Bumper Ride\n2. Grand Island Scuba Diving with underwater HD video & dolphin spotting\n3. Mandovi River Sunset & Dinner Cruise with live DJ & Goan folk dance\n4. Dudhsagar Waterfalls Jeep Safari & Spice Plantation tour\n\nWould you like me to reserve any of these for your trip?";
+
+                // Flow Step 9: Specific questions — Self-drive cars only
+                } elseif (strpos($msgClean, 'car') !== false || strpos($msgClean, 'cars') !== false || strpos($msgClean, 'suv') !== false || strpos($msgClean, 'self drive') !== false || strpos($msgClean, 'self-drive') !== false || strpos($msgClean, 'vehicle') !== false) {
                     $carItems = [];
                     foreach ($dbCars as $c) {
                         $carItems[] = "• " . $c['name'] . " — ₹" . number_format($c['price']) . "/day (" . ($c['transmission'] ?? 'Automatic') . ", " . ($c['seating'] ?? '5 Seater') . ")";
@@ -7396,6 +8025,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $carListText = !empty($carItems) ? implode("\n", $carItems) : "• Land Rover Defender — ₹10,000/day\n• Maruti Swift — ₹2,000/day\n• Mahindra Thar 4x4 — ₹3,200/day";
 
                     $reply = "🚘 Here are our Self-Drive Cars available for rent in Goa:\n\n{$carListText}\n\n📍 Free doorstep delivery in North & South Goa and Airport handovers. Which car would you like to rent?";
+
+                // Flow Step 10: Specific questions — Bikes & Scooters only
                 } elseif (strpos($msgClean, 'bike') !== false || strpos($msgClean, 'bikes') !== false || strpos($msgClean, 'scooter') !== false || strpos($msgClean, 'two wheeler') !== false) {
                     $bikeItems = [];
                     foreach ($dbBikes as $b) {
@@ -7404,15 +8035,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $bikeListText = !empty($bikeItems) ? implode("\n", $bikeItems) : "• Honda Activa 6G — ₹450/day\n• Royal Enfield Classic 350 — ₹1,000/day\n• Yamaha R15 / KTM Duke — ₹1,400/day";
 
                     $reply = "🛵 Here are our Bikes & Scooters available for rent in Goa:\n\n{$bikeListText}\n\n🛡️ All rentals include 2 sanitized helmets & commercial road permits. What dates do you need it for?";
-                } elseif (strpos($msgClean, 'package') !== false || strpos($msgClean, 'packages') !== false || strpos($msgClean, 'tour') !== false || strpos($msgClean, 'itinerary') !== false || strpos($msgClean, 'holiday') !== false) {
-                    $pkgItems = [];
-                    foreach ($dbPackages as $p) {
-                        $dur = !empty($p['duration']) ? $p['duration'] : '4D/3N';
-                        $pkgItems[] = "• " . $p['name'] . " (" . $dur . ") — ₹" . number_format($p['price']) . " / person";
-                    }
-                    $pkgListText = !empty($pkgItems) ? implode("\n", $pkgItems) : "• Coastal Goa Explorer Pack (4D/3N) — ₹14,999/person\n• Romantic Sunset Escape (3D/2N) — ₹29,999/person";
 
-                    $reply = "🌴 Featured TripGalileo Holiday Packages:\n\n{$pkgListText}\n\n✨ All packages include Resort Stays + Transfers/Self-Drive Car + Daily Breakfast + Sightseeing!\n\nWould you like to customize one of these packages for your travel dates?";
+                // Flow Step 11: Specific questions — Hotels & Resorts only
                 } elseif (strpos($msgClean, 'hotel') !== false || strpos($msgClean, 'hotels') !== false || strpos($msgClean, 'resort') !== false || strpos($msgClean, 'stay') !== false || strpos($msgClean, 'villa') !== false) {
                     $hotelItems = [];
                     foreach ($dbHotels as $h) {
@@ -7423,22 +8047,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $hotelListText = !empty($hotelItems) ? implode("\n", $hotelItems) : "• Casa Baga Boutique Resort (3★) — ₹3,499/night\n• Goa Luxury Beach Resort (4★) — ₹5,000/night\n• The Grand Candolim Beachfront Resort (4★) — ₹7,999/night\n• Taj Exotica Resort & Spa Goa (5★) — ₹17,500/night";
 
                     $reply = "🏖️ Featured Luxury Stays & Beach Resorts in Goa:\n\n{$hotelListText}\n\n🍽️ All stays include complimentary buffet breakfast and swimming pool access. Which beach location or resort do you prefer?";
+
+                // Flow Step 12: Specific questions — Packages only
+                } elseif (strpos($msgClean, 'package') !== false || strpos($msgClean, 'packages') !== false || strpos($msgClean, 'tour') !== false || strpos($msgClean, 'itinerary') !== false || strpos($msgClean, 'holiday') !== false) {
+                    $pkgItems = [];
+                    foreach ($dbPackages as $p) {
+                        $dur = !empty($p['duration']) ? $p['duration'] : '4D/3N';
+                        $pkgItems[] = "• " . $p['name'] . " (" . $dur . ") — ₹" . number_format($p['price']) . " / person";
+                    }
+                    $pkgListText = !empty($pkgItems) ? implode("\n", $pkgItems) : "• Coastal Goa Explorer Pack (4D/3N) — ₹14,999/person\n• Romantic Sunset Escape (3D/2N) — ₹29,999/person";
+
+                    $reply = "🌴 Featured TripGalileo Holiday Packages:\n\n{$pkgListText}\n\n✨ All packages include Resort Stays + Transfers/Self-Drive Car + Daily Breakfast + Sightseeing!\n\nWould you like to customize one of these packages for your travel dates?";
+
+                // Flow Step 13: Specific questions — Beaches & Destinations only
                 } elseif (strpos($msgClean, 'beach') !== false || strpos($msgClean, 'north goa') !== false || strpos($msgClean, 'south goa') !== false || strpos($msgClean, 'baga') !== false || strpos($msgClean, 'calangute') !== false || strpos($msgClean, 'anjuna') !== false) {
                     $reply = "🌊 Here are Goa's top beach highlights:\n\n🔥 North Goa (Vibrant & Nightlife):\n• Baga & Calangute: Watersports, beach shacks, night markets\n• Anjuna & Vagator: Sunset views, cliff cafes, techno parties, Curlies, Thalassa\n• Morjim & Ashwem: Peaceful white sands & beach clubs\n\n🌴 South Goa (Serene & Scenic):\n• Palolem & Butterfly Beach: Scenic crescent bays & kayaking\n• Colva & Benaulim: Pristine beaches & authentic Goan seafood";
-                } elseif (strpos($msgClean, 'watersport') !== false || strpos($msgClean, 'scuba') !== false || strpos($msgClean, 'activit') !== false || strpos($msgClean, 'cruise') !== false || strpos($msgClean, 'dudhsagar') !== false) {
-                    $reply = "🤿 Top Goa Experiences with TripGalileo:\n\n1. 5-in-1 Watersports Combo: Jet Ski, Parasailing, Banana & Bumper Ride\n2. Grand Island Scuba Diving with underwater HD video & dolphin spotting\n3. Mandovi River Sunset & Dinner Cruise with live DJ & Goan folk dance\n4. Dudhsagar Waterfalls Jeep Safari & Spice Plantation tour\n\nWould you like me to add any of these to your booking?";
+
+                // Flow Step 14: Specific questions — Documents & Requirements only
                 } elseif (strpos($msgClean, 'document') !== false || strpos($msgClean, 'license') !== false || strpos($msgClean, 'dl') !== false || strpos($msgClean, 'require') !== false || strpos($msgClean, 'id') !== false) {
                     $reply = "📄 Requirements for Self-Drive Rental:\n\n1. Original Valid Driving License (Indian DL or International Driving Permit)\n2. Original Govt Photo ID (Aadhaar Card, Passport, or Voter ID)\n3. Minimum age 21 years for cars, 18 years for two-wheelers\n\nVerification takes just 2 minutes at vehicle handover!";
-                } elseif (strpos($msgClean, 'price') !== false || strpos($msgClean, 'cost') !== false || strpos($msgClean, 'pay') !== false || strpos($msgClean, 'advance') !== false || strpos($msgClean, 'book') !== false) {
+
+                // Flow Step 15: Specific questions — Pricing & Advance policy only
+                } elseif (strpos($msgClean, 'price') !== false || strpos($msgClean, 'cost') !== false || strpos($msgClean, 'pay') !== false || strpos($msgClean, 'advance') !== false || strpos($msgClean, 'token') !== false) {
                     $reply = "💳 Flexible Booking at TripGalileo:\n\n• Pay just 25% Advance Token to lock your package, vehicle, or hotel reservation.\n• Pay remaining 75% on arrival during check-in or vehicle handover.\n• 100% transparent pricing with zero surprise charges.\n\nShare your travel dates and I will get you the best available quote!";
+
+                // Default Fallback: Short, conversational, helpful — NO service dump
                 } else {
-                    $carNames = array_map(function($c) { return $c['name']; }, $dbCars);
-                    $carListStr = !empty($carNames) ? implode(', ', array_slice($carNames, 0, 5)) : "DEFENDAR, Thar, Swift, Creta, Fortuner";
-                    $reply = "🌴 Hello! I'm Sophia, your personal TripGalileo travel assistant for Goa!\n\nI can help you with:\n1. 🚗 Self-Drive Cars ({$carListStr})\n2. 🛵 Bike & Scooter Rentals (Activa, Classic 350, Ninja H2R, GT)\n3. 🏖️ Custom Holiday Packages (Coastal Explorer, Romantic Escape)\n4. 🏨 Luxury Resorts (Casa Baga, Goa Luxury Resort, Grand Candolim, Taj Exotica)\n5. 🤿 Watersports, Scuba & Sunset Cruises\n\nWhat would you like to explore today?";
+                    $reply = "I'm here to help with your Goa trip! What can I assist you with today?";
                 }
             }
 
-            echo json_encode(["success" => true, "reply" => $reply]);
+            $contextResponse = [
+                'active_item_id' => $activeItem['id'] ?? null,
+                'active_item_name' => $activeItem['name'] ?? null,
+                'active_item_type' => $activeType ?? null,
+                'price' => isset($activeItem['price']) ? floatval($activeItem['price']) : null,
+                'travel_dates' => $activeDates,
+                'booking_intent' => $activeBookingIntent,
+                'stage' => $activeStage,
+                'booking_preview' => $bookingPreview
+            ];
+
+            echo json_encode([
+                "success" => true,
+                "reply" => $reply,
+                "context" => $contextResponse
+            ]);
             exit;
         } elseif ($action === 'login') {
             // Phase 10: Use consolidated authoritative login handler

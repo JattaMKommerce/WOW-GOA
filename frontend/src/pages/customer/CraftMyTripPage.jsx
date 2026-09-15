@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import * as api from '../../services/api';
 import HotelImageGallery from '../../components/HotelImageGallery';
+import CraftServiceDetailsModal from '../../components/customer/CraftServiceDetailsModal';
 import { getTodayDateStr, getNextDayDateStr } from '../../utils/dateUtils';
 
 // Fallback seed vehicles if API is empty or connecting
@@ -66,6 +67,7 @@ function Step1Vehicle({ allCars = [], allBikes = [], bookings = [], pickupDate, 
   const [loadingVehicles, setLoadingVehicles] = useState(false);
   const [filterSub, setFilterSub] = useState('All');
   const [searchVeh, setSearchVeh] = useState(initialSearchQuery || '');
+  const [detailsVehicle, setDetailsVehicle] = useState(null);
 
   // Auto-fetch if parent props were empty on mount
   useEffect(() => {
@@ -307,7 +309,8 @@ function Step1Vehicle({ allCars = [], allBikes = [], bookings = [], pickupDate, 
               <div
                 key={v.id}
                 className={`cmt-vehicle-card ${isSelected ? 'selected' : ''}`}
-                onClick={() => handleSelectVehicle(v)}
+                onClick={() => setDetailsVehicle(v)}
+                style={{ cursor: 'pointer' }}
               >
                 {isSelected && <div className="cmt-selected-badge"><CheckCircle size={16} /> Selected</div>}
                 <div className="cmt-vehicle-img-wrap">
@@ -331,9 +334,23 @@ function Step1Vehicle({ allCars = [], allBikes = [], bookings = [], pickupDate, 
                     {v.fuel && <span>⛽ {v.fuel}</span>}
                     {v.category && <span>🏷️ {v.category}</span>}
                   </div>
-                  <div className="cmt-vehicle-price">
-                    <span className="cmt-price-label">per day</span>
-                    <span className="cmt-price-val">₹{Number(v.price).toLocaleString('en-IN')}</span>
+                  <div className="d-flex align-items-center justify-content-between mt-3 pt-2 border-top">
+                    <div className="cmt-vehicle-price">
+                      <span className="cmt-price-label">per day</span>
+                      <span className="cmt-price-val">₹{Number(v.price).toLocaleString('en-IN')}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className={`btn btn-sm rounded-pill px-3 py-1.5 fw-bold text-xs d-flex align-items-center gap-1 ${
+                        isSelected ? 'btn-success text-white' : 'btn-outline-primary'
+                      }`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDetailsVehicle(v);
+                      }}
+                    >
+                      {isSelected ? '✓ Selected' : 'View Details & Select'}
+                    </button>
                   </div>
                 </div>
               </div>
@@ -376,6 +393,32 @@ function Step1Vehicle({ allCars = [], allBikes = [], bookings = [], pickupDate, 
           </button>
         </div>
       </div>
+
+      {detailsVehicle && (
+        <CraftServiceDetailsModal
+          isOpen={Boolean(detailsVehicle)}
+          serviceType="vehicle"
+          item={detailsVehicle}
+          pickupDate={pickupDate}
+          dropDate={dropDate}
+          memberCount={memberCount}
+          isSelected={selectedVehicle?.id === detailsVehicle?.id}
+          onClose={() => setDetailsVehicle(null)}
+          onSelect={(v) => {
+            handleSelectVehicle(v);
+            setDetailsVehicle(null);
+          }}
+          onDeselect={() => {
+            setSelectedVehicle(null);
+            setDetailsVehicle(null);
+          }}
+          onContinue={(v) => {
+            handleSelectVehicle(v);
+            setDetailsVehicle(null);
+            onNext();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -396,6 +439,7 @@ function Step2Hotel({ allHotels = [], pickupDate, dropDate, selectedHotel, setSe
   const [galleryHotel, setGalleryHotel] = useState(null);
   const [starFilter, setStarFilter] = useState('All');
   const [searchHotelName, setSearchHotelName] = useState(initialSearchQuery || '');
+  const [detailsHotel, setDetailsHotel] = useState(null);
 
   const validPickup = pickupDate || getTodayDateStr();
   const validDrop = dropDate || getNextDayDateStr(validPickup);
@@ -650,14 +694,14 @@ function Step2Hotel({ allHotels = [], pickupDate, dropDate, selectedHotel, setSe
                 boxShadow: isSelected ? '0 8px 24px rgba(0,82,255,0.15)' : '',
                 position: 'relative'
               }}
-              onClick={() => setSelectedHotel({ ...h, _nightPrice: nightPrice, _totalPrice: totalHotelPrice, _nights: nights })}
+              onClick={() => setDetailsHotel(h)}
             >
               {isSelected && (
                 <div className="position-absolute top-0 end-0 m-2" style={{ zIndex: 10 }}>
                   <CheckCircle size={28} color="#0052ff" fill="#fff" />
                 </div>
               )}
-              <div className="mmt-hotel-img-wrapper" onClick={(e) => { e.stopPropagation(); setGalleryHotel(h); }} style={{ cursor: 'pointer', position: 'relative' }}>
+              <div className="mmt-hotel-img-wrapper" onClick={(e) => { e.stopPropagation(); setDetailsHotel(h); }} style={{ cursor: 'pointer', position: 'relative' }}>
                 <img 
                   src={h.image || h.photo || `https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=400&q=80`} 
                   alt={h.name} 
@@ -668,7 +712,7 @@ function Step2Hotel({ allHotels = [], pickupDate, dropDate, selectedHotel, setSe
                   {h.badge || 'Verified Stay'}
                 </span>
                 <div className="position-absolute bottom-0 end-0 m-2 badge bg-dark bg-opacity-75 text-white rounded shadow-sm">
-                  View Photos
+                  View Details
                 </div>
               </div>
               
@@ -717,9 +761,13 @@ function Step2Hotel({ allHotels = [], pickupDate, dropDate, selectedHotel, setSe
                   </div>
                   <button 
                     type="button" 
-                    className={`btn btn-sm ${isSelected ? 'btn-primary' : 'btn-outline-primary'} px-3 fw-bold rounded-pill`}
+                    className={`btn btn-sm ${isSelected ? 'btn-success text-white' : 'btn-outline-primary'} px-3 fw-bold rounded-pill d-flex align-items-center gap-1`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDetailsHotel(h);
+                    }}
                   >
-                    {isSelected ? 'Selected' : 'Select Hotel'}
+                    {isSelected ? '✓ Selected' : 'View Details & Select'}
                   </button>
                 </div>
               </div>
@@ -737,6 +785,37 @@ function Step2Hotel({ allHotels = [], pickupDate, dropDate, selectedHotel, setSe
           </button>
         </div>
       </div>
+
+      {detailsHotel && (
+        <CraftServiceDetailsModal
+          isOpen={Boolean(detailsHotel)}
+          serviceType="hotel"
+          item={detailsHotel}
+          pickupDate={pickupDate}
+          dropDate={dropDate}
+          bookingDays={nights}
+          memberCount={memberCount}
+          isSelected={selectedHotel?.id === detailsHotel?.id || selectedHotel?.name === detailsHotel?.name}
+          onClose={() => setDetailsHotel(null)}
+          onSelect={(h) => {
+            const nightPrice = getHotelNightPrice(h);
+            const totalHotelPrice = nightPrice * nights;
+            setSelectedHotel({ ...h, _nightPrice: nightPrice, _totalPrice: totalHotelPrice, _nights: nights });
+            setDetailsHotel(null);
+          }}
+          onDeselect={() => {
+            setSelectedHotel(null);
+            setDetailsHotel(null);
+          }}
+          onContinue={(h) => {
+            const nightPrice = getHotelNightPrice(h);
+            const totalHotelPrice = nightPrice * nights;
+            setSelectedHotel({ ...h, _nightPrice: nightPrice, _totalPrice: totalHotelPrice, _nights: nights });
+            setDetailsHotel(null);
+            onNext();
+          }}
+        />
+      )}
       
       {galleryHotel && (
         <HotelImageGallery 
@@ -770,6 +849,7 @@ function Step3Activities({
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery || '');
   const [liveActivities, setLiveActivities] = useState(allActivities || []);
   const [loading, setLoading] = useState(false);
+  const [detailsActivity, setDetailsActivity] = useState(null);
 
   useEffect(() => {
     if (initialSearchQuery) {
@@ -978,7 +1058,7 @@ function Step3Activities({
             return (
               <div key={act.id} className="col-12 col-md-6">
                 <div
-                  onClick={() => toggleActivity(act)}
+                  onClick={() => setDetailsActivity(act)}
                   className={`card h-100 border rounded-4 overflow-hidden shadow-xs cursor-pointer transition-all ${
                     isSelected ? 'border-success border-2 shadow-sm' : 'border-light-subtle hover-shadow-md'
                   }`}
@@ -1017,7 +1097,7 @@ function Step3Activities({
                               <Check size={11} /> Added
                             </span>
                           ) : (
-                            <span className="text-muted small" style={{ fontSize: '0.7rem' }}>Click to add</span>
+                            <span className="text-muted small" style={{ fontSize: '0.7rem' }}>Click to view</span>
                           )}
                         </div>
                         <h6 className="fw-bold text-dark mb-1 font-heading" style={{ fontSize: '0.92rem' }}>
@@ -1054,15 +1134,15 @@ function Step3Activities({
                           </div>
                           <button
                             type="button"
-                            className={`btn btn-xs rounded-pill px-3 py-1 fw-bold ${
+                            className={`btn btn-xs rounded-pill px-3 py-1.5 fw-bold d-flex align-items-center gap-1 ${
                               isSelected ? 'btn-success text-white' : 'btn-outline-primary'
                             }`}
                             onClick={(e) => {
                               e.stopPropagation();
-                              toggleActivity(act);
+                              setDetailsActivity(act);
                             }}
                           >
-                            {isSelected ? '✓ Added' : '+ Add to Trip'}
+                            {isSelected ? '✓ Added' : 'View Details & Add'}
                           </button>
                         </div>
                       </div>
@@ -1099,6 +1179,32 @@ function Step3Activities({
           </button>
         </div>
       </div>
+
+      {detailsActivity && (
+        <CraftServiceDetailsModal
+          isOpen={Boolean(detailsActivity)}
+          serviceType="activity"
+          item={detailsActivity}
+          memberCount={memberCount}
+          isSelected={selectedActivities.some(a => String(a.id) === String(detailsActivity?.id))}
+          onClose={() => setDetailsActivity(null)}
+          onSelect={(act) => {
+            toggleActivity(act);
+            setDetailsActivity(null);
+          }}
+          onDeselect={(act) => {
+            setSelectedActivities(prev => prev.filter(a => String(a.id) !== String(act.id)));
+            setDetailsActivity(null);
+          }}
+          onContinue={(act) => {
+            const isAlreadySelected = selectedActivities.some(a => String(a.id) === String(act.id));
+            if (!isAlreadySelected) {
+              setSelectedActivities(prev => [...prev, act]);
+            }
+            setDetailsActivity(null);
+          }}
+        />
+      )}
     </div>
   );
 }

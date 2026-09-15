@@ -27,6 +27,23 @@ export default function BookingVoucher({
     ? new Date(booking.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
     : new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
+  // Parse customizations safely
+  const voucherCustoms = React.useMemo(() => {
+    if (!booking.customizations) return {};
+    if (typeof booking.customizations === 'object') return booking.customizations;
+    try {
+      return JSON.parse(booking.customizations) || {};
+    } catch (e) {
+      return {};
+    }
+  }, [booking.customizations]);
+
+  const hotelRoomTypeName = booking.room_type || voucherCustoms.room_type_name || voucherCustoms.selected_room_name || '';
+  const hotelMealPlan = voucherCustoms.meal_plan || '';
+  const hotelCancellation = voucherCustoms.cancellation_policy || '';
+  const hotelNumRooms = voucherCustoms.num_rooms || '';
+  const hotelNumGuests = voucherCustoms.num_guests || (voucherCustoms.adults ? (voucherCustoms.adults + (voucherCustoms.children || 0)) : '');
+
   // ─── 2. Customer Information Resolution ───
   const guestName = (
     booking.name ||
@@ -306,10 +323,25 @@ export default function BookingVoucher({
               Unit ID: {booking.physical_unit_id}
             </span>
           )}
-          {booking.room_type && (
+          {hotelRoomTypeName && (
             <span className="badge bg-light text-dark border px-1.5 py-0.5 rounded text-xxs mt-0.5 ms-1">
-              Room: {booking.room_type}
+              🛏️ Room: <strong>{hotelRoomTypeName}</strong>
             </span>
+          )}
+          {hotelMealPlan && (
+            <span className="badge bg-light text-dark border px-1.5 py-0.5 rounded text-xxs mt-0.5 ms-1">
+              🍽️ Meal Plan: <strong>{hotelMealPlan}</strong>
+            </span>
+          )}
+          {hotelNumRooms && (
+            <span className="badge bg-light text-dark border px-1.5 py-0.5 rounded text-xxs mt-0.5 ms-1">
+              Rooms: {hotelNumRooms} {hotelNumGuests ? `(${hotelNumGuests} Guests)` : ''}
+            </span>
+          )}
+          {hotelCancellation && (
+            <div className="text-success mt-1" style={{ fontSize: '9.5px' }}>
+              ✓ Cancellation Policy: {hotelCancellation}
+            </div>
           )}
         </div>
 

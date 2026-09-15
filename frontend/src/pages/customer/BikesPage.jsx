@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Star, TrendingUp, ShieldCheck, Award, Clock, Filter, AlertCircle, RotateCcw } from 'lucide-react';
+import { Star, TrendingUp, ShieldCheck, Award, Clock, Filter, AlertCircle, RotateCcw, ChevronRight } from 'lucide-react';
 
 export default function BikesPage({
   bikeFilterType = 'All',
@@ -187,7 +187,14 @@ export default function BikesPage({
 
             return (
               <div key={bike.id} className="col-md-6 col-lg-4">
-                <div className="card h-100 border-0 shadow-sm rounded-4 overflow-hidden position-relative">
+                <div 
+                  className="card h-100 border-0 shadow-sm rounded-4 overflow-hidden position-relative hover-scale"
+                  style={{ cursor: 'pointer', transition: 'all 0.25s ease' }}
+                  onClick={() => {
+                    if (document.activeElement?.blur) document.activeElement.blur();
+                    if (onViewDetails) onViewDetails({ ...bike, type: 'bike' });
+                  }}
+                >
                   <div className="position-relative bg-dark" style={{ height: '200px' }}>
                     <img 
                       src={currentImg} 
@@ -231,12 +238,12 @@ export default function BikesPage({
 
                   <div className="card-body p-3 d-flex flex-column justify-content-between">
                     <div>
-                      <h5 className="fw-bold text-dark mb-1">{bike.name}</h5>
-                      <div className="d-flex align-items-center gap-2 text-muted small mb-3">
-                        <span>👥 2 Seats</span>
-                        <span>•</span>
-                        <span>⛽ {bike.fuel || 'Petrol'}</span>
-                        <span>•</span>
+                      <h5 className="fw-bold text-dark mb-1 font-heading">{bike.name}</h5>
+                      <div className="d-flex align-items-center gap-2 text-muted small mb-3 flex-wrap">
+                        {bike.engine && <span>⚡ {bike.engine}</span>}
+                        {bike.engine && bike.fuel && <span>•</span>}
+                        {bike.fuel && <span>⛽ {bike.fuel}</span>}
+                        {(bike.engine || bike.fuel) && <span>•</span>}
                         <span>📍 {bike.location || 'Goa Delivery'}</span>
                       </div>
                     </div>
@@ -244,35 +251,21 @@ export default function BikesPage({
                     <div className="d-flex justify-content-between align-items-center pt-2 border-top">
                       <div>
                         <span className="text-muted small d-block">per day</span>
-                        <h4 className="fw-black text-primary mb-0">₹{Number(bike.price).toLocaleString('en-IN')}</h4>
+                        <h4 className="fw-black text-primary mb-0 font-heading">₹{Number(bike.price).toLocaleString('en-IN')}</h4>
                       </div>
-                      <div className="d-flex gap-2">
-                        {onViewDetails && (
-                          <button 
-                            type="button" 
-                            className="btn btn-outline-secondary btn-sm rounded-pill px-3"
-                            onClick={() => {
-                              if (document.activeElement && typeof document.activeElement.blur === 'function') {
-                                document.activeElement.blur();
-                              }
-                              onViewDetails(bike);
-                            }}
-                          >
-                            Details
-                          </button>
-                        )}
+                      <div>
                         <button 
                           type="button" 
-                          className="btn btn-primary btn-sm rounded-pill px-3 fw-bold"
-                          style={{ background: '#FF6333', borderColor: '#FF6333' }}
-                          onClick={() => {
-                            if (document.activeElement && typeof document.activeElement.blur === 'function') {
-                              document.activeElement.blur();
-                            }
-                            handleOpenBooking(bike);
+                          className="btn btn-primary btn-sm rounded-pill px-3 py-1.5 fw-bold font-heading d-flex align-items-center gap-1 hover-scale shadow-sm"
+                          style={{ background: '#FF6333', borderColor: '#FF6333', color: '#FFFFFF' }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (document.activeElement?.blur) document.activeElement.blur();
+                            if (onViewDetails) onViewDetails({ ...bike, type: 'bike' });
                           }}
                         >
-                          Book Now
+                          <span>View Details &amp; Book</span>
+                          <ChevronRight size={15} />
                         </button>
                       </div>
                     </div>

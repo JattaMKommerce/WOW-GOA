@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Filter, Car, Hotel, Plane, Utensils, MapPin, Check, ChevronDown, ChevronRight, ChevronLeft, AlertCircle, RotateCcw, X, Sparkles, SlidersHorizontal } from 'lucide-react';
 
+import { getMarkupPrice, resolvePackagePrices } from '../../utils/pricingHelper';
+
 export default function SelfDrivePage({
   handleOpenBooking,
   onViewDetails,
@@ -47,38 +49,18 @@ export default function SelfDrivePage({
     return nights || 3;
   };
 
-  const getMarkupPrice = (basePrice, vendorId, entityType, itemId = 'all') => {
-    if (!markups || !Array.isArray(markups)) return basePrice;
-    
-    // 1. Item-specific markup for this vendor
-    let applicableMarkup = markups.find(m => m.entity_type === entityType && m.vendor_id == vendorId && m.item_id == itemId);
-    
-    // 2. Global markup for this vendor (item_id = 'all')
-    if (!applicableMarkup) {
-      applicableMarkup = markups.find(m => m.entity_type === entityType && m.vendor_id == vendorId && (m.item_id === 'all' || !m.item_id));
-    }
-
-    // 3. Global markup for all vendors
-    if (!applicableMarkup) {
-      applicableMarkup = markups.find(m => m.entity_type === entityType && m.vendor_id === 'global');
-    }
-    if (applicableMarkup) {
-      const val = parseFloat(applicableMarkup.markup_value);
-      if (applicableMarkup.markup_type === 'flat') {
-        return basePrice + val;
-      } else if (applicableMarkup.markup_type === 'percentage') {
-        return basePrice + (basePrice * (val / 100));
-      }
-    }
-    return basePrice;
-  };
-
-  // Base list of packages with markup prices applied
+  // Base list of packages with markup prices applied via shared pricing helper
   const displayPackages = useMemo(() => {
-    return (packages || []).map(pkg => ({
-      ...pkg,
-      price: getMarkupPrice(normalizePrice(pkg.price), pkg.vendor_id || 'global', 'packages', pkg.id)
-    }));
+    return (packages || []).map(pkg => {
+      const resolved = resolvePackagePrices(pkg, markups);
+      return {
+        ...pkg,
+        price: resolved.price,
+        price_with_flight: resolved.price_with_flight,
+        originalPrice: resolved.originalPrice,
+        originalFlightPrice: resolved.originalFlightPrice
+      };
+    });
   }, [packages, markups]);
 
   // Extract unique themes for Tabs WITH counts
@@ -541,7 +523,12 @@ export default function SelfDrivePage({
                 <div className="premium-card bg-white rounded-4 overflow-hidden shadow-sm border position-relative transition-all hover-lift" style={{ transition: 'transform 0.3s ease, box-shadow 0.3s ease' }}>
                   <div className="row g-0">
                     {/* Image Section */}
-                    <div className="col-md-4 position-relative" style={{ minHeight: '250px' }}>
+                    <div 
+                      className="col-md-4 position-relative cursor-pointer" 
+                      style={{ minHeight: '250px', cursor: 'pointer' }}
+                      onClick={() => onViewDetails(pkg)}
+                      title={`View details of ${pkg.name}`}
+                    >
                       <img 
                         src={pkg.imageUrl || pkg.image || pkg.image_url || 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=800&q=80'} 
                         alt={pkg.name} 
@@ -563,7 +550,7 @@ export default function SelfDrivePage({
                     <div className="col-md-8 p-4 d-flex flex-column justify-content-between">
                       <div>
                         <div className="d-flex justify-content-between align-items-start mb-2">
-                          <h4 className="fw-bold text-dark mb-0 hover-primary cursor-pointer" onClick={() => onViewDetails(pkg)}>
+                          <h4 className="fw-bold text-dark mb-0 hover-primary cursor-pointer" onClick={() => onViewDetails(pkg)} title={`View details of ${pkg.name}`}>
                             {pkg.name}
                           </h4>
                           <div className="text-end">
@@ -607,26 +594,21 @@ export default function SelfDrivePage({
                           <MapPin size={14} className="text-danger" />
                           <span>{pkg.places_included || pkg.destination || 'Goa & Surroundings'}</span>
                         </div>
-                        <div className="d-flex gap-2">
+                        <div>
                           <button 
                             type="button" 
-                            className="btn btn-outline-secondary btn-sm px-3 rounded-pill fw-semibold"
-                            onClick={() => onViewDetails(pkg)}
-                          >
-                            View Itinerary
-                          </button>
-                          <button 
-                            type="button" 
-                            className="btn btn-primary btn-sm px-4 rounded-pill fw-bold"
-                            style={{ background: '#FF6333', borderColor: '#FF6333' }}
+                            className="btn btn-primary btn-sm px-4 py-2 rounded-pill fw-bold d-inline-flex align-items-center gap-1.5 shadow-sm"
+                            style={{ background: 'linear-gradient(135deg, #FF6333 0%, #FF8A00 100%)', borderColor: '#FF6333' }}
                             onClick={(e) => {
                               if (document.activeElement && typeof document.activeElement.blur === 'function') {
                                 document.activeElement.blur();
                               }
-                              handleOpenBooking(pkg);
+                              onViewDetails(pkg);
                             }}
+                            title={`View full details & book ${pkg.name}`}
                           >
-                            Book Package
+                            <span>View Details &amp; Book</span>
+                            <ChevronRight size={15} />
                           </button>
                         </div>
                       </div>

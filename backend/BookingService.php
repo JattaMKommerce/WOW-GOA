@@ -114,7 +114,17 @@ class BookingService {
             $allocatedPhysicalUnitId = null;
             $authoritativeVendorId = null;
             if (!empty($itemId) && function_exists('checkInventoryAvailability')) {
-                $avail = checkInventoryAvailability($pdo, $serviceType, $itemId, $depDate, $retDate);
+                $availRoomTypeId = null;
+                $availReqRooms = 1;
+                if ($serviceType === 'hotel') {
+                    $customsData = is_array($payload['customizations'] ?? null) 
+                        ? $payload['customizations'] 
+                        : (is_string($payload['customizations'] ?? null) ? json_decode($payload['customizations'], true) : []);
+                    if (!is_array($customsData)) $customsData = [];
+                    $availRoomTypeId = $payload['room_type_id'] ?? ($customsData['selected_room_type'] ?? ($customsData['room_type_id'] ?? null));
+                    $availReqRooms = max(1, intval($payload['num_rooms'] ?? ($customsData['num_rooms'] ?? ($payload['qty'] ?? 1))));
+                }
+                $avail = checkInventoryAvailability($pdo, $serviceType, $itemId, $depDate, $retDate, null, $availRoomTypeId, $availReqRooms);
                 if (!$avail['available']) {
                     throw new BookingServiceException($avail['reason'] ?? "The selected item is already reserved or unavailable for the chosen dates.", 409, true);
                 }
@@ -223,35 +233,107 @@ class BookingService {
                 $commercials = $pricing;
             } else {
                 // Authoritative D2C calculation
-                $totalAmount = floatval($payload['total_amount'] ?? ($payload['total_paid'] ?? 0));
-                $amountPaid = floatval($payload['amount_paid'] ?? ($payload['total_paid'] ?? $totalAmount));
-                $remainingAmount = max(0, $totalAmount - $amountPaid);
+                if ($serviceType === 'hotel') {
+                    $hotelCalc = self::calculateAuthoritativeHotelPrice($pdo, $payload, $itemId, $depDate, $retDate);
+                    $authoritativeTotal = $hotelCalc['authoritative_total'];
 
-                // Fetch image if not present
-                if (empty($imageVal) && !empty($itemId)) {
-                    $stmtImg = $pdo->prepare("SELECT image FROM cars WHERE id = ?");
-                    $stmtImg->execute([$itemId]);
-                    $imgRow = $stmtImg->fetch(PDO::FETCH_ASSOC);
-                    if (!$imgRow) {
-                        $stmtImgB = $pdo->prepare("SELECT image FROM bikes WHERE id = ?");
-                        $stmtImgB->execute([$itemId]);
-                        $imgRow = $stmtImgB->fetch(PDO::FETCH_ASSOC);
+                    // Prevent total_amount manipulation: if client submitted total differs by > ₹10, reject manipulation
+                    $clientSubmitted = floatval($payload['total_amount'] ?? ($payload['total_paid'] ?? 0));
+                    if ($clientSubmitted > 0 && abs($clientSubmitted - $authoritativeTotal) > 10) {
+                        throw new BookingServiceException(
+                            "Authoritative hotel price validation failed: Server-calculated total is ₹" . number_format($authoritativeTotal) . ", but received ₹" . number_format($clientSubmitted) . ". Manipulated booking totals are strictly prevented.",
+                            400
+                        );
                     }
-                    if (!$imgRow) {
-                        $stmtImgH = $pdo->prepare("SELECT image FROM hotels WHERE id = ?");
-                        $stmtImgH->execute([$itemId]);
-                        $imgRow = $stmtImgH->fetch(PDO::FETCH_ASSOC);
+
+                    $totalAmount = $authoritativeTotal;
+                    $walletAmountUsed = $hotelCalc['wallet_amount_used'];
+                    $itemName = $hotelCalc['hotel']['name'] . ' - ' . $hotelCalc['room_type']['name'];
+                    $imageVal = $hotelCalc['hotel']['image'] ?? ($hotelCalc['hotel']['image_url'] ?? $imageVal);
+                    $driverReq = $hotelCalc['driver_required'];
+                    $driverCharge = $hotelCalc['driver_charge'];
+                    $driverServiceType = $hotelCalc['driver_service_type'];
+                    if ($driverReq) {
+                        $driverDays = ($driverServiceType === 'entire_stay' || $driverServiceType === 'FULL') ? $hotelCalc['nights'] : 1;
+                        $driverEarning = $driverCharge;
                     }
-                    if (!$imgRow) {
-                        $stmtImgA = $pdo->prepare("SELECT image_url, image FROM add_ons WHERE id = ?");
-                        $stmtImgA->execute([$itemId]);
-                        $actRow = $stmtImgA->fetch(PDO::FETCH_ASSOC);
-                        if ($actRow) {
-                            $imgRow = ['image' => !empty($actRow['image_url']) ? $actRow['image_url'] : ($actRow['image'] ?? '')];
+
+                    // Authoritative metadata to persist in customizations
+                    $customizationsData = [
+                        'hotel_id' => $itemId,
+                        'hotel_name' => $hotelCalc['hotel']['name'],
+                        'room_type_id' => $hotelCalc['room_type']['id'],
+                        'selected_room_type' => $hotelCalc['room_type']['id'],
+                        'room_type_name' => $hotelCalc['room_type']['name'],
+                        'selected_room_name' => $hotelCalc['room_type']['name'],
+                        'rate_plan_id' => $hotelCalc['rate_plan_id'],
+                        'meal_plan' => $hotelCalc['meal_plan'],
+                        'cancellation_policy' => $hotelCalc['cancellation_policy'],
+                        'check_in_date' => $depDate,
+                        'check_out_date' => $retDate,
+                        'check_in_time' => $payload['checkin_time'] ?? ($hotelCalc['hotel']['checkin_time'] ?? '02:00 PM'),
+                        'check_out_time' => $payload['checkout_time'] ?? ($hotelCalc['hotel']['checkout_time'] ?? '11:00 AM'),
+                        'nights' => $hotelCalc['nights'],
+                        'num_rooms' => $hotelCalc['num_rooms'],
+                        'adults' => $hotelCalc['adults'],
+                        'children' => $hotelCalc['children'],
+                        'num_guests' => $hotelCalc['num_guests'],
+                        'driver_required' => $driverReq,
+                        'driver_service' => $driverServiceType,
+                        'driver_charge' => $driverCharge,
+                        'hotel_location' => $hotelCalc['hotel']['area'] ?? ($hotelCalc['hotel']['location'] ?? 'Goa'),
+                        'authoritative_price_breakdown' => [
+                            'base_room_rate' => $hotelCalc['base_rate'],
+                            'weekend_room_rate' => $hotelCalc['weekend_rate'],
+                            'meal_surcharge_per_night' => $hotelCalc['meal_surcharge_night'],
+                            'room_nights_subtotal' => $hotelCalc['room_nights_subtotal'],
+                            'extra_adult_charge' => $hotelCalc['extra_adult_charge'],
+                            'extra_child_charge' => $hotelCalc['extra_child_charge'],
+                            'markup' => $hotelCalc['markup_amount'],
+                            'room_total_with_markup' => $hotelCalc['room_total_with_markup'],
+                            'gst' => $hotelCalc['gst'],
+                            'platform_fee' => $hotelCalc['platform_fee'],
+                            'driver_charge' => $driverCharge,
+                            'total_amount' => $authoritativeTotal,
+                            'wallet_amount_used' => $walletAmountUsed,
+                            'final_payable' => $hotelCalc['final_payable']
+                        ]
+                    ];
+                    $payload['customizations'] = $customizationsData;
+                    $payload['hotel_name'] = $hotelCalc['hotel']['name'];
+                    $amountPaid = floatval($payload['amount_paid'] ?? ($payload['total_paid'] ?? $totalAmount));
+                    $remainingAmount = max(0, $totalAmount - $amountPaid);
+                } else {
+                    $totalAmount = floatval($payload['total_amount'] ?? ($payload['total_paid'] ?? 0));
+                    $amountPaid = floatval($payload['amount_paid'] ?? ($payload['total_paid'] ?? $totalAmount));
+                    $remainingAmount = max(0, $totalAmount - $amountPaid);
+
+                    // Fetch image if not present
+                    if (empty($imageVal) && !empty($itemId)) {
+                        $stmtImg = $pdo->prepare("SELECT image FROM cars WHERE id = ?");
+                        $stmtImg->execute([$itemId]);
+                        $imgRow = $stmtImg->fetch(PDO::FETCH_ASSOC);
+                        if (!$imgRow) {
+                            $stmtImgB = $pdo->prepare("SELECT image FROM bikes WHERE id = ?");
+                            $stmtImgB->execute([$itemId]);
+                            $imgRow = $stmtImgB->fetch(PDO::FETCH_ASSOC);
                         }
-                    }
-                    if ($imgRow && !empty($imgRow['image'])) {
-                        $imageVal = $imgRow['image'];
+                        if (!$imgRow) {
+                            $stmtImgH = $pdo->prepare("SELECT image FROM hotels WHERE id = ?");
+                            $stmtImgH->execute([$itemId]);
+                            $imgRow = $stmtImgH->fetch(PDO::FETCH_ASSOC);
+                        }
+                        if (!$imgRow) {
+                            $stmtImgA = $pdo->prepare("SELECT image_url, image FROM add_ons WHERE id = ?");
+                            $stmtImgA->execute([$itemId]);
+                            $actRow = $stmtImgA->fetch(PDO::FETCH_ASSOC);
+                            if ($actRow) {
+                                $imgRow = ['image' => !empty($actRow['image_url']) ? $actRow['image_url'] : ($actRow['image'] ?? '')];
+                            }
+                        }
+                        if ($imgRow && !empty($imgRow['image'])) {
+                            $imageVal = $imgRow['image'];
+                        }
                     }
                 }
             }
@@ -335,7 +417,7 @@ class BookingService {
                 b2b_original_price, b2b_base_price, b2b_tax_amount,
                 b2b_commission_percentage, b2b_commission_amount, b2b_commission_status,
                 b2b_net_discount_percentage, b2b_net_price, b2b_pricing_rule_id, idempotency_key,
-                vendor_id, physical_unit_id, driver_service_type
+                vendor_id, physical_unit_id, driver_service_type, hotel_name
             ) VALUES (
                 ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                 ?, ?, ?, ?, ?, ?, ?,
@@ -347,7 +429,7 @@ class BookingService {
                 ?, ?, ?,
                 ?, ?, ?,
                 ?, ?, ?, ?,
-                ?, ?, ?
+                ?, ?, ?, ?
             )";
 
             $stmtMaster = $pdo->prepare($sqlMaster);
@@ -408,7 +490,8 @@ class BookingService {
                 $idempotencyKey ?: null,
                 $authoritativeVendorId,
                 $allocatedPhysicalUnitId,
-                $driverServiceType
+                $driverServiceType,
+                $payload['hotel_name'] ?? null
             ]);
 
             // 11. Master-Child Booking Creation for Package Bookings (Phase 6)
@@ -706,5 +789,246 @@ class BookingService {
         }
 
         return $children;
+    }
+
+    /**
+     * Authoritatively recalculate hotel booking price from database records.
+     * Enforces date-specific pricing, calendar overrides, weekend pricing, meal plans (EP/CP/MAP/AP),
+     * extra guests (adults/children), markups, 18% GST, flat ₹250 platform fee, chauffeur, and 10% wallet benefit limit.
+     */
+    public static function calculateAuthoritativeHotelPrice(PDO $pdo, array $payload, string $hotelId, string $depDate, string $retDate): array {
+        $stmtH = $pdo->prepare("SELECT * FROM hotels WHERE id = ?");
+        $stmtH->execute([$hotelId]);
+        $hotel = $stmtH->fetch(PDO::FETCH_ASSOC);
+        if (!$hotel) {
+            throw new BookingServiceException("The requested hotel property does not exist.", 404);
+        }
+
+        // Customizations payload extraction
+        $customs = is_array($payload['customizations'] ?? null) 
+            ? $payload['customizations'] 
+            : (is_string($payload['customizations'] ?? null) ? json_decode($payload['customizations'], true) : []);
+        if (!is_array($customs)) $customs = [];
+
+        // 1. Resolve room type
+        $roomTypeId = $payload['room_type_id'] ?? ($customs['selected_room_type'] ?? ($customs['room_type_id'] ?? ''));
+        $roomTypeName = $payload['room_type'] ?? ($customs['selected_room_name'] ?? '');
+        $rt = null;
+        if (!empty($roomTypeId)) {
+            $stmtRt = $pdo->prepare("SELECT * FROM hotel_room_types WHERE id = ? AND hotel_id = ?");
+            $stmtRt->execute([$roomTypeId, $hotelId]);
+            $rt = $stmtRt->fetch(PDO::FETCH_ASSOC);
+        }
+        if (!$rt && !empty($roomTypeName)) {
+            $stmtRt = $pdo->prepare("SELECT * FROM hotel_room_types WHERE hotel_id = ? AND name = ? LIMIT 1");
+            $stmtRt->execute([$hotelId, $roomTypeName]);
+            $rt = $stmtRt->fetch(PDO::FETCH_ASSOC);
+        }
+        if (!$rt) {
+            // Fallback to first active room type for this hotel
+            $stmtRt = $pdo->prepare("SELECT * FROM hotel_room_types WHERE hotel_id = ? AND status = 'Active' ORDER BY id ASC LIMIT 1");
+            $stmtRt->execute([$hotelId]);
+            $rt = $stmtRt->fetch(PDO::FETCH_ASSOC);
+        }
+        if (!$rt) {
+            // If still no room types in DB for this hotel, construct base room from hotel row
+            $rt = [
+                'id' => 'rt_' . $hotelId . '_std',
+                'hotel_id' => $hotelId,
+                'name' => 'Standard Deluxe Room',
+                'base_price' => floatval($hotel['price'] ?: 4500),
+                'selling_price' => floatval($hotel['price'] ?: 4500),
+                'weekend_price' => floatval($hotel['price'] ?: 4500),
+                'extra_adult_charge' => 0,
+                'extra_child_charge' => 0,
+                'max_occupancy' => 3,
+                'base_occupancy' => 2
+            ];
+        }
+
+        $roomTypeId = $rt['id'];
+        $roomTypeName = $rt['name'];
+
+        // 2. Resolve meal plan & rate plan
+        $ratePlanId = $payload['rate_plan_id'] ?? ($customs['rate_plan_id'] ?? '');
+        $mealPlan = strtoupper(trim($payload['meal_plan'] ?? ($customs['meal_plan'] ?? 'EP')));
+        if (!in_array($mealPlan, ['EP', 'CP', 'MAP', 'AP'])) {
+            $mealPlan = 'EP';
+        }
+
+        $rp = null;
+        if (!empty($ratePlanId)) {
+            $stmtRp = $pdo->prepare("SELECT * FROM hotel_rate_plans WHERE id = ?");
+            $stmtRp->execute([$ratePlanId]);
+            $rp = $stmtRp->fetch(PDO::FETCH_ASSOC);
+        }
+        if (!$rp) {
+            $stmtRp = $pdo->prepare("SELECT * FROM hotel_rate_plans WHERE hotel_id = ? AND room_type_id = ? AND UPPER(meal_plan) = ? AND is_active = 1 LIMIT 1");
+            $stmtRp->execute([$hotelId, $roomTypeId, $mealPlan]);
+            $rp = $stmtRp->fetch(PDO::FETCH_ASSOC);
+        }
+
+        // Pricing rules
+        $baseRoomRate = floatval($rt['selling_price'] ?: ($rt['price'] ?: ($rt['base_price'] ?: ($hotel['price'] ?: 4500))));
+        $weekendRoomRate = floatval($rt['weekend_price'] ?: $baseRoomRate);
+        $extraAdultRate = floatval($rt['extra_adult_charge'] ?? 0);
+        $extraChildRate = floatval($rt['extra_child_charge'] ?? 0);
+        $cancellationPolicy = $rp['cancellation_policy'] ?? ($rt['cancellation_policy'] ?? 'Free cancellation up to 48 hours before check-in');
+
+        // Standard Meal Plan surcharges if not already a dedicated rate plan
+        $mealPlanSurcharges = [
+            'EP' => 0,
+            'CP' => 500,
+            'MAP' => 1400,
+            'AP' => 2200
+        ];
+        $mealSurchargePerNight = $mealPlanSurcharges[$mealPlan] ?? 0;
+
+        if ($rp) {
+            if (!empty($rp['base_price']) && floatval($rp['base_price']) > 0) {
+                $baseRoomRate = floatval($rp['base_price']);
+                $mealSurchargePerNight = 0; // price already includes meal plan
+            }
+            if (!empty($rp['weekend_price']) && floatval($rp['weekend_price']) > 0) {
+                $weekendRoomRate = floatval($rp['weekend_price']);
+            }
+            if (isset($rp['extra_adult_rate'])) $extraAdultRate = floatval($rp['extra_adult_rate']);
+            if (isset($rp['extra_child_rate'])) $extraChildRate = floatval($rp['extra_child_rate']);
+            if (!empty($rp['cancellation_policy'])) $cancellationPolicy = $rp['cancellation_policy'];
+            $ratePlanId = $rp['id'];
+        } else {
+            $ratePlanId = 'rp_' . strtolower($mealPlan) . '_' . $roomTypeId;
+        }
+
+        // 3. Stay dates, nights, rooms, guests
+        $nights = max(1, (int)round((strtotime($retDate) - strtotime($depDate)) / 86400));
+        $numRooms = max(1, intval($payload['num_rooms'] ?? ($customs['num_rooms'] ?? ($payload['qty'] ?? 1))));
+        $adults = max(1, intval($payload['adults'] ?? ($customs['adults'] ?? 2)));
+        $children = max(0, intval($payload['children'] ?? ($customs['children'] ?? 0)));
+
+        // 4. Nightly price calculation with calendar overrides & weekend pricing
+        $calOverrides = [];
+        try {
+            $calStmt = $pdo->prepare("SELECT date, price_override FROM hotel_availability_calendar WHERE hotel_id = ? AND (room_type_id = ? OR room_type_id IS NULL OR room_type_id = '') AND date >= ? AND date < ?");
+            $calStmt->execute([$hotelId, $roomTypeId, $depDate, $retDate]);
+            while ($cRow = $calStmt->fetch(PDO::FETCH_ASSOC)) {
+                if (!empty($cRow['price_override']) && floatval($cRow['price_override']) > 0) {
+                    $calOverrides[$cRow['date']] = floatval($cRow['price_override']);
+                }
+            }
+        } catch (Exception $ce) {}
+
+        $roomNightsSubtotal = 0;
+        $currentTs = strtotime($depDate);
+        for ($i = 0; $i < $nights; $i++) {
+            $curDateStr = date('Y-m-d', $currentTs);
+            $dayOfWeek = (int)date('N', $currentTs); // 1 = Monday, ..., 5 = Friday, 6 = Saturday, 7 = Sunday
+            $isWeekend = ($dayOfWeek === 5 || $dayOfWeek === 6); // Fri or Sat
+
+            if (isset($calOverrides[$curDateStr])) {
+                $nightlyRate = $calOverrides[$curDateStr];
+            } elseif ($isWeekend) {
+                $nightlyRate = $weekendRoomRate;
+            } else {
+                $nightlyRate = $baseRoomRate;
+            }
+
+            $nightlyRate += $mealSurchargePerNight;
+            $roomNightsSubtotal += ($nightlyRate * $numRooms);
+            $currentTs = strtotime('+1 day', $currentTs);
+        }
+
+        // 5. Extra Guests Calculation
+        $baseOcc = intval($rt['base_occupancy'] ?: 2);
+        $totalBaseAdultCapacity = $baseOcc * $numRooms;
+        $extraAdults = max(0, $adults - $totalBaseAdultCapacity);
+        $extraAdultTotal = $extraAdults * $extraAdultRate * $nights;
+        $extraChildTotal = $children * $extraChildRate * $nights;
+        $totalExtraGuestCharge = $extraAdultTotal + $extraChildTotal;
+
+        // Subtotal room charges
+        $subtotalRoomCharges = $roomNightsSubtotal + $totalExtraGuestCharge;
+
+        // 6. Markup Calculation (from markups table)
+        $markupAmount = 0;
+        try {
+            $mkStmt = $pdo->prepare("SELECT markup_type, markup_value FROM markups WHERE entity_type IN ('hotel', 'all') AND (vendor_id = ? OR vendor_id = 'global') AND (item_id = ? OR item_id = 'all') ORDER BY id DESC LIMIT 1");
+            $mkStmt->execute([$hotel['vendor_id'] ?? 'global', $hotelId]);
+            $mk = $mkStmt->fetch(PDO::FETCH_ASSOC);
+            if ($mk && floatval($mk['markup_value']) > 0) {
+                $mVal = floatval($mk['markup_value']);
+                if (strtolower($mk['markup_type']) === 'percentage') {
+                    $markupAmount = round($subtotalRoomCharges * ($mVal / 100));
+                } else {
+                    $markupAmount = round($mVal * $nights * $numRooms);
+                }
+            }
+        } catch (Exception $e) {}
+
+        $roomTotalWithMarkup = $subtotalRoomCharges + $markupAmount;
+
+        // 7. GST: 18%
+        $gst = round($roomTotalWithMarkup * 0.18);
+
+        // 8. Platform Fee: flat ₹250
+        $platformFee = 250;
+
+        // 9. Driver / Chauffeur Charges
+        $driverCharge = 0;
+        $driverRequired = !empty($payload['driver_required']) && ($payload['driver_required'] == 1 || $payload['driver_required'] === '1' || $payload['driver_required'] === 'yes' || $payload['driver_required'] === true);
+        $driverServiceType = trim($payload['driver_service_type'] ?? ($customs['driver_service'] ?? 'airport_transfer'));
+        if ($driverRequired) {
+            if ($driverServiceType === 'airport_transfer' || $driverServiceType === 'PICKUP' || $driverServiceType === 'DROP') {
+                $driverCharge = 800;
+            } elseif ($driverServiceType === 'full_day') {
+                $driverCharge = 1800;
+            } elseif ($driverServiceType === 'entire_stay' || $driverServiceType === 'FULL') {
+                $driverCharge = 1500 * $nights;
+            } else {
+                $driverCharge = 800;
+            }
+        }
+
+        // Authoritative Total Amount
+        $authoritativeTotal = $roomTotalWithMarkup + $gst + $platformFee + $driverCharge;
+
+        // 10. Customer Wallet Benefit (strictly capped at 10% of authoritative total)
+        $clientWalletRequested = floatval($payload['wallet_amount_used'] ?? 0);
+        $maxAllowedWallet = round($authoritativeTotal * 0.10, 2);
+        $appliedWallet = min($clientWalletRequested, $maxAllowedWallet);
+        if ($appliedWallet < 0) $appliedWallet = 0;
+
+        $finalPayable = max(0, round($authoritativeTotal - $appliedWallet, 2));
+
+        return [
+            'hotel' => $hotel,
+            'room_type' => $rt,
+            'rate_plan' => $rp,
+            'rate_plan_id' => $ratePlanId,
+            'meal_plan' => $mealPlan,
+            'cancellation_policy' => $cancellationPolicy,
+            'nights' => $nights,
+            'num_rooms' => $numRooms,
+            'adults' => $adults,
+            'children' => $children,
+            'num_guests' => $adults + $children,
+            'base_rate' => $baseRoomRate,
+            'weekend_rate' => $weekendRoomRate,
+            'meal_surcharge_night' => $mealSurchargePerNight,
+            'room_nights_subtotal' => $roomNightsSubtotal,
+            'extra_adult_charge' => $extraAdultTotal,
+            'extra_child_charge' => $extraChildTotal,
+            'markup_amount' => $markupAmount,
+            'room_total_with_markup' => $roomTotalWithMarkup,
+            'gst' => $gst,
+            'platform_fee' => $platformFee,
+            'driver_required' => $driverRequired ? 1 : 0,
+            'driver_service_type' => $driverRequired ? $driverServiceType : null,
+            'driver_charge' => $driverCharge,
+            'authoritative_total' => $authoritativeTotal,
+            'wallet_amount_used' => $appliedWallet,
+            'max_wallet_benefit' => $maxAllowedWallet,
+            'final_payable' => $finalPayable
+        ];
     }
 }

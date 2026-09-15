@@ -6,6 +6,7 @@ import {
   RefreshCw, Sparkles, UserCheck, Activity, Radio, Save, Send, UserPlus, CornerDownRight, Check, ExternalLink
 } from 'lucide-react';
 import * as api from '../../services/api';
+import { parseTravelDate } from '../../utils/dateUtils';
 
 const SOURCE_TABS = [
   'All',
@@ -62,6 +63,122 @@ function SourceBadge({ source }) {
   );
 }
 
+function getCustomItineraryDays(numDays, enq = {}, lead = {}) {
+  const dest = enq.destinations || lead.service || 'Goa';
+  const hasCar = enq.req_car == 1;
+  const hasBike = enq.req_bike == 1;
+  const hasAirport = enq.req_airport_pickup == 1 || enq.req_flight == 1;
+  const hasSightseeing = enq.req_sightseeing == 1;
+  const hasAdventure = enq.req_adventure == 1;
+  const hotelCat = enq.hotel_category ? `${enq.hotel_category} Hotel` : 'Hotel';
+
+  // 1-Day Same-Day Excursion / Tour Plan
+  if (numDays === 1) {
+    let morningPickup = 'Morning pickup & start of Goa exploration.';
+    if (hasCar) morningPickup = 'Self-drive car handover & morning coastal drive.';
+    else if (hasBike) morningPickup = 'Bike rental handover & scenic coastal ride.';
+    else if (hasAirport) morningPickup = 'Airport/Station private pickup (Dabolim/Mopa) with welcome drink.';
+
+    let morningActivity = hasAdventure 
+      ? 'High-speed water sports at Calangute/Baga: Jet Ski, Parasailing & Banana Boat ride.' 
+      : 'Scenic beach walk at Calangute & Baga, coastal photography & relaxed Goan breakfast.';
+
+    let eveningActivity = hasSightseeing 
+      ? 'Guided visit to Fort Aguada Lighthouse & sunset Mandovi River Cruise with Goan folk dance.' 
+      : 'Breathtaking sunset at Chapora Fort (Dil Chahta Hai viewpoint) & Vagator cliff.';
+
+    return [
+      {
+        dayNum: 1,
+        title: `Full-Day ${dest} Tour & Highlights`,
+        morning: `${morningPickup} ${morningActivity}`,
+        afternoon: `Traditional Goan seafood curry lunch at a beachside shack. Heritage visit to historic coastal forts & churches.`,
+        evening: eveningActivity,
+        night: `Shopping for cashews, feni & local handicrafts. Candlelight beachside dinner at Tito's Lane / Candolim, followed by departure transfer.`
+      }
+    ];
+  }
+
+  // Multi-day itinerary pool
+  const dayTemplates = [
+    {
+      title: `Arrival, Check-in & North Goa Exploration`,
+      morning: `${hasAirport ? 'Airport/Station private pickup (Dabolim GOI / Mopa GOX).' : 'Arrival in Goa.'} ${hasCar ? 'Self-drive car handover.' : hasBike ? 'Bike rental handover.' : ''} Check-in at ${hotelCat} & freshen up.`,
+      afternoon: `Relaxed coastal lunch at Calangute/Candolim. Stroll along the golden beach sands.`,
+      evening: `Scenic sunset viewing at Fort Aguada lighthouse & Candolim beach promenade.`,
+      night: hasSightseeing ? `Seaside dinner & exploring vibrant nightlife around Tito's Lane & Baga.` : `Authentic Goan dinner at hotel or nearby beach shack.`
+    },
+    {
+      title: `Beaches, Water Sports & Forts`,
+      morning: hasAdventure 
+        ? `Adrenaline water sports: Jet Ski, Parasailing, Banana Boat & Bumper Ride at Baga Beach.` 
+        : `Morning leisure beach walk at Anjuna & Baga. Coconut water & sunbathing.`,
+      afternoon: `Cliffside lunch at Vagator overlooking the Arabian Sea.`,
+      evening: `Panoramic sunset photography at Chapora Fort (Dil Chahta Hai point) & Little Vagator.`,
+      night: `Acoustic live music, beach shack dining & artisan night market at Anjuna.`
+    },
+    {
+      title: `South Goa Heritage & Mandovi Sunset Cruise`,
+      morning: `UNESCO Heritage tour: Basilica of Bom Jesus, Se Cathedral & historical churches of Old Goa.`,
+      afternoon: `Heritage walk through Fontainhas (Portuguese Latin Quarter) & authentic café lunch.`,
+      evening: hasSightseeing 
+        ? `Sunset Mandovi River Cruise with live Goan folk dance & DJ music.` 
+        : `Miramar Beach sunset stroll & Panjim promenade walk.`,
+      night: `Fine dining Goan seafood dinner along Miramar coastline.`
+    },
+    {
+      title: `Dudhsagar Waterfalls & Spice Plantation`,
+      morning: `Scenic jungle jeep safari to majestic Dudhsagar Waterfalls. Natural pool swim.`,
+      afternoon: `Traditional Goan spice plantation tour with authentic buffet lunch served on banana leaf.`,
+      evening: `Return scenic drive through lush Western Ghats countryside.`,
+      night: `Relaxed dinner & evening drinks by the beach.`
+    },
+    {
+      title: `Grand Island Marine Adventure & Scuba`,
+      morning: `Speedboat cruise to Grand Island. Dolphin spotting & guided snorkeling / scuba diving with certified instructors.`,
+      afternoon: `Barbecue beach lunch at Monkey Beach with swimming & leisure.`,
+      evening: `Cruise back to harbor. Sunset relaxation at Sinquerim Beach.`,
+      night: `Dinner at award-winning Goan cuisine restaurant.`
+    },
+    {
+      title: `Fontainhas Art, Culture & Latin Quarter`,
+      morning: `Architectural walking tour of colorful Latin Quarter homes, art galleries & bakeries.`,
+      afternoon: `Traditional Portuguese-Goan lunch at iconic heritage restaurant.`,
+      evening: `Dona Paula viewpoint sunset & shopping for Goan handicrafts & Mario Miranda souvenirs.`,
+      night: `Live jazz & coastal dining in Panjim.`
+    }
+  ];
+
+  const days = [];
+  for (let i = 0; i < numDays; i++) {
+    if (i === numDays - 1 && numDays > 1) {
+      days.push({
+        dayNum: i + 1,
+        title: `Leisure, Souvenirs & Departure`,
+        morning: `Buffet breakfast at ${hotelCat}. Souvenir shopping for cashews, spices, port wine & handicrafts at Panjim/Mapusa market.`,
+        afternoon: `Hotel check-out. Scenic coastal drive through palm groves.`,
+        evening: hasAirport 
+          ? `Private transfer to airport (Dabolim GOI / Mopa GOX) or railway station.` 
+          : `Onward journey departure from Goa.`,
+        night: ''
+      });
+    } else {
+      const tmplIndex = i % dayTemplates.length;
+      const tmpl = dayTemplates[tmplIndex];
+      days.push({
+        dayNum: i + 1,
+        title: tmpl.title,
+        morning: tmpl.morning,
+        afternoon: tmpl.afternoon,
+        evening: tmpl.evening,
+        night: tmpl.night
+      });
+    }
+  }
+
+  return days;
+}
+
 export default function LeadManagement({ usersList = [], currentUser }) {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -83,13 +200,74 @@ export default function LeadManagement({ usersList = [], currentUser }) {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [previewLead, setPreviewLead] = useState(null);
 
-  const handleOpenPreview = (lead, e) => {
+  // Linked custom_enquiries record for Custom Trips leads
+  const [linkedEnquiry, setLinkedEnquiry] = useState(null);
+  const [linkedEnquiryLoading, setLinkedEnquiryLoading] = useState(false);
+
+  const fetchLinkedEnquiryForLead = useCallback(async (lead) => {
+    if (!lead) {
+      setLinkedEnquiry(null);
+      return null;
+    }
+    const isCustomTrip = (lead.source || '').toLowerCase().includes('custom');
+    const notesStr = lead.notes || '';
+    const enqIdMatch = notesStr.match(/(?:ENQ|INQ)-[A-Z0-9]+/i);
+    const targetEnqId = enqIdMatch ? enqIdMatch[0].toUpperCase() : null;
+
+    if (!isCustomTrip && !targetEnqId) {
+      setLinkedEnquiry(null);
+      return null;
+    }
+
+    setLinkedEnquiryLoading(true);
+    try {
+      const list = await api.fetchCustomEnquiries();
+      const cleanTargetPhone = String(lead.phone || '').replace(/\D/g, '').slice(-10);
+      const cleanTargetEmail = String(lead.email || '').trim().toLowerCase();
+
+      const match = (list || []).find(item => {
+        const eid = String(item.enquiry_id || item.id || '').toUpperCase();
+        if (targetEnqId && eid === targetEnqId) return true;
+        if (cleanTargetPhone) {
+          const itemPhone = String(item.phone || '').replace(/\D/g, '').slice(-10);
+          if (itemPhone && itemPhone === cleanTargetPhone) return true;
+        }
+        if (cleanTargetEmail) {
+          const itemEmail = String(item.email || '').trim().toLowerCase();
+          if (itemEmail && itemEmail === cleanTargetEmail) return true;
+        }
+        return false;
+      });
+      setLinkedEnquiry(match || null);
+      return match || null;
+    } catch (e) {
+      setLinkedEnquiry(null);
+      return null;
+    } finally {
+      setLinkedEnquiryLoading(false);
+    }
+  }, []);
+
+  const handleOpenPreview = async (lead, e) => {
     if (e) {
       e.stopPropagation();
       e.preventDefault();
     }
-    setPreviewLead(lead || selectedLead);
+    const target = lead || selectedLead;
+    setPreviewLead(target);
     setIsPreviewOpen(true);
+
+    if (target) {
+      const isCustomTrip = (target.source || '').toLowerCase().includes('custom');
+      const notesStr = target.notes || '';
+      const enqIdMatch = notesStr.match(/(?:ENQ|INQ)-[A-Z0-9]+/i);
+      const targetEnqId = enqIdMatch ? enqIdMatch[0].toUpperCase() : null;
+      const currentEnqId = String(linkedEnquiry?.enquiry_id || linkedEnquiry?.id || '').toUpperCase();
+
+      if ((isCustomTrip || targetEnqId) && (!linkedEnquiry || (targetEnqId && currentEnqId !== targetEnqId))) {
+        await fetchLinkedEnquiryForLead(target);
+      }
+    }
   };
 
   const handleClosePreview = () => {
@@ -349,7 +527,7 @@ export default function LeadManagement({ usersList = [], currentUser }) {
     };
   }, [loadLeads, loadAssignableUsers, loadComments]);
 
-  // Load comments when selectedLead ID changes
+  // Load comments and linked enquiry when selectedLead ID changes
   const selectedLeadId = selectedLead?.id;
   useEffect(() => {
     if (selectedLeadId) {
@@ -358,10 +536,12 @@ export default function LeadManagement({ usersList = [], currentUser }) {
       setEditingNextAction(false);
       setEditingNotes(false);
       loadComments(selectedLeadId, true);
+      fetchLinkedEnquiryForLead(selectedLead);
     } else {
       setComments([]);
+      setLinkedEnquiry(null);
     }
-  }, [selectedLeadId, loadComments]);
+  }, [selectedLeadId, loadComments, fetchLinkedEnquiryForLead]);
 
   // Scroll comments to bottom
   useEffect(() => {
@@ -1175,6 +1355,65 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                     💡 <em>Refining this requirement permanently protects it from automated overwrite.</em>
                   </div>
                 </div>
+              ) : linkedEnquiry ? (
+                /* ── Custom Enquiry: show the actual submitted form data ── */
+                <div>
+                  {/* Destinations + Travel Dates */}
+                  {(linkedEnquiry.destinations || linkedEnquiry.travel_dates) && (
+                    <div className="mb-2">
+                      {linkedEnquiry.destinations && (
+                        <p className="mb-0 text-dark fw-bold" style={{ fontSize: '0.85rem' }}>
+                          📍 {linkedEnquiry.destinations}
+                        </p>
+                      )}
+                      {linkedEnquiry.travel_dates && (
+                        <p className="mb-0 text-muted" style={{ fontSize: '0.78rem' }}>
+                          📅 {linkedEnquiry.travel_dates}{linkedEnquiry.flexible_dates == 1 ? ' (Flexible)' : ''}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {/* Guests */}
+                  <div className="d-flex align-items-center gap-2 flex-wrap mb-2">
+                    {(linkedEnquiry.adults > 0) && (
+                      <span className="badge rounded-pill bg-white text-dark border px-2" style={{ fontSize: '0.68rem' }}>
+                        👥 {linkedEnquiry.adults} Adults{linkedEnquiry.children > 0 ? ` · ${linkedEnquiry.children} Children` : ''}{linkedEnquiry.infants > 0 ? ` · ${linkedEnquiry.infants} Infants` : ''}
+                      </span>
+                    )}
+                    {linkedEnquiry.budget_range && (
+                      <span className="badge rounded-pill bg-white text-success border border-success-subtle px-2 fw-bold" style={{ fontSize: '0.68rem' }}>
+                        💰 {linkedEnquiry.budget_range}
+                      </span>
+                    )}
+                    {linkedEnquiry.hotel_category && (
+                      <span className="badge rounded-pill bg-white text-dark border px-2" style={{ fontSize: '0.68rem' }}>
+                        🏨 {linkedEnquiry.hotel_category}{linkedEnquiry.room_type ? ` · ${linkedEnquiry.room_type}` : ''}
+                      </span>
+                    )}
+                    {linkedEnquiry.meal_pref && (
+                      <span className="badge rounded-pill bg-white text-dark border px-2" style={{ fontSize: '0.68rem' }}>
+                        🍽️ {linkedEnquiry.meal_pref}
+                      </span>
+                    )}
+                  </div>
+                  {/* Requested Services */}
+                  <div className="d-flex flex-wrap gap-1">
+                    {linkedEnquiry.req_flight == 1 && <span className="badge bg-primary-subtle text-primary border" style={{ fontSize: '0.67rem' }}>✈️ Flight</span>}
+                    {linkedEnquiry.req_train == 1 && <span className="badge bg-secondary-subtle text-secondary border" style={{ fontSize: '0.67rem' }}>🚆 Train</span>}
+                    {linkedEnquiry.req_car == 1 && <span className="badge bg-warning-subtle text-warning-emphasis border" style={{ fontSize: '0.67rem' }}>🚗 Car</span>}
+                    {linkedEnquiry.req_bike == 1 && <span className="badge bg-warning-subtle text-warning-emphasis border" style={{ fontSize: '0.67rem' }}>🏍️ Bike</span>}
+                    {linkedEnquiry.req_airport_pickup == 1 && <span className="badge bg-info-subtle text-info border" style={{ fontSize: '0.67rem' }}>🛬 Airport Pickup</span>}
+                    {linkedEnquiry.req_sightseeing == 1 && <span className="badge bg-success-subtle text-success border" style={{ fontSize: '0.67rem' }}>🗺️ Sightseeing</span>}
+                    {linkedEnquiry.req_adventure == 1 && <span className="badge bg-danger-subtle text-danger border" style={{ fontSize: '0.67rem' }}>🌊 Adventure</span>}
+                  </div>
+                  {linkedEnquiry.special_requests && (
+                    <p className="mb-0 mt-2 text-muted fst-italic" style={{ fontSize: '0.75rem' }}>
+                      💬 {linkedEnquiry.special_requests}
+                    </p>
+                  )}
+                </div>
+              ) : linkedEnquiryLoading ? (
+                <p className="mb-0 text-muted fst-italic" style={{ fontSize: '0.8rem' }}>Loading enquiry details…</p>
               ) : (
                 <div>
                   <p className="mb-1 text-dark fw-bold" style={{ fontSize: '0.85rem' }}>
@@ -1870,18 +2109,54 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                       <span className="text-muted text-uppercase fw-bold" style={{ fontSize: '0.68rem', color: '#16a34a' }}>
                         📌 CUSTOMER REQUIREMENT / ENQUIRY
                       </span>
-                      {previewLead.pax && (
+                      {linkedEnquiry ? (
+                        <span className="badge rounded-pill bg-success text-white px-2" style={{ fontSize: '0.64rem' }}>Custom Enquiry</span>
+                      ) : previewLead.pax ? (
                         <span className="badge rounded-pill bg-light text-dark border px-2 py-0.5" style={{ fontSize: '0.66rem' }}>
                           👥 {previewLead.pax} Guests
                         </span>
-                      )}
+                      ) : null}
                     </div>
-                    <h6 className="fw-bold text-dark mb-1 font-heading" style={{ fontSize: '0.92rem' }}>
-                      {previewLead.notes || previewLead.service || 'General Trip Consultation'}
-                    </h6>
-                    <span className="text-muted small" style={{ fontSize: '0.74rem' }}>
-                      Service: {previewLead.service || 'Holiday Planning'} · Category: {previewLead.source}
-                    </span>
+                    {linkedEnquiryLoading ? (
+                      <div className="py-2 text-muted small fst-italic">
+                        <span className="spinner-border spinner-border-sm text-success me-2" />
+                        Loading custom enquiry details...
+                      </div>
+                    ) : linkedEnquiry ? (
+                      <div>
+                        {linkedEnquiry.destinations && (
+                          <h6 className="fw-bold text-dark mb-1 font-heading" style={{ fontSize: '0.92rem' }}>📍 {linkedEnquiry.destinations}</h6>
+                        )}
+                        {linkedEnquiry.travel_dates && (
+                          <p className="mb-1 text-muted" style={{ fontSize: '0.76rem' }}>📅 {linkedEnquiry.travel_dates}{linkedEnquiry.flexible_dates == 1 ? ' (Flexible)' : ''}</p>
+                        )}
+                        <div className="d-flex flex-wrap gap-1 mt-1">
+                          {linkedEnquiry.adults > 0 && <span className="badge bg-light text-dark border" style={{ fontSize: '0.66rem' }}>👥 {linkedEnquiry.adults} Adults{linkedEnquiry.children > 0 ? ` + ${linkedEnquiry.children} Ch` : ''}{linkedEnquiry.infants > 0 ? ` + ${linkedEnquiry.infants} Inf` : ''}</span>}
+                          {linkedEnquiry.budget_range && <span className="badge bg-success-subtle text-success border" style={{ fontSize: '0.66rem' }}>💰 {linkedEnquiry.budget_range}</span>}
+                          {linkedEnquiry.hotel_category && <span className="badge bg-light text-dark border" style={{ fontSize: '0.66rem' }}>🏨 {linkedEnquiry.hotel_category}{linkedEnquiry.room_type ? ` · ${linkedEnquiry.room_type}` : ''}</span>}
+                          {linkedEnquiry.meal_pref && <span className="badge bg-light text-dark border" style={{ fontSize: '0.66rem' }}>🍽️ {linkedEnquiry.meal_pref}</span>}
+                          {linkedEnquiry.req_flight == 1 && <span className="badge bg-primary-subtle text-primary border" style={{ fontSize: '0.66rem' }}>✈️ Flight</span>}
+                          {linkedEnquiry.req_train == 1 && <span className="badge bg-secondary-subtle text-secondary border" style={{ fontSize: '0.66rem' }}>🚆 Train</span>}
+                          {linkedEnquiry.req_car == 1 && <span className="badge bg-warning-subtle text-warning-emphasis border" style={{ fontSize: '0.66rem' }}>🚗 Car</span>}
+                          {linkedEnquiry.req_bike == 1 && <span className="badge bg-warning-subtle text-warning-emphasis border" style={{ fontSize: '0.66rem' }}>🏍️ Bike</span>}
+                          {linkedEnquiry.req_airport_pickup == 1 && <span className="badge bg-info-subtle text-info border" style={{ fontSize: '0.66rem' }}>🛬 Airport Transfer</span>}
+                          {linkedEnquiry.req_sightseeing == 1 && <span className="badge bg-success-subtle text-success border" style={{ fontSize: '0.66rem' }}>🗺️ Sightseeing</span>}
+                          {linkedEnquiry.req_adventure == 1 && <span className="badge bg-danger-subtle text-danger border" style={{ fontSize: '0.66rem' }}>🌊 Adventure</span>}
+                        </div>
+                        {linkedEnquiry.special_requests && (
+                          <p className="mb-0 mt-1 text-muted fst-italic" style={{ fontSize: '0.72rem' }}>💬 {linkedEnquiry.special_requests}</p>
+                        )}
+                      </div>
+                    ) : (
+                      <div>
+                        <h6 className="fw-bold text-dark mb-1 font-heading" style={{ fontSize: '0.92rem' }}>
+                          {previewLead.notes || previewLead.service || 'General Trip Consultation'}
+                        </h6>
+                        <span className="text-muted small" style={{ fontSize: '0.74rem' }}>
+                          Service: {previewLead.service || 'Holiday Planning'} · Category: {previewLead.source}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -2110,151 +2385,237 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                   );
                 }
 
+                // If custom enquiry is still loading, show loading spinner
+                if (linkedEnquiryLoading) {
+                  return (
+                    <div className="bg-white rounded-3 shadow-xs border p-5 mb-3 text-center">
+                      <div className="spinner-border spinner-border-sm text-primary me-2" role="status" />
+                      <span className="text-muted small fw-semibold">Loading custom enquiry details and generating tailored itinerary...</span>
+                    </div>
+                  );
+                }
+
+                // ── Custom Trips: build itinerary from the linked enquiry record ──
+                const enq = linkedEnquiry;
+                if (enq) {
+                  // Calculate duration from travel_dates e.g. "12 Sep 2026 to 14 Sep 2026" or "15/09/2026"
+                  let numDays = 1;
+                  let durationLabel = '1 Day Plan';
+
+                  if (enq.travel_dates) {
+                    const cleanDates = enq.travel_dates.replace(' (Flexible)', '').trim();
+                    const parts = cleanDates.split(/\s+(?:to|-)\s+/i);
+                    if (parts.length === 2) {
+                      let s1 = parts[0].trim();
+                      let s2 = parts[1].trim();
+                      if (!/\d{4}/.test(s1) && /\d{4}/.test(s2)) {
+                        const yearMatch = s2.match(/\d{4}/);
+                        if (yearMatch) s1 += ' ' + yearMatch[0];
+                      }
+                      const d1 = parseTravelDate(s1);
+                      const d2 = parseTravelDate(s2);
+                      if (d1 && d2 && d2 >= d1) {
+                        const diff = Math.round((d2 - d1) / 86400000);
+                        if (diff === 0) {
+                          numDays = 1;
+                          durationLabel = `1 Day (Same-Day Plan)${enq.flexible_dates == 1 ? ' · Flexible' : ''}`;
+                        } else {
+                          numDays = diff + 1;
+                          durationLabel = `${numDays} Days / ${diff} Night${diff !== 1 ? 's' : ''}${enq.flexible_dates == 1 ? ' · Flexible' : ''}`;
+                        }
+                      } else {
+                        durationLabel = enq.travel_dates;
+                      }
+                    } else {
+                      // Single date e.g. "15/09/2026" or "From 15 Sep 2026"
+                      const singleStr = cleanDates.replace(/^From\s+/i, '').trim();
+                      const d = parseTravelDate(singleStr);
+                      if (d) {
+                        numDays = 1;
+                        durationLabel = `1 Day (${cleanDates})${enq.flexible_dates == 1 ? ' · Flexible' : ''}`;
+                      } else {
+                        durationLabel = enq.travel_dates;
+                      }
+                    }
+                  } else {
+                    const dMatch = (previewLead.service || previewLead.title || previewLead.notes || '').match(/(\d+)\s*(?:days?|d\b)/i);
+                    if (dMatch) {
+                      numDays = Math.max(1, parseInt(dMatch[1], 10));
+                      const nights = Math.max(0, numDays - 1);
+                      durationLabel = numDays === 1 ? '1 Day Plan' : `${numDays} Days / ${nights} Night${nights !== 1 ? 's' : ''}`;
+                    } else {
+                      numDays = 1;
+                      durationLabel = '1 Day Plan (Flexible Dates)';
+                    }
+                  }
+
+                  // Build day templates based on what the customer actually requested
+                  const days = getCustomItineraryDays(numDays, enq, previewLead);
+
+                  // Services summary for the itinerary header
+                  const reqServices = [
+                    enq.req_flight == 1 && '✈️ Flight',
+                    enq.req_train == 1 && '🚆 Train',
+                    enq.req_car == 1 && '🚗 Self-Drive Car',
+                    enq.req_bike == 1 && '🏍️ Bike Rental',
+                    enq.req_airport_pickup == 1 && '🛬 Airport Transfer',
+                    enq.req_sightseeing == 1 && '🗺️ Sightseeing',
+                    enq.req_adventure == 1 && '🌊 Adventure/Activities',
+                    enq.hotel_category && `🏨 ${enq.hotel_category} Hotel`,
+                  ].filter(Boolean);
+
+                  return (
+                    <div className="bg-white rounded-3 shadow-xs border p-4 mb-3">
+                      <div className="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+                        <div>
+                          <h6 className="fw-bold text-dark mb-0 font-heading">
+                            📍 Custom Trip Itinerary — {enq.destinations || 'Goa'}
+                          </h6>
+                          <span className="text-muted small">Based on enquiry requirements submitted by {previewLead.name}</span>
+                        </div>
+                        <span className="badge rounded-pill bg-success text-white px-3 fw-bold" style={{ fontSize: '0.75rem' }}>
+                          {durationLabel}
+                        </span>
+                      </div>
+
+                      {/* Requested services summary */}
+                      {reqServices.length > 0 && (
+                        <div className="p-2 rounded-3 mb-3 d-flex flex-wrap gap-1" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+                          <span className="fw-bold text-success me-1" style={{ fontSize: '0.72rem' }}>Requested Services:</span>
+                          {reqServices.map((s, i) => (
+                            <span key={i} className="badge bg-white text-dark border" style={{ fontSize: '0.68rem' }}>{s}</span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Special requests */}
+                      {enq.special_requests && (
+                        <div className="p-2 rounded-3 mb-3" style={{ background: '#fefce8', border: '1px solid #fde68a', fontSize: '0.78rem' }}>
+                          <span className="fw-bold text-warning-emphasis">💬 Special Request: </span>
+                          <span className="text-dark">{enq.special_requests}</span>
+                        </div>
+                      )}
+
+                      {/* Day-wise itinerary */}
+                      <div className="d-flex flex-column gap-3">
+                        {days.map((day, idx) => (
+                          <div key={idx} className="p-3 rounded-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                            <div className="d-flex align-items-center justify-content-between mb-2">
+                              <span className="badge bg-primary text-white fw-bold px-2 py-1" style={{ fontSize: '0.72rem' }}>Day {day.dayNum || idx + 1}</span>
+                              <span className="fw-bold text-dark small">{day.title}</span>
+                            </div>
+                            <div className="row g-2 mt-1">
+                              <div className="col-md-6">
+                                <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                                  <span className="fw-bold text-warning d-block">🌅 Morning</span>
+                                  <span className="text-muted">{day.morning}</span>
+                                </div>
+                              </div>
+                              <div className="col-md-6">
+                                <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                                  <span className="fw-bold text-primary d-block">☀️ Afternoon</span>
+                                  <span className="text-muted">{day.afternoon}</span>
+                                </div>
+                              </div>
+                              {day.evening && (
+                                <div className="col-md-6">
+                                  <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                                    <span className="fw-bold text-info d-block">🌆 Evening</span>
+                                    <span className="text-muted">{day.evening}</span>
+                                  </div>
+                                </div>
+                              )}
+                              {day.night && (
+                                <div className="col-md-6">
+                                  <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                                    <span className="fw-bold d-block" style={{ color: '#7c3aed' }}>🌙 Night</span>
+                                    <span className="text-muted">{day.night}</span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Enquiry reference */}
+                      <div className="mt-3 pt-2 border-top text-muted" style={{ fontSize: '0.72rem' }}>
+                        Enquiry Ref: <strong>{enq.enquiry_id || enq.id}</strong> · Trip Type: {enq.trip_type || 'Holiday'} · Submitted by {enq.customer_name}
+                      </div>
+                    </div>
+                  );
+                }
+
+                // ── Fallback: Tour / Package Leads without linked custom enquiry ──
+                let fallbackDays = 4;
+                let fallbackDuration = '4 Days / 3 Nights';
+
+                const dMatch = (previewLead.service || previewLead.title || previewLead.notes || '').match(/(\d+)\s*(?:days?|d\b)/i);
+                if (dMatch) {
+                  fallbackDays = Math.max(1, parseInt(dMatch[1], 10));
+                  const nights = Math.max(0, fallbackDays - 1);
+                  fallbackDuration = fallbackDays === 1 ? '1 Day Plan' : `${fallbackDays} Days / ${nights} Night${nights !== 1 ? 's' : ''}`;
+                } else if (previewLead.booking_days) {
+                  fallbackDays = Math.max(1, parseInt(previewLead.booking_days, 10));
+                  const nights = Math.max(0, fallbackDays - 1);
+                  fallbackDuration = fallbackDays === 1 ? '1 Day Plan' : `${fallbackDays} Days / ${nights} Night${nights !== 1 ? 's' : ''}`;
+                }
+
+                const fallbackDaysList = getCustomItineraryDays(fallbackDays, {}, previewLead);
+
                 return (
-                  /* Comprehensive 4-Day Day-Wise Itinerary Schedule for Tours & Packages */
                   <div className="bg-white rounded-3 shadow-xs border p-4 mb-3">
                     <div className="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
                       <div>
                         <h6 className="fw-bold text-dark mb-0 font-heading">
-                          📍 4-Day Itinerary &amp; Activity Schedule
+                          📍 {fallbackDays === 1 ? '1-Day Itinerary & Activity Schedule' : `${fallbackDays}-Day Itinerary & Activity Schedule`}
                         </h6>
                         <span className="text-muted small">Customized travel schedule for {previewLead.name}</span>
                       </div>
                       <span className="badge rounded-pill bg-light text-dark border px-3 py-1.5 fw-bold" style={{ fontSize: '0.75rem' }}>
-                        4 Days / 3 Nights
+                        {fallbackDuration}
                       </span>
                     </div>
 
                     <div className="d-flex flex-column gap-3">
-                      {/* DAY 1 */}
-                      <div className="p-3 rounded-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                        <div className="d-flex align-items-center justify-content-between mb-2">
-                          <span className="badge bg-primary text-white fw-bold px-2 py-1" style={{ fontSize: '0.72rem' }}>Day 1</span>
-                          <span className="fw-bold text-dark small">Arrival, Private Transfer &amp; North Goa Beach Sunset</span>
-                        </div>
-                        <div className="row g-2 mt-1">
-                          <div className="col-md-6">
-                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                              <span className="fw-bold text-warning d-block">🌅 Morning (09:00 AM - 12:00 PM)</span>
-                              <span className="text-muted">Airport pickup at Dabolim (GOI) / Mopa (GOX) with vehicle handover &amp; luxury hotel check-in.</span>
-                            </div>
+                      {fallbackDaysList.map((day, idx) => (
+                        <div key={idx} className="p-3 rounded-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                          <div className="d-flex align-items-center justify-content-between mb-2">
+                            <span className="badge bg-primary text-white fw-bold px-2 py-1" style={{ fontSize: '0.72rem' }}>Day {day.dayNum || idx + 1}</span>
+                            <span className="fw-bold text-dark small">{day.title}</span>
                           </div>
-                          <div className="col-md-6">
-                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                              <span className="fw-bold text-primary d-block">☀️ Afternoon (01:00 PM - 04:00 PM)</span>
-                              <span className="text-muted">Traditional Goan fish curry lunch at Calangute beach shack followed by relaxed coastal walk.</span>
+                          <div className="row g-2 mt-1">
+                            <div className="col-md-6">
+                              <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                                <span className="fw-bold text-warning d-block">🌅 Morning</span>
+                                <span className="text-muted">{day.morning}</span>
+                              </div>
                             </div>
-                          </div>
-                          <div className="col-md-6">
-                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                              <span className="fw-bold text-info d-block">🌆 Evening (04:30 PM - 07:30 PM)</span>
-                              <span className="text-muted">Scenic sunset viewing at Fort Aguada lighthouse and Candolim Beach promenade.</span>
+                            <div className="col-md-6">
+                              <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                                <span className="fw-bold text-primary d-block">☀️ Afternoon</span>
+                                <span className="text-muted">{day.afternoon}</span>
+                              </div>
                             </div>
-                          </div>
-                          <div className="col-md-6">
-                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                              <span className="fw-bold text-purple d-block" style={{ color: '#7c3aed' }}>🌙 Night (08:00 PM - 11:00 PM)</span>
-                              <span className="text-muted">Candlelight seaside dinner and exploring vibrant nightlife around Tito's Lane &amp; Baga.</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* DAY 2 */}
-                      <div className="p-3 rounded-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                        <div className="d-flex align-items-center justify-content-between mb-2">
-                          <span className="badge bg-primary text-white fw-bold px-2 py-1" style={{ fontSize: '0.72rem' }}>Day 2</span>
-                          <span className="fw-bold text-dark small">Water Sports Adventure, Chapora Fort &amp; Cliffside Dining</span>
-                        </div>
-                        <div className="row g-2 mt-1">
-                          <div className="col-md-6">
-                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                              <span className="fw-bold text-warning d-block">🌅 Morning (09:00 AM - 12:30 PM)</span>
-                              <span className="text-muted">High-speed Jet Ski, Parasailing, Banana Boat Ride &amp; Bumper Tube at Baga Beach.</span>
-                            </div>
-                          </div>
-                          <div className="col-md-6">
-                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                              <span className="fw-bold text-primary d-block">☀️ Afternoon (01:00 PM - 04:00 PM)</span>
-                              <span className="text-muted">Cliffside Mediterranean lunch at Vagator overlooking the azure Arabian Sea.</span>
-                            </div>
-                          </div>
-                          <div className="col-md-6">
-                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                              <span className="fw-bold text-info d-block">🌆 Evening (04:30 PM - 07:00 PM)</span>
-                              <span className="text-muted">Panoramic sunset photography at Chapora Fort (Dil Chahta Hai point) &amp; Little Vagator.</span>
-                            </div>
-                          </div>
-                          <div className="col-md-6">
-                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                              <span className="fw-bold text-purple d-block" style={{ color: '#7c3aed' }}>🌙 Night (07:30 PM - 10:30 PM)</span>
-                              <span className="text-muted">Acoustic live music, artisan night market shopping &amp; dinner at Anjuna beach.</span>
-                            </div>
+                            {day.evening && (
+                              <div className="col-md-6">
+                                <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                                  <span className="fw-bold text-info d-block">🌆 Evening</span>
+                                  <span className="text-muted">{day.evening}</span>
+                                </div>
+                              </div>
+                            )}
+                            {day.night && (
+                              <div className="col-md-6">
+                                <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
+                                  <span className="fw-bold text-purple d-block" style={{ color: '#7c3aed' }}>🌙 Night</span>
+                                  <span className="text-muted">{day.night}</span>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
-                      </div>
-
-                      {/* DAY 3 */}
-                      <div className="p-3 rounded-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                        <div className="d-flex align-items-center justify-content-between mb-2">
-                          <span className="badge bg-primary text-white fw-bold px-2 py-1" style={{ fontSize: '0.72rem' }}>Day 3</span>
-                          <span className="fw-bold text-dark small">South Goa Heritage, Fontainhas &amp; Mandovi Sunset Cruise</span>
-                        </div>
-                        <div className="row g-2 mt-1">
-                          <div className="col-md-6">
-                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                              <span className="fw-bold text-warning d-block">🌅 Morning (09:30 AM - 12:30 PM)</span>
-                              <span className="text-muted">UNESCO Heritage tour: Basilica of Bom Jesus, Se Cathedral &amp; historical churches of Old Goa.</span>
-                            </div>
-                          </div>
-                          <div className="col-md-6">
-                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                              <span className="fw-bold text-primary d-block">☀️ Afternoon (01:00 PM - 04:00 PM)</span>
-                              <span className="text-muted">Heritage walk through Fontainhas (Portuguese Latin Quarter) &amp; cafe lunch.</span>
-                            </div>
-                          </div>
-                          <div className="col-md-6">
-                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                              <span className="fw-bold text-info d-block">🌆 Evening (05:00 PM - 07:30 PM)</span>
-                              <span className="text-muted">Sunset Mandovi River Cruise with live Goan folk dance &amp; DJ music.</span>
-                            </div>
-                          </div>
-                          <div className="col-md-6">
-                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                              <span className="fw-bold text-purple d-block" style={{ color: '#7c3aed' }}>🌙 Night (08:00 PM - 10:30 PM)</span>
-                              <span className="text-muted">Fine dining authentic seafood dinner along Miramar Beach coastline.</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* DAY 4 */}
-                      <div className="p-3 rounded-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                        <div className="d-flex align-items-center justify-content-between mb-2">
-                          <span className="badge bg-primary text-white fw-bold px-2 py-1" style={{ fontSize: '0.72rem' }}>Day 4</span>
-                          <span className="fw-bold text-dark small">Leisure Souvenirs &amp; Airport Departure Transfer</span>
-                        </div>
-                        <div className="row g-2 mt-1">
-                          <div className="col-md-6">
-                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                              <span className="fw-bold text-warning d-block">🌅 Morning (09:00 AM - 11:30 AM)</span>
-                              <span className="text-muted">Poolside buffet breakfast, cashew and spice shopping at Panjim/Mapusa market.</span>
-                            </div>
-                          </div>
-                          <div className="col-md-6">
-                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                              <span className="fw-bold text-primary d-block">☀️ Afternoon (12:00 PM - 03:00 PM)</span>
-                              <span className="text-muted">Hotel check-out and scenic drive through coconut groves of South Goa.</span>
-                            </div>
-                          </div>
-                          <div className="col-md-12">
-                            <div className="p-2 rounded bg-white border" style={{ fontSize: '0.78rem' }}>
-                              <span className="fw-bold text-success d-block">✈️ Evening / Departure (04:00 PM Onwards)</span>
-                              <span className="text-muted">Hassle-free vehicle drop / airport transfer at Dabolim (GOI) or Mopa (GOX) with departure support.</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
+                      ))}
                     </div>
                   </div>
                 );
