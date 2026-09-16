@@ -22,17 +22,11 @@ $resource = isset($_GET['resource']) ? $_GET['resource'] : '';
 $action = isset($_GET['action']) ? $_GET['action'] : (isset($_POST['action']) ? $_POST['action'] : '');
 
 function getTenantId() {
-    if (function_exists('apache_request_headers')) {
-        $headers = apache_request_headers();
-        if (isset($headers['X-Tenant-ID'])) {
-            return $headers['X-Tenant-ID'];
-        }
-        if (isset($headers['x-tenant-id'])) {
-            return $headers['x-tenant-id'];
-        }
-    }
     if (isset($_SERVER['HTTP_X_TENANT_ID'])) {
         return $_SERVER['HTTP_X_TENANT_ID'];
+    }
+    if (isset($_SERVER['X_TENANT_ID'])) {
+        return $_SERVER['X_TENANT_ID'];
     }
     return isset($_GET['tenant_id']) ? $_GET['tenant_id'] : 'admin';
 }
@@ -1520,10 +1514,6 @@ function verifyAuthToken($token) {
  */
 function authenticateRequest($pdo, $required = false) {
     $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '');
-    if (!$authHeader && function_exists('apache_request_headers')) {
-        $reqH = apache_request_headers();
-        $authHeader = $reqH['Authorization'] ?? ($reqH['authorization'] ?? '');
-    }
     if (!$authHeader && function_exists('getallheaders')) {
         $allH = getallheaders();
         $authHeader = $allH['Authorization'] ?? ($allH['authorization'] ?? '');
@@ -1535,10 +1525,6 @@ function authenticateRequest($pdo, $required = false) {
     }
     if (!$token) {
         $xToken = $_SERVER['HTTP_X_AUTH_TOKEN'] ?? '';
-        if (!$xToken && function_exists('apache_request_headers')) {
-            $reqH = apache_request_headers();
-            $xToken = $reqH['X-Auth-Token'] ?? ($reqH['x-auth-token'] ?? '');
-        }
         if (!$xToken && function_exists('getallheaders')) {
             $allH = getallheaders();
             $xToken = $allH['X-Auth-Token'] ?? ($allH['x-auth-token'] ?? '');
@@ -1751,6 +1737,123 @@ function extractLeadRequirements($chatHistory, $currentNotes = '') {
         'duration' => $duration,
         'is_manual' => false
     ];
+}
+
+/**
+ * Find existing lead for a customer to prevent duplication.
+ * Matches by normalized 10-digit phone or non-placeholder email.
+ */
+function findExistingLead($pdo, $phone, $email = null) {
+    $cleanPhone = preg_replace('/\D/', '', $phone ?? '');
+    if (strlen($cleanPhone) > 10) {
+        $cleanPhone = substr($cleanPhone, -10);
+    }
+    $cleanEmail = strtolower(trim($email ?? ''));
+    if (strpos($cleanEmail, '@guest.wowgoa.com') !== false || strpos($cleanEmail, 'placeholder') !== false) {
+        $cleanEmail = '';
+    }
+
+    if (!empty($cleanPhone) && strlen($cleanPhone) === 10) {
+        // Find lead by exact phone or phone ending/beginning with 10 digits
+        $stmt = $pdo->prepare("SELECT * FROM leads WHERE (phone = ? OR phone LIKE ? OR phone LIKE ?) ORDER BY CASE WHEN status = 'Booked' THEN 1 WHEN status = 'Closed-Won' THEN 2 WHEN status = 'Inquiry' THEN 3 WHEN status = 'Pending Inquiry' THEN 4 ELSE 5 END, created_at DESC LIMIT 1");
+        $stmt->execute([$cleanPhone, '%' . $cleanPhone, '+91' . $cleanPhone]);
+        $lead = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($lead) return $lead;
+    }
+
+    if (!empty($cleanEmail)) {
+        $stmt = $pdo->prepare("SELECT * FROM leads WHERE LOWER(email) = ? ORDER BY CASE WHEN status = 'Booked' THEN 1 WHEN status = 'Closed-Won' THEN 2 WHEN status = 'Inquiry' THEN 3 WHEN status = 'Pending Inquiry' THEN 4 ELSE 5 END, created_at DESC LIMIT 1");
+        $stmt->execute([$cleanEmail]);
+        $lead = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($lead) return $lead;
+    }
+
+    return null;
+}
+
+/**
+ * Deduplicated Customer Lead Linker & Updater.
+ * When a customer completes a booking:
+ * 1. Checks if customer already has an existing lead (via normalized 10-digit phone or email).
+ * 2. If YES: Updates that existing lead with booking details & status "Booked". DOES NOT create duplicate lead.
+ * 3. If NO: Creates a new lead with status "Booked".
+ */
+function recordOrUpdateCustomerBookingLead($pdo, $payload, $booking_id, $tenant_id = 'admin') {
+    try {
+        $rawPhone = $payload['phone'] ?? ($payload['guest_phone'] ?? ($payload['customer_phone'] ?? ''));
+        $cleanPhone = preg_replace('/\D/', '', $rawPhone);
+        if (strlen($cleanPhone) > 10) $cleanPhone = substr($cleanPhone, -10);
+
+        $leadEmail = $payload['email'] ?? ($payload['guest_email'] ?? ($payload['customer_email'] ?? ''));
+        if (!$leadEmail && !empty($payload['traveller_details_json'])) {
+            $td = is_array($payload['traveller_details_json']) ? $payload['traveller_details_json'] : json_decode($payload['traveller_details_json'], true);
+            if (!empty($td['email'])) $leadEmail = $td['email'];
+        }
+
+        $itemName = $payload['item_name'] ?? ($payload['package_name'] ?? 'Booking');
+        $isHtl = (stripos($itemName, 'Hotel') !== false || stripos($payload['item_id'] ?? '', 'hotel') !== false || stripos($payload['item_id'] ?? '', 'htl') !== false);
+        $isPkg = (stripos($payload['type'] ?? '', 'package') !== false || stripos($payload['service_type'] ?? '', 'package') !== false);
+        $leadSource = $isPkg ? 'Custom Trips' : ($isHtl ? 'Hotel Enquiries' : 'Vehicle Rental');
+        $durationDays = intval($payload['booking_days'] ?? 1);
+        $leadService = $itemName . ($durationDays > 0 ? " ($durationDays Days)" : '');
+        $totAmt = intval($payload['total_amount'] ?? ($payload['total_paid'] ?? ($payload['amount_paid'] ?? 0)));
+        $leadBudget = $totAmt > 0 ? ('₹' . number_format($totAmt)) : 'Standard Rate';
+        $bookingNote = 'Direct Booking #' . $booking_id . ' | ' . ($payload['pickup_loc'] ?? ($payload['pickup_location'] ?? 'Goa'));
+
+        $existingLead = findExistingLead($pdo, $cleanPhone, $leadEmail);
+
+        if ($existingLead) {
+            // Update existing lead to status "Booked"
+            $existingNotes = $existingLead['notes'] ?? '';
+            $combinedNotes = !empty($existingNotes) ? ($existingNotes . ' | ' . $bookingNote) : $bookingNote;
+            $custName = (!empty($payload['name']) && $payload['name'] !== 'Customer') ? $payload['name'] : ($existingLead['name'] ?: 'Customer');
+            $custEmail = !empty($leadEmail) ? $leadEmail : ($existingLead['email'] ?? '');
+
+            $updLead = $pdo->prepare("UPDATE leads SET 
+                status = 'Booked',
+                service = ?,
+                budget = ?,
+                deal_value = ?,
+                notes = ?,
+                name = ?,
+                email = ?,
+                updated_at = ?
+                WHERE id = ?");
+            $updLead->execute([
+                $leadService,
+                $leadBudget,
+                $totAmt,
+                $combinedNotes,
+                $custName,
+                $custEmail,
+                date('Y-m-d H:i:s'),
+                $existingLead['id']
+            ]);
+            return $existingLead['id'];
+        } else {
+            // Fresh direct customer: create single lead with status "Booked"
+            $leadId = 'LD-' . rand(1000, 9999);
+            $leadStmt = $pdo->prepare("INSERT INTO leads (id, name, phone, email, source, service, assigned_to, status, budget, deal_value, notes, admin_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'Unassigned', 'Booked', ?, ?, ?, ?, ?, ?)");
+            $leadStmt->execute([
+                $leadId,
+                $payload['name'] ?? 'Customer',
+                $cleanPhone,
+                $leadEmail,
+                $leadSource,
+                $leadService,
+                $leadBudget,
+                $totAmt,
+                $bookingNote,
+                $tenant_id,
+                date('Y-m-d H:i:s'),
+                date('Y-m-d H:i:s')
+            ]);
+            return $leadId;
+        }
+    } catch (Exception $e) {
+        error_log("recordOrUpdateCustomerBookingLead error: " . $e->getMessage());
+        return null;
+    }
 }
 
 /**
@@ -2054,7 +2157,7 @@ function getAuthenticatedB2BPartner($pdo, $required = true) {
     $partnerIdOrToken = '';
     
     // Check all headers
-    $headers = function_exists('getallheaders') ? getallheaders() : (function_exists('apache_request_headers') ? apache_request_headers() : []);
+    $headers = function_exists('getallheaders') ? getallheaders() : [];
     $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '');
     if (!$authHeader) {
         foreach ($headers as $k => $v) {
@@ -4287,6 +4390,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
             echo json_encode($data);
             exit;} elseif ($resource === 'global_settings') { $stmt = $pdo->query("SELECT * FROM global_settings LIMIT 1"); $data = $stmt->fetch(PDO::FETCH_ASSOC); echo json_encode($data ? $data : (object)[]); exit; 
+            exit;} elseif ($resource === 'ai_settings' || $resource === 'chatbot_settings') {
+                $stmt = $pdo->query("SELECT * FROM ai_settings WHERE id = 1 LIMIT 1");
+                $data = $stmt->fetch(PDO::FETCH_ASSOC);
+                if (!$data) {
+                    $pdo->exec("INSERT OR IGNORE INTO ai_settings (id, chatbot_enabled, auto_create_leads) VALUES (1, 1, 1)");
+                    $data = ['id' => 1, 'chatbot_enabled' => 1, 'auto_create_leads' => 1];
+                }
+                echo json_encode([
+                    'success' => true,
+                    'ai_chatbot_enabled' => (bool)($data['chatbot_enabled'] ?? 1),
+                    'auto_create_leads' => (bool)($data['auto_create_leads'] ?? 1),
+                    'settings' => $data
+                ]);
+                exit;
             exit;} elseif ($resource === 'coupons') {
             $stmt = $pdo->prepare("SELECT * FROM coupons WHERE (admin_id = ? OR ? = 'superadmin')");
             $stmt->execute([$tenant_id, $tenant_id]);
@@ -6453,6 +6570,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $pdo->prepare("UPDATE site_configs SET booking_fee_deduction = ?, min_wallet_recharge = ?");
             $stmt->execute([$payload['booking_fee_deduction'], $payload['min_wallet_recharge']]);
             echo json_encode(["success" => true, "message" => "Platform settings updated."]);
+            exit;
+        } elseif ($action === 'toggle_ai_chatbot' || $action === 'update_ai_settings') {
+            $enabled = isset($payload['enabled']) ? ($payload['enabled'] ? 1 : 0) : 1;
+            $autoLeads = isset($payload['auto_create_leads']) ? ($payload['auto_create_leads'] ? 1 : 0) : 1;
+            $stmt = $pdo->prepare("UPDATE ai_settings SET chatbot_enabled = ?, auto_create_leads = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1");
+            $stmt->execute([$enabled, $autoLeads]);
+            if ($stmt->rowCount() === 0) {
+                $pdo->prepare("INSERT OR REPLACE INTO ai_settings (id, chatbot_enabled, auto_create_leads) VALUES (1, ?, ?)")->execute([$enabled, $autoLeads]);
+            }
+            echo json_encode([
+                "success" => true,
+                "ai_chatbot_enabled" => (bool)$enabled,
+                "auto_create_leads" => (bool)$autoLeads,
+                "message" => "AI Chatbot settings saved to database."
+            ]);
             exit;} elseif ($action === 'save_commission_rule') {
             $vendor_type = $payload['vendor_type']; // 'hotel_vendor', 'vendor', 'flight_vendor'
             $vendor_id = $payload['vendor_id'] ?? 'all'; // 'all' or specific vendor id
@@ -6533,23 +6665,80 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!isset($payload['name']) || !isset($payload['phone'])) {
                 throw new Exception("Missing name or phone parameter.");
             }
-            $aiLeadId = uniqid('ai-');
-            $stmt = $pdo->prepare("INSERT INTO ai_leads (id, name, phone, created_at) VALUES (?, ?, ?, ?)");
-            $stmt->execute([
-                $aiLeadId,
-                $payload['name'],
-                $payload['phone'],
-                date('Y-m-d H:i:s')
-            ]);
-            
-            // Auto-capture into enterprise leads table
-            $leadId = 'LD-' . rand(1000, 9999);
+            $cleanName = trim($payload['name']);
+            $cleanPhone = preg_replace('/\D/', '', $payload['phone']);
+            if (strlen($cleanPhone) > 10) {
+                $cleanPhone = substr($cleanPhone, -10);
+            }
+            if (!preg_match('/^\d{10}$/', $cleanPhone)) {
+                http_response_code(400);
+                echo json_encode(["success" => false, "error" => "Please enter a valid 10-digit mobile number."]);
+                exit;
+            }
+            $cleanEmail = trim($payload['email'] ?? '');
+
+            // 1. Check or reuse in ai_leads table
+            $existingAi = null;
             try {
-                $leadStmt = $pdo->prepare("INSERT INTO leads (id, name, phone, email, source, service, assigned_to, status, budget, notes, admin_id, created_at, updated_at) VALUES (?, ?, ?, '', 'AI Planner', 'AI Travel Assistant Chat', 'Unassigned', 'New', '', 'Inquired via Sophia AI Assistant', 'admin', ?, ?)");
-                $leadStmt->execute([$leadId, $payload['name'], $payload['phone'], date('Y-m-d H:i:s'), date('Y-m-d H:i:s')]);
-            } catch (Exception $leade) {}
-            
-            echo json_encode(["success" => true, "id" => $aiLeadId, "lead_id" => $leadId, "message" => "AI Lead captured successfully."]);
+                $aiChk = $pdo->prepare("SELECT * FROM ai_leads WHERE phone = ? OR phone LIKE ? ORDER BY created_at DESC LIMIT 1");
+                $aiChk->execute([$cleanPhone, '%' . $cleanPhone]);
+                $existingAi = $aiChk->fetch(PDO::FETCH_ASSOC);
+            } catch (Exception $aie) {}
+
+            if ($existingAi) {
+                $aiLeadId = $existingAi['id'];
+                if ($cleanName && (empty($existingAi['name']) || $existingAi['name'] === 'Customer')) {
+                    $pdo->prepare("UPDATE ai_leads SET name = ? WHERE id = ?")->execute([$cleanName, $aiLeadId]);
+                }
+            } else {
+                $aiLeadId = uniqid('ai-');
+                $stmt = $pdo->prepare("INSERT INTO ai_leads (id, name, phone, created_at) VALUES (?, ?, ?, ?)");
+                $stmt->execute([
+                    $aiLeadId,
+                    $cleanName,
+                    $cleanPhone,
+                    date('Y-m-d H:i:s')
+                ]);
+            }
+
+            // 2. Check if lead already exists in enterprise leads table (using unique phone/email)
+            $existingLead = findExistingLead($pdo, $cleanPhone, $cleanEmail);
+
+            if ($existingLead) {
+                // Re-use existing lead! DO NOT duplicate!
+                $leadId = $existingLead['id'];
+                $updFields = [];
+                $updParams = [];
+                if (!empty($cleanName) && (empty($existingLead['name']) || $existingLead['name'] === 'Customer')) {
+                    $updFields[] = "name = ?";
+                    $updParams[] = $cleanName;
+                }
+                if (!empty($cleanEmail) && empty($existingLead['email'])) {
+                    $updFields[] = "email = ?";
+                    $updParams[] = $cleanEmail;
+                }
+                // Transition status: if 'New', set to 'Pending Inquiry'. If already 'Booked' or 'Closed-Won', preserve booked status!
+                if ($existingLead['status'] === 'New') {
+                    $updFields[] = "status = 'Pending Inquiry'";
+                }
+                $updFields[] = "updated_at = ?";
+                $updParams[] = date('Y-m-d H:i:s');
+                $updParams[] = $leadId;
+
+                try {
+                    $sql = "UPDATE leads SET " . implode(", ", $updFields) . " WHERE id = ?";
+                    $pdo->prepare($sql)->execute($updParams);
+                } catch (Exception $leade) {}
+            } else {
+                // Create new lead with status "Pending Inquiry"
+                $leadId = 'LD-' . rand(1000, 9999);
+                try {
+                    $leadStmt = $pdo->prepare("INSERT INTO leads (id, name, phone, email, source, service, assigned_to, status, budget, notes, admin_id, created_at, updated_at) VALUES (?, ?, ?, ?, 'AI Planner', 'AI Travel Assistant Chat', 'Unassigned', 'Pending Inquiry', '', 'Inquired via Sophia AI Assistant', 'admin', ?, ?)");
+                    $leadStmt->execute([$leadId, $cleanName, $cleanPhone, $cleanEmail, date('Y-m-d H:i:s'), date('Y-m-d H:i:s')]);
+                } catch (Exception $leade) {}
+            }
+
+            echo json_encode(["success" => true, "id" => $aiLeadId, "lead_id" => $leadId, "is_existing" => !empty($existingLead), "message" => "AI Lead captured successfully."]);
             exit;
         } elseif ($action === 'update_ai_lead_chat') {
             $id = $payload['id'] ?? $payload['lead_id'] ?? null;
@@ -6575,14 +6764,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $updNotes = $extracted['notes'];
                     $updBudget = $extracted['budget'] ?: $leadRow['budget'];
                     $updPax = $extracted['pax'] ?: ($leadRow['pax'] ?? null);
+
+                    // Requirement: Set lead status flow: Pending -> Inquiry -> Booked
+                    // When customer begins discussing trip requirements in chat, advance 'Pending Inquiry' -> 'Inquiry'.
+                    // If already 'Booked' or 'Closed-Won', do NOT demote!
+                    $currStatus = $leadRow['status'] ?? 'Pending Inquiry';
+                    $newStatus = $currStatus;
+                    if ($currStatus === 'Pending Inquiry' || $currStatus === 'Pending' || $currStatus === 'New') {
+                        $newStatus = 'Inquiry';
+                    }
+
                     $updLeads = $pdo->prepare("UPDATE leads SET 
                         notes = COALESCE(?, notes),
                         budget = COALESCE(?, budget),
                         pax = COALESCE(?, pax),
+                        status = ?,
                         chat_history = ?,
                         updated_at = CURRENT_TIMESTAMP
                         WHERE id = ?");
-                    $updLeads->execute([$updNotes, $updBudget, $updPax, $chatHistStr, $leadRow['id']]);
+                    $updLeads->execute([$updNotes, $updBudget, $updPax, $newStatus, $chatHistStr, $leadRow['id']]);
                 }
 
                 // Update ai_leads table: destination, dates, budget, pax, transcript
@@ -6991,23 +7191,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 );
             }
 
-            // Auto-capture inbound lead into leads table (preserved)
-            try {
-                $leadId = 'LD-' . rand(1000, 9999);
-                $isHtl = (stripos($payload['item_name'] ?? '', 'Hotel') !== false || stripos($payload['item_id'] ?? '', 'hotel') !== false || stripos($payload['item_id'] ?? '', 'htl') !== false);
-                $leadSource = $isHtl ? 'Hotel Enquiries' : 'Vehicle Rental';
-                $leadService = ($payload['item_name'] ?? 'Booking') . ' (' . ($payload['booking_days'] ?? 1) . ' Days)';
-                $totAmt = intval($payload['total_amount'] ?? $payload['total_paid'] ?? 0);
-                $leadBudget = $totAmt > 0 ? '₹' . number_format($totAmt) : 'Standard Rate';
-                $leadNotes = 'Direct Booking #' . $booking_id . ' | ' . ($payload['pickup_loc'] ?? 'Goa');
-                $leadEmail = $payload['email'] ?? '';
-                if (!$leadEmail && !empty($payload['traveller_details_json'])) {
-                    $td = is_array($payload['traveller_details_json']) ? $payload['traveller_details_json'] : json_decode($payload['traveller_details_json'], true);
-                    if (!empty($td['email'])) $leadEmail = $td['email'];
-                }
-                $leadStmt = $pdo->prepare("INSERT INTO leads (id, name, phone, email, source, service, assigned_to, status, budget, notes, admin_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'Unassigned', 'New', ?, ?, ?, ?, ?)");
-                $leadStmt->execute([$leadId, $payload['name'] ?? 'Customer', $payload['phone'] ?? '', $leadEmail, $leadSource, $leadService, $leadBudget, $leadNotes, $tenant_id, date('Y-m-d H:i:s'), date('Y-m-d H:i:s')]);
-            } catch (Exception $leade) {}
+            // Auto-capture / Update lead in enterprise leads table (Deduplicated Single-Lead Architecture)
+            recordOrUpdateCustomerBookingLead($pdo, $payload, $booking_id, $tenant_id);
 
             // Preserve existing response contract exactly
             echo json_encode([
@@ -7039,6 +7224,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $payload['service_type'] = 'package';
             try {
                 $result = BookingService::createBooking($pdo, $payload, $actor, $channel);
+                recordOrUpdateCustomerBookingLead($pdo, $payload, $result['booking_id'], $tenant_id);
                 echo json_encode([
                     "success" => true,
                     "message" => "Package booking created successfully.",
@@ -7614,12 +7800,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!isset($payload['name']) || !isset($payload['phone'])) {
                 throw new Exception("Missing name or phone.");
             }
+            $cleanName = trim($payload['name']);
+            $cleanPhone = preg_replace('/\D/', '', $payload['phone']);
+            if (strlen($cleanPhone) > 10) {
+                $cleanPhone = substr($cleanPhone, -10);
+            }
+            if (!preg_match('/^\d{10}$/', $cleanPhone)) {
+                http_response_code(400);
+                echo json_encode(["success" => false, "error" => "Please enter a valid 10-digit mobile number."]);
+                exit;
+            }
             $leadId = "lead-" . rand(10000, 99999);
             $stmt = $pdo->prepare("INSERT INTO ai_leads (id, name, phone, created_at) VALUES (?, ?, ?, ?)");
             $stmt->execute([
                 $leadId,
-                $payload['name'],
-                $payload['phone'],
+                $cleanName,
+                $cleanPhone,
                 date('Y-m-d H:i:s')
             ]);
             echo json_encode(["success" => true, "id" => $leadId, "message" => "Lead created successfully."]);
@@ -7653,17 +7849,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $dbBikes = [];
             $dbHotels = [];
             $dbPackages = [];
+            $dbAddons = [];
             try {
                 $dbCars = $pdo->query("SELECT * FROM cars")->fetchAll(PDO::FETCH_ASSOC);
                 $dbBikes = $pdo->query("SELECT * FROM bikes")->fetchAll(PDO::FETCH_ASSOC);
                 $dbHotels = $pdo->query("SELECT * FROM hotels")->fetchAll(PDO::FETCH_ASSOC);
                 $dbPackages = $pdo->query("SELECT * FROM packages")->fetchAll(PDO::FETCH_ASSOC);
+                $dbAddons = $pdo->query("SELECT * FROM add_ons WHERE is_active = 1 OR is_active IS NULL")->fetchAll(PDO::FETCH_ASSOC);
             } catch(Exception $e) {}
 
             $msgClean = strtolower(trim($latestUserMsg));
 
-            // Safe word-boundary inventory matcher (handles short tokens like GT, i10, i20, R15, Defender)
-            $matchInventory = function($text) use ($dbBikes, $dbCars, $dbHotels, $dbPackages) {
+            // Safe word-boundary inventory matcher (handles cars, bikes, hotels, packages, add_ons)
+            $matchInventory = function($text) use ($dbBikes, $dbCars, $dbHotels, $dbPackages, $dbAddons) {
                 $t = strtolower(trim($text));
                 if (empty($t)) return null;
 
@@ -7738,6 +7936,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
 
+                // 5. Check add_ons (Sightseeing & Activities)
+                foreach ($dbAddons as $addon) {
+                    $aTitle = strtolower(trim($addon['title'] ?? ($addon['name'] ?? '')));
+                    $aType = strtolower(trim($addon['type'] ?? 'activity'));
+                    if ($aTitle && preg_match('/\b' . preg_quote($aTitle, '/') . '\b/i', $t)) {
+                        return ['item' => $addon, 'type' => $aType];
+                    }
+                    $aWords = preg_split('/[\s\-\/\(\)]+/', $aTitle);
+                    foreach ($aWords as $aw) {
+                        $aw = trim($aw);
+                        if (strlen($aw) >= 4 && !in_array($aw, ['with', 'from', 'tour', 'trip', 'island', 'beach', 'experience', 'package', 'combo', 'south', 'north'])) {
+                            if (preg_match('/\b' . preg_quote($aw, '/') . '\b/i', $t)) {
+                                return ['item' => $addon, 'type' => $aType];
+                            }
+                        }
+                    }
+                }
+
                 return null;
             };
 
@@ -7751,27 +7967,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $activeBookingIntent = !empty($incomingContext['booking_intent']);
             $activeStage = $incomingContext['stage'] ?? 'idle';
 
+            $itemChanged = false;
             if ($directMatch) {
+                $prevItemId = $incomingContext['active_item_id'] ?? null;
+                $newItemId = $directMatch['item']['id'] ?? null;
+                $itemChanged = (!empty($prevItemId) && strval($prevItemId) !== strval($newItemId));
+
                 $activeItem = $directMatch['item'];
                 $activeType = $directMatch['type'];
                 $activeStage = 'item_selected';
+
+                if ($itemChanged) {
+                    // Item genuinely changed: clear stale dates and old preview
+                    $activeDates = '';
+                    $activeBookingIntent = false;
+                    $incomingContext['booking_preview'] = null;
+                    $incomingContext['travel_dates'] = '';
+                }
             } elseif (!empty($incomingContext['active_item_id'])) {
                 $cId = $incomingContext['active_item_id'];
                 $cType = $incomingContext['active_item_type'] ?? '';
                 if ($cType === 'bike') {
-                    foreach ($dbBikes as $b) { if ($b['id'] == $cId) { $activeItem = $b; $activeType = 'bike'; break; } }
+                    foreach ($dbBikes as $b) { if (strval($b['id']) === strval($cId)) { $activeItem = $b; $activeType = 'bike'; break; } }
                 } elseif ($cType === 'car') {
-                    foreach ($dbCars as $c) { if ($c['id'] == $cId) { $activeItem = $c; $activeType = 'car'; break; } }
+                    foreach ($dbCars as $c) { if (strval($c['id']) === strval($cId)) { $activeItem = $c; $activeType = 'car'; break; } }
                 } elseif ($cType === 'hotel') {
-                    foreach ($dbHotels as $h) { if ($h['id'] == $cId) { $activeItem = $h; $activeType = 'hotel'; break; } }
+                    foreach ($dbHotels as $h) { if (strval($h['id']) === strval($cId)) { $activeItem = $h; $activeType = 'hotel'; break; } }
                 } elseif ($cType === 'package') {
-                    foreach ($dbPackages as $p) { if ($p['id'] == $cId) { $activeItem = $p; $activeType = 'package'; break; } }
+                    foreach ($dbPackages as $p) { if (strval($p['id']) === strval($cId)) { $activeItem = $p; $activeType = 'package'; break; } }
+                } elseif ($cType === 'activity' || $cType === 'sightseeing') {
+                    foreach ($dbAddons as $a) { if (strval($a['id']) === strval($cId)) { $activeItem = $a; $activeType = strtolower($a['type'] ?? 'activity'); break; } }
                 }
             }
 
             // Fallback scan: backwards through earlier messages if activeItem is still not resolved
             if (!$activeItem) {
                 for ($i = count($messages) - 2; $i >= 0; $i--) {
+                    if (($messages[$i]['role'] ?? '') !== 'user') {
+                        continue;
+                    }
                     $histText = $messages[$i]['content'] ?? '';
                     $histMatch = $matchInventory($histText);
                     if ($histMatch) {
@@ -7789,29 +8023,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $activeBookingIntent = true;
             }
 
-            // Detect travel dates in latest message
+            // Detect travel dates in latest user message
             $detectedDates = '';
-            if (preg_match('/\b(\d{1,2}(?:st|nd|rd|th)?(?:\s+[a-z]+)?(?:\s*\d{4})?\s*(?:to|-|till|until)\s*\d{1,2}(?:st|nd|rd|th)?(?:\s+[a-z]+)?(?:\s*\d{4})?)\b/i', $latestUserMsg, $dMatches)) {
+            if (preg_match('/\b(\d{4}-\d{2}-\d{2})\s*(?:to|-|till|until)\s*(\d{4}-\d{2}-\d{2})\b/i', $latestUserMsg, $dMatches)) {
+                $detectedDates = trim($dMatches[0]);
+            } elseif (preg_match('/\b(\d{4}-\d{2}-\d{2})\b/', $latestUserMsg, $dMatches)) {
+                $detectedDates = trim($dMatches[1]);
+            } elseif (preg_match('/\b(\d{1,2}(?:st|nd|rd|th)?(?:\s+[a-zA-Z]+)?(?:\s*\d{4})?\s*(?:to|\s+-\s+|till|until)\s*\d{1,2}(?:st|nd|rd|th)?(?:\s+[a-zA-Z]+)?(?:\s*\d{4})?)\b/i', $latestUserMsg, $dMatches)) {
+                $detectedDates = trim($dMatches[1]);
+            } elseif (preg_match('/\b(\d{1,2}(?:st|nd|rd|th)?\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:\s+\d{4})?)\b/i', $latestUserMsg, $dMatches)) {
+                $detectedDates = trim($dMatches[1]);
+            } elseif (preg_match('/\b((?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*\d{4})?)\b/i', $latestUserMsg, $dMatches)) {
                 $detectedDates = trim($dMatches[1]);
             } elseif (preg_match('/\b(tomorrow|today|day after tomorrow|this weekend|next week|from tomorrow)\b/i', $latestUserMsg, $dMatches)) {
                 $detectedDates = trim($dMatches[1]);
-            } elseif (preg_match('/\b(for\s+\d+\s+days?|\d+\s+days?)\b/i', $latestUserMsg, $dMatches)) {
-                $detectedDates = trim($dMatches[1]);
+            } elseif (preg_match('/\b(?:for\s+)?(\d+)\s+days?\b/i', $latestUserMsg, $dMatches)) {
+                $detectedDates = trim($dMatches[0]);
+            }
+
+            // Multi-turn date recovery from history if no date in latest message
+            // STRICT RULE: ONLY recover history dates for the SAME item (never across an item switch!)
+            // AND ONLY inspect messages where role === 'user'! Assistant messages must NEVER be used!
+            if (!$itemChanged && empty($detectedDates) && empty($activeDates)) {
+                for ($i = count($messages) - 2; $i >= 0; $i--) {
+                    if (($messages[$i]['role'] ?? '') !== 'user') {
+                        continue;
+                    }
+                    $prevMsg = $messages[$i]['content'] ?? '';
+                    if (preg_match('/\b(\d{4}-\d{2}-\d{2})\s*(?:to|-|till|until)\s*(\d{4}-\d{2}-\d{2})\b/i', $prevMsg, $pm)) {
+                        $detectedDates = trim($pm[0]);
+                        break;
+                    } elseif (preg_match('/\b(\d{4}-\d{2}-\d{2})\b/', $prevMsg, $pm)) {
+                        $detectedDates = trim($pm[1]);
+                        break;
+                    } elseif (preg_match('/\b(\d{1,2}(?:st|nd|rd|th)?(?:\s+[a-zA-Z]+)?(?:\s*\d{4})?\s*(?:to|\s+-\s+|till|until)\s*\d{1,2}(?:st|nd|rd|th)?(?:\s+[a-zA-Z]+)?(?:\s*\d{4})?)\b/i', $prevMsg, $pm)) {
+                        $detectedDates = trim($pm[1]);
+                        break;
+                    } elseif (preg_match('/\b(\d{1,2}(?:st|nd|rd|th)?\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:\s+\d{4})?)\b/i', $prevMsg, $pm)) {
+                        $detectedDates = trim($pm[1]);
+                        break;
+                    } elseif (preg_match('/\b(tomorrow|today|day after tomorrow)\b/i', $prevMsg, $pm)) {
+                        $detectedDates = trim($pm[1]);
+                        break;
+                    }
+                }
             }
 
             if (!empty($detectedDates)) {
                 $activeDates = $detectedDates;
+            } elseif ($itemChanged || ($directMatch && empty($detectedDates))) {
+                // When asking an inventory question for a directly matched item without dates, keep activeDates empty
+                $activeDates = '';
             }
 
             $isConfirmationWord = preg_match('/\b(yes|yeah|sure|confirm|confirmed|proceed|ok|okay|yep|lock it|done|go ahead|please do)\b/i', $msgClean);
 
             // Robust Travel Dates Normalizer
-            $parseTravelDates = function($text) {
+            $parseTravelDates = function($text, $itemType = 'vehicle') {
                 $now = time();
                 $curYear = intval(date('Y', $now));
                 $curMonth = intval(date('m', $now));
+                $isActivity = ($itemType === 'activity' || $itemType === 'sightseeing');
 
-                // ISO dates: '2026-09-15 to 2026-09-17'
+                // 1. ISO date range: '2026-09-25 to 2026-09-27'
                 if (preg_match('/(\d{4}-\d{2}-\d{2})\s*(?:to|-|till|until)\s*(\d{4}-\d{2}-\d{2})/i', $text, $m)) {
                     $pickup = $m[1];
                     $drop = $m[2];
@@ -7819,18 +8093,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     return ['pickup_date' => $pickup, 'drop_date' => $drop, 'days' => $days];
                 }
 
-                // '15th to 17th Sep' or '15 to 17 Sep' or '15th to 17th'
-                if (preg_match('/(\d{1,2})(?:st|nd|rd|th)?\s*(?:to|-|till|until)\s*(\d{1,2})(?:st|nd|rd|th)?(?:\s+([a-zA-Z]+))?(?:\s+(\d{4}))?/i', $text, $m)) {
+                // 2. Single ISO date: '2026-09-25'
+                if (preg_match('/(\d{4}-\d{2}-\d{2})/', $text, $m)) {
+                    $pickup = $m[1];
+                    $drop = $isActivity ? $pickup : date('Y-m-d', strtotime('+1 day', strtotime($pickup)));
+                    $days = 1;
+                    return ['pickup_date' => $pickup, 'drop_date' => $drop, 'days' => $days];
+                }
+
+                // 3. Date range: '15th to 17th Sep 2026' or '15 Sep to 18 Sep 2026'
+                if (preg_match('/(\d{1,2})(?:st|nd|rd|th)?(?:\s+([a-zA-Z]+))?(?:\s+(\d{4}))?\s*(?:to|\s+-\s+|till|until)\s*(\d{1,2})(?:st|nd|rd|th)?(?:\s+([a-zA-Z]+))?(?:\s+(\d{4}))?/i', $text, $m)) {
                     $d1 = intval($m[1]);
-                    $d2 = intval($m[2]);
-                    $monthStr = !empty($m[3]) ? trim($m[3]) : date('M', $now);
-                    $year = !empty($m[4]) ? intval($m[4]) : $curYear;
+                    $d2 = intval($m[4]);
+                    $month1 = !empty($m[2]) ? trim($m[2]) : (!empty($m[5]) ? trim($m[5]) : date('M', $now));
+                    $month2 = !empty($m[5]) ? trim($m[5]) : $month1;
+                    $year = !empty($m[6]) ? intval($m[6]) : (!empty($m[3]) ? intval($m[3]) : $curYear);
 
-                    $mTime = strtotime("$monthStr 1, $year");
-                    $mNum = $mTime ? date('m', $mTime) : sprintf('%02d', $curMonth);
+                    $mTime1 = strtotime("$month1 1, $year");
+                    $mNum1 = $mTime1 ? date('m', $mTime1) : sprintf('%02d', $curMonth);
+                    $mTime2 = strtotime("$month2 1, $year");
+                    $mNum2 = $mTime2 ? date('m', $mTime2) : $mNum1;
 
-                    $pickup = sprintf('%04d-%02d-%02d', $year, $mNum, $d1);
-                    $drop = sprintf('%04d-%02d-%02d', $year, $mNum, $d2);
+                    $pickup = sprintf('%04d-%02d-%02d', $year, $mNum1, $d1);
+                    $drop = sprintf('%04d-%02d-%02d', $year, $mNum2, $d2);
                     if (strtotime($drop) <= strtotime($pickup)) {
                         $drop = date('Y-m-d', strtotime('+1 day', strtotime($pickup)));
                     }
@@ -7838,18 +8123,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     return ['pickup_date' => $pickup, 'drop_date' => $drop, 'days' => $days];
                 }
 
-                // 'tomorrow' or 'day after tomorrow'
+                // 4. Single named date: '25th September 2026', '25 Sep', '25th Sep 2026'
+                if (preg_match('/(\d{1,2})(?:st|nd|rd|th)?\s+([a-zA-Z]+)(?:\s+(\d{4}))?/i', $text, $m)) {
+                    $d = intval($m[1]);
+                    $monthStr = trim($m[2]);
+                    $year = !empty($m[3]) ? intval($m[3]) : $curYear;
+                    $mTime = strtotime("$monthStr 1, $year");
+                    if ($mTime) {
+                        $mNum = date('m', $mTime);
+                        $pickup = sprintf('%04d-%02d-%02d', $year, $mNum, $d);
+                        $drop = $isActivity ? $pickup : date('Y-m-d', strtotime('+1 day', strtotime($pickup)));
+                        $days = 1;
+                        return ['pickup_date' => $pickup, 'drop_date' => $drop, 'days' => $days];
+                    }
+                }
+
+                // 5. 'tomorrow', 'day after tomorrow', or 'today'
                 if (stripos($text, 'day after tomorrow') !== false) {
                     $pickup = date('Y-m-d', strtotime('+2 days', $now));
-                    $drop = date('Y-m-d', strtotime('+3 days', $now));
+                    $drop = $isActivity ? $pickup : date('Y-m-d', strtotime('+3 days', $now));
                     return ['pickup_date' => $pickup, 'drop_date' => $drop, 'days' => 1];
                 } elseif (stripos($text, 'tomorrow') !== false) {
                     $pickup = date('Y-m-d', strtotime('+1 day', $now));
-                    $drop = date('Y-m-d', strtotime('+2 days', $now));
+                    $drop = $isActivity ? $pickup : date('Y-m-d', strtotime('+2 days', $now));
+                    return ['pickup_date' => $pickup, 'drop_date' => $drop, 'days' => 1];
+                } elseif (stripos($text, 'today') !== false) {
+                    $pickup = date('Y-m-d', $now);
+                    $drop = $isActivity ? $pickup : date('Y-m-d', strtotime('+1 day', $now));
                     return ['pickup_date' => $pickup, 'drop_date' => $drop, 'days' => 1];
                 }
 
-                // 'for 3 days' or '3 days'
+                // 6. 'for 3 days' or '3 days'
                 if (preg_match('/(?:for\s+)?(\d+)\s*days?/i', $text, $m)) {
                     $days = max(1, intval($m[1]));
                     $pickup = date('Y-m-d', strtotime('+1 day', $now));
@@ -7857,32 +8161,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     return ['pickup_date' => $pickup, 'drop_date' => $drop, 'days' => $days];
                 }
 
-                $pickup = date('Y-m-d', strtotime('+1 day', $now));
-                $drop = date('Y-m-d', strtotime('+3 days', $now));
-                return ['pickup_date' => $pickup, 'drop_date' => $drop, 'days' => 2];
+                // Fallback: NEVER invent dates!
+                return null;
             };
 
             // Structure authoritative booking preview
             $bookingPreview = null;
             if ($activeItem && !empty($activeDates)) {
-                $parsedDates = $parseTravelDates($activeDates);
-                $days = $parsedDates['days'];
-                $rate = floatval($activeItem['price'] ?? 0);
-                $total = $days * $rate;
-                $activeStage = 'ready_to_confirm';
+                $parsedDates = $parseTravelDates($activeDates, $activeType);
+                if ($parsedDates && !empty($parsedDates['pickup_date']) && !empty($parsedDates['drop_date'])) {
+                    $days = $parsedDates['days'];
+                    $rate = floatval($activeItem['price'] ?? 0);
+                    $total = $days * $rate;
+                    $activeStage = 'ready_to_confirm';
 
-                $bookingPreview = [
-                    'item_id' => $activeItem['id'],
-                    'item_name' => $activeItem['name'],
-                    'item_type' => $activeType,
-                    'price_per_day' => $rate,
-                    'pickup_date' => $parsedDates['pickup_date'],
-                    'drop_date' => $parsedDates['drop_date'],
-                    'days' => $days,
-                    'duration' => "{$days} Days",
-                    'estimated_total' => $total,
-                    'travel_dates' => $activeDates
-                ];
+                    $resolvedItemTitle = $activeItem['title'] ?? ($activeItem['name'] ?? 'Experience');
+                    $bookingPreview = [
+                        'item_id' => $activeItem['id'],
+                        'item_name' => $resolvedItemTitle,
+                        'item_type' => $activeType,
+                        'price_per_day' => $rate,
+                        'pickup_date' => $parsedDates['pickup_date'],
+                        'drop_date' => $parsedDates['drop_date'],
+                        'days' => $days,
+                        'duration' => "{$days} Days",
+                        'estimated_total' => $total,
+                        'travel_dates' => $activeDates
+                    ];
+                } else {
+                    $activeDates = '';
+                }
             }
 
             // Try Groq first if real API key configured
@@ -7894,8 +8202,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $inventoryContext .= "Cars: " . implode(', ', array_map(function($c) { return "{$c['name']} (₹{$c['price']}/day, {$c['transmission']}, {$c['seating']}, {$c['fuel']})"; }, $dbCars)) . "\n";
                 $inventoryContext .= "Bikes: " . implode(', ', array_map(function($b) { return "{$b['name']} (₹{$b['price']}/day)"; }, $dbBikes)) . "\n";
                 $inventoryContext .= "Hotels: " . implode(', ', array_map(function($h) { return "{$h['name']} ({$h['stars']}★, ₹{$h['price']}/night in {$h['location']})"; }, $dbHotels)) . "\n";
+                $inventoryContext .= "Sightseeing & Activities: " . implode(', ', array_map(function($a) { return ($a['title'] ?? $a['name']) . " (₹{$a['price']}/person)"; }, $dbAddons)) . "\n";
 
-                $system_prompt = "You are Sophia, the expert AI travel assistant for TripGalileo (Goa travel platform). Follow this critical rule: Answer strictly the customer's current intent — do not proactively dump unrelated information. For simple greetings (Hi, Hello, Hey, Good morning), reply with a short natural greeting ('Hi! 👋 How can I help you today?'). For casual conversation (Thanks, Ok, Bye), respond naturally and briefly. If asked about a specific vehicle (e.g. Defender, Swift, GT bike), answer only about that vehicle. If asked about hotels, answer only about hotels. Do NOT list all services unless the customer explicitly asks 'What services do you provide?'. Maintain conversation context when the user asks to book or provides dates. Be warm, concise, and helpful. Use emojis. Stick to plain text.\n\n" . $inventoryContext;
+                $system_prompt = "You are Sophia, the expert AI travel assistant for TripGalileo (Goa travel platform). Follow this critical rule: Answer strictly the customer's current intent — do not proactively dump unrelated information. If asked a math question (e.g. 2 + 2), answer directly. For simple greetings (Hi, Hello, Hey, Good morning), reply with a short natural greeting ('Hi! 👋 How can I help you today?'). For casual conversation (Thanks, Ok, Bye), respond naturally and briefly. If asked about a specific vehicle, hotel, or activity (e.g. Scuba, Defender, Swift, GT bike), answer specifically about that item. Do NOT list all services unless the customer explicitly asks 'What services do you provide?'. Maintain conversation context when the user asks to book or provides dates. Be warm, concise, and helpful. Use emojis. Stick to plain text.\n\n" . $inventoryContext;
 
                 $groqMessages = $messages;
                 array_unshift($groqMessages, ["role" => "system", "content" => $system_prompt]);
@@ -7925,36 +8234,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // High-Intelligence Dynamic Database-Backed Knowledge Engine Fallback
             if (!$reply) {
+                // Check for Math calculations first (e.g. '2 + 2', 'what is 10 * 5')
+                if (preg_match('/(?:what\s+is\s+)?(\d+)\s*([\+\-\*\/])\s*(\d+)\s*\??/i', $msgClean, $mathM)) {
+                    $num1 = intval($mathM[1]);
+                    $op = $mathM[2];
+                    $num2 = intval($mathM[3]);
+                    $calcResult = 0;
+                    if ($op === '+') $calcResult = $num1 + $num2;
+                    elseif ($op === '-') $calcResult = $num1 - $num2;
+                    elseif ($op === '*') $calcResult = $num1 * $num2;
+                    elseif ($op === '/' && $num2 != 0) $calcResult = $num1 / $num2;
+                    $reply = "{$num1} {$op} {$num2} is {$calcResult}. Let me know how I can help with your Goa trip! 🌴";
+                }
+                // Check for pure greetings ONLY (never intercept greetings that include questions or booking requests)
+                elseif (preg_match('/^(hi|hello|hey|hiya|howdy|good\s+(morning|afternoon|evening|day)|greetings)(\s+there|\s+sophia)?[\!\.\?]*$/i', $msgClean)) {
+                    $reply = "Hi! 👋 How can I help you today?";
+                }
+                // Sophia Identity & Persona: Who are you, What is your name, Are you Sophia, Tell me about yourself
+                elseif (preg_match('/\b(what(?:\'s|\s+is)\s+your\s+name|who\s+are\s+you|are\s+you\s+sophia|tell\s+me\s+about\s+yourself|what\s+should\s+i\s+call\s+you)\b/i', $msgClean)) {
+                    $reply = "I'm **Sophia**! 🌴✨ I am WOW GOA's AI Travel Expert, here to help you discover Goa, find the best self-drive cars & bikes, book luxury resorts, explore top sightseeing & activities, and plan your perfect trip.";
+                }
                 // Multi-Turn Context Flow:
-                // Flow Step 1: Active item exists and user provides travel dates
-                if ($activeItem && !empty($detectedDates)) {
-                    $itemName = $activeItem['name'];
+                // Flow Step 1: Active item exists, valid bookingPreview generated with real travel dates
+                elseif ($activeItem && !empty($detectedDates) && !empty($bookingPreview)) {
+                    $itemName = $activeItem['title'] ?? ($activeItem['name'] ?? 'Experience');
                     $itemPrice = number_format(floatval($activeItem['price']));
-                    $itemEmoji = ($activeType === 'bike') ? '🛵' : (($activeType === 'car') ? '🚙' : (($activeType === 'hotel') ? '🏨' : '🌴'));
+                    $itemEmoji = ($activeType === 'bike') ? '🛵' : (($activeType === 'car') ? '🚙' : (($activeType === 'hotel') ? '🏨' : '🤿'));
                     $activeStage = 'ready_to_confirm';
                     $activeBookingIntent = true;
 
-                    $reply = "Got it! Dates noted: {$activeDates} for your {$itemName} rental. {$itemEmoji}✨\n\nI have generated your **Booking Summary** below. Please review the details and click **Confirm & Book** to secure your booking.";
+                    $reply = "Got it! Dates noted: {$activeDates} for your {$itemName}. {$itemEmoji}✨\n\nI have generated your **Booking Summary** below. Please review the details and click **Confirm & Book** to secure your booking.";
                 }
-                // Flow Step 2: Active item exists, user expresses booking intent without dates
-                elseif ($activeItem && $isBookingIntent && empty($activeDates)) {
-                    $itemName = $activeItem['name'];
+                // Flow Step 2: Active item exists, user expresses booking intent without dates (or dates not yet valid)
+                elseif ($activeItem && $isBookingIntent && empty($bookingPreview)) {
+                    $itemName = $activeItem['title'] ?? ($activeItem['name'] ?? 'Experience');
                     $itemPrice = number_format(floatval($activeItem['price']));
-                    $itemEmoji = ($activeType === 'bike') ? '🛵' : (($activeType === 'car') ? '🚙' : (($activeType === 'hotel') ? '🏨' : '🌴'));
+                    $itemEmoji = ($activeType === 'bike') ? '🛵' : (($activeType === 'car') ? '🚙' : (($activeType === 'hotel') ? '🏨' : '🤿'));
                     $activeStage = 'awaiting_dates';
 
-                    $reply = "Great! I can help you reserve the {$itemName} {$itemEmoji} (₹{$itemPrice}/day) right away!\n\nWhat travel dates do you need it for? (For example: '15th to 17th Sep' or 'tomorrow for 2 days')";
+                    $reply = "Great! I can help you reserve {$itemName} {$itemEmoji} (₹{$itemPrice}) right away!\n\nWhat travel date do you need it for? (For example: '25th September' or 'tomorrow')";
                 }
                 // Flow Step 3: Active item & dates exist, user confirms
                 elseif ($activeItem && !empty($activeDates) && $isConfirmationWord) {
-                    $itemName = $activeItem['name'];
+                    $itemName = $activeItem['title'] ?? ($activeItem['name'] ?? 'Experience');
                     $itemPrice = number_format(floatval($activeItem['price']));
-                    $itemEmoji = ($activeType === 'bike') ? '🛵' : (($activeType === 'car') ? '🚙' : (($activeType === 'hotel') ? '🏨' : '🌴'));
+                    $itemEmoji = ($activeType === 'bike') ? '🛵' : (($activeType === 'car') ? '🚙' : (($activeType === 'hotel') ? '🏨' : '🤿'));
                     $activeStage = 'ready_to_confirm';
 
-                    $reply = "Your reservation request for the {$itemName} ({$activeDates}) is ready! {$itemEmoji}📋\n\nPlease check the Booking Summary below and tap **Confirm & Book** to finalize your booking with our official booking system.";
+                    $reply = "Your reservation request for {$itemName} ({$activeDates}) is ready! {$itemEmoji}📋\n\nPlease check the Booking Summary below and tap **Confirm & Book** to finalize your booking with our official booking system.";
                 }
-                // Flow Step 4: Direct query matching a specific inventory item (e.g. GT bike, Defender)
+                // Flow Step 4: Direct query matching a specific inventory item (e.g. GT bike, Defender, Scuba)
                 elseif ($directMatch) {
                     if ($directMatch['type'] === 'car') {
                         $carName = $directMatch['item']['name'];
@@ -7990,17 +8319,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $activeStage = 'item_selected';
 
                         $reply = "Yes! We offer the \"{$pkgName}\" holiday package! 🌴✨\n\n⏱️ Duration: {$dur}\n📍 Destination: {$dest}\n💵 Price: Starting from ₹{$price} / person\n✨ Inclusions: Hotel Stay with Breakfast, Private Transfer or Self-Drive Car, Airport Pickup/Drop, and Day-by-Day Sightseeing Activities.\n\nWould you like to customize this package for your travel dates?";
+                    } elseif ($directMatch['type'] === 'activity' || $directMatch['type'] === 'sightseeing') {
+                        $actName = $directMatch['item']['title'] ?? ($directMatch['item']['name'] ?? 'Experience');
+                        $price = number_format(floatval($directMatch['item']['price']));
+                        $loc = !empty($directMatch['item']['location']) ? $directMatch['item']['location'] : 'Goa';
+                        $dur = !empty($directMatch['item']['duration']) ? $directMatch['item']['duration'] : '3-4 Hours';
+                        $desc = !empty($directMatch['item']['description']) ? $directMatch['item']['description'] : '';
+                        $activeStage = 'item_selected';
+
+                        $reply = "Yes! We have the \"{$actName}\" available in Goa! 🤿✨\n\n📍 Location: {$loc}\n⏱️ Duration: {$dur}\n💵 Price: ₹{$price} per person\n\n{$desc}\n\nWhat date would you like to reserve this experience for?";
                     }
                 } elseif (preg_match('/\b[6-9]\d{9}\b/', $latestUserMsg, $phoneMatches)) {
                     $reply = "🎉 Thank you! I have saved your contact (" . $phoneMatches[0] . "). Our dedicated TripGalileo holiday specialist will reach out shortly to customize your dream Goa itinerary and apply exclusive discount rates! 🌴✨";
 
-                // Flow Step 5: Simple Greetings (Hi, Hello, Hey, Good morning, etc.)
-                // Short natural greeting only — NO listing of services
-                } elseif (preg_match('/^(hi|hello|hey|hiya|howdy|good\s+(morning|afternoon|evening|day)|greetings)(\s+there|\s+sophia)?$/i', $msgClean) ||
-                    (preg_match('/^(hi|hello|hey|good\s+(morning|afternoon|evening))\b/i', $msgClean) && !preg_match('/\b(book|rent|hotel|car|bike|package|service|sightseeing|activity|activities|cruise|tour|stay|resort|price|cost)\b/i', $msgClean))) {
-                    $reply = "Hi! 👋 How can I help you today?";
-
-                // Flow Step 6: Casual conversation & closing (Thanks, Okay, Great, Nice, Bye)
+                // Flow Step 5: Casual conversation & closing (Thanks, Okay, Great, Nice, Bye)
                 } elseif (preg_match('/\b(thanks|thank\s+you|thx|tq|ty|appreciate\s+it)\b/i', $msgClean)) {
                     $reply = "You're welcome! Let me know if you need anything else for your Goa trip. 😊";
                 } elseif (preg_match('/^(ok|okay|k|great|nice|cool|awesome|perfect|sounds\s+good|got\s+it)$/i', $msgClean)) {
@@ -8008,13 +8340,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } elseif (preg_match('/\b(bye|goodbye|see\s+you|cya|take\s+care)\b/i', $msgClean)) {
                     $reply = "Goodbye! Have a fantastic time in Goa! 🌴 Reach out anytime you need assistance.";
 
-                // Flow Step 7: General service question (ONLY if explicitly asked)
-                } elseif (preg_match('/\b(what\s+(services?|options?|do\s+you\s+(offer|provide|have)|can\s+you\s+(do|help(\s+me)?\s+with))|services?\s+(offered|provided|available)|tell\s+me\s+about\s+your\s+services|what\s+can\s+you\s+do|how\s+can\s+you\s+help)\b/i', $msgClean)) {
+                // Flow Step 6: General questions about Goa (weather, best time, attractions, capital)
+                } elseif (strpos($msgClean, 'capital') !== false && strpos($msgClean, 'goa') !== false) {
+                    $reply = "The capital of Goa is **Panaji** (also known as Panjim). It is famous for its charming Latin Quarter (Fontainhas), riverside promenades along the Mandovi River, and historic Portuguese architecture. Let me know if you'd like to explore Panaji sightseeing! 🏛️✨";
+                } elseif ((strpos($msgClean, 'best time') !== false || strpos($msgClean, 'when to visit') !== false) && strpos($msgClean, 'goa') !== false) {
+                    $reply = "The best time to visit Goa is between **November and February**, when the weather is pleasantly sunny and cool (20°C–30°C). Perfect for beaches, watersports, and nightlife! ☀️🌴";
+                } elseif (strpos($msgClean, 'weather') !== false || strpos($msgClean, 'climate') !== false) {
+                    $reply = "Goa has a warm tropical climate year-round! Winter (Nov–Feb) is dry and comfortable, Summer (Mar–May) is warm and sunny, and Monsoon (Jun–Sep) brings lush greenery and majestic waterfalls like Dudhsagar. 🌊☀️";
+
+                // Flow Step 7: Sophia Capabilities & Services (What can you do / How can you help / Services)
+                } elseif (preg_match('/\b(what\s+can\s+you\s+do|what\s+are\s+your\s+capabilities|how\s+can\s+you\s+help(\s+me)?|how\s+do\s+you\s+work)\b/i', $msgClean)) {
+                    $reply = "As WOW GOA's AI Travel Expert, I can help you with:\n• 🚗 **Car & Bike Rentals:** Check real-time vehicle availability, specs, and daily rates\n• 🏨 **Hotels & Stays:** Explore handpicked beach resorts and luxury stays across Goa\n• 🤿 **Sightseeing & Activities:** Scuba diving, watersports combos, cruises, and waterfall tours\n• 🌴 **Goa Trip Advice:** Beach recommendations, weather, best times to visit, and local tips\n• 📋 **Direct Booking Assistance:** Reserve your vehicle, hotel, or activity step-by-step\n\nWhat would you like assistance with for your Goa trip?";
+                } elseif (preg_match('/\b(what\s+(services?|options?|do\s+you\s+(offer|provide|have))|services?\s+(offered|provided|available)|tell\s+me\s+about\s+your\s+services)\b/i', $msgClean)) {
                     $reply = "We provide complete Goa travel solutions:\n• 🚗 Self-Drive Cars & SUVs\n• 🛵 Bike & Scooter Rentals\n• 🏨 Handpicked Hotels & Luxury Resorts\n• 🏖️ Custom Holiday Packages\n• 🤿 Sightseeing, Watersports & Cruises\n\nWhich service would you like to explore?";
 
                 // Flow Step 8: Specific questions — Sightseeing & Activities only
                 } elseif (strpos($msgClean, 'sightseeing') !== false || strpos($msgClean, 'watersport') !== false || strpos($msgClean, 'scuba') !== false || strpos($msgClean, 'activit') !== false || strpos($msgClean, 'cruise') !== false || strpos($msgClean, 'dudhsagar') !== false) {
-                    $reply = "🤿 Top Goa Experiences with TripGalileo:\n\n1. 5-in-1 Watersports Combo: Jet Ski, Parasailing, Banana & Bumper Ride\n2. Grand Island Scuba Diving with underwater HD video & dolphin spotting\n3. Mandovi River Sunset & Dinner Cruise with live DJ & Goan folk dance\n4. Dudhsagar Waterfalls Jeep Safari & Spice Plantation tour\n\nWould you like me to reserve any of these for your trip?";
+                    $actItems = [];
+                    foreach ($dbAddons as $a) {
+                        $aTitle = $a['title'] ?? ($a['name'] ?? 'Experience');
+                        $actItems[] = "• " . $aTitle . " — ₹" . number_format($a['price']) . " (" . ($a['location'] ?? 'Goa') . ")";
+                    }
+                    $actListText = !empty($actItems) ? implode("\n", $actItems) : "• Scuba Diving Experience — ₹2,999\n• Dudhsagar Waterfall & Spice Plantation Safari — ₹1,800\n• Mandovi River Sunset Dinner Cruise — ₹1,499\n• North Goa Highlights Private Tour — ₹2,499";
+
+                    $reply = "🤿 Top Goa Sightseeing & Activities with TripGalileo:\n\n{$actListText}\n\nWould you like me to reserve any of these for your trip dates?";
 
                 // Flow Step 9: Specific questions — Self-drive cars only
                 } elseif (strpos($msgClean, 'car') !== false || strpos($msgClean, 'cars') !== false || strpos($msgClean, 'suv') !== false || strpos($msgClean, 'self drive') !== false || strpos($msgClean, 'self-drive') !== false || strpos($msgClean, 'vehicle') !== false) {
@@ -8077,15 +8426,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
+            // Always preserve context across all turns
+            $resolvedItemTitle = $activeItem ? ($activeItem['title'] ?? ($activeItem['name'] ?? null)) : null;
+
+            // Safe preview carry-over: ONLY carry over if it is the EXACT SAME item and stage is ready_to_confirm
+            $finalPreview = null;
+            if ($bookingPreview) {
+                $finalPreview = $bookingPreview;
+            } elseif (
+                !empty($incomingContext['booking_preview']) &&
+                $activeItem &&
+                strval($incomingContext['active_item_id'] ?? '') === strval($activeItem['id'] ?? '') &&
+                !empty($activeDates) &&
+                $activeStage === 'ready_to_confirm'
+            ) {
+                $finalPreview = $incomingContext['booking_preview'];
+            }
+
             $contextResponse = [
                 'active_item_id' => $activeItem['id'] ?? null,
-                'active_item_name' => $activeItem['name'] ?? null,
+                'active_item_name' => $resolvedItemTitle,
                 'active_item_type' => $activeType ?? null,
                 'price' => isset($activeItem['price']) ? floatval($activeItem['price']) : null,
                 'travel_dates' => $activeDates,
                 'booking_intent' => $activeBookingIntent,
                 'stage' => $activeStage,
-                'booking_preview' => $bookingPreview
+                'booking_preview' => $finalPreview
             ];
 
             echo json_encode([
@@ -8414,16 +8780,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt_tl = $pdo->prepare("INSERT INTO enquiry_timeline (enquiry_id, action_type, notes, created_by) VALUES (?, 'Created', 'Custom trip enquiry received via portal.', 'System')");
             $stmt_tl->execute([$enquiry_id]);
 
-            // Auto-capture custom enquiry into leads table
+            // Auto-capture / Deduplicate custom enquiry into leads table
             try {
-                $leadId = 'LD-' . rand(1000, 9999);
+                $rawPhone = $payload['phone'] ?? '';
+                $cleanPhone = preg_replace('/\D/', '', $rawPhone);
+                if (strlen($cleanPhone) > 10) $cleanPhone = substr($cleanPhone, -10);
+                $custEmail = trim($payload['email'] ?? '');
                 $dest = $payload['destinations'] ?? 'Goa';
                 $tt = $payload['trip_type'] ?? 'Holiday Tour';
                 $leadService = "$dest ($tt Package)";
                 $leadBudget = $payload['budget_range'] ?? '₹30,000 - ₹50,000';
                 $leadNotes = "Custom Enquiry #$enquiry_id" . (!empty($payload['special_requests']) ? ' | ' . $payload['special_requests'] : '');
-                $leadStmt = $pdo->prepare("INSERT INTO leads (id, name, phone, email, source, service, assigned_to, status, budget, notes, admin_id, created_at, updated_at) VALUES (?, ?, ?, ?, 'Custom Trips', ?, 'Unassigned', 'New', ?, ?, ?, ?, ?)");
-                $leadStmt->execute([$leadId, $payload['customer_name'] ?? 'Customer', $payload['phone'] ?? '', $payload['email'] ?? '', $leadService, $leadBudget, $leadNotes, $tenant_id, date('Y-m-d H:i:s'), date('Y-m-d H:i:s')]);
+
+                $existingLead = findExistingLead($pdo, $cleanPhone, $custEmail);
+                if ($existingLead) {
+                    $newStatus = ($existingLead['status'] === 'Booked' || $existingLead['status'] === 'Closed-Won') ? $existingLead['status'] : 'Inquiry';
+                    $existingNotes = $existingLead['notes'] ?? '';
+                    $combinedNotes = !empty($existingNotes) ? ($existingNotes . ' | ' . $leadNotes) : $leadNotes;
+                    $pdo->prepare("UPDATE leads SET service = ?, budget = ?, notes = ?, status = ?, updated_at = ? WHERE id = ?")
+                        ->execute([$leadService, $leadBudget, $combinedNotes, $newStatus, date('Y-m-d H:i:s'), $existingLead['id']]);
+                } else {
+                    $leadId = 'LD-' . rand(1000, 9999);
+                    $leadStmt = $pdo->prepare("INSERT INTO leads (id, name, phone, email, source, service, assigned_to, status, budget, notes, admin_id, created_at, updated_at) VALUES (?, ?, ?, ?, 'Custom Trips', ?, 'Unassigned', 'Inquiry', ?, ?, ?, ?, ?)");
+                    $leadStmt->execute([$leadId, $payload['customer_name'] ?? 'Customer', $cleanPhone, $custEmail, $leadService, $leadBudget, $leadNotes, $tenant_id, date('Y-m-d H:i:s'), date('Y-m-d H:i:s')]);
+                }
             } catch (Exception $leade) {}
 
             echo json_encode(["success" => true, "enquiry_id" => $enquiry_id, "message" => "Custom enquiry saved."]);

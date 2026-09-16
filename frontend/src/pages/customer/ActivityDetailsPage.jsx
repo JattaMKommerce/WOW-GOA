@@ -176,14 +176,6 @@ export default function ActivityDetailsPage({
               <h1 className="fw-black text-dark mb-1 fs-2 font-heading tracking-tight">{title}</h1>
               
               <div className="d-flex align-items-center gap-3 text-muted text-sm flex-wrap mt-2">
-                {Number.isFinite(ratingVal) && (
-                  <>
-                    <div className="d-flex align-items-center gap-1">
-                      <span className="fw-bold text-dark">{ratingVal.toFixed(1)}</span>
-                    </div>
-                    <span>•</span>
-                  </>
-                )}
                 <div className="d-flex align-items-center gap-1">
                   <MapPin size={15} className="text-warning" />
                   <span className="text-dark fw-medium">{location}</span>

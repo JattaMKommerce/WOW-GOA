@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import * as api from '../../services/api';
 import { parseTravelDate } from '../../utils/dateUtils';
+import AIChatbotToggle from '../common/AIChatbotToggle';
 
 const SOURCE_TABS = [
   'All',
@@ -20,6 +21,9 @@ const SOURCE_TABS = [
 
 const STATUS_LIST = [
   'All Statuses',
+  'Pending Inquiry',
+  'Inquiry',
+  'Booked',
   'New',
   'Contacted',
   'In Progress',
@@ -569,8 +573,8 @@ export default function LeadManagement({ usersList = [], currentUser }) {
 
   // KPI Calculations
   const totalLeads = leads.length;
-  const newLeadsCount = leads.filter(l => l.status === 'New' || !l.assigned_to || l.assigned_to === 'Unassigned' || l.assignedTo === 'Unassigned').length;
-  const convertedCount = leads.filter(l => l.status === 'Closed-Won').length;
+  const newLeadsCount = leads.filter(l => l.status === 'New' || l.status === 'Pending Inquiry' || l.status === 'Inquiry' || !l.assigned_to || l.assigned_to === 'Unassigned' || l.assignedTo === 'Unassigned').length;
+  const convertedCount = leads.filter(l => l.status === 'Closed-Won' || l.status === 'Booked').length;
   const conversionRate = totalLeads > 0 ? ((convertedCount / totalLeads) * 100).toFixed(1) : '0';
   const lostCount = leads.filter(l => l.status === 'Closed-Lost').length;
 
@@ -882,6 +886,13 @@ export default function LeadManagement({ usersList = [], currentUser }) {
         </div>
       </div>
 
+      {/* AI Assistant Chatbot Master Control Banner */}
+      {!isSubAdmin && (
+        <div className="mb-4">
+          <AIChatbotToggle />
+        </div>
+      )}
+
       {/* KPI Cards (Grid of 4) */}
       <div className="row g-3 mb-4">
         <div className="col-md-3">
@@ -1128,8 +1139,8 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                         style={{ 
                           fontSize: '0.74rem', 
                           width: 'auto',
-                          background: item.status === 'New' ? '#fee2e2' : item.status === 'Closed-Won' ? '#dcfce7' : item.status === 'In Progress' ? '#dbeafe' : item.status === 'Qualified' ? '#f5f3ff' : '#f8fafc',
-                          color: item.status === 'New' ? '#dc2626' : item.status === 'Closed-Won' ? '#16a34a' : item.status === 'In Progress' ? '#2563eb' : item.status === 'Qualified' ? '#7c3aed' : '#475569'
+                          background: (item.status === 'Closed-Won' || item.status === 'Booked') ? '#dcfce7' : (item.status === 'Pending Inquiry' || item.status === 'Pending') ? '#fef3c7' : (item.status === 'Inquiry' || item.status === 'In Progress') ? '#dbeafe' : item.status === 'New' ? '#fee2e2' : item.status === 'Qualified' ? '#f5f3ff' : '#f8fafc',
+                          color: (item.status === 'Closed-Won' || item.status === 'Booked') ? '#15803d' : (item.status === 'Pending Inquiry' || item.status === 'Pending') ? '#d97706' : (item.status === 'Inquiry' || item.status === 'In Progress') ? '#0284c7' : item.status === 'New' ? '#dc2626' : item.status === 'Qualified' ? '#7c3aed' : '#475569'
                         }}
                         value={item.status || 'New'}
                         onChange={e => handleUpdateLeadStatus(item.id, e.target.value)}
@@ -2083,7 +2094,16 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                   <div className="d-flex align-items-center gap-2">
                     <h5 className="mb-0 fw-bold text-white font-heading">{previewLead.name || 'Lead Details'}</h5>
                     <span className="badge bg-secondary font-monospace" style={{ fontSize: '0.7rem' }}>#{previewLead.id}</span>
-                    <span className="badge rounded-pill bg-warning text-dark fw-bold" style={{ fontSize: '0.68rem' }}>{previewLead.status || 'New'}</span>
+                    <span 
+                      className="badge rounded-pill fw-bold" 
+                      style={{ 
+                        fontSize: '0.68rem',
+                        background: (previewLead.status === 'Closed-Won' || previewLead.status === 'Booked') ? '#dcfce7' : (previewLead.status === 'Pending Inquiry' || previewLead.status === 'Pending') ? '#fef3c7' : (previewLead.status === 'Inquiry' || previewLead.status === 'In Progress') ? '#dbeafe' : '#fee2e2',
+                        color: (previewLead.status === 'Closed-Won' || previewLead.status === 'Booked') ? '#15803d' : (previewLead.status === 'Pending Inquiry' || previewLead.status === 'Pending') ? '#d97706' : (previewLead.status === 'Inquiry' || previewLead.status === 'In Progress') ? '#0284c7' : '#dc2626'
+                      }}
+                    >
+                      {previewLead.status || 'New'}
+                    </span>
                   </div>
                   <div className="text-white-50" style={{ fontSize: '0.75rem' }}>
                     {previewLead.source} · Created {previewLead.created_at || previewLead.createdAt || 'Recently'}

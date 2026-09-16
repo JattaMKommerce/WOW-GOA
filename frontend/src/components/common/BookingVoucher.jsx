@@ -287,7 +287,7 @@ export default function BookingVoucher({
           )}
 
           {/* B2B Partner Row if booked via B2B agency */}
-          {(booking.b2b_partner_name || partnerUser?.company_name) && (
+          {String(booking.booking_channel || '').toUpperCase() === 'B2B' && (booking.b2b_partner_name || partnerUser?.company_name) && (
             <div className="col-4 mt-1">
               <span className="text-muted d-block" style={{ fontSize: '9.5px' }}>Booking Channel:</span>
               <strong className="text-primary">{booking.b2b_partner_name || partnerUser?.company_name} (B2B Partner)</strong>
