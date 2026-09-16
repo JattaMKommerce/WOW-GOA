@@ -67,6 +67,44 @@ function SourceBadge({ source }) {
   );
 }
 
+function isVehicleRentalLead(lead) {
+  if (!lead) return false;
+
+  const cat = String(lead.source || lead.category || lead.service_type || '').toLowerCase();
+  const serv = String(lead.service || '').toLowerCase();
+  const title = String(lead.title || '').toLowerCase();
+  const notes = String(lead.notes || '').toLowerCase();
+
+  // If this is explicitly a Custom Trips lead from the custom enquiry form, let Custom Trips handle it
+  if (cat.includes('custom') && !cat.includes('vehicle')) {
+    return false;
+  }
+
+  // Explicit vehicle rental source / category
+  if (cat.includes('vehicle') || cat.includes('rental') || cat.includes('self-drive') || cat.includes('self drive')) {
+    return true;
+  }
+
+  const combined = `${cat} ${serv} ${title} ${notes}`.trim();
+
+  // Specific Goan self-drive rental vehicle models (Thar, Fortuner, Scorpio, Innova, Activa, scooter, etc.)
+  if (/\b(thar|fortuner|scorpio|innova|activa|scooter)\b/i.test(combined)) {
+    return true;
+  }
+
+  // Generic vehicle keywords with rental / self-drive intent
+  const hasRentalIntent = 
+    /\b(rent|rental|self\s*drive|self-drive|selfdrive|hire|renting)\b/i.test(combined);
+  const hasVehicleKeyword = 
+    /\b(car|bike|vehicle|suv|sedan|jeep|two\s*wheeler|4x4)\b/i.test(combined);
+
+  if (hasRentalIntent && hasVehicleKeyword) {
+    return true;
+  }
+
+  return false;
+}
+
 function getCustomItineraryDays(numDays, enq = {}, lead = {}) {
   const dest = enq.destinations || lead.service || 'Goa';
   const hasCar = enq.req_car == 1;
@@ -2291,27 +2329,37 @@ export default function LeadManagement({ usersList = [], currentUser }) {
 
               {/* Dynamic Lead Schedule: Vehicle Rental Handover vs Tour Package Itinerary */}
               {(() => {
-                const leadCat = String(previewLead.source || previewLead.category || previewLead.service_type || '').toLowerCase();
-                const leadServ = String(previewLead.service || previewLead.title || previewLead.notes || '').toLowerCase();
-                const isVehicleRental = 
-                  leadCat.includes('vehicle') || 
-                  leadCat.includes('car') || 
-                  leadCat.includes('bike') || 
-                  leadCat.includes('rental') || 
-                  leadServ.includes('vehicle rental') || 
-                  leadServ.includes('car rental') || 
-                  leadServ.includes('bike rental') ||
-                  leadServ.includes('fortuner') || 
-                  leadServ.includes('thar') || 
-                  leadServ.includes('scorpio') || 
-                  leadServ.includes('innova') || 
-                  leadServ.includes('activa') || 
-                  leadServ.includes('self drive');
+                const isVehicleRental = isVehicleRentalLead(previewLead);
 
                 if (isVehicleRental) {
-                  const pickupInfo = previewLead.notes?.includes('|') 
-                    ? previewLead.notes.split('|')[1]?.trim() 
-                    : (previewLead.notes || 'Goa Airport (Dabolim / Mopa) / Doorstep Delivery');
+                  const defaultPickup = 'Goa Airport (Dabolim / Mopa) / Doorstep Delivery';
+                  let pickupInfo = defaultPickup;
+                  if (previewLead.notes) {
+                    if (previewLead.notes.includes('|')) {
+                      const parts = previewLead.notes.split('|').map(s => s.trim()).filter(Boolean);
+                      const locPart = parts.find(p => /airport|mopa|dabolim|doorstep|delivery|hotel|station|calangute|candolim|baga|panjim/i.test(p));
+                      pickupInfo = (locPart && !/^(thar|car|bike|scooter|rental)/i.test(locPart)) ? locPart : (parts[1] || defaultPickup);
+                    } else {
+                      const isVehicleReqOnly = /^(?:rent\s+a\s+|need\s+a\s+|self\s+drive\s+)?(?:thar|car|bike|scooter|fortuner|scorpio|innova|activa)(?:\s+rental|\s+rent)?$/i.test(previewLead.notes.trim()) ||
+                        previewLead.notes.trim().toLowerCase() === 'thar rental';
+                      if (!isVehicleReqOnly && /airport|mopa|dabolim|doorstep|delivery|hotel|station|calangute|candolim|baga|panjim/i.test(previewLead.notes)) {
+                        pickupInfo = previewLead.notes.trim();
+                      }
+                    }
+                  }
+
+                  const vehicleTitle = (() => {
+                    const serv = (previewLead.service || '').trim();
+                    const isGenericChat = /ai\s*(?:travel\s*assistant|planner|chat)/i.test(serv) || serv.toLowerCase() === 'general inquiry';
+                    if (!isGenericChat && serv) {
+                      return serv;
+                    }
+                    if (previewLead.notes && !previewLead.notes.toLowerCase().startsWith('inquired via')) {
+                      const cleanNote = previewLead.notes.split('|')[0].trim();
+                      if (cleanNote) return cleanNote;
+                    }
+                    return 'Self-Drive Vehicle';
+                  })();
 
                   return (
                     <div className="bg-white rounded-3 shadow-xs border p-4 mb-3">
@@ -2324,7 +2372,7 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                           <span className="text-muted small">Fleet allocation &amp; handover schedule for {previewLead.name}</span>
                         </div>
                         <span className="badge rounded-pill bg-light text-dark border px-3 py-1.5 fw-bold" style={{ fontSize: '0.75rem' }}>
-                          {previewLead.service || 'Self-Drive Vehicle'}
+                          {vehicleTitle}
                         </span>
                       </div>
 
@@ -2567,10 +2615,46 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                 }
 
                 // ── Fallback: Tour / Package Leads without linked custom enquiry ──
+                const dMatch = (previewLead.service || previewLead.title || previewLead.notes || '').match(/(\d+)\s*(?:days?|d\b)/i);
+                const hasExplicitDuration = Boolean(dMatch || previewLead.booking_days);
+                const isGenericAiEnquiry = (
+                  previewLead.source === 'AI Planner' || 
+                  (previewLead.service || '').toLowerCase().includes('ai travel assistant')
+                ) && !hasExplicitDuration;
+
+                // For generic AI enquiries without requested trip duration, do NOT fabricate a fake 4-day itinerary
+                if (isGenericAiEnquiry) {
+                  return (
+                    <div className="bg-white rounded-3 shadow-xs border p-4 mb-3">
+                      <div className="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+                        <div>
+                          <h6 className="fw-bold text-dark mb-0 font-heading d-flex align-items-center gap-2">
+                            <Sparkles size={18} style={{ color: '#FF6333' }} />
+                            <span>AI Travel Consultation Overview</span>
+                          </h6>
+                          <span className="text-muted small">Inquiry consultation details for {previewLead.name}</span>
+                        </div>
+                        <span className="badge rounded-pill bg-light text-primary border px-3 py-1.5 fw-bold" style={{ fontSize: '0.75rem' }}>
+                          AI Inbound Inquiry
+                        </span>
+                      </div>
+
+                      <div className="p-3 rounded-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                        <div className="d-flex align-items-center justify-content-between mb-2">
+                          <span className="badge bg-primary text-white fw-bold px-2 py-1" style={{ fontSize: '0.72rem' }}>Requirement</span>
+                          <span className="fw-bold text-dark small">{previewLead.notes || 'General Trip Consultation'}</span>
+                        </div>
+                        <p className="text-muted mb-0" style={{ fontSize: '0.8rem' }}>
+                          The customer connected via Sophia AI Assistant. Review the conversation transcript above for full context and use the quick action buttons to follow up.
+                        </p>
+                      </div>
+                    </div>
+                  );
+                }
+
                 let fallbackDays = 4;
                 let fallbackDuration = '4 Days / 3 Nights';
 
-                const dMatch = (previewLead.service || previewLead.title || previewLead.notes || '').match(/(\d+)\s*(?:days?|d\b)/i);
                 if (dMatch) {
                   fallbackDays = Math.max(1, parseInt(dMatch[1], 10));
                   const nights = Math.max(0, fallbackDays - 1);
@@ -2654,25 +2738,7 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                   style={{ fontSize: '0.8rem' }}
                   onClick={() => window.print()}
                 >
-                  {(() => {
-                    const leadCat = String(previewLead.source || previewLead.category || previewLead.service_type || '').toLowerCase();
-                    const leadServ = String(previewLead.service || previewLead.title || previewLead.notes || '').toLowerCase();
-                    const isVehicleRental = 
-                      leadCat.includes('vehicle') || 
-                      leadCat.includes('car') || 
-                      leadCat.includes('bike') || 
-                      leadCat.includes('rental') || 
-                      leadServ.includes('vehicle rental') || 
-                      leadServ.includes('car rental') || 
-                      leadServ.includes('bike rental') ||
-                      leadServ.includes('fortuner') || 
-                      leadServ.includes('thar') || 
-                      leadServ.includes('scorpio') || 
-                      leadServ.includes('innova') || 
-                      leadServ.includes('activa') || 
-                      leadServ.includes('self drive');
-                    return isVehicleRental ? 'Print Rental Summary' : 'Print Itinerary';
-                  })()}
+                  {isVehicleRentalLead(previewLead) ? 'Print Rental Summary' : 'Print Itinerary'}
                 </button>
                 <button 
                   type="button" 

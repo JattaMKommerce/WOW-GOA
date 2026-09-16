@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import chatbotVideo from '../../assets/aichatbot.mp4';
+import chatbotAvatar from '../../assets/aichatbot.webp';
 import { getAIChatbotSettings, toggleAIChatbot } from '../../services/api';
 import { Sparkles, Bot } from 'lucide-react';
 
@@ -131,7 +131,7 @@ export default function AIChatbotToggle({
           style={{
             width: '52px',
             height: '52px',
-            background: '#dcd9db',
+            background: 'radial-gradient(circle at center, #ffffff 40%, #f1f5f9 100%)',
             borderRadius: '50%',
             overflow: 'hidden',
             transition: 'all 300ms ease',
@@ -141,21 +141,14 @@ export default function AIChatbotToggle({
             opacity: enabled ? 1 : 0.45
           }}
         >
-          {/* Calibrated video avatar framing Sophia's face & waving hand */}
-          <video
-            src={chatbotVideo}
-            autoPlay
-            loop
-            muted
-            playsInline
+          <img
+            src={chatbotAvatar}
+            alt="AI Chatbot"
             style={{
-              position: 'absolute',
-              width: '133%',
-              height: 'auto',
-              left: '-22%',
-              top: '12%',
-              pointerEvents: 'none',
-              objectFit: 'contain'
+              width: '88%',
+              height: '88%',
+              objectFit: 'contain',
+              filter: 'drop-shadow(0 2px 5px rgba(0, 0, 0, 0.15))'
             }}
           />
 

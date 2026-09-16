@@ -185,11 +185,15 @@ export default function App() {
   const [bikeFilterType, setBikeFilterType] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Checkout Modal state
+  // Checkout Modal state — booking modal overlays must always initialize closed (null) on page reload/refresh
+  // It should only be restored if the user is explicitly on the full-page package customization view (?step=customize)
   const [selectedBookingItem, setSelectedBookingItem] = useState(() => {
     try {
-      const saved = sessionStorage.getItem('tg_selectedBookingItem') || sessionStorage.getItem('tg_selectedDetailItem');
-      if (saved) return JSON.parse(saved);
+      const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+      if (urlParams && urlParams.get('step') === 'customize') {
+        const saved = sessionStorage.getItem('tg_selectedBookingItem') || sessionStorage.getItem('tg_selectedDetailItem');
+        if (saved) return JSON.parse(saved);
+      }
     } catch (e) {}
     return null;
   });
