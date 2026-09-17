@@ -201,3 +201,90 @@ export function parseTravelDate(str) {
   if (!isNaN(d.getTime())) return d;
   return null;
 }
+
+/**
+ * Calculates accurate age from a DOB string evaluated against a reference date (defaults to today).
+ * Reference date for vehicle rentals is the vehicle pickup date.
+ * Accurately handles birthdays (accounts for whether birthday has occurred in reference year)
+ * and leap years (e.g. 2008-02-29).
+ * Returns number (>= 0) or null if invalid/missing/future DOB.
+ */
+export function calculateAge(dobString, referenceDateString = null) {
+  if (!dobString) return null;
+  const dob = parseTravelDate(dobString);
+  if (!dob || isNaN(dob.getTime())) return null;
+
+  let ref = referenceDateString ? parseTravelDate(referenceDateString) : new Date();
+  if (!ref || isNaN(ref.getTime())) ref = new Date();
+
+  // If reference/pickup date is before birth date, impossible future DOB
+  if (ref < dob) return null;
+
+  let age = ref.getFullYear() - dob.getFullYear();
+  const mDiff = ref.getMonth() - dob.getMonth();
+  if (mDiff < 0 || (mDiff === 0 && ref.getDate() < dob.getDate())) {
+    age--;
+  }
+  return age >= 0 ? age : null;
+}
+
+/**
+ * Centralized business rule validator for vehicle booking eligibility.
+ * - Self Drive (isSelfDrive = true):
+ *     DOB is mandatory
+ *     Age must be >= 18 on vehicle pickup date
+ *     Driving License is mandatory
+ * - Vehicle + Driver (isSelfDrive = false):
+ *     DOB is mandatory
+ *     No 18+ age restriction
+ *     Driving License is optional
+ *
+ * @returns {{ valid: boolean, age: number|null, error: string|null }}
+ */
+export function validateVehicleBookingEligibility(
+  dob,
+  pickupDate,
+  isSelfDrive = true,
+  license = ''
+) {
+  if (!dob || !String(dob).trim()) {
+    return {
+      valid: false,
+      age: null,
+      error: 'Date of birth is required for vehicle bookings.'
+    };
+  }
+
+  const age = calculateAge(dob, pickupDate);
+  if (age === null) {
+    return {
+      valid: false,
+      age: null,
+      error: 'Please enter a valid Date of Birth.'
+    };
+  }
+
+  if (isSelfDrive) {
+    if (age < 18) {
+      return {
+        valid: false,
+        age,
+        error: 'Primary driver must be 18 years or older on pickup date for Self Drive rentals.'
+      };
+    }
+    if (!license || !String(license).trim()) {
+      return {
+        valid: false,
+        age,
+        error: 'Driving License is required for Self Drive rentals.'
+      };
+    }
+  }
+
+  return {
+    valid: true,
+    age,
+    error: null
+  };
+}
+

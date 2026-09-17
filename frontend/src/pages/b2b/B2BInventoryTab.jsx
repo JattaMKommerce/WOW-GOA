@@ -11,6 +11,10 @@ import B2BSelfDriveFlow from './B2BSelfDriveFlow';
 import B2BCraftMyTripFlow from './B2BCraftMyTripFlow';
 import ImageCarousel from '../../components/common/ImageCarousel';
 import { resolveItemImages } from '../../utils/bookingImageHelper';
+import HotelDetailsPage from '../customer/HotelDetailsPage';
+import ActivityDetailsPage from '../customer/ActivityDetailsPage';
+import PackageDetailsPage from '../customer/PackageDetailsPage';
+import FlightDetailsPage from '../customer/FlightDetailsPage';
 
 // Helper to parse day-wise itinerary in any format (JSON string, array, or object)
 const parseItinerary = (raw) => {
@@ -209,13 +213,13 @@ export default function B2BInventoryTab({
       name: '',
       phone: '',
       email: '',
-      checkInDate: tomorrowStr,
-      checkOutDate: dayAfterTomorrowStr,
-      date: tomorrowStr,
-      rooms: 1,
-      guests: 2,
-      daysOrQty: 1,
-      special_requests: '',
+      checkInDate: item?.check_in_date || item?.pickup_date || tomorrowStr,
+      checkOutDate: item?.check_out_date || item?.drop_date || dayAfterTomorrowStr,
+      date: item?.date || item?.pickup_date || tomorrowStr,
+      rooms: item?.rooms ? parseInt(item.rooms, 10) : 1,
+      guests: item?.guests ? parseInt(item.guests, 10) : 2,
+      daysOrQty: item?.daysOrQty || item?.guests || 1,
+      special_requests: item?.special_requests || '',
       payment_method: 'Prepaid Agent Wallet'
     });
   };
@@ -260,6 +264,8 @@ export default function B2BInventoryTab({
         room_price: isHotel ? pr.sellingPrice : undefined,
         rooms: isHotel ? rooms : undefined,
         nights: isHotel ? nights : undefined,
+        room_type: bookingItem.preselected_room?.name || undefined,
+        rate_plan: bookingItem.preselected_rate_plan?.name || undefined,
         airline: activeService === 'flights' ? (bookingItem.airline || 'Airline') : undefined
       }
     };
@@ -440,7 +446,7 @@ export default function B2BInventoryTab({
               <div key={item.id} className="col-12 col-md-6 col-xl-4">
                 <div className="card h-100 border-0 shadow-sm rounded-4 overflow-hidden d-flex flex-column transition-all hover-shadow-lg bg-white">
                   {/* Item Image */}
-                  <div className="position-relative" style={{ height: '190px', background: '#F8F9FA' }}>
+                  <div className="position-relative" style={{ height: '190px', background: '#F8F9FA', cursor: 'pointer' }} onClick={() => setDetailItem(item)}>
                     <img 
                       src={image} 
                       alt={title}
@@ -468,7 +474,7 @@ export default function B2BInventoryTab({
                   <div className="p-3.5 flex-grow-1 d-flex flex-column justify-content-between">
                     <div>
                       <div className="d-flex align-items-start justify-content-between mb-1">
-                        <h6 className="fw-bold text-dark font-heading mb-0 text-sm text-truncate pe-1">{title}</h6>
+                        <h6 className="fw-bold text-dark font-heading mb-0 text-sm text-truncate pe-1" style={{ cursor: 'pointer' }} onClick={() => setDetailItem(item)}>{title}</h6>
                       </div>
 
                       <div className="d-flex align-items-center gap-1 text-xxs text-muted mb-2">
@@ -488,16 +494,24 @@ export default function B2BInventoryTab({
                         {item.description || item.short_desc || 'Rich inventory item with shared D2C/B2B database availability.'}
                       </p>
 
-                      {/* Amenities or Highlights pill */}
-                      {item.amenities && (
-                        <div className="d-flex gap-1 flex-wrap mb-2">
-                          {(typeof item.amenities === 'string' ? item.amenities.split(',') : item.amenities).slice(0, 3).map((am, i) => (
-                            <span key={i} className="badge bg-light text-muted border text-xxs py-0.5 px-1.5 font-monospace">
-                              {typeof am === 'string' ? am.trim() : am}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                      {/* Included Items Badges */}
+                      <div className="d-flex flex-wrap gap-1 mb-2">
+                        {item.hotel_included && (
+                          <span className="badge bg-light text-dark border text-3xs px-1.5 py-0.5">
+                            🏨 {item.hotel_included}
+                          </span>
+                        )}
+                        {item.car_included && (
+                          <span className="badge bg-light text-dark border text-3xs px-1.5 py-0.5">
+                            🚗 {item.car_included}
+                          </span>
+                        )}
+                        {item.category && (
+                          <span className="badge bg-light text-dark border text-3xs px-1.5 py-0.5">
+                            🏷️ {item.category}
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {/* Mode Specific Pricing Box */}
@@ -545,7 +559,7 @@ export default function B2BInventoryTab({
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleOpenBooking(item)}
+                          onClick={() => setDetailItem(item)}
                           className={`btn flex-grow-1 btn-sm rounded-pill fw-bold py-1.5 d-flex align-items-center justify-content-center gap-1.5 ${
                             mode === 'COMMISSION' ? 'btn-warning text-dark' : 'btn-primary text-white'
                           }`}
@@ -563,394 +577,81 @@ export default function B2BInventoryTab({
         </div>
       )}
 
-      {/* RICH DETAILS MODAL (Preserves all details without simplified cards) */}
+      {/* ── AUTHORITATIVE D2C DETAILS PAGES IN B2B (REUSING D2C DETAILS DIRECTLY) ── */}
       {detailItem && (
         <div 
-          className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center p-3"
-          style={{ background: 'rgba(13, 27, 46, 0.75)', zIndex: 1050, backdropFilter: 'blur(4px)' }}
+          className="position-fixed top-0 start-0 w-100 h-100 bg-white"
+          style={{ zIndex: 1060, overflowY: 'auto' }}
         >
-          <div 
-            className="card border-0 shadow-2xl rounded-4 overflow-hidden animate-fade-in"
-            style={{ maxWidth: '680px', width: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', background: '#ffffff' }}
-          >
-            <div className="p-3.5 text-white d-flex align-items-center justify-content-between" style={{ background: '#0D1B2E' }}>
-              <div>
-                <span className="badge bg-warning text-dark text-xxs fw-bold px-2 py-0.5 rounded-pill mb-1">
-                  FULL INVENTORY SPECIFICATION
-                </span>
-                <h5 className="fw-bold mb-0 text-white font-heading">
-                  {detailItem.name || detailItem.title || 'Service Details'}
-                </h5>
-              </div>
-              <button 
-                className="btn btn-link text-white-50 p-0 border-0" 
-                onClick={() => setDetailItem(null)}
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="p-4 overflow-y-auto flex-grow-1">
-              <div className="mb-3">
-                <ImageCarousel
-                  images={resolveItemImages(detailItem, activeService)}
-                  alt={detailItem.name || 'Detail'}
-                  height="340px"
-                  rounded="16px"
-                />
-              </div>
-
-              <div className="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom flex-wrap gap-2">
-                <div className="d-flex align-items-center gap-2">
-                  <MapPin size={15} className="text-warning" />
-                  <span className="text-xs fw-semibold text-dark">
-                    {detailItem.location || detailItem.address || detailItem.city || 'Goa, India'}
-                  </span>
-                </div>
-                {detailItem.duration && (
-                  <span className="badge bg-light text-dark border text-xs">
-                    ⏱️ Duration: {detailItem.duration}
-                  </span>
-                )}
-              </div>
-
-              {/* Descriptions */}
-              <h6 className="fw-bold text-dark text-xs text-uppercase mb-1.5 font-heading">Overview</h6>
-              <p className="text-muted text-xs leading-relaxed mb-3">
-                {detailItem.description || detailItem.detailed_description || 'Full experience managed and serviced under WOW GOA premium standards.'}
-              </p>
-
-              {/* Included Hotel / Vehicle (if applicable for packages) */}
-              {(detailItem.hotel_included || detailItem.car_included) && (
-                <div className="row g-2 mb-3">
-                  {detailItem.hotel_included && (
-                    <div className="col-12 col-md-6">
-                      <div className="p-2.5 rounded-3 bg-light border d-flex align-items-center gap-2">
-                        <Hotel size={16} className="text-primary flex-shrink-0" />
-                        <div>
-                          <span className="text-muted d-block" style={{ fontSize: '10px' }}>STAY / RESORT</span>
-                          <span className="text-dark fw-bold text-xxs">{detailItem.hotel_included}</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  {detailItem.car_included && (
-                    <div className="col-12 col-md-6">
-                      <div className="p-2.5 rounded-3 bg-light border d-flex align-items-center gap-2">
-                        <Car size={16} className="text-primary flex-shrink-0" />
-                        <div>
-                          <span className="text-muted d-block" style={{ fontSize: '10px' }}>INCLUDED VEHICLE</span>
-                          <span className="text-dark fw-bold text-xxs">{detailItem.car_included}</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Day-wise itinerary for packages */}
-              {(() => {
-                const rawItin = detailItem.day_wise_itinerary || detailItem.itinerary || detailItem.day_plan || detailItem.dayPlan;
-                if (!rawItin) return null;
-                const parsedDays = parseItinerary(rawItin);
-
-                if (parsedDays && parsedDays.length > 0) {
-                  return (
-                    <div className="mb-3">
-                      <div className="d-flex align-items-center justify-content-between mb-2">
-                        <h6 className="fw-bold text-dark text-xs text-uppercase mb-0 font-heading">
-                          Day-Wise Itinerary ({parsedDays.length} Days)
-                        </h6>
-                        <span className="text-muted text-xxs">Click day to expand</span>
-                      </div>
-                      <div className="d-flex flex-column gap-2">
-                        {parsedDays.map((day, idx) => {
-                          const isExp = expandedItineraryDay === idx;
-                          const dayNum = day.day || idx + 1;
-                          return (
-                            <div key={idx} className="border rounded-3 overflow-hidden bg-white shadow-xs">
-                              <div 
-                                className="p-2.5 d-flex align-items-center justify-content-between cursor-pointer"
-                                style={{ 
-                                  background: isExp ? '#f8fafc' : '#ffffff', 
-                                  cursor: 'pointer',
-                                  userSelect: 'none',
-                                  transition: 'background-color 0.2s ease'
-                                }}
-                                onClick={() => setExpandedItineraryDay(isExp ? -1 : idx)}
-                              >
-                                <div className="d-flex align-items-center gap-2.5">
-                                  <span 
-                                    className="badge rounded-circle p-0 d-inline-flex align-items-center justify-content-center fw-bold" 
-                                    style={{ 
-                                      width: '26px', 
-                                      height: '26px', 
-                                      background: isExp ? '#FF6333' : '#0D1B2E', 
-                                      color: '#fff', 
-                                      fontSize: '0.72rem',
-                                      flexShrink: 0 
-                                    }}
-                                  >
-                                    {dayNum}
-                                  </span>
-                                  <span className="fw-bold text-dark" style={{ fontSize: '0.84rem' }}>
-                                    {day.title || `Day ${dayNum}`}
-                                  </span>
-                                </div>
-                                {isExp ? (
-                                  <ChevronUp size={16} className="text-muted flex-shrink-0" />
-                                ) : (
-                                  <ChevronDown size={16} className="text-muted flex-shrink-0" />
-                                )}
-                              </div>
-
-                              {isExp && (
-                                <div className="p-3 border-top bg-light" style={{ fontSize: '0.82rem' }}>
-                                  {day.description && (
-                                    <p className="text-muted lh-base mb-2.5" style={{ fontSize: '0.8rem' }}>
-                                      {day.description}
-                                    </p>
-                                  )}
-
-                                  {/* Structured activities by time of day */}
-                                  {(day.morning || day.afternoon || day.evening || day.night || day.activities || day.meals) && (
-                                    <div className="d-flex flex-column gap-2 mb-2">
-                                      {day.morning && (
-                                        <div className="p-2.5 bg-white rounded-3 border-start border-3 border-warning shadow-xs">
-                                          <div className="d-flex align-items-center gap-1.5 mb-1">
-                                            <span className="badge bg-warning text-dark fw-bold" style={{ fontSize: '9px', letterSpacing: '0.4px' }}>
-                                              MORNING
-                                            </span>
-                                          </div>
-                                          <p className="text-dark mb-0 lh-base" style={{ fontSize: '0.8rem' }}>{day.morning}</p>
-                                        </div>
-                                      )}
-                                      {day.afternoon && (
-                                        <div className="p-2.5 bg-white rounded-3 border-start border-3 border-primary shadow-xs">
-                                          <div className="d-flex align-items-center gap-1.5 mb-1">
-                                            <span className="badge bg-primary text-white fw-bold" style={{ fontSize: '9px', letterSpacing: '0.4px' }}>
-                                              AFTERNOON
-                                            </span>
-                                          </div>
-                                          <p className="text-dark mb-0 lh-base" style={{ fontSize: '0.8rem' }}>{day.afternoon}</p>
-                                        </div>
-                                      )}
-                                      {day.evening && (
-                                        <div className="p-2.5 bg-white rounded-3 border-start border-3 border-info shadow-xs">
-                                          <div className="d-flex align-items-center gap-1.5 mb-1">
-                                            <span className="badge bg-info text-dark fw-bold" style={{ fontSize: '9px', letterSpacing: '0.4px' }}>
-                                              EVENING
-                                            </span>
-                                          </div>
-                                          <p className="text-dark mb-0 lh-base" style={{ fontSize: '0.8rem' }}>{day.evening}</p>
-                                        </div>
-                                      )}
-                                      {day.night && (
-                                        <div className="p-2.5 bg-white rounded-3 border-start border-3 border-dark shadow-xs">
-                                          <div className="d-flex align-items-center gap-1.5 mb-1">
-                                            <span className="badge bg-dark text-white fw-bold" style={{ fontSize: '9px', letterSpacing: '0.4px' }}>
-                                              NIGHT
-                                            </span>
-                                          </div>
-                                          <p className="text-dark mb-0 lh-base" style={{ fontSize: '0.8rem' }}>{day.night}</p>
-                                        </div>
-                                      )}
-                                      {day.meals && (
-                                        <div className="p-2.5 bg-white rounded-3 border-start border-3 border-success shadow-xs">
-                                          <div className="d-flex align-items-center gap-1.5 mb-1">
-                                            <span className="badge bg-success text-white fw-bold d-inline-flex align-items-center gap-1" style={{ fontSize: '9px', letterSpacing: '0.4px' }}>
-                                              <Utensils size={10} /> MEALS
-                                            </span>
-                                          </div>
-                                          <p className="text-dark mb-0 lh-base" style={{ fontSize: '0.8rem' }}>{day.meals}</p>
-                                        </div>
-                                      )}
-                                      {day.activities && !day.morning && !day.afternoon && (
-                                        <div className="p-2.5 bg-white rounded-3 border-start border-3 border-secondary shadow-xs">
-                                          <div className="d-flex align-items-center gap-1.5 mb-1">
-                                            <span className="badge bg-secondary text-white fw-bold" style={{ fontSize: '9px', letterSpacing: '0.4px' }}>
-                                              ACTIVITIES
-                                            </span>
-                                          </div>
-                                          <p className="text-dark mb-0 lh-base" style={{ fontSize: '0.8rem' }}>{day.activities}</p>
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
-
-                                  {/* Sightseeing badges */}
-                                  {day.sightseeing_locations && Array.isArray(day.sightseeing_locations) && day.sightseeing_locations.length > 0 && (
-                                    <div className="d-flex flex-wrap gap-1.5 my-2">
-                                      {day.sightseeing_locations.map((loc, i) => (
-                                        <span key={i} className="badge bg-white text-dark border px-2 py-1" style={{ fontSize: '0.72rem' }}>
-                                          📍 {typeof loc === 'string' ? loc : loc.name}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
-
-                                  {/* Hotel, Location, Tips badges if present */}
-                                  {(day.hotel || day.location || day.tips) && (
-                                    <div className="d-flex flex-wrap gap-1.5 my-1.5">
-                                      {day.hotel && (
-                                        <span className="badge bg-white text-dark border px-2 py-1" style={{ fontSize: '0.72rem' }}>
-                                          🏨 {day.hotel}
-                                        </span>
-                                      )}
-                                      {day.location && (
-                                        <span className="badge bg-white text-dark border px-2 py-1" style={{ fontSize: '0.72rem' }}>
-                                          📍 {day.location}
-                                        </span>
-                                      )}
-                                      {day.tips && (
-                                        <span className="badge bg-white text-muted border px-2 py-1" style={{ fontSize: '0.72rem' }}>
-                                          💡 {day.tips}
-                                        </span>
-                                      )}
-                                    </div>
-                                  )}
-
-                                  {/* Day inclusions */}
-                                  {day.inclusions && Array.isArray(day.inclusions) && day.inclusions.length > 0 && (
-                                    <div className="d-flex flex-wrap gap-1.5 mt-2">
-                                      {day.inclusions.map((inc, i) => (
-                                        <span key={i} className="badge bg-white text-secondary border px-2 py-1" style={{ fontSize: '0.68rem' }}>
-                                          ✓ {inc}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                }
-
-                // Fallback for plain text itinerary string
-                return (
-                  <div className="mb-3">
-                    <h6 className="fw-bold text-dark text-xs text-uppercase mb-2 font-heading">Day-Wise Itinerary</h6>
-                    <div className="p-3 rounded-3 bg-light border text-xs text-muted" style={{ whiteSpace: 'pre-line', lineHeight: '1.6' }}>
-                      {typeof rawItin === 'string' ? rawItin : JSON.stringify(rawItin, null, 2)}
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Inclusions & Exclusions */}
-              {(() => {
-                const incList = parseBulletList(detailItem.inclusions);
-                const excList = parseBulletList(detailItem.exclusions);
-                if (incList.length === 0 && excList.length === 0 && !detailItem.inclusions && !detailItem.exclusions) return null;
-
-                return (
-                  <div className="row g-2 mb-3">
-                    {(incList.length > 0 || detailItem.inclusions) && (
-                      <div className="col-12 col-md-6">
-                        <div className="p-3 rounded-3 bg-success bg-opacity-10 border border-success border-opacity-25 h-100">
-                          <strong className="text-success text-xs d-flex align-items-center gap-1.5 mb-2">
-                            <CheckCircle2 size={14} /> What's Included:
-                          </strong>
-                          {incList.length > 0 ? (
-                            <ul className="list-unstyled mb-0 d-flex flex-column gap-1 text-xxs text-dark">
-                              {incList.map((inc, i) => (
-                                <li key={i} className="d-flex align-items-start gap-1.5">
-                                  <span className="text-success fw-bold">✓</span>
-                                  <span>{inc}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <span className="text-dark text-xxs">{detailItem.inclusions}</span>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                    {(excList.length > 0 || detailItem.exclusions) && (
-                      <div className="col-12 col-md-6">
-                        <div className="p-3 rounded-3 bg-danger bg-opacity-10 border border-danger border-opacity-25 h-100">
-                          <strong className="text-danger text-xs d-flex align-items-center gap-1.5 mb-2">
-                            <AlertCircle size={14} /> Exclusions:
-                          </strong>
-                          {excList.length > 0 ? (
-                            <ul className="list-unstyled mb-0 d-flex flex-column gap-1 text-xxs text-dark">
-                              {excList.map((exc, i) => (
-                                <li key={i} className="d-flex align-items-start gap-1.5">
-                                  <span className="text-danger fw-bold">✕</span>
-                                  <span>{exc}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <span className="text-dark text-xxs">{detailItem.exclusions}</span>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {/* Amenities */}
-              {detailItem.amenities && (
-                <div className="mb-3">
-                  <h6 className="fw-bold text-dark text-xs text-uppercase mb-1.5 font-heading">Amenities & Features</h6>
-                  <div className="d-flex gap-1.5 flex-wrap">
-                    {(typeof detailItem.amenities === 'string' ? detailItem.amenities.split(',') : detailItem.amenities).map((am, i) => (
-                      <span key={i} className="badge bg-light text-dark border text-xxs py-1 px-2">
-                        ✓ {typeof am === 'string' ? am.trim() : am}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Modal Footer with Pricing */}
-            <div className="p-3 border-top bg-light d-flex align-items-center justify-content-between">
-              <div>
-                {(() => {
-                  const pr = getItemPricing(detailItem);
-                  return mode === 'COMMISSION' ? (
-                    <div>
-                      <span className="text-xxs text-muted d-block">Retail: ₹{pr.sellingPrice.toLocaleString()}</span>
-                      <strong className="text-success text-xs">Commission ({pr.commPercent}%): +₹{pr.commAmount.toLocaleString()}</strong>
-                    </div>
-                  ) : (
-                    <div>
-                      <span className="text-xxs text-muted d-block">Retail: <del>₹{pr.sellingPrice.toLocaleString()}</del></span>
-                      <strong className="text-primary text-xs">B2B Net Rate: ₹{pr.netPrice.toLocaleString()}</strong>
-                    </div>
-                  );
-                })()}
-              </div>
-
-              <div className="d-flex gap-2">
-                <button 
-                  className="btn btn-outline-secondary btn-sm rounded-pill px-3 text-xs" 
-                  onClick={() => setDetailItem(null)}
-                >
-                  Close
-                </button>
-                <button
-                  className={`btn btn-sm rounded-pill px-4 fw-bold text-xs ${
-                    mode === 'COMMISSION' ? 'btn-warning text-dark' : 'btn-primary text-white'
-                  }`}
-                  onClick={() => {
-                    const it = detailItem;
-                    setDetailItem(null);
-                    handleOpenBooking(it);
-                  }}
-                >
-                  Book This Item
-                </button>
-              </div>
-            </div>
-          </div>
+          {activeService === 'hotels' ? (
+            <HotelDetailsPage
+              hotel={detailItem}
+              actionLabel="Book for Guest"
+              backLabel="Back to B2B Hotels"
+              breadcrumbPrefix="B2B Portal / Hotels"
+              onBack={() => setDetailItem(null)}
+              onBook={(hotel, selectedRoom, selectedRatePlan) => {
+                const enrichedHotel = {
+                  ...hotel,
+                  preselected_room: selectedRoom,
+                  preselected_rate_plan: selectedRatePlan,
+                  price: (selectedRatePlan?.price || selectedRoom?.price_per_night || hotel.price)
+                };
+                setDetailItem(null);
+                handleOpenBooking(enrichedHotel);
+              }}
+            />
+          ) : activeService === 'activities' ? (
+            <ActivityDetailsPage
+              activity={detailItem}
+              actionLabel="Book for Guest"
+              backLabel="Back to B2B Activities"
+              breadcrumbPrefix="B2B Portal / Sightseeing & Activities"
+              onBack={() => setDetailItem(null)}
+              onBook={(activityData) => {
+                const enrichedActivity = {
+                  ...detailItem,
+                  ...(activityData || {}),
+                  date: activityData?.pickup_date || activityData?.date || guestDetails.date,
+                  daysOrQty: activityData?.guests || activityData?.adults || 1
+                };
+                setDetailItem(null);
+                handleOpenBooking(enrichedActivity);
+              }}
+            />
+          ) : activeService === 'flights' ? (
+            <FlightDetailsPage
+              flight={detailItem}
+              actionLabel="Book for Guest"
+              backLabel="Back to B2B Flights"
+              breadcrumbPrefix="B2B Portal / Flights & Airport Transfers"
+              onBack={() => setDetailItem(null)}
+              onBook={(flightData) => {
+                const enrichedFlight = {
+                  ...detailItem,
+                  ...(flightData || {})
+                };
+                setDetailItem(null);
+                handleOpenBooking(enrichedFlight);
+              }}
+            />
+          ) : (
+            <PackageDetailsPage
+              pkg={detailItem}
+              actionLabel="Book for Guest"
+              backLabel="Back to B2B Packages"
+              breadcrumbPrefix="B2B Portal / Tour Packages"
+              onBack={() => setDetailItem(null)}
+              onBook={(pkgData) => {
+                const enrichedPkg = {
+                  ...detailItem,
+                  ...(pkgData || {})
+                };
+                setDetailItem(null);
+                handleOpenBooking(enrichedPkg);
+              }}
+            />
+          )}
         </div>
       )}
 

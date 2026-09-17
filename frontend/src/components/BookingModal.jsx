@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { X, CheckCircle, ShieldCheck, Compass, Calendar, Clock, MapPin, Cake, Award, Sparkles, Gift, Wallet } from 'lucide-react';
-import { getTodayDateStr, addDays } from '../utils/dateUtils';
+import { X, CheckCircle, ShieldCheck, Compass, Calendar, Clock, MapPin, Cake, Award, Sparkles, Gift, Wallet, Users } from 'lucide-react';
+import { getTodayDateStr, addDays, validateVehicleBookingEligibility } from '../utils/dateUtils';
 import * as api from '../services/api';
 import { checkCustomerDob } from '../services/api';
 import UnifiedGalleryViewer from './UnifiedGalleryViewer';
@@ -217,7 +217,13 @@ export default function BookingModal({
 
   const isHotel = String(selectedBookingItem?.id).startsWith('hotel-') || selectedBookingItem.property_type || selectedBookingItem.stars;
   const isCar = String(selectedBookingItem?.id).startsWith('car-') || selectedBookingItem.type === 'car';
-  const isBike = String(selectedBookingItem?.id).startsWith('bike-') || selectedBookingItem.type === 'bike';
+  const isBike = String(selectedBookingItem?.id).startsWith('bike-') || 
+    selectedBookingItem.type === 'bike' || 
+    selectedBookingItem.item_type === 'bike' || 
+    selectedBookingItem.category === 'bike' ||
+    /bike|scooter|activa|bullet|reborn|classic\s*350|himalayan|royal\s*enfield|jupiter|faschino|access\s*125/i.test(
+      selectedBookingItem?.name || selectedBookingItem?.vehicle_name || selectedBookingItem?.title || ''
+    );
   const isFlight = String(selectedBookingItem?.id).startsWith('FL-') || String(selectedBookingItem?.id).startsWith('fl-') || String(selectedBookingItem?.id).startsWith('flt-') || selectedBookingItem.type === 'flight' || Boolean(selectedBookingItem.airline) || Boolean(selectedBookingItem.flight_number);
   const isActivity = String(selectedBookingItem?.id).startsWith('act-') || String(selectedBookingItem?.id).startsWith('sight-') || selectedBookingItem.type === 'activity' || selectedBookingItem.type === 'sightseeing' || selectedBookingItem.item_type === 'activity' || selectedBookingItem.item_type === 'sightseeing';
   const isPackage = !isCar && !isBike && !isFlight && !isHotel && !isActivity;
@@ -290,9 +296,24 @@ export default function BookingModal({
   const handleFormSubmit = (e) => {
     e.preventDefault();
 
-    if (!userDob && !isDobSaved) {
-      alert("Please select your Date of Birth (Day, Month, and Year). Date of Birth is required for birthday privileges and special offers from WOW GOA.");
-      return;
+    const isVehicleItem = isCar || isBike || Boolean(addonVehicle);
+    if (isVehicleItem) {
+      const isSelfDriveRental = (!driverRequired || isBike);
+      const eligibility = validateVehicleBookingEligibility(
+        userDob,
+        modalPickupDate,
+        isSelfDriveRental,
+        userLicense
+      );
+      if (!eligibility.valid) {
+        alert(eligibility.error);
+        return;
+      }
+    } else {
+      if (!userDob && !isDobSaved) {
+        alert("Please select your Date of Birth (Day, Month, and Year). Date of Birth is required for birthday privileges and special offers from WOW GOA.");
+        return;
+      }
     }
 
     // Validation for driver services when enabled
@@ -383,11 +404,11 @@ export default function BookingModal({
       total_members: totalMembers,
       guests: totalMembers,
       totalMembers: totalMembers,
-      driver_required: driverRequired ? 1 : 0,
-      driver_service_type: driverRequired ? driverServiceType : null,
-      driver_charge: driverTotalCharge,
-      driver_days: totalDriverServiceDays,
-      driver_earning: driverTotalCharge,
+      driver_required: (!isBike && driverRequired) ? 1 : 0,
+      driver_service_type: (!isBike && driverRequired) ? driverServiceType : null,
+      driver_charge: (!isBike && driverRequired) ? driverTotalCharge : 0,
+      driver_days: (!isBike && driverRequired) ? totalDriverServiceDays : 0,
+      driver_earning: (!isBike && driverRequired) ? driverTotalCharge : 0,
       driver_payment_status: 'Pending',
       driver_pickup_enabled: driverPickupEnabled ? 1 : 0,
       driver_pickup_date: driverPickupDate || modalPickupDate,
@@ -581,6 +602,7 @@ export default function BookingModal({
                             value={userDob}
                             onChange={(val) => setUserDob(val)}
                             required={true}
+                            referenceDate={modalPickupDate}
                           />
                           <small className="text-muted d-block mt-1" style={{ fontSize: '11px', color: '#64748b' }}>
                             Date of Birth is required to provide birthday benefits and special offers from WOW GOA.
@@ -612,14 +634,17 @@ export default function BookingModal({
 
                   {(isCar || isBike || addonVehicle) && (
                     <div className="mb-3">
-                      <label className="form-label small fw-bold">Driving License Number</label>
+                      <label className="form-label small fw-bold">
+                        Driving License Number {!(!isBike && driverRequired) && <span className="text-danger">*</span>}
+                        {(!isBike && driverRequired) && <span className="text-muted fw-normal" style={{ fontSize: '11px' }}> (Optional for Chauffeur/Driver)</span>}
+                      </label>
                       <input 
                         type="text" 
                         className="form-control" 
                         placeholder="e.g. DL-1420180098765"
                         value={userLicense}
                         onChange={(e) => setUserLicense(e.target.value)}
-                        required 
+                        required={!(!isBike && driverRequired)}
                       />
                     </div>
                   )}
@@ -781,7 +806,7 @@ export default function BookingModal({
                   </div>
 
                   {/* Optional Private Driver Service Section */}
-                  {!isFlight && (
+                  {!isFlight && !isBike && (
                     <div className="mb-3 p-3 rounded-3" style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
                       <div className="form-check d-flex align-items-center gap-2 mb-1">
                         <input

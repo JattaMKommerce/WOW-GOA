@@ -12,6 +12,16 @@ export default function CustomerDriverTripsTab({
 }) {
   // Filter bookings that requested a chauffeur / driver
   const driverTrips = (bookings || []).filter(b => {
+    const rawType = String(b.package_type || b.type || '').toLowerCase();
+    const rawItem = String(b.item_name || b.package_name || b.vehicle_name || '').toLowerCase();
+    const rawId = String(b.item_id || '').toLowerCase();
+    if (
+      rawType === 'bike' || rawType.includes('bike') || rawType.includes('scooter') ||
+      rawId.startsWith('bike') || rawId.startsWith('bk-') ||
+      /bike|scooter|activa|bullet|reborn|classic\s*350|himalayan|royal\s*enfield|jupiter|access/i.test(rawItem)
+    ) {
+      return false;
+    }
     const svcType = String(b.driver_service_type || '').toUpperCase();
     return (
       ['PICKUP', 'DROP', 'FULL'].includes(svcType) ||

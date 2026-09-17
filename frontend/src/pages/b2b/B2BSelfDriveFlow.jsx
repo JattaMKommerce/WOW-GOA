@@ -8,6 +8,11 @@ import {
 import * as api from '../../services/api';
 import ImageCarousel from '../../components/common/ImageCarousel';
 import { resolveItemImages } from '../../utils/bookingImageHelper';
+import { validateVehicleBookingEligibility } from '../../utils/dateUtils';
+import DobPicker from '../../components/common/DobPicker';
+import CarDetailsPage from '../customer/CarDetailsPage';
+import BikeDetailsPage from '../customer/BikeDetailsPage';
+import { isBikeVehicle } from '../../utils/vehicleHelper';
 
 const GOA_LOCATIONS = [
   { id: 'mopa', name: 'Manohar International Airport (Mopa - GOX)', type: 'Airport' },
@@ -97,6 +102,8 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
     name: '',
     phone: '',
     email: '',
+    dob: '',
+    license: '',
     id_type: 'Aadhaar / Driving License',
     id_number: '',
     flight_number: '',
@@ -262,6 +269,18 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
       return;
     }
 
+    const hasDriverEarly = Boolean(driverRequired && driverTotalCharge > 0);
+    const eligibility = validateVehicleBookingEligibility(
+      guestDetails.dob,
+      pickupDate,
+      !hasDriverEarly,
+      guestDetails.license
+    );
+    if (!eligibility.valid) {
+      setBookingError(eligibility.error);
+      return;
+    }
+
     // Validate driver service inputs matching main website logic
     if (driverRequired) {
       if (!driverServiceType) {
@@ -363,6 +382,8 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
       guest_name: guestDetails.name,
       guest_phone: guestDetails.phone,
       guest_email: guestDetails.email,
+      date_of_birth: guestDetails.dob,
+      license: guestDetails.license,
       payment_method: guestDetails.payment_method,
       driver_required: hasDriver ? 1 : 0,
       driver_service_type: hasDriver ? driverServiceType : null,
@@ -394,7 +415,9 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
         driver_days: totalDriverServiceDays,
         driver_details: driverDetailsPayload,
         id_type: guestDetails.id_type,
-        id_number: guestDetails.id_number,
+        id_number: guestDetails.license || guestDetails.id_number,
+        date_of_birth: guestDetails.dob,
+        license: guestDetails.license,
         flight_number: guestDetails.flight_number,
         special_requests: guestDetails.special_requests
       }
@@ -643,7 +666,7 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
               <div key={veh.id} className="col-12 col-md-6 col-xl-4">
                 <div className="card h-100 border-0 shadow-sm rounded-4 overflow-hidden d-flex flex-column transition-all hover-shadow-lg" style={{ background: '#ffffff' }}>
                   {/* Vehicle Image */}
-                  <div className="position-relative" style={{ height: '190px', background: '#F8F9FA' }}>
+                  <div className="position-relative" style={{ height: '190px', background: '#F8F9FA', cursor: 'pointer' }} onClick={() => setDetailVehicle(veh)}>
                     <img 
                       src={veh.image || (isBike ? 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=600&q=80' : 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=600&q=80')} 
                       alt={veh.name}
@@ -671,7 +694,7 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
                   <div className="p-3.5 flex-grow-1 d-flex flex-column justify-content-between">
                     <div>
                       <div className="d-flex align-items-start justify-content-between mb-1">
-                        <h6 className="fw-bold text-dark font-heading mb-0 text-sm">{veh.name}</h6>
+                        <h6 className="fw-bold text-dark font-heading mb-0 text-sm" style={{ cursor: 'pointer' }} onClick={() => setDetailVehicle(veh)}>{veh.name}</h6>
                         <span className="text-xxs text-muted">{veh.fuel_type || (isBike ? 'Petrol' : 'Petrol')}</span>
                       </div>
 
@@ -755,7 +778,7 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleSelectToBook(veh)}
+                          onClick={() => setDetailVehicle(veh)}
                           className={`btn flex-grow-1 btn-sm rounded-pill fw-bold py-2 d-flex align-items-center justify-content-center gap-1.5 ${
                             mode === 'COMMISSION' ? 'btn-warning text-dark' : 'btn-primary text-white'
                           }`}
@@ -1305,6 +1328,31 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
                       />
                     </div>
                     <div className="col-12 col-md-6">
+                      <label className="form-label text-xxs fw-bold text-muted mb-1">
+                        Guest Date of Birth <span className="text-danger">*</span>
+                      </label>
+                      <DobPicker
+                        value={guestDetails.dob}
+                        onChange={(val) => setGuestDetails(prev => ({ ...prev, dob: val }))}
+                        referenceDate={pickupDate}
+                        required={true}
+                        id="b2b-guest-dob"
+                      />
+                    </div>
+                    <div className="col-12 col-md-6">
+                      <label className="form-label text-xxs fw-bold text-muted mb-1">
+                        Driving License Number {!(driverRequired && driverTotalCharge > 0) ? <span className="text-danger">*</span> : <span className="text-muted fw-normal"> (Optional with Driver)</span>}
+                      </label>
+                      <input
+                        type="text"
+                        className="form-control form-control-sm"
+                        placeholder="e.g. DL-1420180098765"
+                        value={guestDetails.license}
+                        onChange={(e) => setGuestDetails(prev => ({ ...prev, license: e.target.value }))}
+                        required={!(driverRequired && driverTotalCharge > 0)}
+                      />
+                    </div>
+                    <div className="col-12 col-md-6">
                       <label className="form-label text-xxs fw-bold text-muted mb-1">Flight / Train Arrival No.</label>
                       <input
                         type="text"
@@ -1471,167 +1519,39 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
           </div>
         </div>
       )}
-      {/* ── VEHICLE RICH DETAILS MODAL WITH MULTI-IMAGE CAROUSEL ── */}
+      {/* ── AUTHORITATIVE D2C VEHICLE DETAILS PAGE (CARS & BIKES SEPARATED) ── */}
       {detailVehicle && (
         <div 
-          className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center p-3"
-          style={{ background: 'rgba(13, 27, 46, 0.75)', zIndex: 1060, backdropFilter: 'blur(4px)' }}
-          onClick={() => setDetailVehicle(null)}
+          className="position-fixed top-0 start-0 w-100 h-100 bg-white"
+          style={{ zIndex: 1060, overflowY: 'auto' }}
         >
-          <div 
-            className="card border-0 shadow-2xl rounded-4 overflow-hidden animate-fade-in"
-            style={{ maxWidth: '720px', width: '100%', maxHeight: '92vh', display: 'flex', flexDirection: 'column', background: '#ffffff' }}
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="p-3.5 text-white d-flex align-items-center justify-content-between" style={{ background: '#0D1B2E' }}>
-              <div>
-                <span className="badge bg-warning text-dark text-xxs fw-bold px-2 py-0.5 rounded-pill mb-1">
-                  SELF DRIVE FLEET SPECIFICATION
-                </span>
-                <h5 className="fw-bold mb-0 text-white font-heading">{detailVehicle.name}</h5>
-              </div>
-              <button 
-                type="button"
-                className="btn btn-link text-white-50 p-0 border-0" 
-                onClick={() => setDetailVehicle(null)}
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Body */}
-            {(() => {
-              const isBike = Boolean(
-                String(detailVehicle.category || '').toLowerCase().includes('bike') ||
-                String(detailVehicle.category || '').toLowerCase().includes('scooter') ||
-                String(detailVehicle.category || '').toLowerCase().includes('moped') ||
-                detailVehicle.type === 'bike' ||
-                detailVehicle.engine ||
-                detailVehicle.mileage
-              );
-              return (
-                <div className="p-4 overflow-y-auto flex-grow-1">
-                  {/* Multi-Image Carousel with Thumbnails & Lightbox */}
-                  <div className="mb-3">
-                    <ImageCarousel
-                      images={resolveItemImages(detailVehicle, isBike ? 'bikes' : 'selfdrive')}
-                      alt={detailVehicle.name}
-                      height="340px"
-                      rounded="16px"
-                    />
-                  </div>
-
-                  {/* Specs & Highlights */}
-                  <div className="d-flex align-items-center gap-2 mb-3 pb-2 border-bottom flex-wrap">
-                    <span className={`badge ${isBike ? 'bg-primary' : 'bg-primary bg-opacity-10 text-primary'} px-2 py-1 rounded`}>
-                      {detailVehicle.category || (isBike ? 'Two Wheeler / Bike' : 'Standard Fleet')}
-                    </span>
-                    <span className="badge bg-dark text-white px-2 py-1 rounded">
-                      {detailVehicle.transmission || (isBike ? (detailVehicle.engine ? `${detailVehicle.engine}` : 'Manual') : 'Manual')}
-                    </span>
-                    <span className="badge bg-warning bg-opacity-10 text-dark border border-warning border-opacity-25 px-2 py-1 rounded">
-                      {detailVehicle.fuel_type || detailVehicle.fuel || 'Petrol'}
-                    </span>
-                    {isBike && (
-                      <span className="badge bg-info bg-opacity-10 text-dark border border-info border-opacity-25 px-2 py-1 rounded">
-                        2 Helmets Included
-                      </span>
-                    )}
-                    <span className="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-2 py-1 rounded">
-                      Goa Authorized Fleet
-                    </span>
-                  </div>
-
-                  {/* Specifications Grid */}
-                  <h6 className="fw-bold text-dark text-xs text-uppercase mb-2 font-heading">Specifications</h6>
-                  <div className="row g-2 mb-3">
-                    <div className="col-4">
-                      <div className="p-2.5 rounded-3 bg-light border text-center">
-                        <Users size={18} className="text-primary mb-1 mx-auto" />
-                        <div className="text-muted text-3xs">{isBike ? 'Seating Capacity' : 'Seating'}</div>
-                        <strong className="text-xs text-dark">{isBike ? '2 Persons' : `${detailVehicle.seating_capacity || 5} Seats`}</strong>
-                      </div>
-                    </div>
-                    <div className="col-4">
-                      <div className="p-2.5 rounded-3 bg-light border text-center">
-                        <Fuel size={18} className="text-primary mb-1 mx-auto" />
-                        <div className="text-muted text-3xs">{isBike && detailVehicle.engine ? 'Engine Spec' : 'Fuel Type'}</div>
-                        <strong className="text-xs text-dark">{isBike && detailVehicle.engine ? detailVehicle.engine : (detailVehicle.fuel_type || detailVehicle.fuel || 'Petrol')}</strong>
-                      </div>
-                    </div>
-                    <div className="col-4">
-                      <div className="p-2.5 rounded-3 bg-light border text-center">
-                        <Gauge size={18} className="text-primary mb-1 mx-auto" />
-                        <div className="text-muted text-3xs">{isBike ? 'Mileage / Limits' : 'Kilometers'}</div>
-                        <strong className="text-xs text-dark">{isBike && detailVehicle.mileage ? detailVehicle.mileage : 'Unlimited KMs'}</strong>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Description */}
-                  <h6 className="fw-bold text-dark text-xs text-uppercase mb-1.5 font-heading">Overview</h6>
-                  <p className="text-muted text-xs leading-relaxed mb-3">
-                    {detailVehicle.description || 'Full comprehensive insurance included. Clean & sanitized delivery. 24/7 roadside assistance across North and South Goa.'}
-                  </p>
-
-                  {/* Rental Features */}
-                  <h6 className="fw-bold text-dark text-xs text-uppercase mb-1.5 font-heading">Included Benefits</h6>
-                  <div className="d-flex gap-1.5 flex-wrap mb-2">
-                    <span className="badge bg-light text-dark border text-xxs py-1 px-2">✓ Comprehensive Insurance</span>
-                    {isBike && <span className="badge bg-light text-dark border text-xxs py-1 px-2">✓ 2 Sanitized Helmets</span>}
-                    <span className="badge bg-light text-dark border text-xxs py-1 px-2">✓ Sanitized Vehicle Delivery</span>
-                    <span className="badge bg-light text-dark border text-xxs py-1 px-2">✓ 24/7 Roadside Assistance</span>
-                    <span className="badge bg-light text-dark border text-xxs py-1 px-2">✓ Free Airport / Hub Delivery</span>
-                    <span className="badge bg-light text-dark border text-xxs py-1 px-2">✓ Instant B2B Confirmation</span>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Footer */}
-            <div className="p-3 border-top bg-light d-flex align-items-center justify-content-between">
-              <div>
-                {(() => {
-                  const pr = calculateVehiclePricingEstimate(detailVehicle);
-                  return mode === 'COMMISSION' ? (
-                    <div>
-                      <span className="text-xxs text-muted d-block">Retail Daily: ₹{pr.sellingPrice.toLocaleString()}/day</span>
-                      <strong className="text-success text-xs">Agent Commission ({pr.commissionPercent}%): +₹{pr.commissionAmount.toLocaleString()}/day</strong>
-                    </div>
-                  ) : (
-                    <div>
-                      <span className="text-xxs text-muted d-block">Retail Daily: <del>₹{pr.sellingPrice.toLocaleString()}</del></span>
-                      <strong className="text-primary text-xs">B2B Net Rate: ₹{pr.netPrice.toLocaleString()}/day</strong>
-                    </div>
-                  );
-                })()}
-              </div>
-
-              <div className="d-flex gap-2">
-                <button 
-                  type="button"
-                  className="btn btn-outline-secondary btn-sm rounded-pill px-3 text-xs" 
-                  onClick={() => setDetailVehicle(null)}
-                >
-                  Close
-                </button>
-                <button
-                  type="button"
-                  className={`btn btn-sm rounded-pill px-4 fw-bold text-xs ${
-                    mode === 'COMMISSION' ? 'btn-warning text-dark' : 'btn-primary text-white'
-                  }`}
-                  onClick={() => {
-                    const veh = detailVehicle;
-                    setDetailVehicle(null);
-                    handleSelectToBook(veh);
-                  }}
-                >
-                  Book for Guest &rarr;
-                </button>
-              </div>
-            </div>
-          </div>
+          {isBikeVehicle(detailVehicle) ? (
+            <BikeDetailsPage
+              bike={detailVehicle}
+              actionLabel="Book for Guest"
+              backLabel="Back to B2B Fleet"
+              breadcrumbPrefix="B2B Portal / Self Drive Bikes"
+              onBack={() => setDetailVehicle(null)}
+              onBook={(veh) => {
+                const targetVeh = veh || detailVehicle;
+                setDetailVehicle(null);
+                handleSelectToBook(targetVeh);
+              }}
+            />
+          ) : (
+            <CarDetailsPage
+              car={detailVehicle}
+              actionLabel="Book for Guest"
+              backLabel="Back to B2B Fleet"
+              breadcrumbPrefix="B2B Portal / Self Drive Cars"
+              onBack={() => setDetailVehicle(null)}
+              onBook={(veh) => {
+                const targetVeh = veh || detailVehicle;
+                setDetailVehicle(null);
+                handleSelectToBook(targetVeh);
+              }}
+            />
+          )}
         </div>
       )}
     </div>

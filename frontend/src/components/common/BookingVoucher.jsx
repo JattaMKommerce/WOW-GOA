@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Printer, X, CheckCircle, Clock, ShieldCheck, MapPin, Phone, Mail, Calendar, User, FileText, Compass, AlertCircle } from 'lucide-react';
 
 /**
@@ -89,12 +89,24 @@ export default function BookingVoucher({
   const isBike = (
     rawType === 'bike' ||
     rawType.includes('bike') ||
+    rawType.includes('scooter') ||
+    rawType.includes('two wheeler') ||
+    rawType.includes('two-wheeler') ||
     rawItemName.includes('bike') ||
     rawItemName.includes('scooter') ||
     rawItemName.includes('activa') ||
     rawItemName.includes('bullet') ||
     rawItemName.includes('himalayan') ||
-    rawItemId.startsWith('bike-')
+    rawItemName.includes('classic 350') ||
+    rawItemName.includes('classic') ||
+    rawItemName.includes('reborn') ||
+    rawItemName.includes('royal enfield') ||
+    rawItemName.includes('jupiter') ||
+    rawItemName.includes('access 125') ||
+    rawItemName.includes('faschino') ||
+    rawItemId.startsWith('bike-') ||
+    rawItemId.startsWith('bike_') ||
+    rawItemId.startsWith('bk-')
   );
 
   const isSelfDrive = (
@@ -135,9 +147,9 @@ export default function BookingVoucher({
 
   const durationText = booking.duration || (booking.booking_days ? `${booking.booking_days} Days / ${Math.max(1, booking.booking_days - 1)} Nights` : '');
 
-  // ─── 5. Driver / Chauffeur Service Check ───
+  // ─── 5. Driver / Chauffeur Service Check (Strictly NEVER for bikes / scooters) ───
   const svcType = String(booking.driver_service_type || '').toUpperCase();
-  const hasDriverService = Boolean(
+  const hasDriverService = !isBike && Boolean(
     ['PICKUP', 'DROP', 'FULL'].includes(svcType) ||
     booking.driver_required == 1 ||
     booking.driver_required === 'yes' ||
@@ -146,23 +158,42 @@ export default function BookingVoucher({
     booking.assigned_driver_id
   );
 
-  const driverAssigned = Boolean(booking.assigned_driver_name || booking.assigned_driver_id);
-  const driverName = booking.assigned_driver_name || (booking.assigned_driver_id ? `Chauffeur #${booking.assigned_driver_id}` : '');
-  const driverPhone = booking.assigned_driver_phone || '';
-  const driverVehicle = booking.assigned_driver_vehicle || '';
+  const driverAssigned = hasDriverService && Boolean(booking.assigned_driver_name || booking.assigned_driver_id);
+  const driverName = hasDriverService ? (booking.assigned_driver_name || (booking.assigned_driver_id ? `Chauffeur #${booking.assigned_driver_id}` : '')) : '';
+  const driverPhone = hasDriverService ? (booking.assigned_driver_phone || '') : '';
+  const driverVehicle = hasDriverService ? (booking.assigned_driver_vehicle || '') : '';
 
   // ─── 6. Financial Calculations ───
   const totalAmount = parseFloat(booking.total_amount || booking.amount || booking.total_paid || 0);
   const amountPaid = parseFloat(booking.amount_paid || booking.paid_amount || (booking.payment_status === 'Paid' ? totalAmount : 0));
   const pendingBalance = Math.max(0, parseFloat(booking.remaining_amount || booking.pending_amount || (totalAmount - amountPaid)));
   const walletAmountUsed = parseFloat(booking.wallet_amount_used || 0);
-  const driverCharge = parseFloat(booking.driver_charge || 0);
+  const driverCharge = hasDriverService ? parseFloat(booking.driver_charge || 0) : 0;
   const b2bCommission = parseFloat(booking.b2b_commission_amount || 0);
   const b2bNetPrice = parseFloat(booking.b2b_net_price || 0);
 
   const paymentStatus = booking.payment_status || (pendingBalance === 0 && totalAmount > 0 ? 'Paid' : 'Pending');
   const paymentMethod = booking.payment_method || booking.payment_mode || (booking.b2b_mode ? 'B2B Partner Billing' : 'Prepaid Online / Direct');
   const bookingStatus = (booking.status || 'Confirmed').toUpperCase();
+
+  // ─── 7. Hide sticky header while modal is open ───
+  useEffect(() => {
+    if (!isModal) return;
+    // Suppress any sticky/fixed portal headers so the backdrop fully covers them
+    const stickyHeaders = document.querySelectorAll('.sticky-top, [class*="sticky"]');
+    const originals = [];
+    stickyHeaders.forEach((el) => {
+      originals.push({ el, zIndex: el.style.zIndex });
+      el.style.zIndex = '1';
+    });
+    document.body.style.overflow = 'hidden';
+    return () => {
+      originals.forEach(({ el, zIndex }) => {
+        el.style.zIndex = zIndex;
+      });
+      document.body.style.overflow = '';
+    };
+  }, [isModal]);
 
   // ─── 7. Print Handler ───
   const handlePrint = (e) => {
@@ -181,38 +212,53 @@ export default function BookingVoucher({
   };
 
   const content = (
-    <div className="booking-voucher-document bg-white text-dark font-sans" style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", color: '#0f172a', lineHeight: 1.35 }}>
+    <div 
+      className="booking-voucher-document bg-white text-dark font-sans" 
+      style={{ 
+        maxWidth: '740px', 
+        margin: '0 auto', 
+        border: '1px solid #e2e8f0', 
+        borderRadius: '8px', 
+        padding: '20px 24px', 
+        boxShadow: '0 4px 16px rgba(0,0,0,0.06)', 
+        fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", 
+        color: '#0f172a', 
+        lineHeight: 1.35 
+      }}
+    >
       
-      {/* ─── Print & Action Toolbar (Screen Only) ─── */}
-      <div className="no-print d-flex justify-content-between align-items-center pb-3 mb-3 border-bottom">
-        <div className="d-flex align-items-center gap-2">
-          <div className="rounded-circle p-1.5 bg-dark text-white d-flex align-items-center justify-content-center" style={{ width: '28px', height: '28px' }}>
-            <FileText size={16} />
+      {/* ─── Print & Action Toolbar (Screen Only, shown when not embedded in modal) ─── */}
+      {!isModal && (
+        <div className="no-print d-flex justify-content-between align-items-center pb-3 mb-3 border-bottom">
+          <div className="d-flex align-items-center gap-2">
+            <div className="rounded-circle p-1.5 bg-dark text-white d-flex align-items-center justify-content-center" style={{ width: '28px', height: '28px' }}>
+              <FileText size={16} />
+            </div>
+            <span className="fw-bold text-dark small">Booking Document Preview</span>
           </div>
-          <span className="fw-bold text-dark small">Booking Document Preview</span>
-        </div>
-        <div className="d-flex gap-2">
-          <button 
-            type="button" 
-            onClick={handlePrint}
-            className="btn btn-dark btn-sm rounded-pill px-4 py-1.5 fw-bold d-flex align-items-center gap-1.5 shadow-sm"
-            style={{ fontSize: '0.8rem', background: '#0B192C', borderColor: '#0B192C' }}
-          >
-            <Printer size={14} />
-            <span>Print Voucher</span>
-          </button>
-          {onClose && (
+          <div className="d-flex gap-2">
             <button 
               type="button" 
-              onClick={onClose}
-              className="btn btn-outline-secondary btn-sm rounded-pill px-3 py-1.5 fw-bold"
-              style={{ fontSize: '0.8rem' }}
+              onClick={handlePrint}
+              className="btn btn-dark btn-sm rounded-pill px-4 py-1.5 fw-bold d-flex align-items-center gap-1.5 shadow-sm"
+              style={{ fontSize: '0.8rem', background: '#0B192C', borderColor: '#0B192C' }}
             >
-              Close
+              <Printer size={14} />
+              <span>Print Voucher</span>
             </button>
-          )}
+            {onClose && (
+              <button 
+                type="button" 
+                onClick={onClose}
+                className="btn btn-outline-secondary btn-sm rounded-pill px-3 py-1.5 fw-bold"
+                style={{ fontSize: '0.8rem' }}
+              >
+                Close
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ═══════════════════════════════════════════════════════
           SECTION 1: HEADER & CORPORATE BRANDING
@@ -509,11 +555,23 @@ export default function BookingVoucher({
 
         {/* Booking-Specific Operational Notes */}
         <div style={{ fontSize: '9.5px', color: '#475569' }}>
-          {isSelfDrive && (
+          {isBike ? (
+            <>
+              <div className="mb-0.5">
+                • <strong>Rider Helmet &amp; Safety:</strong> 1 complimentary sanitized ISI-standard rider helmet is included. Pillion helmet available on request. Wearing a helmet is strictly mandatory by Goa Traffic Police regulations.
+              </div>
+              <div className="mb-0.5">
+                • <strong>Security Deposit &amp; License:</strong> A refundable deposit of ₹1,500–₹3,000 (UPI/Cash) and physical original Driving License must be presented at vehicle handover.
+              </div>
+              <div className="mb-0.5">
+                • <strong>Fuel Policy:</strong> Vehicles are handed over with reserve fuel; please return with the same fuel level.
+              </div>
+            </>
+          ) : isSelfDrive ? (
             <div className="mb-0.5">
               • <strong>Security Deposit:</strong> A refundable deposit of ₹3,000–₹5,000 (UPI/Cash) and physical Driving License must be presented at vehicle handover.
             </div>
-          )}
+          ) : null}
           {isHotel && (
             <div className="mb-0.5">
               • <strong>Check-in Requirement:</strong> Standard check-in starts from 14:00 hrs. Government-issued photo IDs (Aadhaar/Passport) required for all staying adults.
@@ -642,8 +700,9 @@ export default function BookingVoucher({
             overflow: visible !important;
           }
 
-          /* Reset Modal Card Body */
-          .modal-backdrop-custom .card-body {
+          /* Reset Modal Scroll Body & Card Body */
+          .modal-backdrop-custom .card-body,
+          .modal-backdrop-custom .modal-voucher-scroll-body {
             position: static !important;
             display: block !important;
             width: 100% !important;
@@ -698,27 +757,142 @@ export default function BookingVoucher({
   if (isModal) {
     return (
       <div 
-        className="modal-backdrop-custom d-flex align-items-center justify-content-center"
+        className="modal-backdrop-custom"
         style={{
           position: 'fixed',
           top: 0,
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(11, 25, 44, 0.75)',
-          backdropFilter: 'blur(6px)',
-          zIndex: 1070,
-          padding: '16px'
+          background: 'rgba(11, 25, 44, 0.78)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+          zIndex: 1080,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          padding: '16px',
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'center'
         }}
         onClick={onClose}
       >
         <div 
-          className="card border-0 shadow-lg rounded-4 overflow-hidden animate-fade-in-up" 
-          style={{ width: '100%', maxWidth: '780px', maxHeight: '94vh', display: 'flex', flexDirection: 'column', background: '#ffffff' }}
+          className="card border-0 shadow-2xl rounded-4 overflow-hidden animate-fade-in-up" 
+          style={{
+            width: '100%',
+            maxWidth: '820px',
+            minHeight: '92vh',
+            display: 'flex',
+            flexDirection: 'column',
+            background: '#ffffff',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.45)',
+            margin: 'auto'
+          }}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="card-body p-3 p-md-4 overflow-y-auto" style={{ maxHeight: '94vh' }}>
+          {/* ─── Sticky Modal Header (Screen Only) ─── */}
+          <div 
+            className="no-print d-flex justify-content-between align-items-center px-3 px-md-4 py-2.5 text-white flex-shrink-0"
+            style={{ background: '#0B192C', borderBottom: '1px solid rgba(255,255,255,0.1)' }}
+          >
+            <div className="d-flex align-items-center gap-2.5">
+              <div 
+                className="rounded-3 p-1.5 d-flex align-items-center justify-content-center" 
+                style={{ background: 'rgba(255, 184, 0, 0.18)', color: '#FFB800', width: '34px', height: '34px' }}
+              >
+                <FileText size={18} />
+              </div>
+              <div>
+                <div className="d-flex align-items-center gap-2">
+                  <span className="fw-black text-white" style={{ fontSize: '13.5px', letterSpacing: '-0.2px' }}>
+                    Booking Reservation Voucher
+                  </span>
+                  <span 
+                    className={`badge text-uppercase px-2 py-0.5 rounded-pill ${
+                      bookingStatus === 'CONFIRMED' || bookingStatus === 'COMPLETED' 
+                        ? 'bg-success text-white' 
+                        : 'bg-warning text-dark'
+                    }`}
+                    style={{ fontSize: '9px', fontWeight: 800 }}
+                  >
+                    {bookingStatus}
+                  </span>
+                </div>
+                <div className="d-flex align-items-center gap-2 text-white-50 mt-0.5" style={{ fontSize: '11px' }}>
+                  <span className="font-monospace text-warning fw-bold">#{bookingId}</span>
+                  <span>•</span>
+                  <span>{serviceLabel}</span>
+                  <span>•</span>
+                  <span>{createdDate}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="d-flex align-items-center gap-2">
+              <button 
+                type="button" 
+                onClick={handlePrint}
+                className="btn btn-warning btn-sm rounded-pill px-3 py-1.5 fw-bold d-flex align-items-center gap-1.5 shadow-sm"
+                style={{ fontSize: '0.78rem', background: '#FFB800', borderColor: '#FFB800', color: '#0B192C' }}
+              >
+                <Printer size={14} />
+                <span className="d-none d-sm-inline">Print / Download PDF</span>
+                <span className="d-inline d-sm-none">Print</span>
+              </button>
+              {onClose && (
+                <button 
+                  type="button" 
+                  onClick={onClose}
+                  className="btn btn-sm rounded-circle d-flex align-items-center justify-content-center text-white border-0"
+                  style={{ width: '32px', height: '32px', background: 'rgba(255,255,255,0.15)', cursor: 'pointer' }}
+                  title="Close Voucher"
+                >
+                  <X size={18} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* ─── Modal Body containing the A4 Document ─── */}
+          <div 
+            className="modal-voucher-scroll-body flex-grow-1 p-2 p-md-3" 
+            style={{ background: '#f1f5f9' }}
+          >
             {content}
+          </div>
+
+          {/* ─── Sticky Modal Footer (Screen Only) ─── */}
+          <div 
+            className="no-print d-flex justify-content-between align-items-center px-3 px-md-4 py-2 bg-white border-top flex-shrink-0"
+            style={{ borderColor: '#e2e8f0' }}
+          >
+            <div className="text-muted d-flex align-items-center gap-1.5" style={{ fontSize: '11px' }}>
+              <ShieldCheck size={14} className="text-success flex-shrink-0" />
+              <span className="d-none d-md-inline">Official Travel &amp; Reservation Confirmation Voucher • Verified Corporate Document</span>
+              <span className="d-inline d-md-none">Verified WOW GOA Voucher</span>
+            </div>
+            <div className="d-flex align-items-center gap-2">
+              {onClose && (
+                <button 
+                  type="button" 
+                  onClick={onClose}
+                  className="btn btn-outline-secondary btn-sm rounded-pill px-3 py-1 fw-bold"
+                  style={{ fontSize: '0.75rem' }}
+                >
+                  Close
+                </button>
+              )}
+              <button 
+                type="button" 
+                onClick={handlePrint}
+                className="btn btn-dark btn-sm rounded-pill px-3 py-1 fw-bold d-flex align-items-center gap-1.5"
+                style={{ fontSize: '0.75rem', background: '#0B192C', borderColor: '#0B192C' }}
+              >
+                <Printer size={13} />
+                <span>Print Voucher</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
