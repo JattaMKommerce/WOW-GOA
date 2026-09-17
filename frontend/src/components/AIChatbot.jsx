@@ -1,14 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Send, Bot, User, Mic, MicOff, Volume2, VolumeX, AlertCircle, CheckCircle2, Eye, Printer, Calendar, ShieldCheck, Sparkles, Loader2 } from 'lucide-react';
 import chatbotAvatar from '../assets/aichatbot.webp';
+import chatbotAnimationVideo from '../assets/chatbot-animation.mp4';
+import chatbotAnimation from '../assets/chatbot-animation.webp';
+import sophiaAvatar4k from '../assets/sophia-avatar-4k.png';
 import { chatWithAI, API_BASE, createAiLead, updateAiLeadChat, createBooking, getAIChatbotSettings } from '../services/api';
 import BookingVoucher from './common/BookingVoucher';
 
 const aiMessages = [
-  "Hey, I'm Sophia",
-  "Plan your Goa trip",
-  "Need help booking?",
-  "Rent a Car or Bike"
+  "Rent a Car or Bike",
+  "Plan Your Goa Trip",
+  "Need Help? Ask Sophia",
+  "Let’s Explore Goa"
 ];
 
 export default function AIChatbot() {
@@ -19,6 +22,105 @@ export default function AIChatbot() {
   const [leadId, setLeadId] = useState(null);
   const [aiLeadId, setAiLeadId] = useState(null);
   const [activeContext, setActiveContext] = useState(null);
+  const avatarVideoRef = useRef(null);
+  const canvasRef = useRef(null);
+
+  // Listen to external open_ai_chat custom event
+  useEffect(() => {
+    const handleOpenAIChat = () => setIsOpen(true);
+    window.addEventListener('open_ai_chat', handleOpenAIChat);
+    return () => window.removeEventListener('open_ai_chat', handleOpenAIChat);
+  }, []);
+
+  // Real-time canvas processing to strip black background into true transparency
+  useEffect(() => {
+    const video = avatarVideoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+
+    let animId;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+    const renderCurrentFrame = () => {
+      if (video.readyState >= 2) {
+        // Native high-res canvas buffer matching source video to maintain ultra-sharp 4K clarity
+        if (video.videoWidth && canvas.width !== video.videoWidth) {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+        }
+
+        // Draw frame directly without clearing to black first, preventing flicker across loops
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = frame.data;
+        const l = data.length / 4;
+        const cw = canvas.width;
+        const ch = canvas.height;
+
+        for (let i = 0; i < l; i++) {
+          const idx = i * 4;
+          const r = data[idx];
+          const g = data[idx + 1];
+          const b = data[idx + 2];
+          const px = i % cw;
+          const py = (i / cw) | 0;
+
+          // Clear outer edges & background floating dust particles outside robot silhouette
+          if (px < cw * 0.055 || px > cw * 0.93 || py < ch * 0.04 || (px > cw * 0.77 && py > ch * 0.64)) {
+            data[idx + 3] = 0;
+            continue;
+          }
+
+          const normX = px / cw;
+          const normY = py / ch;
+          // Protect natural black eyes and pupils from being keyed out
+          const isEyeZone = (normY >= 0.20 && normY <= 0.42 && normX >= 0.43 && normX <= 0.59);
+
+          if (isEyeZone) {
+            data[idx + 3] = 255; // Keep natural dark eyes & pupils 100% solid and crisp
+          } else {
+            // Tightened threshold: preserves all dark metallic joints on neck and chest
+            const maxChannel = Math.max(r, g, b);
+            if (maxChannel < 28) {
+              data[idx + 3] = 0; // Pure background only
+            } else if (maxChannel < 45) {
+              // Smooth feathered edges to remove fringing
+              data[idx + 3] = Math.floor(((maxChannel - 28) / 17) * 255);
+            }
+          }
+        }
+        ctx.putImageData(frame, 0, 0);
+      }
+    };
+
+    const drawFrame = () => {
+      renderCurrentFrame();
+      animId = requestAnimationFrame(drawFrame);
+    };
+
+    const handleImmediateRedraw = () => {
+      renderCurrentFrame();
+    };
+
+    // Attach listeners to prevent black flash on loop and redraw immediately
+    video.addEventListener('play', handleImmediateRedraw);
+    video.addEventListener('seeking', handleImmediateRedraw);
+    video.addEventListener('seeked', handleImmediateRedraw);
+    video.addEventListener('timeupdate', handleImmediateRedraw);
+    video.addEventListener('loadeddata', handleImmediateRedraw);
+
+    video.play().catch(() => {});
+    animId = requestAnimationFrame(drawFrame);
+
+    return () => {
+      cancelAnimationFrame(animId);
+      video.removeEventListener('play', handleImmediateRedraw);
+      video.removeEventListener('seeking', handleImmediateRedraw);
+      video.removeEventListener('seeked', handleImmediateRedraw);
+      video.removeEventListener('timeupdate', handleImmediateRedraw);
+      video.removeEventListener('loadeddata', handleImmediateRedraw);
+    };
+  }, []);
 
   // Sync AI Chatbot enabled state from database and listen to real-time toggle events
   useEffect(() => {
@@ -655,37 +757,250 @@ export default function AIChatbot() {
 
   return (
     <>
-      <button
+      {/* ─── FLOATING AI ASSISTANT ROBOT TRIGGER ──────────────────────── */}
+      {/* Hidden Video Source for Real-Time Canvas Chroma-Keying */}
+      <video
+        ref={avatarVideoRef}
+        src={chatbotAnimationVideo}
+        id="ai-hidden-video"
+        autoPlay
+        loop
+        muted
+        playsInline
+        style={{ display: 'none' }}
+      />
+
+      <div
         onClick={() => setIsOpen(true)}
-        className={`position-fixed shadow-lg d-flex align-items-center p-0 transition-all ${isOpen ? 'scale-0' : 'scale-100'}`}
-        style={{
-          bottom: '30px', right: '30px', height: '60px', background: 'white',
-          borderRadius: '50px', zIndex: 1040, border: '1px solid #eaeaea',
-          boxShadow: '0 10px 25px rgba(0, 0, 0, 0.15)', cursor: 'pointer',
-          paddingRight: '20px', overflow: 'visible'
+        role="button"
+        tabIndex={0}
+        aria-label="Open Sophia AI Assistant"
+        className={`sophia-floating-trigger ai-floating-trigger ${isOpen ? 'is-hidden' : 'is-visible'}`}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setIsOpen(true);
+          }
         }}
       >
-        <div 
-          className="avatar-glow-container rounded-circle d-flex align-items-center justify-content-center"
-          style={{ width: '64px', height: '64px', background: 'white', border: '2px solid #0B192C', marginLeft: '-4px', position: 'relative', overflow: 'hidden' }}
-        >
-          <img 
-            src={chatbotAvatar} 
-            alt="Sophia AI" 
-            className="head-movement"
-            style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
+        {/* Left Speech Bubble / Pill Badge with 4-second cycling text */}
+        <div className="sophia-speech-pill ai-speech-pill">
+          <span className="sophia-status-dot ai-status-indicator" />
+          <span
+            className="sophia-speech-text"
+            style={{
+              color: '#0f172a',
+              fontWeight: 700,
+              fontSize: '15px',
+              opacity: fade ? 1 : 0,
+              transition: 'opacity 0.35s ease-in-out',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            {aiMessages[msgIndex]}
+          </span>
+        </div>
+
+        {/* Floating Robot Avatar Wrapper with Centered Round Aura & Canvas */}
+        <div className="sophia-avatar-wrapper ai-avatar-wrapper">
+          <canvas
+            ref={canvasRef}
+            id="ai-avatar-canvas"
+            width="1280"
+            height="720"
           />
         </div>
-        <div style={{ marginLeft: '14px', marginRight: '10px', fontSize: '15px', color: '#1a202c', transition: 'opacity 0.5s ease-in-out', opacity: fade ? 1 : 0, whiteSpace: 'nowrap' }}>
-          {msgIndex === 0 ? <span>Hey, <strong style={{ color: '#6b46c1', fontSize: '16px' }}>I'm Sophia</strong></span> : <span style={{ fontWeight: '500' }}>{aiMessages[msgIndex]}</span>}
-        </div>
-      </button>
+      </div>
+
+      <style>{`
+        /* 1. Main Floating Trigger Container (Positioned comfortably to the right edge) */
+        .sophia-floating-trigger,
+        .ai-floating-trigger {
+          position: fixed;
+          bottom: 12px;
+          right: -6px;
+          z-index: 1045;
+          display: flex;
+          align-items: center;
+          cursor: pointer;
+          user-select: none;
+          background: transparent !important;
+          -webkit-tap-highlight-color: transparent;
+          transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease;
+        }
+        .sophia-floating-trigger.is-hidden,
+        .ai-floating-trigger.is-hidden {
+          transform: scale(0);
+          opacity: 0;
+          pointer-events: none;
+        }
+        .sophia-floating-trigger.is-visible,
+        .ai-floating-trigger.is-visible {
+          transform: scale(1);
+          opacity: 1;
+          pointer-events: auto;
+        }
+        .sophia-floating-trigger:hover,
+        .ai-floating-trigger:hover {
+          transform: scale(1.03);
+        }
+        .sophia-floating-trigger:active,
+        .ai-floating-trigger:active {
+          transform: scale(0.97);
+        }
+
+        /* 2. Overlapping Speech Pill Badge (Tightly balanced with larger character) */
+        .sophia-speech-pill,
+        .ai-speech-pill {
+          position: relative;
+          z-index: 1;
+          margin-right: -32px;
+          padding: 11px 24px;
+          background: #ffffff;
+          border: 1.5px solid rgba(0, 168, 255, 0.25);
+          box-shadow: 0 10px 25px rgba(0, 140, 255, 0.12), 0 4px 6px rgba(0, 0, 0, 0.03);
+          border-radius: 9999px;
+          color: #0f172a !important;
+          font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          font-size: 15.5px;
+          font-weight: 700;
+          letter-spacing: -0.2px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          white-space: nowrap;
+          transition: all 0.3s ease;
+          animation: sophiaPillFloat 3.8s ease-in-out infinite;
+        }
+        @keyframes sophiaPillFloat {
+          0%, 100% {
+            transform: translateY(0px);
+          }
+          50% {
+            transform: translateY(-4px);
+          }
+        }
+        .sophia-speech-text {
+          color: #0f172a !important;
+          font-weight: 700 !important;
+          font-size: 15.5px !important;
+          letter-spacing: -0.2px;
+        }
+        .sophia-floating-trigger:hover .sophia-speech-pill,
+        .ai-floating-trigger:hover .sophia-speech-pill {
+          box-shadow: 0 14px 30px rgba(0, 140, 255, 0.2), 0 6px 10px rgba(0, 0, 0, 0.05);
+          border-color: rgba(0, 168, 255, 0.4);
+        }
+
+        /* 3. Glowing Green Status Indicator Dot with Pulse */
+        .sophia-status-dot,
+        .ai-status-indicator {
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+          background: #10b981;
+          box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6);
+          animation: dot-pulse 2s infinite;
+          flex-shrink: 0;
+        }
+        @keyframes dot-pulse {
+          0% {
+            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6);
+          }
+          70% {
+            box-shadow: 0 0 0 8px rgba(16, 185, 129, 0);
+          }
+          100% {
+            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+          }
+        }
+
+        /* 4. Large Avatar Container (Scale to 210px, z-index: 10, overflow: visible) */
+        .sophia-avatar-wrapper,
+        .ai-avatar-wrapper {
+          position: relative;
+          z-index: 10;
+          width: 210px;
+          height: auto;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          overflow: visible !important;
+          background: transparent !important;
+          border: none !important;
+          animation: sophiaAntiGravityFloat 3.8s ease-in-out infinite;
+        }
+        @keyframes sophiaAntiGravityFloat {
+          0%, 100% {
+            transform: translateY(0px);
+          }
+          50% {
+            transform: translateY(-10px);
+          }
+        }
+
+        /* Enlarged & Centered Blue Aura Glow behind character */
+        .sophia-avatar-wrapper::before,
+        .ai-avatar-wrapper::before {
+          content: '';
+          position: absolute;
+          top: 52%;
+          left: 51%;
+          transform: translate(-50%, -50%);
+          width: 200px;
+          height: 200px;
+          border-radius: 50%;
+          background: radial-gradient(circle, rgba(0, 195, 255, 0.45) 0%, rgba(0, 140, 255, 0.12) 55%, transparent 75%);
+          filter: blur(22px);
+          z-index: 0;
+          pointer-events: none;
+        }
+
+        /* 5. Canvas with Ultra-Sharp Display Resolution & Seamless Vignette Fade */
+        #ai-avatar-canvas {
+          -webkit-mask-image: linear-gradient(to bottom, black 72%, rgba(0, 0, 0, 0.85) 86%, transparent 100%);
+          mask-image: linear-gradient(to bottom, black 72%, rgba(0, 0, 0, 0.85) 86%, transparent 100%);
+          width: 210px;
+          height: auto;
+          z-index: 10;
+          position: relative;
+          pointer-events: none;
+          display: block;
+        }
+
+        /* 6. Mobile Responsiveness */
+        @media (max-width: 600px) {
+          .sophia-floating-trigger,
+          .ai-floating-trigger {
+            bottom: 8px;
+            right: -8px;
+          }
+          .sophia-speech-pill,
+          .ai-speech-pill {
+            font-size: 13px;
+            padding: 8px 16px;
+            margin-right: -22px;
+          }
+          .sophia-avatar-wrapper,
+          .ai-avatar-wrapper {
+            width: 145px;
+          }
+          #ai-avatar-canvas {
+            width: 145px;
+          }
+          .sophia-avatar-wrapper::before,
+          .ai-avatar-wrapper::before {
+            width: 140px;
+            height: 140px;
+          }
+        }
+      `}</style>
 
       {/* Chatbot Window */}
       <div 
         className={`position-fixed shadow-lg rounded-4 overflow-hidden transition-all bg-white d-flex flex-column`}
         style={{
-          bottom: isOpen ? '30px' : '-600px', right: '30px', width: '380px', height: '600px',
+          bottom: isOpen ? '20px' : '-600px', right: '20px', width: '380px', height: '600px',
           maxWidth: 'calc(100vw - 40px)', maxHeight: 'calc(100vh - 40px)', zIndex: 1050,
           opacity: isOpen ? 1 : 0, pointerEvents: isOpen ? 'all' : 'none', border: '1px solid rgba(0,0,0,0.1)',
         }}

@@ -126,7 +126,18 @@ function StatusBadge({ status }) {
     flight_vendor: { bg: '#e0f2fe', color: '#0369a1' },
     customer: { bg: '#f0f9ff', color: '#0369a1' },
     'new enquiry': { bg: '#fef9c3', color: '#ca8a04' },
-    captured: { bg: '#dcfce7', color: '#16a34a' }
+    captured: { bg: '#dcfce7', color: '#16a34a' },
+    paid: { bg: '#dcfce7', color: '#16a34a' },
+    'paid online': { bg: '#dcfce7', color: '#16a34a' },
+    full: { bg: '#dcfce7', color: '#16a34a' },
+    success: { bg: '#dcfce7', color: '#16a34a' },
+    successful: { bg: '#dcfce7', color: '#16a34a' },
+    partial: { bg: '#fef9c3', color: '#ca8a04' },
+    'partially paid': { bg: '#fef9c3', color: '#ca8a04' },
+    unpaid: { bg: '#fee2e2', color: '#dc2626' },
+    failed: { bg: '#fee2e2', color: '#dc2626' },
+    refunded: { bg: '#f1f5f9', color: '#64748b' },
+    'pending verification': { bg: '#fef9c3', color: '#ca8a04' }
   };
   const s = status?.toLowerCase();
   const style = map[s] || { bg: '#f1f5f9', color: '#64748b' };
@@ -1362,69 +1373,63 @@ function BookingsTab({ bookings = [], type, vendors = [], onRefresh }) {
           const isCancelled = (b.status || '').toLowerCase() === 'cancelled';
           return (
             <tr key={b.id}>
-              <td className="px-3 py-2 fw-bold" style={{ color: '#2563eb', fontSize: '0.78rem' }}>#{b.id}</td>
+              <td className="px-3 py-2 fw-bold" style={{ color: '#2563eb', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>#{b.id}</td>
               <td className="px-3 py-2">
                 <div className="fw-bold" style={{ color: '#0D1B2E' }}>{b.name || b.customer_name || '—'}</div>
                 <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{b.phone || 'No phone'}</div>
               </td>
               <td className="px-3 py-2">
                 <div className="fw-bold" style={{ color: '#0f172a' }}>{b.item_name || '—'}</div>
-                {(v || b.vendor_id) && (
-                  <div className="mt-0.5">
-                    <span className="badge" style={{ background: '#e0f2fe', color: '#0369a1', fontSize: '0.65rem' }}>Vendor: {v?.name || b.vendor_id}</span>
+                {type === 'activity' ? (
+                  <div className="d-flex align-items-center gap-1 mt-0.5" style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                    <MapPin size={11} className="text-danger flex-shrink-0" />
+                    <span>{b.pickup_loc || b.location || 'Goa'}</span>
+                    {v && v.role === 'activity_vendor' && (
+                      <span className="badge ms-1" style={{ background: '#e0f2fe', color: '#0369a1', fontSize: '0.65rem' }}>Vendor: {v.name}</span>
+                    )}
                   </div>
+                ) : type === 'hotel' ? (
+                  <div className="d-flex align-items-center gap-1 mt-0.5" style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                    <MapPin size={11} className="text-secondary flex-shrink-0" />
+                    <span>{b.pickup_loc || 'Goa Resort'}</span>
+                    {(v || b.vendor_id) && (
+                      <span className="badge ms-1" style={{ background: '#d1fae5', color: '#059669', fontSize: '0.65rem' }}>{v?.name || b.vendor_id}</span>
+                    )}
+                  </div>
+                ) : (
+                  (v || b.vendor_id) && (
+                    <div className="mt-0.5">
+                      <span className="badge" style={{ background: '#e0f2fe', color: '#0369a1', fontSize: '0.65rem' }}>Vendor: {v?.name || b.vendor_id}</span>
+                    </div>
+                  )
                 )}
               </td>
-              <td className="px-3 py-2">
+              <td className="px-3 py-2" style={{ whiteSpace: 'nowrap' }}>
                 <div className="fw-bold text-dark">₹{parseFloat(b.total_amount || b.total_paid || b.amount_paid || 0).toLocaleString()}</div>
                 <div style={{ fontSize: '0.72rem', color: '#64748b' }}>Paid: ₹{parseFloat(b.amount_paid || b.total_paid || 0).toLocaleString()}</div>
               </td>
-              <td className="px-3 py-2"><StatusBadge status={b.status || 'pending'} /></td>
-              <td className="px-3 py-2"><StatusBadge status={b.payment_status || 'pending'} /></td>
-              <td className="px-3 py-2" style={{ color: '#94a3b8', fontSize: '0.75rem' }}>{b.created_at?.slice(0, 10) || '—'}</td>
-              <td className="px-3 py-2">
-                <div className="d-flex align-items-center gap-1 flex-wrap">
+              <td className="px-3 py-2" style={{ whiteSpace: 'nowrap' }}><StatusBadge status={b.status || 'pending'} /></td>
+              <td className="px-3 py-2" style={{ whiteSpace: 'nowrap' }}><StatusBadge status={b.payment_status || 'pending'} /></td>
+              <td className="px-3 py-2 text-muted" style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>{b.created_at?.slice(0, 10) || b.pickup_date || '—'}</td>
+              <td className="px-3 py-2" style={{ whiteSpace: 'nowrap' }}>
+                <div className="d-flex align-items-center gap-1.5 flex-nowrap">
                   <button
                     type="button"
-                    className="btn btn-sm px-2 py-1 rounded-2 d-inline-flex align-items-center gap-1"
-                    style={{ background: '#dbeafe', color: '#2563eb', fontSize: '0.72rem', fontWeight: 600 }}
+                    className="btn btn-sm px-2.5 py-1 rounded-2 d-inline-flex align-items-center gap-1 shadow-sm"
+                    style={{ background: '#dbeafe', color: '#1e40af', fontSize: '0.72rem', fontWeight: 600, border: '1px solid #bfdbfe' }}
                     onClick={(e) => { e.stopPropagation(); setViewBooking(b); }}
                     title="View Booking Details"
                   >
                     <Eye size={12} /> View
                   </button>
 
-                  {isPending && (
-                    <button
-                      type="button"
-                      className="btn btn-sm px-2 py-1 rounded-2 fw-semibold d-inline-flex align-items-center gap-1"
-                      style={{ background: '#dcfce7', color: '#16a34a', fontSize: '0.72rem' }}
-                      onClick={(e) => { e.stopPropagation(); handleUpdateStatus(b.id, 'Confirmed'); }}
-                      title="Confirm Booking"
-                    >
-                      <Check size={12} /> Confirm
-                    </button>
-                  )}
-
-                  {!isCancelled && !isPending && (
-                    <button
-                      type="button"
-                      className="btn btn-sm px-2 py-1 rounded-2 fw-semibold"
-                      style={{ background: '#fee2e2', color: '#dc2626', fontSize: '0.72rem' }}
-                      onClick={(e) => { e.stopPropagation(); handleUpdateStatus(b.id, 'Cancelled'); }}
-                      title="Cancel Booking"
-                    >
-                      Cancel
-                    </button>
-                  )}
-
                   <select
                     className="form-select form-select-sm"
                     style={{
-                      width: '105px',
+                      width: '110px',
                       fontSize: '0.72rem',
                       fontWeight: 600,
-                      padding: '3px 20px 3px 6px',
+                      padding: '3px 20px 3px 8px',
                       borderRadius: '6px',
                       border: '1px solid #cbd5e1',
                       cursor: 'pointer',
@@ -1443,12 +1448,12 @@ function BookingsTab({ bookings = [], type, vendors = [], onRefresh }) {
 
                   <button
                     type="button"
-                    className="btn btn-sm p-1 text-danger border-0 opacity-75"
+                    className="btn btn-sm p-1 text-danger border-0 opacity-75 hover-opacity-100"
                     style={{ background: 'transparent' }}
                     onClick={(e) => { e.stopPropagation(); handleDeleteBooking(b.id); }}
                     title="Delete Booking"
                   >
-                    <Trash2 size={13} />
+                    <Trash2 size={14} />
                   </button>
                 </div>
               </td>
@@ -1459,7 +1464,11 @@ function BookingsTab({ bookings = [], type, vendors = [], onRefresh }) {
 
       {/* Booking Details Modal */}
       {viewBooking && (
-        <Modal title={`${type === 'hotel' ? 'Hotel' : 'Vehicle'} Booking Details — #${viewBooking.id}`} onClose={() => setViewBooking(null)} size="620px">
+        <Modal 
+          title={`${type === 'hotel' ? 'Hotel' : type === 'vehicle' ? 'Vehicle' : type === 'activity' ? 'Sightseeing & Activity' : 'Flight'} Booking Details — #${viewBooking.id}`} 
+          onClose={() => setViewBooking(null)} 
+          size="620px"
+        >
           <div className="d-flex flex-column gap-3">
             <div className="p-3 rounded-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
               <div className="d-flex align-items-center justify-content-between mb-2">
@@ -1470,19 +1479,30 @@ function BookingsTab({ bookings = [], type, vendors = [], onRefresh }) {
                 <div className="col-6"><span className="text-muted">Name:</span> <strong>{viewBooking.name || viewBooking.customer_name}</strong></div>
                 <div className="col-6"><span className="text-muted">Phone:</span> <strong>{viewBooking.phone}</strong></div>
                 <div className="col-6"><span className="text-muted">Email:</span> <strong>{viewBooking.email || '—'}</strong></div>
-                {viewBooking.license && <div className="col-6"><span className="text-muted">Driving License:</span> <strong>{viewBooking.license}</strong></div>}
-                <div className="col-6"><span className="text-muted">Pickup Location:</span> <strong>{viewBooking.pickup_loc || 'Goa'}</strong></div>
+                {type === 'vehicle' && viewBooking.license && (
+                  <div className="col-6"><span className="text-muted">Driving License:</span> <strong>{viewBooking.license}</strong></div>
+                )}
+                <div className="col-6"><span className="text-muted">Location / City:</span> <strong>{viewBooking.pickup_loc || 'Goa'}</strong></div>
               </div>
             </div>
 
             <div className="p-3 rounded-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-              <h6 className="fw-bold mb-2.5" style={{ fontSize: '13px' }}>Reservation Schedule & Vendor</h6>
+              <h6 className="fw-bold mb-2.5" style={{ fontSize: '13px' }}>
+                {type === 'activity' ? 'Activity & Reservation Details' : type === 'hotel' ? 'Hotel Stay & Schedule' : 'Reservation Schedule & Vendor'}
+              </h6>
               <div className="row g-2" style={{ fontSize: '13px' }}>
-                <div className="col-12"><span className="text-muted">Reserved Item:</span> <strong>{viewBooking.item_name}</strong></div>
-                <div className="col-6"><span className="text-muted">Pickup Schedule:</span> <strong>{viewBooking.pickup_date || '—'} {viewBooking.pickup_time || ''}</strong></div>
-                <div className="col-6"><span className="text-muted">Drop Schedule:</span> <strong>{viewBooking.drop_date || '—'} {viewBooking.drop_time || ''}</strong></div>
-                <div className="col-6"><span className="text-muted">Booking Duration:</span> <strong>{viewBooking.booking_days || 1} Days</strong></div>
-                <div className="col-6"><span className="text-muted">Vendor ID:</span> <strong>{viewBooking.vendor_id || '—'}</strong></div>
+                <div className="col-12"><span className="text-muted">{type === 'activity' ? 'Activity Name:' : 'Reserved Item:'}</span> <strong>{viewBooking.item_name}</strong></div>
+                <div className="col-6"><span className="text-muted">{type === 'activity' ? 'Activity Date:' : 'Pickup Schedule:'}</span> <strong>{viewBooking.pickup_date || '—'} {viewBooking.pickup_time || ''}</strong></div>
+                {type !== 'activity' && (
+                  <div className="col-6"><span className="text-muted">Drop Schedule:</span> <strong>{viewBooking.drop_date || '—'} {viewBooking.drop_time || ''}</strong></div>
+                )}
+                <div className="col-6"><span className="text-muted">{type === 'activity' ? 'Duration / Type:' : 'Booking Duration:'}</span> <strong>{viewBooking.duration || (viewBooking.booking_days ? `${viewBooking.booking_days} Days` : 'Full Day')}</strong></div>
+                {viewBooking.vendor_id && viewBooking.vendor_id !== 'vendor-1' && (
+                  <div className="col-6"><span className="text-muted">Vendor ID:</span> <strong>{viewBooking.vendor_id}</strong></div>
+                )}
+                {viewBooking.pickup_loc && (
+                  <div className="col-6"><span className="text-muted">Starting Point / Location:</span> <strong>{viewBooking.pickup_loc}</strong></div>
+                )}
               </div>
             </div>
 

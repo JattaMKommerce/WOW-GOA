@@ -104,7 +104,7 @@ export default function AIChatbotToggle({
       onMouseLeave={() => setIsHovered(false)}
       className={`ai-chatbot-toggle-card d-flex align-items-center justify-content-between ${className}`}
       style={{
-        padding: '16px',
+        padding: '10px 16px',
         borderRadius: '12px',
         cursor: 'pointer',
         userSelect: 'none',
@@ -124,13 +124,13 @@ export default function AIChatbotToggle({
         ...style
       }}
     >
-      {/* ─── LEFT: AVATAR (CIRCULAR, 52px) ─── */}
+      {/* ─── LEFT: AVATAR (CIRCULAR, 42px) ─── */}
       <div className="d-flex align-items-center gap-3" style={{ minWidth: 0 }}>
         <div
           className="position-relative flex-shrink-0 rounded-circle d-flex align-items-center justify-content-center"
           style={{
-            width: '52px',
-            height: '52px',
+            width: '42px',
+            height: '42px',
             background: 'radial-gradient(circle at center, #ffffff 40%, #f1f5f9 100%)',
             borderRadius: '50%',
             overflow: 'hidden',

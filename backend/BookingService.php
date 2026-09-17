@@ -174,7 +174,7 @@ class BookingService {
                 } elseif ($serviceType === 'flight') {
                     $authoritativeVendorId = 'vendor-4';
                 } elseif ($serviceType === 'activity' || $serviceType === 'sightseeing') {
-                    $authoritativeVendorId = 'vendor-1';
+                    $authoritativeVendorId = null;
                 }
             }
 

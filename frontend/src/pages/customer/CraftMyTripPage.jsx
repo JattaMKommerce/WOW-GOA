@@ -1390,12 +1390,13 @@ function Step4Flight({ selectedFlight, setSelectedFlight, withFlight, setWithFli
       )}
 
       {/* Navigation Footer */}
-      <div className="cmt-nav-actions mt-4 pt-3 border-top">
-        <button className="btn btn-outline-secondary d-flex align-items-center gap-2" onClick={onBack}>
-          <ChevronLeft size={16} /> Back: Activities
+      <div className="cmt-nav-row d-flex justify-content-between align-items-center mt-4 pt-3 border-top">
+        <button type="button" className="cmt-btn-secondary" onClick={onBack}>
+          <ArrowLeft size={16} /> Back to Activities
         </button>
         <button
-          className="btn btn-primary d-flex align-items-center gap-2"
+          type="button"
+          className="cmt-btn-primary"
           onClick={() => {
             if (withFlight && !selectedFlight) {
               setError('Please choose a flight or toggle flight off.');
@@ -1404,7 +1405,7 @@ function Step4Flight({ selectedFlight, setSelectedFlight, withFlight, setWithFli
             onNext();
           }}
         >
-          Review Trip <ChevronRight size={16} />
+          Review Trip <ArrowRight size={16} />
         </button>
       </div>
     </div>
