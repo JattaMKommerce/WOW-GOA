@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Eye, Check, X, Clock, ArrowRight, AlertCircle, CheckCircle, Car, Filter, Download, Plus, Edit, Trash2, Save, Calendar, User, Phone, Mail, DollarSign } from 'lucide-react';
 import { createBooking, updateBooking, updateBookingStatus, deleteBooking } from '../../../services/api';
+import { validateVehicleBookingEligibility } from '../../../utils/dateUtils';
 
 const WORKFLOW_STEPS = ['Pending', 'Payment Verification', 'Confirmed', 'Pickup', 'Return', 'Completed'];
 const STATUS_COLORS = {
@@ -100,6 +101,7 @@ export default function VehicleBookingManagement({ bookings = [], cars = [], bik
     customer_name: '',
     phone: '',
     email: '',
+    date_of_birth: '',
     license: '',
     item_id: defaultVehicle.id || '',
     item_name: defaultVehicle.name || '',
@@ -192,6 +194,18 @@ export default function VehicleBookingManagement({ bookings = [], cars = [], bik
       setFormError('Customer name and phone number are required.');
       return;
     }
+
+    const eligibility = validateVehicleBookingEligibility(
+      createForm.date_of_birth,
+      createForm.pickup_date,
+      true,
+      createForm.license
+    );
+    if (!eligibility.valid) {
+      setFormError(eligibility.error);
+      return;
+    }
+
     setSaving(true);
     setFormError('');
     try {
@@ -200,7 +214,9 @@ export default function VehicleBookingManagement({ bookings = [], cars = [], bik
         customer_name: createForm.customer_name,
         phone: createForm.phone,
         email: createForm.email,
+        date_of_birth: createForm.date_of_birth,
         license: createForm.license,
+        type: 'selfdrive',
         item_id: createForm.item_id,
         item_name: createForm.item_name,
         pickup_loc: createForm.pickup_loc,
@@ -230,6 +246,7 @@ export default function VehicleBookingManagement({ bookings = [], cars = [], bik
           customer_name: '',
           phone: '',
           email: '',
+          date_of_birth: '',
           license: '',
           item_id: defaultVehicle.id || '',
           item_name: defaultVehicle.name || '',
@@ -483,8 +500,12 @@ export default function VehicleBookingManagement({ bookings = [], cars = [], bik
                   <input type="email" className="form-control" style={{ fontSize: '0.85rem', borderRadius: '8px' }} value={createForm.email} onChange={e => setCreateForm(f => ({ ...f, email: e.target.value }))} placeholder="customer@gmail.com" />
                 </div>
                 <div className="col-12 col-md-6">
-                  <label className="form-label fw-bold" style={{ fontSize: '0.78rem', color: '#475569' }}>Driving License No.</label>
-                  <input type="text" className="form-control" style={{ fontSize: '0.85rem', borderRadius: '8px' }} value={createForm.license} onChange={e => setCreateForm(f => ({ ...f, license: e.target.value }))} placeholder="e.g. DL-07-20210012" />
+                  <label className="form-label fw-bold" style={{ fontSize: '0.78rem', color: '#475569' }}>Date of Birth *</label>
+                  <input type="date" className="form-control" style={{ fontSize: '0.85rem', borderRadius: '8px' }} value={createForm.date_of_birth} onChange={e => setCreateForm(f => ({ ...f, date_of_birth: e.target.value }))} required />
+                </div>
+                <div className="col-12 col-md-6">
+                  <label className="form-label fw-bold" style={{ fontSize: '0.78rem', color: '#475569' }}>Driving License No. *</label>
+                  <input type="text" className="form-control" style={{ fontSize: '0.85rem', borderRadius: '8px' }} value={createForm.license} onChange={e => setCreateForm(f => ({ ...f, license: e.target.value }))} placeholder="e.g. DL-07-20210012" required />
                 </div>
               </div>
 

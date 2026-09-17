@@ -23,6 +23,16 @@ export default function CustomerSelfDriveTab({
   // ─── Unified Driver & Self Drive Helpers ───
   const hasDriverService = (b) => {
     if (!b) return false;
+    const rawType = String(b.package_type || b.type || '').toLowerCase();
+    const rawItem = String(b.item_name || b.package_name || b.vehicle_name || '').toLowerCase();
+    const rawId = String(b.item_id || '').toLowerCase();
+    if (
+      rawType === 'bike' || rawType.includes('bike') || rawType.includes('scooter') ||
+      rawId.startsWith('bike') || rawId.startsWith('bk-') ||
+      /bike|scooter|activa|bullet|reborn|classic\s*350|himalayan|royal\s*enfield|jupiter|access/i.test(rawItem)
+    ) {
+      return false;
+    }
     const svcType = String(b.driver_service_type || '').toUpperCase().trim();
     if (['PICKUP', 'DROP', 'FULL'].includes(svcType)) return true;
     if (svcType === 'NONE') return false;

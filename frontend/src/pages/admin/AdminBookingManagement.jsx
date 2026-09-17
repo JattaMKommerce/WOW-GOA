@@ -6,6 +6,7 @@ import {
   Layers, Radio, SlidersHorizontal
 } from 'lucide-react';
 import * as api from '../../services/api';
+import { validateVehicleBookingEligibility } from '../../utils/dateUtils';
 
 // ─── Classification & Formatting Helpers ───
 
@@ -292,6 +293,8 @@ export default function AdminBookingManagement({
     name: '',
     phone: '',
     email: '',
+    date_of_birth: '',
+    license: '',
     serviceType: 'hotel',
     item_id: '',
     item_name: '',
@@ -512,16 +515,31 @@ export default function AdminBookingManagement({
       return;
     }
 
+    const isPkg = formData.serviceType === 'package' || formData.serviceType === 'custom';
+    const isSd = formData.serviceType === 'selfdrive';
+    const isCar = formData.serviceType === 'car';
+    const isBike = formData.serviceType === 'bike';
+    const isHotel = formData.serviceType === 'hotel';
+    const isActivity = formData.serviceType === 'activity';
+    const isVehicle = isSd || isCar || isBike;
+
+    if (isVehicle) {
+      const isSelfDrive = (!formData.driver_required || isBike);
+      const eligibility = validateVehicleBookingEligibility(
+        formData.date_of_birth,
+        formData.pickup_date,
+        isSelfDrive,
+        formData.license
+      );
+      if (!eligibility.valid) {
+        setFormError(eligibility.error);
+        return;
+      }
+    }
+
     setActionLoading(true);
     setFormError('');
     try {
-      const isPkg = formData.serviceType === 'package' || formData.serviceType === 'custom';
-      const isSd = formData.serviceType === 'selfdrive';
-      const isCar = formData.serviceType === 'car';
-      const isBike = formData.serviceType === 'bike';
-      const isHotel = formData.serviceType === 'hotel';
-      const isActivity = formData.serviceType === 'activity';
-
       const payload = {
         name: formData.name,
         customer_name: formData.name,
@@ -529,6 +547,8 @@ export default function AdminBookingManagement({
         customer_phone: formData.phone,
         email: formData.email || null,
         customer_email: formData.email || null,
+        license: formData.license || '',
+        date_of_birth: formData.date_of_birth || '',
         item_id: formData.item_id || (isActivity ? `act-${Date.now()}` : `item-${Date.now()}`),
         item_name: formData.item_name,
         package_name: formData.item_name,
@@ -554,6 +574,8 @@ export default function AdminBookingManagement({
         name: '',
         phone: '',
         email: '',
+        date_of_birth: '',
+        license: '',
         serviceType: 'hotel',
         item_id: '',
         item_name: '',
@@ -1300,6 +1322,34 @@ export default function AdminBookingManagement({
                         placeholder="e.g. Dabolim Airport, Goa"
                       />
                     </div>
+
+                    {(formData.serviceType === 'car' || formData.serviceType === 'bike' || formData.serviceType === 'selfdrive') && (
+                      <>
+                        <div className="col-md-6">
+                          <label className="form-label small fw-bold text-secondary">Date of Birth *</label>
+                          <input
+                            type="date"
+                            className="form-control form-control-sm rounded-2"
+                            value={formData.date_of_birth}
+                            onChange={e => setFormData({ ...formData, date_of_birth: e.target.value })}
+                            required
+                          />
+                        </div>
+                        <div className="col-md-6">
+                          <label className="form-label small fw-bold text-secondary">
+                            Driving License No. {!formData.driver_required && <span className="text-danger">*</span>}
+                          </label>
+                          <input
+                            type="text"
+                            className="form-control form-control-sm rounded-2"
+                            value={formData.license}
+                            onChange={e => setFormData({ ...formData, license: e.target.value })}
+                            placeholder="e.g. DL-1420180098765"
+                            required={!formData.driver_required}
+                          />
+                        </div>
+                      </>
+                    )}
 
                     <div className="col-md-4">
                       <label className="form-label small fw-bold text-secondary">Service Type</label>

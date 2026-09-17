@@ -19,9 +19,17 @@ import CustomerProfileTab from '../../components/customer/CustomerProfileTab';
 import CustomerSupportTab from '../../components/customer/CustomerSupportTab';
 import CustomerActivitiesTab from '../../components/customer/CustomerActivitiesTab';
 import BookingModal from '../../components/BookingModal';
+import HotelBookingModal from '../../components/HotelBookingModal';
 import BookingVoucher from '../../components/common/BookingVoucher';
+import CarDetailsPage from './CarDetailsPage';
+import BikeDetailsPage from './BikeDetailsPage';
+import HotelDetailsPage from './HotelDetailsPage';
+import ActivityDetailsPage from './ActivityDetailsPage';
+import PackageDetailsPage from './PackageDetailsPage';
+import FlightDetailsPage from './FlightDetailsPage';
+import { isBikeVehicle, normalizeVehicleType } from '../../utils/vehicleHelper';
 import * as api from '../../services/api';
-import { getTodayDateStr } from '../../utils/dateUtils';
+import { getTodayDateStr, addDays } from '../../utils/dateUtils';
 import NotificationSoundToggle from '../../components/common/NotificationSoundToggle';
 import { handleIncomingNotifications, registerSeenNotifications, getRelativeTimeString, parseNotificationTitleAndStatus } from '../../utils/notificationSound';
 
@@ -526,6 +534,35 @@ export default function CustomerPortalPage({
   const [bookingUserPhone, setBookingUserPhone] = useState(customerUser?.phone || '');
   const [bookingUserLicense, setBookingUserLicense] = useState('');
 
+  // Authoritative Details View state (reusing canonical D2C details components)
+  const [activeDetailItem, setActiveDetailItem] = useState(null);
+  const [activeDetailType, setActiveDetailType] = useState(null);
+  const [selectedHotelBookingItem, setSelectedHotelBookingItem] = useState(null);
+
+  const handleOpenDetail = (item, type = null) => {
+    if (!item) return;
+    let resolvedType = type;
+    if (!resolvedType) {
+      if (item.property_type || item.stars || String(item.id).startsWith('hotel-') || item.type === 'hotel') {
+        resolvedType = 'hotel';
+      } else if (item.flight_number || item.airline || String(item.id).startsWith('FL-') || String(item.id).startsWith('fl-') || item.type === 'flight') {
+        resolvedType = 'flight';
+      } else if (item.category === 'Water Sports' || item.category === 'Sightseeing & Tours' || String(item.id).startsWith('act-') || String(item.id).startsWith('sight-') || item.type === 'activity' || item.type === 'sightseeing') {
+        resolvedType = 'activity';
+      } else if (item.places_included || item.package_type || item.day_wise_itinerary || item.duration) {
+        resolvedType = 'package';
+      } else {
+        resolvedType = normalizeVehicleType(item);
+      }
+    }
+    if (resolvedType === 'vehicle' || resolvedType === 'car' || resolvedType === 'bike') {
+      resolvedType = normalizeVehicleType(item);
+    }
+    setActiveDetailItem(item);
+    setActiveDetailType(resolvedType);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   // Keep customer identity pre-filled in booking checkout
   useEffect(() => {
     if (customerUser) {
@@ -552,7 +589,8 @@ export default function CustomerPortalPage({
         email: customerUser?.email || `${cleanDigits || 'guest'}@customer.wowgoa.com`,
         customer_email: customerUser?.email || `${cleanDigits || 'guest'}@customer.wowgoa.com`,
         customer_id: customerUser?.id || `c_${cleanDigits || Date.now()}`,
-        license: bookingUserLicense || '',
+        license: bookingUserLicense || details.license || '',
+        date_of_birth: details.date_of_birth || customerUser?.date_of_birth || '',
         pickup_loc: details.pickupLoc || 'Goa Airport',
         pickup_location: details.pickupLoc || 'Goa Airport',
         pickup_date: pDate,
@@ -630,6 +668,8 @@ export default function CustomerPortalPage({
   const [bookingsCategoryFilter, setBookingsCategoryFilter] = useState('all');
 
   const handleNavClick = (tabId, optCategory = 'all') => {
+    setActiveDetailItem(null);
+    setActiveDetailType(null);
     setActiveTab(tabId);
     if (optCategory) {
       setBookingsCategoryFilter(optCategory);
@@ -1303,6 +1343,121 @@ export default function CustomerPortalPage({
                   🔒 Secure 256-bit Encrypted Customer Portal • WOW GOA
                 </div>
               </div>
+            ) : activeDetailItem ? (
+              <div className="active-details-view animate-fade-in">
+                {activeDetailType === 'bike' && (
+                  <BikeDetailsPage
+                    bike={activeDetailItem}
+                    pickupDate={getTodayDateStr()}
+                    dropDate={addDays(getTodayDateStr(), 2)}
+                    bookingDays={2}
+                    backLabel="Back to Customer Portal"
+                    breadcrumbPrefix="Customer Portal"
+                    onBack={() => { setActiveDetailItem(null); setActiveDetailType(null); }}
+                    onBook={(bikeItem) => {
+                      const itm = bikeItem || activeDetailItem;
+                      setActiveDetailItem(null);
+                      setActiveDetailType(null);
+                      setDirectBookingSuccess(false);
+                      setLastConfirmedDirectBooking(null);
+                      setDirectBookingItem(itm);
+                    }}
+                  />
+                )}
+                {activeDetailType === 'car' && (
+                  <CarDetailsPage
+                    car={activeDetailItem}
+                    pickupDate={getTodayDateStr()}
+                    dropDate={addDays(getTodayDateStr(), 2)}
+                    bookingDays={2}
+                    backLabel="Back to Customer Portal"
+                    breadcrumbPrefix="Customer Portal"
+                    onBack={() => { setActiveDetailItem(null); setActiveDetailType(null); }}
+                    onBook={(carItem) => {
+                      const itm = carItem || activeDetailItem;
+                      setActiveDetailItem(null);
+                      setActiveDetailType(null);
+                      setDirectBookingSuccess(false);
+                      setLastConfirmedDirectBooking(null);
+                      setDirectBookingItem(itm);
+                    }}
+                  />
+                )}
+                {activeDetailType === 'hotel' && (
+                  <HotelDetailsPage
+                    hotel={activeDetailItem}
+                    pickupDate={getTodayDateStr()}
+                    dropDate={addDays(getTodayDateStr(), 2)}
+                    nights={2}
+                    backLabel="Back to Customer Portal"
+                    breadcrumbPrefix="Customer Portal"
+                    onBack={() => { setActiveDetailItem(null); setActiveDetailType(null); }}
+                    onBook={(enrichedHotel, room, plan) => {
+                      const itm = {
+                        ...enrichedHotel,
+                        preselected_room: room,
+                        preselected_rate_plan: plan
+                      };
+                      setActiveDetailItem(null);
+                      setActiveDetailType(null);
+                      setSelectedHotelBookingItem(itm);
+                    }}
+                  />
+                )}
+                {activeDetailType === 'activity' && (
+                  <ActivityDetailsPage
+                    activity={activeDetailItem}
+                    pickupDate={getTodayDateStr()}
+                    backLabel="Back to Customer Portal"
+                    breadcrumbPrefix="Customer Portal"
+                    onBack={() => { setActiveDetailItem(null); setActiveDetailType(null); }}
+                    onBook={(activityPayload) => {
+                      const itm = {
+                        ...activeDetailItem,
+                        ...(activityPayload || {})
+                      };
+                      setActiveDetailItem(null);
+                      setActiveDetailType(null);
+                      setDirectBookingSuccess(false);
+                      setLastConfirmedDirectBooking(null);
+                      setDirectBookingItem(itm);
+                    }}
+                  />
+                )}
+                {activeDetailType === 'package' && (
+                  <PackageDetailsPage
+                    pkg={activeDetailItem}
+                    backLabel="Back to Customer Portal"
+                    breadcrumbPrefix="Customer Portal"
+                    onBack={() => { setActiveDetailItem(null); setActiveDetailType(null); }}
+                    onBook={(pkgItem) => {
+                      const itm = pkgItem || activeDetailItem;
+                      setActiveDetailItem(null);
+                      setActiveDetailType(null);
+                      setDirectBookingSuccess(false);
+                      setLastConfirmedDirectBooking(null);
+                      setDirectBookingItem(itm);
+                    }}
+                  />
+                )}
+                {activeDetailType === 'flight' && (
+                  <FlightDetailsPage
+                    flight={activeDetailItem}
+                    pickupDate={getTodayDateStr()}
+                    backLabel="Back to Customer Portal"
+                    breadcrumbPrefix="Customer Portal"
+                    onBack={() => { setActiveDetailItem(null); setActiveDetailType(null); }}
+                    onBook={(fltItem) => {
+                      const itm = fltItem || activeDetailItem;
+                      setActiveDetailItem(null);
+                      setActiveDetailType(null);
+                      setDirectBookingSuccess(false);
+                      setLastConfirmedDirectBooking(null);
+                      setDirectBookingItem(itm);
+                    }}
+                  />
+                )}
+              </div>
             ) : (
               <>
                 {activeTab === 'overview' && (
@@ -1314,13 +1469,11 @@ export default function CustomerPortalPage({
                     bikes={bikes}
                     hotels={hotels}
                     flights={flights}
+                    activities={activities}
                     onNavigateTab={(tab, optCat) => handleNavClick(tab, optCat)}
                     onSelectBooking={handleOpenBookingDetails}
-                    onDirectBook={(item) => {
-                      setDirectBookingSuccess(false);
-                      setLastConfirmedDirectBooking(null);
-                      setDirectBookingItem(item);
-                    }}
+                    onViewDetails={handleOpenDetail}
+                    onDirectBook={(item) => handleOpenDetail(item)}
                     walletBalance={walletBalance}
                     cashbackBalance={cashbackBalance}
                   />
@@ -1347,7 +1500,16 @@ export default function CustomerPortalPage({
                     bookings={customerBookings}
                     onOpenBookingDetails={handleOpenBookingDetails}
                     onNavigateTab={(tab, optCat) => handleNavClick(tab, optCat)}
-                    onViewDetails={onViewDetails}
+                    onViewDetails={(item) => handleOpenDetail(item, 'activity')}
+                    onBook={(item) => handleOpenDetail(item, 'activity')}
+                  />
+                )}
+
+                {activeTab === 'driver-trips' && (
+                  <CustomerDriverTripsTab
+                    currentUser={customerUser}
+                    bookings={customerBookings}
+                    onOpenBookingDetails={handleOpenBookingDetails}
                   />
                 )}
 
@@ -1424,7 +1586,18 @@ export default function CustomerPortalPage({
         />
       )}
 
-      {/* ─── 4. Direct Booking Modal within Customer Portal ─── */}
+      {/* ─── 4a. Hotel Booking Modal with Room & Rate Plan Selection ─── */}
+      {selectedHotelBookingItem && (
+        <HotelBookingModal
+          selectedBookingItem={selectedHotelBookingItem}
+          setSelectedBookingItem={setSelectedHotelBookingItem}
+          pickupDate={getTodayDateStr()}
+          dropDate={addDays(getTodayDateStr(), 2)}
+          bookingDays={2}
+        />
+      )}
+
+      {/* ─── 4b. Direct Booking Modal within Customer Portal ─── */}
       {directBookingItem && (
         <BookingModal
           selectedBookingItem={directBookingItem}

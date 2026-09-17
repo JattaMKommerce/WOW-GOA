@@ -115,6 +115,81 @@ class BookingService {
         }
         $itemId = trim($payload['item_id'] ?? '');
 
+        // Authoritative classification for vehicle packages and fleets
+        $pkgType = strtolower(trim($payload['package_type'] ?? ''));
+        if ($pkgType === 'self drive package' || $pkgType === 'self-drive package' || $pkgType === 'car rental' || $pkgType === 'bike rental') {
+            $serviceType = 'vehicle';
+        }
+        if ($serviceType !== 'vehicle' && !empty($itemId)) {
+            if (str_starts_with($itemId, 'car-') || str_starts_with($itemId, 'bike-') || str_starts_with($itemId, 'lux-def-') || str_starts_with($itemId, 'bike-def-') || str_starts_with($itemId, 'car_') || str_starts_with($itemId, 'bike_')) {
+                $serviceType = 'vehicle';
+            }
+        }
+
+        // 3b. Authoritative Vehicle Eligibility Validation (DOB, Age, Driving License)
+        $isBikeRental = ($payload['type'] ?? '') === 'bike' || ($payload['service_type'] ?? '') === 'bike' || str_starts_with($itemId, 'bike-') || str_starts_with($itemId, 'bike_') || str_starts_with($itemId, 'bike-def-');
+        $rawDriverServiceType = strtoupper(trim($payload['driver_service_type'] ?? ($payload['extra_details']['driver_service_type'] ?? '')));
+        $isDriverExplicit = in_array($rawDriverServiceType, ['PICKUP', 'DROP', 'FULL']) ||
+            (!empty($payload['driver_required']) && ($payload['driver_required'] == 1 || $payload['driver_required'] === '1' || $payload['driver_required'] === 'yes' || $payload['driver_required'] === true));
+        $isVehicleWithDriver = $isDriverExplicit && !$isBikeRental;
+
+        $rawLicense = trim($payload['license'] ?? ($payload['driving_license'] ?? ($payload['guest_license'] ?? ($payload['id_number'] ?? ''))));
+
+        if ($serviceType === 'vehicle') {
+            // Check if customer is repeat customer with stored DOB in database if not explicitly provided in payload
+            if (empty($rawDob) && !empty($last10)) {
+                try {
+                    $chkCust = $pdo->prepare("SELECT date_of_birth FROM users WHERE (phone != '' AND (phone LIKE ? OR phone LIKE ?)) OR (email != '' AND LOWER(email) = ?) LIMIT 1");
+                    $chkCust->execute(["%$last10", "%$rawPhone", $custEmail]);
+                    $existingCust = $chkCust->fetch(PDO::FETCH_ASSOC);
+                    if ($existingCust && !empty($existingCust['date_of_birth'])) {
+                        $rawDob = trim($existingCust['date_of_birth']);
+                    }
+                } catch (Exception $e) {}
+            }
+
+            if (empty($rawDob)) {
+                throw new BookingServiceException("Date of birth is required for vehicle bookings.", 400);
+            }
+
+            $dobTimestamp = strtotime($rawDob);
+            if (!$dobTimestamp) {
+                throw new BookingServiceException("Please provide a valid date of birth.", 400);
+            }
+
+            try {
+                $dobDate = new DateTime($rawDob);
+                $pickupDateObj = new DateTime($depDate);
+            } catch (Exception $e) {
+                throw new BookingServiceException("Invalid date format for date of birth or pickup date.", 400);
+            }
+
+            if ($pickupDateObj < $dobDate) {
+                throw new BookingServiceException("Date of birth cannot be after the vehicle pickup date.", 400);
+            }
+
+            // Self Drive rentals (!isVehicleWithDriver):
+            // - DOB mandatory (checked above)
+            // - Age >= 18 on vehicle pickup date
+            // - Driving License mandatory
+            if (!$isVehicleWithDriver) {
+                $ageInterval = $dobDate->diff($pickupDateObj);
+                $calculatedAge = $ageInterval->y;
+
+                if ($calculatedAge < 18) {
+                    throw new BookingServiceException("Primary driver must be 18 years or older on pickup date for Self Drive rentals.", 400);
+                }
+
+                if (empty($rawLicense)) {
+                    throw new BookingServiceException("Driving License is required for Self Drive rentals.", 400);
+                }
+            }
+            // Vehicle + Driver ($isVehicleWithDriver):
+            // - DOB mandatory (checked above)
+            // - Driving License optional
+            // - No 18+ restriction
+        }
+
         // 4. Begin Database Transaction
         $pdo->beginTransaction();
 
@@ -452,7 +527,7 @@ class BookingService {
                 $custName,
                 $rawPhone,
                 $custEmail,
-                $payload['license'] ?? '',
+                $rawLicense,
                 $payload['pickup_loc'] ?? ($payload['pickup_location'] ?? 'Goa'),
                 $depDate,
                 $payload['pickup_time'] ?? '10:00 AM',

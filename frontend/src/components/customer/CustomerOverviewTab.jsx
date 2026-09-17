@@ -8,11 +8,22 @@ import {
 import SelfDriveCategoryShowcase from '../widgets/SelfDriveCategoryShowcase';
 import CustomerLoyaltyCard from './CustomerLoyaltyCard';
 import { getBookingDisplayImage } from '../../utils/bookingImageHelper';
+import { isBikeVehicle } from '../../utils/vehicleHelper';
 import * as api from '../../services/api';
 
 // ─── Unified Driver Service Helper ───
 const hasDriverService = (b) => {
   if (!b) return false;
+  const rawType = String(b.package_type || b.type || '').toLowerCase();
+  const rawItem = String(b.item_name || b.package_name || b.vehicle_name || '').toLowerCase();
+  const rawId = String(b.item_id || '').toLowerCase();
+  if (
+    rawType === 'bike' || rawType.includes('bike') || rawType.includes('scooter') ||
+    rawId.startsWith('bike') || rawId.startsWith('bk-') ||
+    /bike|scooter|activa|bullet|reborn|classic\s*350|himalayan|royal\s*enfield|jupiter|access/i.test(rawItem)
+  ) {
+    return false;
+  }
   const svcType = String(b.driver_service_type || '').toUpperCase().trim();
   if (['PICKUP', 'DROP', 'FULL'].includes(svcType)) return true;
   if (svcType === 'NONE') return false;
@@ -200,6 +211,7 @@ export default function CustomerOverviewTab({
   hotels = [],
   flights = [],
   activities = [],
+  onViewDetails,
   onNavigateTab,
   onSelectBooking,
   onDirectBook,
@@ -222,7 +234,6 @@ export default function CustomerOverviewTab({
   // Category state for Explore More WOW GOA
   const [exploreCategory, setExploreCategory] = useState('selfdrive'); // 'selfdrive' | 'packages' | 'hotels' | 'cars' | 'flights'
   const [selfDriveSubcategory, setSelfDriveSubcategory] = useState('all');
-  const [previewItem, setPreviewItem] = useState(null);
 
   // Bookings passed from CustomerPortalPage are already strictly isolated for the customer
   const myBookings = Array.isArray(bookings) ? bookings : [];
@@ -269,11 +280,24 @@ export default function CustomerOverviewTab({
   const hotelsList = (Array.isArray(hotels) && hotels.length > 0) ? hotels : [];
   const carsList = (Array.isArray(cars) && cars.length > 0) ? cars : [];
   const flightsList = (Array.isArray(flights) && flights.length > 0) ? flights : [];
-  const activitiesList = (Array.isArray(activities) && activities.length > 0) ? activities : [];
+  const activitiesList = (Array.isArray(activities) && activities.length > 0)
+    ? activities.filter(item => item && item.is_active !== 0 && item.is_active !== '0' && item.is_active !== false)
+    : [];
 
-  // Handle direct booking from card
-  const handleTriggerBooking = (item) => {
-    if (onDirectBook) {
+  // Handle direct details navigation
+  const handleTriggerDetails = (item, type = null) => {
+    if (!item) return;
+    if (onViewDetails) {
+      let resolvedType = type;
+      if (!resolvedType) {
+        if (item.property_type || item.stars || String(item.id).startsWith('hotel-')) resolvedType = 'hotel';
+        else if (item.flight_number || item.airline || String(item.id).startsWith('FL-')) resolvedType = 'flight';
+        else if (item.category === 'Water Sports' || item.category === 'Sightseeing & Tours' || String(item.id).startsWith('act-') || String(item.id).startsWith('sight-') || item.type === 'activity' || item.type === 'sightseeing') resolvedType = 'activity';
+        else if (item.places_included || item.package_type || item.day_wise_itinerary) resolvedType = 'package';
+        else resolvedType = isBikeVehicle(item) ? 'bike' : 'car';
+      }
+      onViewDetails(item, resolvedType);
+    } else if (onDirectBook) {
       onDirectBook(item);
     } else {
       window.location.href = `/#book-${item.id || 'item'}`;
@@ -1038,11 +1062,8 @@ export default function CustomerOverviewTab({
               <SelfDriveCategoryShowcase
                 cars={cars}
                 bikes={bikes}
-                onBookVehicle={(v) => {
-                  if (onDirectBook) onDirectBook(v);
-                  else setPreviewItem(v);
-                }}
-                onViewVehicle={(v) => setPreviewItem(v)}
+                onBookVehicle={(v) => handleTriggerDetails(v, isBikeVehicle(v) ? 'bike' : 'car')}
+                onViewVehicle={(v) => handleTriggerDetails(v, isBikeVehicle(v) ? 'bike' : 'car')}
                 setActiveTab={onNavigateTab}
               />
             </div>
@@ -1094,7 +1115,7 @@ export default function CustomerOverviewTab({
                   return (
                     <div key={item.id || idx} className="col-md-6 col-xl-4">
                       <div className="card border-0 shadow-sm rounded-4 h-100 overflow-hidden bg-white hover-shadow transition-all d-flex flex-column" style={{ border: '1px solid #eef2f6' }}>
-                        <div className="position-relative" style={{ height: '170px' }}>
+                        <div className="position-relative cursor-pointer" style={{ height: '170px', cursor: 'pointer' }} onClick={() => handleTriggerDetails(item, 'package')}>
                           <img 
                             src={pkgImg} 
                             alt={item.name} 
@@ -1102,7 +1123,7 @@ export default function CustomerOverviewTab({
                             onError={(e) => {
                               e.target.onerror = null;
                               e.target.src = 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=600&q=80';
-                            }}
+                            }} 
                           />
                           <span className="position-absolute top-0 start-0 m-2.5 badge bg-warning text-dark text-xxs px-2.5 py-1 rounded-pill fw-black shadow-sm">
                             ⭐ Holiday Package
@@ -1114,7 +1135,7 @@ export default function CustomerOverviewTab({
 
                         <div className="card-body p-3 d-flex flex-column justify-content-between flex-grow-1">
                           <div>
-                            <h6 className="fw-black text-dark mb-1 font-heading text-truncate" title={item.name}>
+                            <h6 className="fw-black text-dark mb-1 font-heading text-truncate cursor-pointer" title={item.name} style={{ cursor: 'pointer' }} onClick={() => handleTriggerDetails(item, 'package')}>
                               {item.name}
                             </h6>
                             <div className="d-flex align-items-center gap-1 text-warning text-xxs mb-1.5">
@@ -1147,7 +1168,7 @@ export default function CustomerOverviewTab({
                               <div className="col-6">
                                 <button 
                                   type="button"
-                                  onClick={() => setPreviewItem(item)}
+                                  onClick={() => handleTriggerDetails(item, 'package')}
                                   className="btn btn-sm btn-outline-dark rounded-pill w-100 py-1.5 text-xs fw-bold d-flex align-items-center justify-content-center gap-1"
                                 >
                                   <Eye size={13} />
@@ -1157,7 +1178,7 @@ export default function CustomerOverviewTab({
                               <div className="col-6">
                                 <button 
                                   type="button"
-                                  onClick={() => handleTriggerBooking(item)}
+                                  onClick={() => handleTriggerDetails(item, 'package')}
                                   className="btn btn-sm btn-warning text-dark rounded-pill w-100 py-1.5 text-xs fw-bold shadow-sm d-flex align-items-center justify-content-center gap-1"
                                 >
                                   <span>Book Now →</span>
@@ -1184,7 +1205,7 @@ export default function CustomerOverviewTab({
             return (
               <div key={item.id || idx} className="col-md-6 col-xl-4">
                 <div className="card border-0 shadow-sm rounded-4 h-100 overflow-hidden bg-white hover-shadow transition-all d-flex flex-column" style={{ border: '1px solid #eef2f6' }}>
-                  <div className="position-relative" style={{ height: '170px' }}>
+                  <div className="position-relative cursor-pointer" style={{ height: '170px', cursor: 'pointer' }} onClick={() => handleTriggerDetails(item, 'package')}>
                     <img 
                       src={pkgImg} 
                       alt={item.name} 
@@ -1203,7 +1224,7 @@ export default function CustomerOverviewTab({
                   </div>
                   <div className="card-body p-3 d-flex flex-column justify-content-between flex-grow-1">
                     <div>
-                      <h6 className="fw-black text-dark mb-1 font-heading text-truncate" title={item.name}>
+                      <h6 className="fw-black text-dark mb-1 font-heading text-truncate cursor-pointer" title={item.name} style={{ cursor: 'pointer' }} onClick={() => handleTriggerDetails(item, 'package')}>
                         {item.name}
                       </h6>
                       <div className="d-flex align-items-center gap-1 text-warning text-xxs mb-1.5">
@@ -1232,7 +1253,7 @@ export default function CustomerOverviewTab({
                         <div className="col-6">
                           <button 
                             type="button"
-                            onClick={() => setPreviewItem(item)}
+                            onClick={() => handleTriggerDetails(item, 'package')}
                             className="btn btn-sm btn-outline-dark rounded-pill w-100 py-1.5 text-xs fw-bold d-flex align-items-center justify-content-center gap-1"
                           >
                             <Eye size={13} />
@@ -1242,7 +1263,7 @@ export default function CustomerOverviewTab({
                         <div className="col-6">
                           <button 
                             type="button"
-                            onClick={() => handleTriggerBooking(item)}
+                            onClick={() => handleTriggerDetails(item, 'package')}
                             className="btn btn-sm btn-warning text-dark rounded-pill w-100 py-1.5 text-xs fw-bold shadow-sm d-flex align-items-center justify-content-center gap-1"
                           >
                             <span>Book Now →</span>
@@ -1260,7 +1281,7 @@ export default function CustomerOverviewTab({
           {exploreCategory === 'hotels' && hotelsList.map((item, idx) => (
             <div key={item.id || idx} className="col-md-6 col-xl-4">
               <div className="card border-0 shadow-sm rounded-4 h-100 overflow-hidden bg-white hover-shadow transition-all d-flex flex-column" style={{ border: '1px solid #eef2f6' }}>
-                <div className="position-relative" style={{ height: '170px' }}>
+                <div className="position-relative cursor-pointer" style={{ height: '170px', cursor: 'pointer' }} onClick={() => handleTriggerDetails(item, 'hotel')}>
                   <img 
                     src={item.image || 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=600&q=80'} 
                     alt={item.name} 
@@ -1275,7 +1296,7 @@ export default function CustomerOverviewTab({
                 </div>
                 <div className="card-body p-3 d-flex flex-column justify-content-between flex-grow-1">
                   <div>
-                    <h6 className="fw-black text-dark mb-0.5 font-heading text-truncate" title={item.name}>
+                    <h6 className="fw-black text-dark mb-0.5 font-heading text-truncate cursor-pointer" title={item.name} style={{ cursor: 'pointer' }} onClick={() => handleTriggerDetails(item, 'hotel')}>
                       {item.name}
                     </h6>
                     <div className="text-muted text-xxs mb-1.5">📍 {item.location || 'North Goa'}</div>
@@ -1296,7 +1317,7 @@ export default function CustomerOverviewTab({
                       <div className="col-6">
                         <button 
                           type="button"
-                          onClick={() => setPreviewItem(item)}
+                          onClick={() => handleTriggerDetails(item, 'hotel')}
                           className="btn btn-sm btn-outline-dark rounded-pill w-100 py-1.5 text-xs fw-bold d-flex align-items-center justify-content-center gap-1"
                         >
                           <Eye size={13} />
@@ -1306,7 +1327,7 @@ export default function CustomerOverviewTab({
                       <div className="col-6">
                         <button 
                           type="button"
-                          onClick={() => handleTriggerBooking(item)}
+                          onClick={() => handleTriggerDetails(item, 'hotel')}
                           className="btn btn-sm btn-warning text-dark rounded-pill w-100 py-1.5 text-xs fw-bold shadow-sm d-flex align-items-center justify-content-center gap-1"
                         >
                           <span>Book Now →</span>
@@ -1323,7 +1344,7 @@ export default function CustomerOverviewTab({
           {exploreCategory === 'flights' && flightsList.map((item, idx) => (
             <div key={item.id || idx} className="col-md-6 col-xl-4">
               <div className="card border-0 shadow-sm rounded-4 h-100 overflow-hidden bg-white hover-shadow transition-all d-flex flex-column" style={{ border: '1px solid #eef2f6' }}>
-                <div className="position-relative" style={{ height: '170px' }}>
+                <div className="position-relative cursor-pointer" style={{ height: '170px', cursor: 'pointer' }} onClick={() => handleTriggerDetails(item, 'flight')}>
                   <img 
                     src={item.image || 'https://images.unsplash.com/photo-1436491865332-7a61a109cc05?auto=format&fit=crop&w=600&q=80'} 
                     alt={item.name} 
@@ -1338,7 +1359,7 @@ export default function CustomerOverviewTab({
                 </div>
                 <div className="card-body p-3 d-flex flex-column justify-content-between flex-grow-1">
                   <div>
-                    <h6 className="fw-black text-dark mb-0.5 font-heading text-truncate" title={item.name}>
+                    <h6 className="fw-black text-dark mb-0.5 font-heading text-truncate cursor-pointer" title={item.name} style={{ cursor: 'pointer' }} onClick={() => handleTriggerDetails(item, 'flight')}>
                       {item.name}
                     </h6>
                     <div className="text-muted text-xxs mb-1.5">{item.airline || 'Direct Daily Flights'}</div>
@@ -1359,7 +1380,7 @@ export default function CustomerOverviewTab({
                       <div className="col-6">
                         <button 
                           type="button"
-                          onClick={() => setPreviewItem(item)}
+                          onClick={() => handleTriggerDetails(item, 'flight')}
                           className="btn btn-sm btn-outline-dark rounded-pill w-100 py-1.5 text-xs fw-bold d-flex align-items-center justify-content-center gap-1"
                         >
                           <Eye size={13} />
@@ -1369,7 +1390,7 @@ export default function CustomerOverviewTab({
                       <div className="col-6">
                         <button 
                           type="button"
-                          onClick={() => handleTriggerBooking(item)}
+                          onClick={() => handleTriggerDetails(item, 'flight')}
                           className="btn btn-sm btn-warning text-dark rounded-pill w-100 py-1.5 text-xs fw-bold shadow-sm d-flex align-items-center justify-content-center gap-1"
                         >
                           <span>Book Now →</span>
@@ -1399,7 +1420,7 @@ export default function CustomerOverviewTab({
                 return (
                   <div key={item.id || idx} className="col-md-6 col-xl-4">
                     <div className="card border-0 shadow-sm rounded-4 h-100 overflow-hidden bg-white hover-shadow transition-all d-flex flex-column" style={{ border: '1px solid #eef2f6' }}>
-                      <div className="position-relative" style={{ height: '170px' }}>
+                      <div className="position-relative cursor-pointer" style={{ height: '170px', cursor: 'pointer' }} onClick={() => handleTriggerDetails(item, 'activity')}>
                         <img
                           src={imgSrc}
                           alt={item.title || item.name}
@@ -1417,7 +1438,7 @@ export default function CustomerOverviewTab({
                       </div>
                       <div className="card-body p-3 d-flex flex-column justify-content-between flex-grow-1">
                         <div>
-                          <h6 className="fw-black text-dark mb-0.5 font-heading text-truncate" title={item.title || item.name}>
+                          <h6 className="fw-black text-dark mb-0.5 font-heading text-truncate cursor-pointer" title={item.title || item.name} style={{ cursor: 'pointer' }} onClick={() => handleTriggerDetails(item, 'activity')}>
                             {item.title || item.name}
                           </h6>
                           {item.location && (
@@ -1439,13 +1460,27 @@ export default function CustomerOverviewTab({
                               </div>
                             </div>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => onNavigateTab && onNavigateTab('activities')}
-                            className="btn btn-sm btn-warning text-dark rounded-pill w-100 py-1.5 text-xs fw-bold shadow-sm d-flex align-items-center justify-content-center gap-1"
-                          >
-                            <span>Book Now →</span>
-                          </button>
+                          <div className="row g-1.5">
+                            <div className="col-6">
+                              <button 
+                                type="button"
+                                onClick={() => handleTriggerDetails(item, 'activity')}
+                                className="btn btn-sm btn-outline-dark rounded-pill w-100 py-1.5 text-xs fw-bold d-flex align-items-center justify-content-center gap-1"
+                              >
+                                <Eye size={13} />
+                                <span>View Details</span>
+                              </button>
+                            </div>
+                            <div className="col-6">
+                              <button
+                                type="button"
+                                onClick={() => handleTriggerDetails(item, 'activity')}
+                                className="btn btn-sm btn-warning text-dark rounded-pill w-100 py-1.5 text-xs fw-bold shadow-sm d-flex align-items-center justify-content-center gap-1"
+                              >
+                                <span>Book Now →</span>
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1457,135 +1492,6 @@ export default function CustomerOverviewTab({
 
         </div>
       </div>
-
-      {/* ─── 6. Interactive Item Details Preview Modal ─── */}
-      {previewItem && (
-        <div className="modal-backdrop-custom d-flex align-items-center justify-content-center" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(11, 25, 44, 0.75)', backdropFilter: 'blur(6px)', zIndex: 1070 }}>
-          <div className="card border-0 shadow-lg rounded-4 overflow-hidden animate-fade-in-up" style={{ width: '92%', maxWidth: '680px', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
-            
-            {/* Modal Header */}
-            <div className="card-header bg-dark text-white p-3.5 d-flex justify-content-between align-items-center border-bottom border-dark">
-              <div className="d-flex align-items-center gap-2.5">
-                <div className="rounded-circle p-2 bg-warning text-dark">
-                  <Compass size={20} />
-                </div>
-                <div>
-                  <span className="badge bg-warning text-dark text-xxs fw-black px-2 py-0.5 rounded">
-                    {previewItem.package_type || previewItem.type || 'WOW GOA HOLIDAY'}
-                  </span>
-                  <h5 className="fw-black mb-0 text-white font-heading" style={{ fontSize: '18px' }}>
-                    {previewItem.name}
-                  </h5>
-                </div>
-              </div>
-              <button 
-                type="button" 
-                onClick={() => setPreviewItem(null)} 
-                className="btn btn-sm btn-outline-light text-white rounded-circle p-1.5 border-0 hover-bg-light"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="card-body p-4 overflow-y-auto" style={{ maxHeight: 'calc(90vh - 140px)', background: '#F8FAFC' }}>
-              
-              {/* Main Photo Banner */}
-              <div className="rounded-3 overflow-hidden mb-3 position-relative" style={{ height: '220px' }}>
-                <img 
-                  src={previewItem.image || previewItem.image_url || 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=800&q=80'} 
-                  alt={previewItem.name} 
-                  className="w-100 h-100 object-fit-cover" 
-                />
-                <span className="position-absolute bottom-0 start-0 m-3 badge bg-dark bg-opacity-80 text-white px-3 py-1.5 rounded-pill text-xs fw-bold">
-                  ⏱️ {previewItem.duration || 'Custom Dates'} • Rated ⭐ 4.9/5
-                </span>
-              </div>
-
-              {/* Description & Overview */}
-              <div className="card border-0 shadow-sm rounded-3 p-3 mb-3 bg-white">
-                <h6 className="fw-bold text-dark mb-1 font-heading">Trip / Experience Overview</h6>
-                <p className="text-muted text-xs mb-0" style={{ lineHeight: 1.6 }}>
-                  {previewItem.description || 'Experience the ultimate freedom in Goa with our verified premium booking services. Includes full insurance, 24/7 on-road support, and transparent zero-hidden-cost pricing.'}
-                </p>
-              </div>
-
-              {/* Inclusions & Highlights */}
-              <div className="card border-0 shadow-sm rounded-3 p-3 mb-3 bg-white">
-                <h6 className="fw-bold text-dark mb-2 font-heading">✨ Key Inclusions & Highlights:</h6>
-                <div className="row g-2 text-xs">
-                  <div className="col-sm-6 d-flex align-items-center gap-1.5 text-dark">
-                    <CheckCircle2 size={15} className="text-success flex-shrink-0" />
-                    <span>Unlimited Kilometers in Goa</span>
-                  </div>
-                  <div className="col-sm-6 d-flex align-items-center gap-1.5 text-dark">
-                    <CheckCircle2 size={15} className="text-success flex-shrink-0" />
-                    <span>All Goa Tourist Permit & Taxes</span>
-                  </div>
-                  <div className="col-sm-6 d-flex align-items-center gap-1.5 text-dark">
-                    <CheckCircle2 size={15} className="text-success flex-shrink-0" />
-                    <span>Free Airport / Doorstep Delivery</span>
-                  </div>
-                  <div className="col-sm-6 d-flex align-items-center gap-1.5 text-dark">
-                    <CheckCircle2 size={15} className="text-success flex-shrink-0" />
-                    <span>24/7 On-Road Mechanical Support</span>
-                  </div>
-                  <div className="col-sm-6 d-flex align-items-center gap-1.5 text-dark">
-                    <CheckCircle2 size={15} className="text-success flex-shrink-0" />
-                    <span>Comprehensive Insurance Coverage</span>
-                  </div>
-                  <div className="col-sm-6 d-flex align-items-center gap-1.5 text-dark">
-                    <CheckCircle2 size={15} className="text-success flex-shrink-0" />
-                    <span>Zero Security Deposit Policy</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Pricing & Terms */}
-              <div className="card border-0 shadow-sm rounded-3 p-3 bg-white">
-                <div className="d-flex align-items-center justify-content-between">
-                  <div>
-                    <span className="text-muted text-xxs">Official WOW GOA Price</span>
-                    <div className="fs-4 fw-black text-dark font-heading">
-                      ₹{Number(previewItem.price || 9999).toLocaleString('en-IN')}
-                    </div>
-                  </div>
-                  <div className="text-end">
-                    <span className="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-2.5 py-1 rounded-pill fw-bold text-xs">
-                      Best Rate Guaranteed
-                    </span>
-                    <div className="text-muted text-xxs mt-0.5">Pay only 20% online now</div>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-
-            {/* Modal Footer */}
-            <div className="card-footer bg-white p-3 d-flex justify-content-between align-items-center border-top">
-              <button 
-                type="button" 
-                onClick={() => setPreviewItem(null)} 
-                className="btn btn-secondary btn-sm rounded-pill px-4 py-2 fw-bold text-xs"
-              >
-                Close
-              </button>
-              <button 
-                type="button" 
-                onClick={() => {
-                  const itm = previewItem;
-                  setPreviewItem(null);
-                  handleTriggerBooking(itm);
-                }} 
-                className="btn btn-warning text-dark btn-sm rounded-pill px-4 py-2 fw-bold text-xs shadow-sm d-flex align-items-center gap-1.5 font-heading"
-              >
-                <span>Book This Holiday Now →</span>
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
 
     </div>
   );

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { CheckCircle2 } from 'lucide-react';
+import { calculateAge as calcAgeUtil } from '../../utils/dateUtils';
 
 const DOB_MONTHS = [
   { value: '01', label: 'January' },
@@ -24,6 +25,7 @@ export default function DobPicker({
   onChange,
   required = false,
   id = 'dob-picker',
+  referenceDate = null,
   maxYear: propMaxYear = DEFAULT_MAX_YEAR,
   minYear: propMinYear = DEFAULT_MIN_YEAR
 }) {
@@ -127,20 +129,13 @@ export default function DobPicker({
     }
   };
 
-  // Calculate age
-  const calculateAge = () => {
+  // Calculate age using centralized utility against reference date
+  const age = useMemo(() => {
     if (!day || !month || !year) return null;
-    const birthDate = new Date(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10));
-    const today = new Date();
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const mDiff = today.getMonth() - birthDate.getMonth();
-    if (mDiff < 0 || (mDiff === 0 && today.getDate() < birthDate.getDate())) {
-      age--;
-    }
-    return age >= 0 ? age : null;
-  };
+    const formatted = `${year}-${month}-${day}`;
+    return calcAgeUtil(formatted, referenceDate);
+  }, [day, month, year, referenceDate]);
 
-  const age = calculateAge();
   const selectedMonthObj = DOB_MONTHS.find(m => m.value === month);
 
   return (

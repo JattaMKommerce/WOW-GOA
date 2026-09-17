@@ -13,8 +13,9 @@ import BikeDetailsPage from './BikeDetailsPage';
 import HotelDetailsPage from './HotelDetailsPage';
 import ActivityDetailsPage from './ActivityDetailsPage';
 import FlightDetailsPage from './FlightDetailsPage';
-import { getTodayDateStr, getNextDayDateStr } from '../../utils/dateUtils';
+import { getTodayDateStr, getNextDayDateStr, validateVehicleBookingEligibility } from '../../utils/dateUtils';
 import { isBikeVehicle } from '../../utils/vehicleHelper';
+import DobPicker from '../../components/common/DobPicker';
 
 // Fallback seed vehicles if API is empty or connecting
 const FALLBACK_CARS = [
@@ -1418,10 +1419,24 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [license, setLicense] = useState('');
+  const [dob, setDob] = useState('');
   const [paymentMode, setPaymentMode] = useState('full');
   const [showSuccess, setShowSuccess] = useState(false);
   const [booking, setBooking] = useState(false);
   const [error, setError] = useState('');
+
+  // Auto-fetch DOB for repeat customer by phone
+  useEffect(() => {
+    const clean = String(phone || '').replace(/\D/g, '');
+    if (clean.length >= 10) {
+      api.checkCustomerDob(clean).then(res => {
+        if (res && res.exists && res.date_of_birth) {
+          setDob(prev => prev || res.date_of_birth);
+          setName(prev => prev || res.name || '');
+        }
+      }).catch(() => {});
+    }
+  }, [phone]);
 
   const validPickup = pickupDate || getTodayDateStr();
   const validDrop = dropDate || getNextDayDateStr(validPickup);
@@ -1448,6 +1463,15 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
       setError('Please fill in your name and phone number.');
       return;
     }
+
+    if (selectedVehicle) {
+      const elig = validateVehicleBookingEligibility(dob, validPickup, true, license);
+      if (!elig.valid) {
+        setError(elig.error);
+        return;
+      }
+    }
+
     setError('');
     setBooking(true);
 
@@ -1473,7 +1497,8 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
       phone,
       customer_phone: phone,
       customer_id: `c_${cleanPhone || Date.now()}`,
-      license,
+      license: selectedVehicle ? license : '',
+      date_of_birth: dob || '',
       pickup_loc: selectedVehicle?.location || 'Goa',
       pickup_location: selectedVehicle?.location || 'Goa',
       drop_loc: selectedVehicle?.location || 'Goa',
@@ -1818,10 +1843,22 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
             <input className="cmt-input" type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} />
           </div>
           {selectedVehicle && (
-            <div className="cmt-form-group">
-              <label>🪪 Driving License No.</label>
-              <input className="cmt-input" placeholder="Required for vehicle pickup" value={license} onChange={e => setLicense(e.target.value)} />
-            </div>
+            <>
+              <div className="cmt-form-group">
+                <label>🎂 Date of Birth *</label>
+                <DobPicker
+                  value={dob}
+                  onChange={(val) => setDob(val)}
+                  referenceDate={validPickup}
+                  required={true}
+                  id="cmt-vehicle-dob"
+                />
+              </div>
+              <div className="cmt-form-group">
+                <label>🪪 Driving License No. *</label>
+                <input className="cmt-input" placeholder="Required for vehicle pickup" value={license} onChange={e => setLicense(e.target.value)} required />
+              </div>
+            </>
           )}
 
           <div className="cmt-you-pay-box">
