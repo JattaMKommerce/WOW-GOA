@@ -17,35 +17,21 @@ export default function ActivityDetailsPage({
   pickupDate,
   adultsCount = 2,
   onBack,
-  onBook
+  onBook,
+  isCraftMyTrip = false,
+  backLabel,
+  actionLabel,
+  breadcrumbPrefix,
+  isSelected = false,
+  memberCount
 }) {
-  if (!activity) return null;
-
-  // 1. Core Metadata & Category Resolution
-  const rawType = (activity.type || activity.item_type || '').toLowerCase();
-  const isSightseeing = rawType === 'sightseeing' || (activity.category || '').toLowerCase().includes('sight') || (activity.category || '').toLowerCase().includes('heritage');
-  const typeLabel = isSightseeing ? 'Sightseeing Tour' : (rawType ? 'Adventure Activity' : 'Not specified');
-  const typeIcon = isSightseeing ? '🏛️' : '⚡';
-
-  const title = activity.title || activity.name || 'Not specified';
-  const location = activity.location || 'Not specified';
-  const duration = activity.duration || 'Not specified';
-  const category = activity.category || 'Not specified';
-
-  // 2. Interactive Guest State & Pricing Calculations
+  // 1. Interactive Guest State & Date (declared unconditionally for React rules of hooks)
   const [guests, setGuests] = useState(adultsCount > 0 ? adultsCount : 2);
   const [selectedTourDate, setSelectedTourDate] = useState(pickupDate || getTodayDateStr());
 
-  const parsedPrice = parseFloat(activity.price);
-  const hasPrice = Number.isFinite(parsedPrice);
-  const pricePerPerson = hasPrice ? Math.round(parsedPrice) : 0;
-  
-  const subtotal = pricePerPerson * guests;
-  const gstAmount = Math.round(subtotal * 0.05); // 5% GST on tour experiences
-  const totalAmount = subtotal + gstAmount;
-
-  // 3. Normalize all experience images from actual DB columns
+  // 2. Normalize all experience images from actual DB columns
   const experienceImages = useMemo(() => {
+    if (!activity) return [];
     const list = [];
     const add = (img) => {
       if (!img) return;
@@ -62,7 +48,7 @@ export default function ActivityDetailsPage({
       try {
         const parsed = typeof activity.images_json === 'string' ? JSON.parse(activity.images_json) : activity.images_json;
         add(parsed);
-      } catch (e) {}
+      } catch {}
     }
 
     // Primary images
@@ -75,7 +61,31 @@ export default function ActivityDetailsPage({
     if (Array.isArray(activity.additional_images)) add(activity.additional_images);
 
     return list;
-  }, [activity, isSightseeing]);
+  }, [activity]);
+
+  if (!activity) return null;
+
+  // 3. Core Metadata & Category Resolution
+  const rawType = (activity.type || activity.item_type || '').toLowerCase();
+  const isSightseeing = rawType === 'sightseeing' || (activity.category || '').toLowerCase().includes('sight') || (activity.category || '').toLowerCase().includes('heritage');
+  const typeLabel = isSightseeing ? 'Sightseeing Tour' : (rawType ? 'Adventure Activity' : 'Not specified');
+  const typeIcon = isSightseeing ? '🏛️' : '⚡';
+
+  const title = activity.title || activity.name || 'Not specified';
+  const location = activity.location || 'Not specified';
+  const duration = activity.duration || 'Not specified';
+  const category = activity.category || 'Not specified';
+
+  // 4. Guest Count & Pricing Calculations
+  const currentGuests = isCraftMyTrip ? (memberCount || adultsCount || 1) : guests;
+
+  const parsedPrice = parseFloat(activity.price);
+  const hasPrice = Number.isFinite(parsedPrice);
+  const pricePerPerson = hasPrice ? Math.round(parsedPrice) : 0;
+  
+  const subtotal = pricePerPerson * currentGuests;
+  const gstAmount = Math.round(subtotal * 0.05); // 5% GST on tour experiences (standalone)
+  const totalAmount = isCraftMyTrip ? subtotal : (subtotal + gstAmount);
 
   const isActive = activity.is_active !== 0;
 
@@ -85,10 +95,10 @@ export default function ActivityDetailsPage({
     }
     const bookingPayload = {
       ...activity,
-      guests,
-      adults: guests,
-      totalMembers: guests,
-      total_members: guests,
+      guests: currentGuests,
+      adults: currentGuests,
+      totalMembers: currentGuests,
+      total_members: currentGuests,
       pickupDate: selectedTourDate,
       pickup_date: selectedTourDate,
       dropDate: selectedTourDate,
@@ -117,14 +127,17 @@ export default function ActivityDetailsPage({
               if (document.activeElement?.blur) document.activeElement.blur();
               onBack();
             }}
-            className="btn btn-light rounded-circle p-2 d-flex align-items-center justify-content-center border hover-scale"
-            title="Back to Sightseeing & Activities"
+            className={`btn btn-light border hover-scale d-flex align-items-center gap-1.5 ${
+              backLabel ? 'rounded-pill px-3 py-1.5 fw-bold text-xs' : 'rounded-circle p-2 justify-content-center'
+            }`}
+            title={backLabel || "Back to Sightseeing & Activities"}
           >
-            <ArrowLeft size={18} />
+            <ArrowLeft size={16} />
+            {backLabel && <span>{backLabel.replace(/^←\s*/, '')}</span>}
           </button>
           <div>
             <div className="text-muted text-xxs text-uppercase fw-semibold" style={{ letterSpacing: '0.5px' }}>
-              Sightseeing &amp; Activities &gt; {category} &gt; {title}
+              {breadcrumbPrefix || 'Sightseeing & Activities'} &gt; {category} &gt; {title}
             </div>
             <h5 className="mb-0 fw-bold text-dark font-heading">{title}</h5>
           </div>
@@ -137,7 +150,7 @@ export default function ActivityDetailsPage({
             className="btn btn-warning text-dark btn-sm rounded-pill px-3.5 py-1.5 fw-bold d-none d-md-flex align-items-center gap-1.5 shadow-sm font-heading hover-scale"
             style={{ background: '#FF6333', borderColor: '#FF6333', color: '#FFFFFF' }}
           >
-            <span>Book Experience</span>
+            <span>{actionLabel || 'Book Experience'}</span>
             <ChevronRight size={15} />
           </button>
           <button 
@@ -148,7 +161,7 @@ export default function ActivityDetailsPage({
             }}
             className="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1.5 rounded-pill px-3 py-1"
           >
-            <X size={15} /> Close
+            <X size={15} /> {backLabel ? 'Back' : 'Close'}
           </button>
         </div>
       </div>
@@ -169,6 +182,11 @@ export default function ActivityDetailsPage({
                 {!isActive && (
                   <span className="badge bg-secondary text-white rounded-pill px-2.5 py-1 text-xxs fw-bold">
                     On Request
+                  </span>
+                )}
+                {isSelected && (
+                  <span className="badge bg-success text-white rounded-pill px-2.5 py-1 text-xxs fw-bold d-inline-flex align-items-center gap-1">
+                    ✓ Added to Trip
                   </span>
                 )}
               </div>
@@ -300,25 +318,34 @@ export default function ActivityDetailsPage({
                 <div className="d-flex justify-content-between align-items-center mb-3">
                   <div>
                     <span className="fw-bold text-dark d-block">Number of Guests</span>
+                    {isCraftMyTrip && (
+                      <span className="text-muted" style={{ fontSize: '10px' }}>From Craft My Trip party</span>
+                    )}
                   </div>
-                  <div className="d-flex align-items-center gap-2 bg-white rounded-pill border px-2 py-1">
-                    <button 
-                      type="button" 
-                      className="btn btn-sm btn-link p-0 text-dark"
-                      onClick={() => setGuests(prev => Math.max(1, prev - 1))}
-                      disabled={guests <= 1}
-                    >
-                      <Minus size={14} />
-                    </button>
-                    <span className="fw-bold text-dark px-1.5">{guests}</span>
-                    <button 
-                      type="button" 
-                      className="btn btn-sm btn-link p-0 text-dark"
-                      onClick={() => setGuests(prev => Math.min(20, prev + 1))}
-                    >
-                      <Plus size={14} />
-                    </button>
-                  </div>
+                  {isCraftMyTrip ? (
+                    <span className="badge bg-white text-dark border px-3 py-1.5 rounded-pill fw-bold text-xs shadow-xs">
+                      {currentGuests} {currentGuests === 1 ? 'Guest' : 'Guests'}
+                    </span>
+                  ) : (
+                    <div className="d-flex align-items-center gap-2 bg-white rounded-pill border px-2 py-1">
+                      <button 
+                        type="button" 
+                        className="btn btn-sm btn-link p-0 text-dark"
+                        onClick={() => setGuests(prev => Math.max(1, prev - 1))}
+                        disabled={guests <= 1}
+                      >
+                        <Minus size={14} />
+                      </button>
+                      <span className="fw-bold text-dark px-1.5">{guests}</span>
+                      <button 
+                        type="button" 
+                        className="btn btn-sm btn-link p-0 text-dark"
+                        onClick={() => setGuests(prev => Math.min(20, prev + 1))}
+                      >
+                        <Plus size={14} />
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Date Selection */}
@@ -345,22 +372,39 @@ export default function ActivityDetailsPage({
               {/* Fare Breakdown */}
               <div className="d-flex flex-column gap-2 mb-4 text-xs">
                 <div className="d-flex justify-content-between text-muted">
-                  <span>Base Fare ({guests} guest{guests > 1 ? 's' : ''})</span>
-                  <span className="fw-semibold text-dark">{hasPrice ? `₹${subtotal.toLocaleString('en-IN')}` : 'Not specified'}</span>
+                  <span>Price per person</span>
+                  <span className="fw-semibold text-dark">{hasPrice ? `₹${pricePerPerson.toLocaleString('en-IN')}` : 'Not specified'}</span>
                 </div>
-                <div className="d-flex justify-content-between text-muted">
-                  <span>GST (5%)</span>
-                  <span className="fw-semibold text-dark">{hasPrice ? `₹${gstAmount.toLocaleString('en-IN')}` : 'Not specified'}</span>
-                </div>
-
-                <hr className="my-1 border-secondary border-opacity-25" />
-
-                <div className="d-flex justify-content-between align-items-baseline">
-                  <div>
-                    <span className="fw-bold text-dark fs-6 d-block">Total Payable</span>
-                  </div>
-                  <span className="fw-black text-primary fs-4">{hasPrice ? `₹${totalAmount.toLocaleString('en-IN')}` : 'Not specified'}</span>
-                </div>
+                {isCraftMyTrip ? (
+                  <>
+                    <div className="d-flex justify-content-between text-muted">
+                      <span>Total ({currentGuests} guest{currentGuests > 1 ? 's' : ''})</span>
+                      <span className="fw-semibold text-dark">{hasPrice ? `₹${(pricePerPerson * currentGuests).toLocaleString('en-IN')}` : 'Not specified'}</span>
+                    </div>
+                    <div className="text-muted text-xxs">+ Taxes calculated at checkout</div>
+                    <hr className="my-1 border-secondary border-opacity-25" />
+                    <div className="d-flex justify-content-between align-items-baseline">
+                      <span className="fw-bold text-dark fs-6">Experience Total</span>
+                      <span className="fw-black text-primary fs-4">{hasPrice ? `₹${(pricePerPerson * currentGuests).toLocaleString('en-IN')}` : 'Not specified'}</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="d-flex justify-content-between text-muted">
+                      <span>Base Fare ({guests} guest{guests > 1 ? 's' : ''})</span>
+                      <span className="fw-semibold text-dark">{hasPrice ? `₹${subtotal.toLocaleString('en-IN')}` : 'Not specified'}</span>
+                    </div>
+                    <div className="d-flex justify-content-between text-muted">
+                      <span>GST (5%)</span>
+                      <span className="fw-semibold text-dark">{hasPrice ? `₹${gstAmount.toLocaleString('en-IN')}` : 'Not specified'}</span>
+                    </div>
+                    <hr className="my-1 border-secondary border-opacity-25" />
+                    <div className="d-flex justify-content-between align-items-baseline">
+                      <span className="fw-bold text-dark fs-6">Total Payable</span>
+                      <span className="fw-black text-primary fs-4">{hasPrice ? `₹${totalAmount.toLocaleString('en-IN')}` : 'Not specified'}</span>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Primary Action Button */}
@@ -370,7 +414,7 @@ export default function ActivityDetailsPage({
                 className="btn btn-primary btn-lg w-100 rounded-pill fw-bold shadow-sm d-flex align-items-center justify-content-center gap-2 hover-scale font-heading"
                 style={{ background: '#FF6333', borderColor: '#FF6333', padding: '12px 20px', fontSize: '15px' }}
               >
-                <span>Book Experience</span>
+                <span>{actionLabel || 'Book Experience'}</span>
                 <ChevronRight size={18} />
               </button>
 
@@ -382,6 +426,30 @@ export default function ActivityDetailsPage({
           </div>
 
         </div>
+      </div>
+
+      {/* ─── 5. MOBILE STICKY BOTTOM BAR ─── */}
+      <div 
+        className="d-lg-none fixed-bottom bg-white border-top px-4 py-3 shadow-lg d-flex justify-content-between align-items-center"
+        style={{ zIndex: 1010 }}
+      >
+        <div>
+          <span className="text-muted text-xxs d-block">
+            {isCraftMyTrip ? `Total (${currentGuests} ${currentGuests === 1 ? 'guest' : 'guests'})` : 'Total Payable'}
+          </span>
+          <div className="fw-black font-heading fs-5 mb-0" style={{ color: '#FF6333' }}>
+            ₹{totalAmount.toLocaleString('en-IN')}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={handleBookNowClick}
+          className="btn btn-primary rounded-pill px-4 py-2 fw-bold d-flex align-items-center gap-1.5 shadow-sm font-heading hover-scale"
+          style={{ background: '#FF6333', borderColor: '#FF6333', color: '#FFFFFF' }}
+        >
+          <span>{actionLabel || 'Book Experience'}</span>
+          <ChevronRight size={16} />
+        </button>
       </div>
 
     </div>

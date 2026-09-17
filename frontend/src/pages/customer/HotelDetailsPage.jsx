@@ -15,7 +15,11 @@ export default function HotelDetailsPage({
   dropDate, 
   nights: initialNights = 1, 
   onBack, 
-  onBook 
+  onBook,
+  backLabel,
+  actionLabel,
+  breadcrumbPrefix,
+  isCraftMyTrip = false
 }) {
   // Navigation & View Mode
   const [galleryOpen, setGalleryOpen] = useState(false);
@@ -254,14 +258,15 @@ export default function HotelDetailsPage({
   }, [hotel.policies_json]);
 
   // Handle Room + Rate Plan Reservation trigger
-  const handleReserveRoom = (room, plan) => {
+  const handleReserveRoom = (room = null, plan = null) => {
     if (document.activeElement?.blur) document.activeElement.blur();
     
     // Prepare extended hotel item containing pre-selections
     const enrichedHotel = {
       ...hotel,
-      preselected_room: room,
-      preselected_rate_plan: plan,
+      preselected_room: room || null,
+      preselected_rate_plan: plan || null,
+      has_selected_room: Boolean(room && plan),
       check_in_date: checkInDate,
       check_out_date: checkOutDate,
       booking_days: nights,
@@ -270,7 +275,7 @@ export default function HotelDetailsPage({
       children: children
     };
     
-    onBook(enrichedHotel, room, plan);
+    if (onBook) onBook(enrichedHotel, room, plan);
   };
 
   // Scroll to Available Rooms section
@@ -294,28 +299,44 @@ export default function HotelDetailsPage({
           <button 
             type="button"
             onClick={() => { if (document.activeElement?.blur) document.activeElement.blur(); onBack(); }} 
-            className="btn btn-light rounded-circle p-2 d-flex align-items-center justify-content-center border hover-scale"
-            title="Back to Hotel Listings"
+            className={`btn btn-light border hover-scale d-flex align-items-center gap-1.5 ${
+              backLabel ? 'rounded-pill px-3 py-1.5 fw-bold text-xs' : 'rounded-circle p-2 justify-content-center'
+            }`}
+            title={backLabel || "Back to Hotel Listings"}
           >
-            <ArrowLeft size={18} />
+            <ArrowLeft size={16} />
+            {backLabel && <span>{backLabel.replace(/^←\s*/, '')}</span>}
           </button>
           <div>
             <div className="text-muted text-xxs text-uppercase fw-semibold" style={{ letterSpacing: '0.5px' }}>
-              Hotels &gt; {hotel.location || hotel.area || 'Goa'} &gt; {hotel.name}
+              {breadcrumbPrefix || 'Hotels'} &gt; {hotel.location || hotel.area || 'Goa'} &gt; {hotel.name}
             </div>
             <h5 className="mb-0 fw-bold text-dark font-heading">{hotel.name}</h5>
           </div>
         </div>
 
         <div className="d-flex align-items-center gap-2">
-          <button 
-            type="button"
-            onClick={scrollToRooms}
-            className="btn btn-warning text-dark btn-sm rounded-pill px-3.5 py-1.5 fw-bold d-none d-md-flex align-items-center gap-1.5 shadow-sm font-heading hover-scale"
-          >
-            <span>View Rooms</span>
-            <ChevronRight size={15} />
-          </button>
+          {roomTypes.length > 0 && (
+            <button 
+              type="button"
+              onClick={scrollToRooms}
+              className="btn btn-warning text-dark btn-sm rounded-pill px-3.5 py-1.5 fw-bold d-none d-md-flex align-items-center gap-1.5 shadow-sm font-heading hover-scale"
+            >
+              <span>View Rooms</span>
+              <ChevronRight size={15} />
+            </button>
+          )}
+          {isCraftMyTrip && (
+            <button 
+              type="button"
+              onClick={() => handleReserveRoom(null, null)}
+              className="btn btn-primary btn-sm rounded-pill px-3.5 py-1.5 fw-bold d-flex align-items-center gap-1.5 shadow-sm font-heading hover-scale"
+              style={{ background: '#FF6333', borderColor: '#FF6333', color: '#FFFFFF' }}
+            >
+              <span>{actionLabel || 'Select & Continue'}</span>
+              <ChevronRight size={15} />
+            </button>
+          )}
           <button 
             type="button"
             onClick={() => { if (document.activeElement?.blur) document.activeElement.blur(); onBack(); }} 
@@ -372,13 +393,32 @@ export default function HotelDetailsPage({
                 <span className="text-muted text-xs">/ night</span>
               </div>
               <span className="text-muted text-xxs">+ 18% GST &amp; fees</span>
-              <button 
-                type="button"
-                onClick={scrollToRooms}
-                className="btn btn-warning text-dark rounded-pill px-4 py-2 fw-bold text-xs mt-2 w-100 shadow-sm font-heading hover-scale"
-              >
-                View Available Rooms
-              </button>
+              {roomTypes.length > 0 ? (
+                <button 
+                  type="button"
+                  onClick={scrollToRooms}
+                  className="btn btn-warning text-dark rounded-pill px-4 py-2 fw-bold text-xs mt-2 w-100 shadow-sm font-heading hover-scale"
+                >
+                  View Available Rooms
+                </button>
+              ) : isCraftMyTrip ? (
+                <button 
+                  type="button"
+                  onClick={() => handleReserveRoom(null, null)}
+                  className="btn btn-primary rounded-pill px-4 py-2 fw-bold text-xs mt-2 w-100 shadow-sm font-heading hover-scale"
+                  style={{ background: '#FF6333', borderColor: '#FF6333', color: '#FFFFFF' }}
+                >
+                  {actionLabel || 'Select & Continue'}
+                </button>
+              ) : (
+                <button 
+                  type="button"
+                  onClick={scrollToRooms}
+                  className="btn btn-warning text-dark rounded-pill px-4 py-2 fw-bold text-xs mt-2 w-100 shadow-sm font-heading hover-scale"
+                >
+                  View Available Rooms
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -770,16 +810,27 @@ export default function HotelDetailsPage({
               <p className="text-muted text-xs mb-3">
                 {roomsError || 'All room types are fully booked or closed for these dates. Please adjust your stay dates.'}
               </p>
-              <button 
-                type="button" 
-                onClick={() => {
-                  setCheckInDate(addDays(getTodayDateStr(), 3));
-                  setCheckOutDate(addDays(getTodayDateStr(), 5));
-                }}
-                className="btn btn-primary btn-sm rounded-pill px-4"
-              >
-                Try Later Dates
-              </button>
+              <div className="d-flex justify-content-center gap-2 flex-wrap">
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    setCheckInDate(addDays(getTodayDateStr(), 3));
+                    setCheckOutDate(addDays(getTodayDateStr(), 5));
+                  }}
+                  className="btn btn-primary btn-sm rounded-pill px-4"
+                >
+                  Try Later Dates
+                </button>
+                {isCraftMyTrip && (
+                  <button 
+                    type="button" 
+                    onClick={() => handleReserveRoom(null, null)}
+                    className="btn btn-outline-dark btn-sm rounded-pill px-4 fw-bold"
+                  >
+                    Select This Hotel (Standard Stay)
+                  </button>
+                )}
+              </div>
             </div>
           ) : (
             <div className="space-y-4">
@@ -956,13 +1007,14 @@ export default function HotelDetailsPage({
                             type="button"
                             disabled={isRoomSoldOut}
                             onClick={() => handleReserveRoom(room, currentSelectedPlan)}
-                            className={`btn ${isRoomSoldOut ? 'btn-secondary' : 'btn-warning text-dark'} rounded-pill px-4 py-2.5 fw-bold text-xs d-flex align-items-center gap-2 shadow-sm font-heading hover-scale`}
+                            className={`btn ${isRoomSoldOut ? 'btn-secondary' : isCraftMyTrip ? 'btn-primary' : 'btn-warning text-dark'} rounded-pill px-4 py-2.5 fw-bold text-xs d-flex align-items-center gap-2 shadow-sm font-heading hover-scale`}
+                            style={isCraftMyTrip && !isRoomSoldOut ? { background: '#FF6333', borderColor: '#FF6333', color: '#FFFFFF' } : {}}
                           >
                             {isRoomSoldOut ? (
                               <span>Sold Out for Dates</span>
                             ) : (
                               <>
-                                <span>Select Room &amp; Book</span>
+                                <span>{actionLabel || 'Select Room & Book'}</span>
                                 <ChevronRight size={16} />
                               </>
                             )}
@@ -1313,6 +1365,37 @@ export default function HotelDetailsPage({
           )}
         </div>
       )}
+
+      {/* ─── 11. MOBILE STICKY BOTTOM BAR ─── */}
+      <div 
+        className="d-lg-none fixed-bottom bg-white border-top px-4 py-3 shadow-lg d-flex justify-content-between align-items-center"
+        style={{ zIndex: 1010 }}
+      >
+        <div>
+          <span className="text-muted text-xxs d-block">Starting from ({nights} {nights === 1 ? 'night' : 'nights'})</span>
+          <div className="fw-black font-heading fs-5 mb-0" style={{ color: '#FF6333' }}>
+            ₹{(basePricePerNight * nights).toLocaleString('en-IN')}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            if (roomTypes.length > 0) {
+              const r = roomTypes.find(rt => rt.id === selectedRoomId) || roomTypes[0];
+              const pId = selectedPlanByRoom[r?.id] || (r?.rate_plans && r.rate_plans[0]?.id);
+              const p = (r?.rate_plans || []).find(plan => plan.id === pId) || (r?.rate_plans && r.rate_plans[0]);
+              handleReserveRoom(r, p);
+            } else {
+              handleReserveRoom(null, null);
+            }
+          }}
+          className="btn btn-primary rounded-pill px-4 py-2 fw-bold d-flex align-items-center gap-1.5 shadow-sm font-heading hover-scale"
+          style={{ background: '#FF6333', borderColor: '#FF6333', color: '#FFFFFF' }}
+        >
+          <span>{actionLabel || (roomTypes.length > 0 ? 'Select Room & Book' : 'Select Hotel')}</span>
+          <ChevronRight size={16} />
+        </button>
+      </div>
 
     </div>
   );
