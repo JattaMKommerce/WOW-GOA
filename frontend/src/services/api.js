@@ -13,6 +13,19 @@ export function getTenantId() {
   return tenant;
 }
 
+export function getCustomerToken() {
+  try {
+    const custStr = localStorage.getItem('customerUser');
+    if (custStr) {
+      const cust = JSON.parse(custStr);
+      if (cust && (cust.role === 'customer' || !cust.role)) {
+        return cust.token || cust.id || cust.phone || '';
+      }
+    }
+  } catch (e) {}
+  return '';
+}
+
 export function getAuthToken() {
   try {
     const adminToken = localStorage.getItem('auth_token');
@@ -37,7 +50,10 @@ export function getAuthToken() {
 
 export async function apiFetch(url, options = {}) {
   const tenantId = getTenantId();
-  const token = getAuthToken();
+  let token = options.token !== undefined ? options.token : getAuthToken();
+  if (options.skipAuth && options.token === undefined) {
+    token = '';
+  }
   const headers = {
     ...options.headers,
     'X-Tenant-ID': tenantId
@@ -1925,13 +1941,26 @@ export async function calculatePackagePrice(data) {
   return json;
 }
 
-export async function createBooking(bookingData) {
+export async function createBooking(bookingData, options = {}) {
   let createdBookingId = null;
-  const res = await apiFetch(`${API_BASE}?action=book`, {
+  const isD2C = bookingData.booking_channel === 'D2C' || bookingData.source === 'sophia';
+  
+  const fetchOptions = {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
     body: JSON.stringify(bookingData)
-  });
+  };
+
+  if (isD2C) {
+    // D2C Customer or Sophia booking: strictly isolate customer identity and avoid inheriting stale vendor/admin credentials
+    const custToken = getCustomerToken();
+    fetchOptions.token = custToken || '';
+    if (!custToken) {
+      fetchOptions.skipAuth = true;
+    }
+  }
+
+  const res = await apiFetch(`${API_BASE}?action=book`, fetchOptions);
   if (res.ok) {
     const data = await res.json();
     if (data && data.success) {
@@ -2095,6 +2124,32 @@ export async function toggleVehicleAvailability(id, type, isAvailable) {
   });
   const data = await res.json();
   if (!res.ok || !data.success) throw new Error(data.error || 'Failed to toggle availability');
+  return data;
+}
+
+export async function getAIChatbotSettings() {
+  try {
+    const res = await apiFetch(`${API_BASE}?resource=ai_settings`);
+    if (!res.ok) throw new Error('Failed to fetch AI chatbot settings');
+    return await res.json();
+  } catch (err) {
+    console.error('getAIChatbotSettings error:', err);
+    return { success: true, ai_chatbot_enabled: true, auto_create_leads: true };
+  }
+}
+
+export async function toggleAIChatbot(enabled, autoCreateLeads = true) {
+  const res = await apiFetch(`${API_BASE}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'toggle_ai_chatbot',
+      enabled: Boolean(enabled),
+      auto_create_leads: Boolean(autoCreateLeads)
+    })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) throw new Error(data.message || data.error || 'Failed to update AI chatbot status');
   return data;
 }
 

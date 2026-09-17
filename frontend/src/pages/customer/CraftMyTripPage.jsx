@@ -8,7 +8,13 @@ import {
 import * as api from '../../services/api';
 import HotelImageGallery from '../../components/HotelImageGallery';
 import CraftServiceDetailsModal from '../../components/customer/CraftServiceDetailsModal';
+import CarDetailsPage from './CarDetailsPage';
+import BikeDetailsPage from './BikeDetailsPage';
+import HotelDetailsPage from './HotelDetailsPage';
+import ActivityDetailsPage from './ActivityDetailsPage';
+import FlightDetailsPage from './FlightDetailsPage';
 import { getTodayDateStr, getNextDayDateStr } from '../../utils/dateUtils';
+import { isBikeVehicle } from '../../utils/vehicleHelper';
 
 // Fallback seed vehicles if API is empty or connecting
 const FALLBACK_CARS = [
@@ -19,9 +25,9 @@ const FALLBACK_CARS = [
 ];
 
 const FALLBACK_BIKES = [
-  { id: 201, name: 'Royal Enfield Classic 350', seating: 2, fuel: 'Petrol', price: 800, is_available: 1, image: 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=400&q=80', location: 'Calangute / Baga' },
-  { id: 202, name: 'Honda Activa 6G', seating: 2, fuel: 'Petrol', price: 450, is_available: 1, image: 'https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?auto=format&fit=crop&w=400&q=80', location: 'All Goa' },
-  { id: 203, name: 'Yamaha FZ-S V3', seating: 2, fuel: 'Petrol', price: 700, is_available: 1, image: 'https://images.unsplash.com/photo-1609630875171-b1321377ee65?auto=format&fit=crop&w=400&q=80', location: 'Panaji / North Goa' }
+  { id: 201, name: 'Royal Enfield Classic 350', category: 'Cruiser', seating: 2, fuel: 'Petrol', price: 800, is_available: 1, image: 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=400&q=80', location: 'Calangute / Baga' },
+  { id: 202, name: 'Honda Activa 6G', category: 'Scooter', seating: 2, fuel: 'Petrol', price: 450, is_available: 1, image: 'https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?auto=format&fit=crop&w=400&q=80', location: 'All Goa' },
+  { id: 203, name: 'Yamaha FZ-S V3', category: 'Sports Bike', seating: 2, fuel: 'Petrol', price: 700, is_available: 1, image: 'https://images.unsplash.com/photo-1609630875171-b1321377ee65?auto=format&fit=crop&w=400&q=80', location: 'Panaji / North Goa' }
 ];
 
 // ─── Step Indicator ─────────────────────────────────────────────────────────
@@ -59,15 +65,29 @@ function StepIndicator({ currentStep }) {
 }
 
 // ─── Step 1: Choose Your Ride ────────────────────────────────────────────────
-function Step1Vehicle({ allCars = [], allBikes = [], bookings = [], pickupDate, dropDate, selectedVehicle, setSelectedVehicle, memberCount, setMemberCount, onNext, onBack, appliedFilters = {}, searchQuery: initialSearchQuery = '' }) {
-  const [vehicleType, setVehicleType] = useState(selectedVehicle?.vehicle_type === 'bike' || selectedVehicle?.type === 'bike' ? 'bike' : 'car');
+function Step1Vehicle({
+  allCars = [],
+  allBikes = [],
+  bookings = [],
+  pickupDate,
+  dropDate,
+  selectedVehicle,
+  setSelectedVehicle,
+  memberCount,
+  setMemberCount,
+  onNext,
+  onBack,
+  appliedFilters = {},
+  searchQuery: initialSearchQuery = '',
+  onViewVehicleDetails
+}) {
+  const [vehicleType, setVehicleType] = useState(selectedVehicle && isBikeVehicle(selectedVehicle) ? 'bike' : 'car');
   const [error, setError] = useState('');
   const [localCars, setLocalCars] = useState(allCars);
   const [localBikes, setLocalBikes] = useState(allBikes);
   const [loadingVehicles, setLoadingVehicles] = useState(false);
   const [filterSub, setFilterSub] = useState('All');
   const [searchVeh, setSearchVeh] = useState(initialSearchQuery || '');
-  const [detailsVehicle, setDetailsVehicle] = useState(null);
 
   // Auto-fetch if parent props were empty on mount
   useEffect(() => {
@@ -157,13 +177,16 @@ function Step1Vehicle({ allCars = [], allBikes = [], bookings = [], pickupDate, 
   });
 
   const maxMembers = selectedVehicle
-    ? vehicleType === 'bike' ? 2 : (parseInt(selectedVehicle.seating) || 4)
-    : vehicleType === 'bike' ? 2 : 6;
+    ? (isBikeVehicle(selectedVehicle) ? 2 : (parseInt(selectedVehicle.seating) || 4))
+    : (vehicleType === 'bike' ? 2 : 6);
 
   const handleSelectVehicle = (v) => {
+    const max = isBikeVehicle(v) ? 2 : (parseInt(v.seating) || 4);
+    if (memberCount > max) {
+      setError(`This vehicle accommodates up to ${max} passengers. Please choose another vehicle or reduce the number of members.`);
+      return;
+    }
     setSelectedVehicle(v);
-    const max = vehicleType === 'bike' ? 2 : (parseInt(v.seating) || 4);
-    if (memberCount > max) setMemberCount(max);
     setError('');
   };
 
@@ -171,13 +194,17 @@ function Step1Vehicle({ allCars = [], allBikes = [], bookings = [], pickupDate, 
     setVehicleType(type);
     setSelectedVehicle(null);
     setFilterSub('All');
-    setMemberCount(1);
     setError('');
   };
 
   const handleNext = () => {
     if (!selectedVehicle) {
       setError('Please select a vehicle to continue, or click "Skip Ride".');
+      return;
+    }
+    const max = isBikeVehicle(selectedVehicle) ? 2 : (parseInt(selectedVehicle.seating) || 4);
+    if (memberCount > max) {
+      setError(`This vehicle accommodates up to ${max} passengers. Please choose another vehicle or reduce the number of members.`);
       return;
     }
     setError('');
@@ -309,7 +336,7 @@ function Step1Vehicle({ allCars = [], allBikes = [], bookings = [], pickupDate, 
               <div
                 key={v.id}
                 className={`cmt-vehicle-card ${isSelected ? 'selected' : ''}`}
-                onClick={() => setDetailsVehicle(v)}
+                onClick={() => (onViewVehicleDetails ? onViewVehicleDetails(v) : handleSelectVehicle(v))}
                 style={{ cursor: 'pointer' }}
               >
                 {isSelected && <div className="cmt-selected-badge"><CheckCircle size={16} /> Selected</div>}
@@ -346,10 +373,14 @@ function Step1Vehicle({ allCars = [], allBikes = [], bookings = [], pickupDate, 
                       }`}
                       onClick={(e) => {
                         e.stopPropagation();
-                        setDetailsVehicle(v);
+                        if (onViewVehicleDetails) {
+                          onViewVehicleDetails(v);
+                        } else {
+                          handleSelectVehicle(v);
+                        }
                       }}
                     >
-                      {isSelected ? '✓ Selected' : 'View Details & Select'}
+                      {isSelected ? '✓ Selected • View Details' : 'View Details'}
                     </button>
                   </div>
                 </div>
@@ -393,32 +424,6 @@ function Step1Vehicle({ allCars = [], allBikes = [], bookings = [], pickupDate, 
           </button>
         </div>
       </div>
-
-      {detailsVehicle && (
-        <CraftServiceDetailsModal
-          isOpen={Boolean(detailsVehicle)}
-          serviceType="vehicle"
-          item={detailsVehicle}
-          pickupDate={pickupDate}
-          dropDate={dropDate}
-          memberCount={memberCount}
-          isSelected={selectedVehicle?.id === detailsVehicle?.id}
-          onClose={() => setDetailsVehicle(null)}
-          onSelect={(v) => {
-            handleSelectVehicle(v);
-            setDetailsVehicle(null);
-          }}
-          onDeselect={() => {
-            setSelectedVehicle(null);
-            setDetailsVehicle(null);
-          }}
-          onContinue={(v) => {
-            handleSelectVehicle(v);
-            setDetailsVehicle(null);
-            onNext();
-          }}
-        />
-      )}
     </div>
   );
 }
@@ -430,7 +435,7 @@ const GOA_HOTEL_AREAS = [
   'Margao', 'Vasco da Gama', 'Colva', 'Benaulim', 'Palolem', 'Ponda'
 ];
 
-function Step2Hotel({ allHotels = [], pickupDate, dropDate, selectedHotel, setSelectedHotel, memberCount, onNext, onBack, appliedFilters = {}, searchQuery: initialSearchQuery = '' }) {
+function Step2Hotel({ allHotels = [], pickupDate, dropDate, selectedHotel, setSelectedHotel, memberCount, onNext, onBack, appliedFilters = {}, searchQuery: initialSearchQuery = '', onViewHotelDetails }) {
   const [searchLoc, setSearchLoc] = useState('Goa');
   const [liveHotels, setLiveHotels] = useState([]);
   const [loadingLive, setLoadingLive] = useState(false);
@@ -694,14 +699,20 @@ function Step2Hotel({ allHotels = [], pickupDate, dropDate, selectedHotel, setSe
                 boxShadow: isSelected ? '0 8px 24px rgba(0,82,255,0.15)' : '',
                 position: 'relative'
               }}
-              onClick={() => setDetailsHotel(h)}
+              onClick={() => {
+                if (onViewHotelDetails) {
+                  onViewHotelDetails(h);
+                } else {
+                  setDetailsHotel(h);
+                }
+              }}
             >
               {isSelected && (
                 <div className="position-absolute top-0 end-0 m-2" style={{ zIndex: 10 }}>
                   <CheckCircle size={28} color="#0052ff" fill="#fff" />
                 </div>
               )}
-              <div className="mmt-hotel-img-wrapper" onClick={(e) => { e.stopPropagation(); setDetailsHotel(h); }} style={{ cursor: 'pointer', position: 'relative' }}>
+              <div className="mmt-hotel-img-wrapper" onClick={(e) => { e.stopPropagation(); if (onViewHotelDetails) onViewHotelDetails(h); else setDetailsHotel(h); }} style={{ cursor: 'pointer', position: 'relative' }}>
                 <img 
                   src={h.image || h.photo || `https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=400&q=80`} 
                   alt={h.name} 
@@ -764,10 +775,14 @@ function Step2Hotel({ allHotels = [], pickupDate, dropDate, selectedHotel, setSe
                     className={`btn btn-sm ${isSelected ? 'btn-success text-white' : 'btn-outline-primary'} px-3 fw-bold rounded-pill d-flex align-items-center gap-1`}
                     onClick={(e) => {
                       e.stopPropagation();
-                      setDetailsHotel(h);
+                      if (onViewHotelDetails) {
+                        onViewHotelDetails(h);
+                      } else {
+                        setDetailsHotel(h);
+                      }
                     }}
                   >
-                    {isSelected ? '✓ Selected' : 'View Details & Select'}
+                    {isSelected ? '✓ Selected • View Details' : 'View Details'}
                   </button>
                 </div>
               </div>
@@ -781,7 +796,7 @@ function Step2Hotel({ allHotels = [], pickupDate, dropDate, selectedHotel, setSe
         <div style={{ display: 'flex', gap: '10px' }}>
           <button type="button" className="cmt-btn-secondary" onClick={handleSkip}>Skip Hotel</button>
           <button type="button" className="cmt-btn-primary" onClick={handleNext}>
-            Next: Flight Options <ArrowRight size={16} />
+            Next: Sightseeing & Activities <ArrowRight size={16} />
           </button>
         </div>
       </div>
@@ -843,13 +858,13 @@ function Step3Activities({
   onNext,
   onBack,
   appliedFilters = {},
-  searchQuery: initialSearchQuery = ''
+  searchQuery: initialSearchQuery = '',
+  onViewActivityDetails
 }) {
   const [filterType, setFilterType] = useState('all'); // 'all', 'sightseeing', 'activity'
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery || '');
   const [liveActivities, setLiveActivities] = useState(allActivities || []);
   const [loading, setLoading] = useState(false);
-  const [detailsActivity, setDetailsActivity] = useState(null);
 
   useEffect(() => {
     if (initialSearchQuery) {
@@ -1058,7 +1073,7 @@ function Step3Activities({
             return (
               <div key={act.id} className="col-12 col-md-6">
                 <div
-                  onClick={() => setDetailsActivity(act)}
+                  onClick={() => onViewActivityDetails && onViewActivityDetails(act)}
                   className={`card h-100 border rounded-4 overflow-hidden shadow-xs cursor-pointer transition-all ${
                     isSelected ? 'border-success border-2 shadow-sm' : 'border-light-subtle hover-shadow-md'
                   }`}
@@ -1139,10 +1154,12 @@ function Step3Activities({
                             }`}
                             onClick={(e) => {
                               e.stopPropagation();
-                              setDetailsActivity(act);
+                              if (onViewActivityDetails) {
+                                onViewActivityDetails(act);
+                              }
                             }}
                           >
-                            {isSelected ? '✓ Added' : 'View Details & Add'}
+                            {isSelected ? '✓ Added • View Details' : 'View Details & Add'}
                           </button>
                         </div>
                       </div>
@@ -1180,37 +1197,12 @@ function Step3Activities({
         </div>
       </div>
 
-      {detailsActivity && (
-        <CraftServiceDetailsModal
-          isOpen={Boolean(detailsActivity)}
-          serviceType="activity"
-          item={detailsActivity}
-          memberCount={memberCount}
-          isSelected={selectedActivities.some(a => String(a.id) === String(detailsActivity?.id))}
-          onClose={() => setDetailsActivity(null)}
-          onSelect={(act) => {
-            toggleActivity(act);
-            setDetailsActivity(null);
-          }}
-          onDeselect={(act) => {
-            setSelectedActivities(prev => prev.filter(a => String(a.id) !== String(act.id)));
-            setDetailsActivity(null);
-          }}
-          onContinue={(act) => {
-            const isAlreadySelected = selectedActivities.some(a => String(a.id) === String(act.id));
-            if (!isAlreadySelected) {
-              setSelectedActivities(prev => [...prev, act]);
-            }
-            setDetailsActivity(null);
-          }}
-        />
-      )}
     </div>
   );
 }
 
 // ─── Step 4: Add Flight (Optional) ──────────────────────────────────────────
-function Step4Flight({ selectedFlight, setSelectedFlight, withFlight, setWithFlight, pickupDate, memberCount, onNext, onBack }) {
+function Step4Flight({ selectedFlight, setSelectedFlight, withFlight, setWithFlight, pickupDate, memberCount, onNext, onBack, onViewFlightDetails }) {
   const [fromAirport, setFromAirport] = useState('DEL');
   const [toAirport, setToAirport] = useState('GOI');
   const [flightDate, setFlightDate] = useState(pickupDate || getTodayDateStr());
@@ -1351,7 +1343,7 @@ function Step4Flight({ selectedFlight, setSelectedFlight, withFlight, setWithFli
                     key={f.id || i} 
                     className="card border-0 shadow-sm rounded mb-3" 
                     style={{ borderWidth: isSelected ? '2px' : '1px', borderStyle: 'solid', borderColor: isSelected ? '#0d6efd' : '#e5e7eb', cursor: 'pointer' }}
-                    onClick={() => setSelectedFlight(f)}
+                    onClick={() => onViewFlightDetails ? onViewFlightDetails(f) : setSelectedFlight(f)}
                   >
                     <div className="card-body p-3 d-flex flex-column flex-md-row align-items-center justify-content-between">
                       <div className="d-flex align-items-center gap-3">
@@ -1373,8 +1365,19 @@ function Step4Flight({ selectedFlight, setSelectedFlight, withFlight, setWithFli
                       <div className="text-end">
                         <div className="fw-bold text-dark fs-5">₹{price.toLocaleString('en-IN')}</div>
                         <div className="small text-muted mb-2">Total: ₹{totalFlightPrice}</div>
-                        <button type="button" className={`btn btn-sm ${isSelected ? 'btn-primary' : 'btn-outline-primary'} rounded-pill px-3`}>
-                          {isSelected ? 'Selected' : 'Select'}
+                        <button 
+                          type="button" 
+                          className={`btn btn-sm ${isSelected ? 'btn-success text-white' : 'btn-outline-primary'} rounded-pill px-3 fw-bold`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onViewFlightDetails) {
+                              onViewFlightDetails(f);
+                            } else {
+                              setSelectedFlight(f);
+                            }
+                          }}
+                        >
+                          {isSelected ? '✓ Selected • View Details' : 'View Details & Select'}
                         </button>
                       </div>
                     </div>
@@ -1387,12 +1390,13 @@ function Step4Flight({ selectedFlight, setSelectedFlight, withFlight, setWithFli
       )}
 
       {/* Navigation Footer */}
-      <div className="cmt-nav-actions mt-4 pt-3 border-top">
-        <button className="btn btn-outline-secondary d-flex align-items-center gap-2" onClick={onBack}>
-          <ChevronLeft size={16} /> Back: Activities
+      <div className="cmt-nav-row d-flex justify-content-between align-items-center mt-4 pt-3 border-top">
+        <button type="button" className="cmt-btn-secondary" onClick={onBack}>
+          <ArrowLeft size={16} /> Back to Activities
         </button>
         <button
-          className="btn btn-primary d-flex align-items-center gap-2"
+          type="button"
+          className="cmt-btn-primary"
           onClick={() => {
             if (withFlight && !selectedFlight) {
               setError('Please choose a flight or toggle flight off.');
@@ -1401,7 +1405,7 @@ function Step4Flight({ selectedFlight, setSelectedFlight, withFlight, setWithFli
             onNext();
           }}
         >
-          Review Trip <ChevronRight size={16} />
+          Review Trip <ArrowRight size={16} />
         </button>
       </div>
     </div>
@@ -1456,6 +1460,13 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
     ].filter(Boolean).join(' + ') || 'Custom Goa Holiday';
 
     const cleanPhone = String(phone || '').replace(/\D/g, '');
+    const determinedPackageType = selectedVehicle
+      ? 'Self Drive Package'
+      : (selectedHotel && !withFlight && (!selectedActivities || selectedActivities.length === 0)
+        ? 'Hotel Stay'
+        : 'Trip Package');
+    const determinedType = 'selfdrive';
+
     const cmtPayload = {
       name,
       customer_name: name,
@@ -1472,8 +1483,8 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
       item_id: `craft-${Date.now()}`,
       item_name: `Craft My Trip: ${itemName}`,
       package_name: `Craft My Trip: ${itemName}`,
-      package_type: 'Self Drive Package',
-      type: 'selfdrive',
+      package_type: determinedPackageType,
+      type: determinedType,
       vehicle_name: selectedVehicle?.name || (selectedHotel?.name ? '' : (selectedActivities[0]?.title || 'Custom Tour')),
       vehicle_image: selectedVehicle?.image || '',
       image: selectedVehicle?.image || selectedHotel?.image || selectedActivities[0]?.image_url || selectedActivities[0]?.image || '',
@@ -1489,10 +1500,31 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
       status: 'Confirmed',
       payment_status: paymentMode === 'full' ? 'Full' : 'Partial',
       customizations: JSON.stringify({
-        vehicle: selectedVehicle ? { id: selectedVehicle.id, name: selectedVehicle.name, price: vehiclePrice } : null,
-        hotel: selectedHotel ? { id: selectedHotel.id, name: selectedHotel.name, price: hotelPrice } : null,
+        vehicle: selectedVehicle ? {
+          id: selectedVehicle.id,
+          name: selectedVehicle.name,
+          vehicle_type: isBikeVehicle(selectedVehicle) ? 'bike' : 'car',
+          price: vehiclePrice
+        } : null,
+        hotel: selectedHotel ? {
+          id: selectedHotel.id,
+          name: selectedHotel.name,
+          price: hotelPrice,
+          ...(selectedHotel.preselected_room?.name ? { room_type_name: selectedHotel.preselected_room.name } : {}),
+          ...(selectedHotel.preselected_rate_plan?.meal_plan_label || selectedHotel.preselected_rate_plan?.name || selectedHotel.preselected_rate_plan?.meal_plan ? {
+            meal_plan: selectedHotel.preselected_rate_plan?.meal_plan_label || selectedHotel.preselected_rate_plan?.name || selectedHotel.preselected_rate_plan?.meal_plan
+          } : {}),
+          ...(selectedHotel.preselected_rate_plan?.id ? { rate_plan_id: selectedHotel.preselected_rate_plan.id } : {})
+        } : null,
         activities: (selectedActivities || []).map(a => ({ id: a.id, title: a.title || a.name, type: a.type, price: a.price, location: a.location, duration: a.duration })),
-        flight: withFlight && selectedFlight ? { id: selectedFlight.id, airline: selectedFlight.airline, price: flightPrice } : null,
+        flight: withFlight && selectedFlight ? {
+          id: selectedFlight.id,
+          airline: selectedFlight.airline?.name || selectedFlight.airline,
+          ...(selectedFlight.flight_number ? { flight_number: selectedFlight.flight_number } : {}),
+          ...(selectedFlight.from_loc || selectedFlight.from ? { from: selectedFlight.from_loc || selectedFlight.from } : {}),
+          ...(selectedFlight.to_loc || selectedFlight.to ? { to: selectedFlight.to_loc || selectedFlight.to } : {}),
+          price: flightPrice
+        } : null,
         members: memberCount,
         payment_mode: paymentMode
       })
@@ -1528,13 +1560,25 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
         <h2>Booking Confirmed! 🎉</h2>
         <p>Your custom Goa trip has been booked successfully.</p>
         <div className="cmt-success-summary">
-          {selectedVehicle && <div><strong>Vehicle:</strong> {selectedVehicle.name}</div>}
-          {selectedHotel && <div><strong>Hotel:</strong> {selectedHotel.name}</div>}
+          {selectedVehicle && (
+            <div>
+              <strong>Vehicle:</strong> {selectedVehicle.name}
+            </div>
+          )}
+          {selectedHotel && (
+            <div>
+              <strong>Hotel:</strong> {selectedHotel.name}
+              {selectedHotel.preselected_room?.name && ` (${selectedHotel.preselected_room.name})`}
+            </div>
+          )}
           {selectedActivities && selectedActivities.length > 0 && (
             <div><strong>Sightseeing & Activities:</strong> {selectedActivities.map(a => a.title || a.name).join(', ')}</div>
           )}
           {withFlight && selectedFlight && (
-            <div><strong>Flight:</strong> {selectedFlight.airline?.name || selectedFlight.airline}</div>
+            <div>
+              <strong>Flight:</strong> {selectedFlight.airline?.name || selectedFlight.airline}
+              {selectedFlight.flight_number ? ` (${selectedFlight.flight_number})` : ''}
+            </div>
           )}
           <div><strong>Total Amount:</strong> ₹{grandTotal.toLocaleString('en-IN')}</div>
           <div><strong>Amount Paid:</strong> ₹{amountDue.toLocaleString('en-IN')} ({paymentMode === 'full' ? 'Full' : '30% Advance'})</div>
@@ -1583,6 +1627,8 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
     );
   }
 
+  const isBike = selectedVehicle ? isBikeVehicle(selectedVehicle) : false;
+
   return (
     <div className="cmt-step-body animate-fade-in-up">
       <div className="cmt-step-header">
@@ -1604,7 +1650,11 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
             {selectedVehicle ? (
               <div className="cmt-summary-item">
                 <div className="d-flex align-items-center gap-2">
-                  <Car size={18} className="text-primary" />
+                  {isBike ? (
+                    <Bike size={18} className="text-primary" />
+                  ) : (
+                    <Car size={18} className="text-primary" />
+                  )}
                   <div>
                     <div className="fw-bold">{selectedVehicle.name}</div>
                     <div className="text-muted small">₹{Number(selectedVehicle.price).toLocaleString('en-IN')} × {nights} days</div>
@@ -1628,7 +1678,17 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
                   <Hotel size={18} className="text-warning" />
                   <div>
                     <div className="fw-bold">{selectedHotel.name}</div>
-                    <div className="text-muted small">{nights} night{nights > 1 ? 's' : ''}</div>
+                    {(selectedHotel.preselected_room?.name || selectedHotel.preselected_rate_plan?.meal_plan_label || selectedHotel.preselected_rate_plan?.name) && (
+                      <div className="text-dark small fw-semibold" style={{ fontSize: '12px' }}>
+                        {[
+                          selectedHotel.preselected_room?.name,
+                          selectedHotel.preselected_rate_plan?.meal_plan_label || selectedHotel.preselected_rate_plan?.name || selectedHotel.preselected_rate_plan?.meal_plan
+                        ].filter(Boolean).join(' · ')}
+                      </div>
+                    )}
+                    <div className="text-muted small">
+                      ₹{Math.round(selectedHotel._nightPrice || (hotelPrice / nights)).toLocaleString('en-IN')} × {nights} night{nights > 1 ? 's' : ''}
+                    </div>
                   </div>
                 </div>
                 <span className="fw-bold">₹{hotelPrice.toLocaleString('en-IN')}</span>
@@ -1674,8 +1734,19 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
                 <div className="d-flex align-items-center gap-2">
                   <Plane size={18} className="text-info" />
                   <div>
-                    <div className="fw-bold">{selectedFlight.airline?.name || selectedFlight.airline || 'Flight'}</div>
-                    <div className="text-muted small">{memberCount} passenger{memberCount > 1 ? 's' : ''}</div>
+                    <div className="fw-bold">
+                      {selectedFlight.airline?.name || selectedFlight.airline || 'Flight'}
+                      {selectedFlight.flight_number ? ` (${selectedFlight.flight_number})` : ''}
+                    </div>
+                    {((selectedFlight.from_loc || selectedFlight.from) && (selectedFlight.to_loc || selectedFlight.to)) && (
+                      <div className="text-dark small fw-semibold" style={{ fontSize: '12px' }}>
+                        {selectedFlight.from_loc || selectedFlight.from} → {selectedFlight.to_loc || selectedFlight.to}
+                        {selectedFlight.departure_time && selectedFlight.arrival_time ? ` · ${selectedFlight.departure_time} - ${selectedFlight.arrival_time}` : ''}
+                      </div>
+                    )}
+                    <div className="text-muted small">
+                      ₹{Number(selectedFlight.price || 4500).toLocaleString('en-IN')} × {memberCount} passenger{memberCount > 1 ? 's' : ''}
+                    </div>
                   </div>
                 </div>
                 <span className="fw-bold">₹{flightPrice.toLocaleString('en-IN')}</span>
@@ -1779,8 +1850,20 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
         </div>
       </div>
 
-      <div className="cmt-nav-row" style={{ marginTop: '24px' }}>
-        <button type="button" className="cmt-btn-secondary" onClick={onBack}><ArrowLeft size={16} /> Back</button>
+      <div className="cmt-nav-row d-flex justify-content-between align-items-center" style={{ marginTop: '24px' }}>
+        <button type="button" className="cmt-btn-secondary" onClick={onBack}>
+          <ArrowLeft size={16} /> Back
+        </button>
+        <button
+          type="button"
+          className="cmt-btn-confirm"
+          style={{ width: 'auto', minWidth: '240px', margin: 0 }}
+          onClick={handleConfirm}
+          disabled={booking || subtotal === 0}
+        >
+          {booking ? <span className="cmt-spinner" /> : <CheckCircle size={18} />}
+          {booking ? 'Confirming...' : `Confirm Booking · ₹${amountDue.toLocaleString('en-IN')}`}
+        </button>
       </div>
     </div>
   );
@@ -1808,12 +1891,574 @@ export default function CraftMyTripPage({
   const [selectedActivities, setSelectedActivities] = useState([]);
   const [withFlight, setWithFlight] = useState(false);
   const [selectedFlight, setSelectedFlight] = useState(null);
+  const [viewingVehicleDetails, setViewingVehicleDetails] = useState(null);
+  const [viewingHotelDetails, setViewingHotelDetails] = useState(null);
+  const [viewingActivityDetails, setViewingActivityDetails] = useState(null);
+  const [viewingFlightDetails, setViewingFlightDetails] = useState(null);
+
+  // 1. Restore draft state from sessionStorage
+  useEffect(() => {
+    try {
+      const savedDraft = sessionStorage.getItem('tg_craft_draft');
+      if (savedDraft) {
+        const draft = JSON.parse(savedDraft);
+        if (draft.step) setStep(draft.step);
+        if (draft.selectedVehicle) setSelectedVehicle(draft.selectedVehicle);
+        if (draft.memberCount) setMemberCount(draft.memberCount);
+        if (draft.selectedHotel) setSelectedHotel(draft.selectedHotel);
+        if (draft.selectedActivities) setSelectedActivities(draft.selectedActivities);
+        if (draft.withFlight !== undefined) setWithFlight(draft.withFlight);
+        if (draft.selectedFlight) setSelectedFlight(draft.selectedFlight);
+      }
+    } catch (e) {}
+  }, []);
+
+  // 2. Persist draft state to sessionStorage whenever it changes
+  useEffect(() => {
+    try {
+      const draft = {
+        step,
+        selectedVehicle,
+        memberCount,
+        selectedHotel,
+        selectedActivities,
+        withFlight,
+        selectedFlight,
+        pickupDate,
+        dropDate
+      };
+      sessionStorage.setItem('tg_craft_draft', JSON.stringify(draft));
+    } catch (e) {}
+  }, [step, selectedVehicle, memberCount, selectedHotel, selectedActivities, withFlight, selectedFlight, pickupDate, dropDate]);
+
+  // 3. Hydrate viewingVehicleDetails or viewingHotelDetails on mount or URL change
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const urlParams = new URLSearchParams(window.location.search);
+    const carId = urlParams.get('car');
+    const bikeId = urlParams.get('bike');
+    const hotelId = urlParams.get('hotel');
+
+    if (carId) {
+      let found = null;
+      try {
+        const saved = sessionStorage.getItem('tg_craft_viewing_vehicle');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (String(parsed.id) === String(carId)) found = parsed;
+        }
+      } catch (e) {}
+      if (!found && allCars && allCars.length > 0) {
+        found = allCars.find(c => String(c.id) === String(carId));
+      }
+      if (!found) {
+        found = FALLBACK_CARS.find(c => String(c.id) === String(carId));
+      }
+      if (found) {
+        setViewingVehicleDetails(found);
+      } else {
+        api.fetchCars().then(carsList => {
+          const c = (carsList || []).find(item => String(item.id) === String(carId));
+          if (c) setViewingVehicleDetails(c);
+        }).catch(() => {});
+      }
+    } else if (bikeId) {
+      let found = null;
+      try {
+        const saved = sessionStorage.getItem('tg_craft_viewing_vehicle');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (String(parsed.id) === String(bikeId)) found = parsed;
+        }
+      } catch (e) {}
+      if (!found && allBikes && allBikes.length > 0) {
+        found = allBikes.find(b => String(b.id) === String(bikeId));
+      }
+      if (!found) {
+        found = FALLBACK_BIKES.find(b => String(b.id) === String(bikeId));
+      }
+      if (found) {
+        setViewingVehicleDetails(found);
+      } else {
+        api.fetchBikes().then(bikesList => {
+          const b = (bikesList || []).find(item => String(item.id) === String(bikeId));
+          if (b) setViewingVehicleDetails(b);
+        }).catch(() => {});
+      }
+    } else {
+      setViewingVehicleDetails(null);
+    }
+
+    if (hotelId) {
+      let found = null;
+      try {
+        const saved = sessionStorage.getItem('tg_craft_viewing_hotel');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (String(parsed.id) === String(hotelId)) found = parsed;
+        }
+      } catch (e) {}
+      if (!found && allHotels && allHotels.length > 0) {
+        found = allHotels.find(h => String(h.id) === String(hotelId));
+      }
+      if (found) {
+        setViewingHotelDetails(found);
+      } else {
+        api.fetchHotels().then(hotelsList => {
+          const h = (hotelsList || []).find(item => String(item.id) === String(hotelId));
+          if (h) setViewingHotelDetails(h);
+        }).catch(() => {});
+      }
+    } else {
+      setViewingHotelDetails(null);
+    }
+
+    const activityId = urlParams.get('activity') || urlParams.get('sightseeing');
+    if (activityId) {
+      let found = null;
+      try {
+        const saved = sessionStorage.getItem('tg_craft_viewing_activity');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (String(parsed.id) === String(activityId)) found = parsed;
+        }
+      } catch {}
+      if (!found && allActivities && allActivities.length > 0) {
+        found = allActivities.find(a => String(a.id) === String(activityId));
+      }
+      if (found) {
+        setViewingActivityDetails(found);
+      } else {
+        api.getActivities().then(activitiesList => {
+          const act = (activitiesList || []).find(item => String(item.id) === String(activityId));
+          if (act) setViewingActivityDetails(act);
+        }).catch(() => {});
+      }
+    } else {
+      setViewingActivityDetails(null);
+    }
+
+    const flightId = urlParams.get('flight');
+    if (flightId) {
+      let found = null;
+      try {
+        const saved = sessionStorage.getItem('tg_craft_viewing_flight');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (String(parsed.id) === String(flightId)) found = parsed;
+        }
+      } catch {}
+      if (found) {
+        setViewingFlightDetails(found);
+      } else {
+        api.fetchFlights().then(flightsList => {
+          const f = (flightsList || []).find(item => String(item.id) === String(flightId));
+          if (f) setViewingFlightDetails(f);
+        }).catch(() => {});
+      }
+    } else {
+      setViewingFlightDetails(null);
+    }
+  }, [allCars, allBikes, allHotels, allActivities]);
+
+  // 4. Listen to browser Back/Forward (popstate)
+  useEffect(() => {
+    const handlePopState = () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const carId = urlParams.get('car');
+      const bikeId = urlParams.get('bike');
+      const hotelId = urlParams.get('hotel');
+
+      if (!carId && !bikeId) {
+        setViewingVehicleDetails(null);
+        try {
+          sessionStorage.removeItem('tg_craft_viewing_vehicle');
+        } catch (e) {}
+      } else {
+        let found = null;
+        try {
+          const saved = sessionStorage.getItem('tg_craft_viewing_vehicle');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (String(parsed.id) === String(carId || bikeId)) found = parsed;
+          }
+        } catch (e) {}
+        if (!found) {
+          found = (allCars || []).find(c => String(c.id) === String(carId)) ||
+                  (allBikes || []).find(b => String(b.id) === String(bikeId)) ||
+                  FALLBACK_CARS.find(c => String(c.id) === String(carId)) ||
+                  FALLBACK_BIKES.find(b => String(b.id) === String(bikeId));
+        }
+        if (found) {
+          setViewingVehicleDetails(found);
+        } else if (bikeId) {
+          api.fetchBikes().then(bikesList => {
+            const b = (bikesList || []).find(item => String(item.id) === String(bikeId));
+            if (b) setViewingVehicleDetails(b);
+          }).catch(() => {});
+        } else if (carId) {
+          api.fetchCars().then(carsList => {
+            const c = (carsList || []).find(item => String(item.id) === String(carId));
+            if (c) setViewingVehicleDetails(c);
+          }).catch(() => {});
+        }
+      }
+
+      if (!hotelId) {
+        setViewingHotelDetails(null);
+        try {
+          sessionStorage.removeItem('tg_craft_viewing_hotel');
+        } catch (e) {}
+      } else {
+        let found = (allHotels || []).find(h => String(h.id) === String(hotelId));
+        if (!found) {
+          try {
+            const saved = sessionStorage.getItem('tg_craft_viewing_hotel');
+            if (saved) {
+              const parsed = JSON.parse(saved);
+              if (String(parsed.id) === String(hotelId)) found = parsed;
+            }
+          } catch (e) {}
+        }
+        if (found) setViewingHotelDetails(found);
+      }
+
+      const activityId = urlParams.get('activity') || urlParams.get('sightseeing');
+      if (!activityId) {
+        setViewingActivityDetails(null);
+        try {
+          sessionStorage.removeItem('tg_craft_viewing_activity');
+        } catch {}
+      } else {
+        let found = (allActivities || []).find(a => String(a.id) === String(activityId));
+        if (!found) {
+          try {
+            const saved = sessionStorage.getItem('tg_craft_viewing_activity');
+            if (saved) {
+              const parsed = JSON.parse(saved);
+              if (String(parsed.id) === String(activityId)) found = parsed;
+            }
+          } catch {}
+        }
+        if (found) {
+          setViewingActivityDetails(found);
+        } else {
+          api.getActivities().then(activitiesList => {
+            const act = (activitiesList || []).find(item => String(item.id) === String(activityId));
+            if (act) setViewingActivityDetails(act);
+          }).catch(() => {});
+        }
+      }
+
+      const flightId = urlParams.get('flight');
+      if (!flightId) {
+        setViewingFlightDetails(null);
+        try {
+          sessionStorage.removeItem('tg_craft_viewing_flight');
+        } catch {}
+      } else {
+        let found = null;
+        try {
+          const saved = sessionStorage.getItem('tg_craft_viewing_flight');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (String(parsed.id) === String(flightId)) found = parsed;
+          }
+        } catch {}
+        if (found) {
+          setViewingFlightDetails(found);
+        } else {
+          api.fetchFlights().then(flightsList => {
+            const f = (flightsList || []).find(item => String(item.id) === String(flightId));
+            if (f) setViewingFlightDetails(f);
+          }).catch(() => {});
+        }
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [allCars, allBikes, allHotels, allActivities]);
+
+  const handleOpenVehicleDetails = (vehicle) => {
+    if (!vehicle) return;
+    const isBike = isBikeVehicle(vehicle);
+    const targetUrl = isBike ? `/craft?bike=${encodeURIComponent(vehicle.id)}` : `/craft?car=${encodeURIComponent(vehicle.id)}`;
+    window.history.pushState({ craftStep: 1, vehicleId: vehicle.id, isBike }, '', targetUrl);
+    try {
+      sessionStorage.setItem('tg_craft_viewing_vehicle', JSON.stringify(vehicle));
+    } catch (e) {}
+    setViewingVehicleDetails(vehicle);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleBackFromVehicleDetails = () => {
+    setViewingVehicleDetails(null);
+    try {
+      sessionStorage.removeItem('tg_craft_viewing_vehicle');
+    } catch (e) {}
+    window.history.pushState({ craftStep: 1 }, '', '/craft');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleSelectAndContinueVehicle = (vehicleItem) => {
+    const item = vehicleItem || viewingVehicleDetails;
+    if (!item) return;
+    const isBike = isBikeVehicle(item);
+    const maxCapacity = isBike ? 2 : (parseInt(item.seating) || 4);
+
+    // Validation: DO NOT proceed or silently change memberCount
+    if (memberCount > maxCapacity) {
+      return;
+    }
+
+    setSelectedVehicle(item);
+    setViewingVehicleDetails(null);
+    try {
+      sessionStorage.removeItem('tg_craft_viewing_vehicle');
+    } catch (e) {}
+    window.history.pushState({ craftStep: 2 }, '', '/craft');
+    setStep(2);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleOpenHotelDetails = (hotel) => {
+    if (!hotel) return;
+    const targetUrl = `/craft?hotel=${encodeURIComponent(hotel.id)}`;
+    window.history.pushState({ craftStep: 2, hotelId: hotel.id }, '', targetUrl);
+    try {
+      sessionStorage.setItem('tg_craft_viewing_hotel', JSON.stringify(hotel));
+    } catch (e) {}
+    setViewingHotelDetails(hotel);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleBackFromHotelDetails = () => {
+    setViewingHotelDetails(null);
+    try {
+      sessionStorage.removeItem('tg_craft_viewing_hotel');
+    } catch (e) {}
+    window.history.pushState({ craftStep: 2 }, '', '/craft');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleSelectAndContinueHotel = (hotelItem, room = null, plan = null) => {
+    const item = hotelItem || viewingHotelDetails;
+    if (!item) return;
+
+    const validPickup = pickupDate || getTodayDateStr();
+    const validDrop = dropDate || getNextDayDateStr(validPickup);
+    const nights = Math.max(1, Math.ceil((new Date(validDrop) - new Date(validPickup)) / (1000 * 60 * 60 * 24)));
+
+    const nightPrice = plan?.base_price 
+      ? parseFloat(plan.base_price) 
+      : (parseFloat(item.price_per_night || item.price || item.rate || 0) || 2500);
+    const totalHotelPrice = nightPrice * nights;
+
+    const selectedPayload = {
+      ...item,
+      preselected_room: room || null,
+      preselected_rate_plan: plan || null,
+      has_selected_room: Boolean(room && plan),
+      _nightPrice: nightPrice,
+      _totalPrice: totalHotelPrice,
+      _nights: nights
+    };
+
+    setSelectedHotel(selectedPayload);
+    setViewingHotelDetails(null);
+    try {
+      sessionStorage.removeItem('tg_craft_viewing_hotel');
+    } catch (e) {}
+    window.history.pushState({ craftStep: 3 }, '', '/craft');
+    setStep(3);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleOpenActivityDetails = (activity) => {
+    if (!activity) return;
+    const targetUrl = `/craft?activity=${encodeURIComponent(activity.id)}`;
+    window.history.pushState({ craftStep: 3, activityId: activity.id }, '', targetUrl);
+    try {
+      sessionStorage.setItem('tg_craft_viewing_activity', JSON.stringify(activity));
+    } catch {}
+    setViewingActivityDetails(activity);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleBackFromActivityDetails = () => {
+    setViewingActivityDetails(null);
+    try {
+      sessionStorage.removeItem('tg_craft_viewing_activity');
+    } catch {}
+    window.history.pushState({ craftStep: 3 }, '', '/craft');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleSelectAndContinueActivity = (activityItem) => {
+    const item = activityItem || viewingActivityDetails;
+    if (!item) return;
+
+    setSelectedActivities(prev => {
+      const exists = (prev || []).some(a => String(a.id) === String(item.id));
+      if (exists) return prev;
+      return [...(prev || []), item];
+    });
+
+    setViewingActivityDetails(null);
+    try {
+      sessionStorage.removeItem('tg_craft_viewing_activity');
+    } catch {}
+    window.history.pushState({ craftStep: 4 }, '', '/craft');
+    setStep(4);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleOpenFlightDetails = (flight) => {
+    if (!flight) return;
+    const targetUrl = `/craft?flight=${encodeURIComponent(flight.id)}`;
+    window.history.pushState({ craftStep: 4, flightId: flight.id }, '', targetUrl);
+    try {
+      sessionStorage.setItem('tg_craft_viewing_flight', JSON.stringify(flight));
+    } catch {}
+    setViewingFlightDetails(flight);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleBackFromFlightDetails = () => {
+    setViewingFlightDetails(null);
+    try {
+      sessionStorage.removeItem('tg_craft_viewing_flight');
+    } catch {}
+    window.history.pushState({ craftStep: 4 }, '', '/craft');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleSelectAndContinueFlight = (flightItem) => {
+    const item = flightItem || viewingFlightDetails;
+    if (!item) return;
+
+    setSelectedFlight(item);
+    setWithFlight(true);
+    setViewingFlightDetails(null);
+    try {
+      sessionStorage.removeItem('tg_craft_viewing_flight');
+    } catch {}
+    window.history.pushState({ craftStep: 5 }, '', '/craft');
+    setStep(5);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const goNext = () => setStep(s => Math.min(s + 1, 5));
   const goBack = () => {
     if (step === 1) { onBack(); return; }
     setStep(s => s - 1);
   };
+
+  // ─── FULL-PAGE VEHICLE DETAILS VIEW ──────────────────────────────────────
+  if (viewingVehicleDetails) {
+    const isBike = isBikeVehicle(viewingVehicleDetails);
+    const bookingDays = (pickupDate && dropDate)
+      ? Math.max(1, Math.round((new Date(dropDate) - new Date(pickupDate)) / (1000 * 60 * 60 * 24)))
+      : 2;
+
+    if (isBike) {
+      return (
+        <BikeDetailsPage
+          bike={viewingVehicleDetails}
+          pickupDate={pickupDate}
+          dropDate={dropDate}
+          bookingDays={bookingDays}
+          isCraftMyTrip={true}
+          backLabel="← Back to Craft My Trip"
+          actionLabel="Select & Continue"
+          breadcrumbPrefix="Craft My Trip"
+          memberCount={memberCount}
+          onMemberCountChange={setMemberCount}
+          onBack={handleBackFromVehicleDetails}
+          onBook={handleSelectAndContinueVehicle}
+        />
+      );
+    }
+
+    return (
+      <CarDetailsPage
+        car={viewingVehicleDetails}
+        pickupDate={pickupDate}
+        dropDate={dropDate}
+        bookingDays={bookingDays}
+        isCraftMyTrip={true}
+        backLabel="← Back to Craft My Trip"
+        actionLabel="Select & Continue"
+        breadcrumbPrefix="Craft My Trip"
+        memberCount={memberCount}
+        onMemberCountChange={setMemberCount}
+        onBack={handleBackFromVehicleDetails}
+        onBook={handleSelectAndContinueVehicle}
+      />
+    );
+  }
+
+  // ─── FULL-PAGE HOTEL DETAILS VIEW ────────────────────────────────────────
+  if (viewingHotelDetails) {
+    const validPickup = pickupDate || getTodayDateStr();
+    const validDrop = dropDate || getNextDayDateStr(validPickup);
+    const calculatedNights = Math.max(1, Math.ceil((new Date(validDrop) - new Date(validPickup)) / (1000 * 60 * 60 * 24)));
+
+    return (
+      <HotelDetailsPage
+        hotel={viewingHotelDetails}
+        pickupDate={pickupDate}
+        dropDate={dropDate}
+        nights={calculatedNights}
+        isCraftMyTrip={true}
+        backLabel="← Back to Craft My Trip"
+        actionLabel="Select & Continue"
+        breadcrumbPrefix="Craft My Trip"
+        onBack={handleBackFromHotelDetails}
+        onBook={handleSelectAndContinueHotel}
+      />
+    );
+  }
+
+  // ─── FULL-PAGE ACTIVITY DETAILS VIEW ────────────────────────────────────
+  if (viewingActivityDetails) {
+    const isAlreadySelected = (selectedActivities || []).some(a => String(a.id) === String(viewingActivityDetails.id));
+    return (
+      <ActivityDetailsPage
+        activity={viewingActivityDetails}
+        pickupDate={pickupDate}
+        adultsCount={memberCount}
+        memberCount={memberCount}
+        isCraftMyTrip={true}
+        isSelected={isAlreadySelected}
+        backLabel="← Back to Craft My Trip"
+        actionLabel={isAlreadySelected ? "Continue to Flight" : "Select & Continue"}
+        breadcrumbPrefix="Craft My Trip"
+        onBack={handleBackFromActivityDetails}
+        onBook={handleSelectAndContinueActivity}
+      />
+    );
+  }
+
+  // ─── FULL-PAGE FLIGHT DETAILS VIEW ──────────────────────────────────────
+  if (viewingFlightDetails) {
+    const isAlreadySelected = selectedFlight?.id === viewingFlightDetails.id;
+    return (
+      <FlightDetailsPage
+        flight={viewingFlightDetails}
+        flightAdults={memberCount}
+        memberCount={memberCount}
+        pickupDate={pickupDate}
+        isCraftMyTrip={true}
+        isSelected={isAlreadySelected}
+        backLabel="← Back to Craft My Trip"
+        actionLabel={isAlreadySelected ? "Continue to Review" : "Select & Continue"}
+        breadcrumbPrefix="Craft My Trip"
+        onBack={handleBackFromFlightDetails}
+        onBook={handleSelectAndContinueFlight}
+      />
+    );
+  }
 
   return (
     <div className="cmt-page">
@@ -1853,6 +2498,7 @@ export default function CraftMyTripPage({
             onBack={goBack}
             appliedFilters={appliedFilters}
             searchQuery={searchQuery}
+            onViewVehicleDetails={handleOpenVehicleDetails}
           />
         )}
         {step === 2 && (
@@ -1867,6 +2513,7 @@ export default function CraftMyTripPage({
             onBack={goBack}
             appliedFilters={appliedFilters}
             searchQuery={searchQuery}
+            onViewHotelDetails={handleOpenHotelDetails}
           />
         )}
         {step === 3 && (
@@ -1879,6 +2526,7 @@ export default function CraftMyTripPage({
             onBack={goBack}
             appliedFilters={appliedFilters}
             searchQuery={searchQuery}
+            onViewActivityDetails={handleOpenActivityDetails}
           />
         )}
         {step === 4 && (
@@ -1891,6 +2539,7 @@ export default function CraftMyTripPage({
             memberCount={memberCount}
             onNext={goNext}
             onBack={goBack}
+            onViewFlightDetails={handleOpenFlightDetails}
           />
         )}
         {step === 5 && (

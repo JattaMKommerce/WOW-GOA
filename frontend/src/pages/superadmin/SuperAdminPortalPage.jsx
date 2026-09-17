@@ -21,7 +21,10 @@ import { handleIncomingNotifications, registerSeenNotifications, getRelativeTime
 const SIDEBAR_GROUPS = [
   {
     label: 'Overview',
-    items: [{ id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={15} /> }]
+    items: [
+      { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={15} /> },
+      { id: 'lead_management', label: 'Lead Management', icon: <Users size={15} /> }
+    ]
   },
   {
     label: 'Administration',
@@ -56,7 +59,6 @@ const SIDEBAR_GROUPS = [
     items: [
       { id: 'vendor_management', label: 'Vendor Management', icon: <Building size={15} /> },
       { id: 'vendor_verification', label: 'KYC & Verification', icon: <CheckCircle size={15} /> },
-      { id: 'lead_management', label: 'Lead Management', icon: <Users size={15} /> },
     ]
   },
   {
@@ -65,7 +67,7 @@ const SIDEBAR_GROUPS = [
       { id: 'hotel_bookings', label: 'Hotel Booking', icon: <Hotel size={15} /> },
       { id: 'trip_bookings', label: 'Trip Booking', icon: <CalendarDays size={15} /> },
       { id: 'vehicle_bookings', label: 'Vehicle Booking', icon: <Car size={15} /> },
-      { id: 'activity_bookings', label: 'Manage Sightseeing & Activity Booking', icon: <MapIcon size={15} /> },
+      { id: 'activity_bookings', label: 'Sightseeing & Activity Booking', icon: <MapIcon size={15} /> },
     ]
   },
   {
@@ -113,7 +115,7 @@ const PAGE_TITLES = {
   hotel_bookings: 'Hotel Booking',
   trip_bookings: 'Trip Booking',
   vehicle_bookings: 'Vehicle Booking',
-  activity_bookings: 'Manage Sightseeing & Activity Booking',
+  activity_bookings: 'Sightseeing & Activity Bookings',
   wallet: 'Wallet & Approvals',
   payment_gateway: 'Payment Gateways',
   subscription_plans: 'Subscription Plans',
@@ -124,15 +126,18 @@ const PAGE_TITLES = {
 };
 
 function SidebarGroup({ group, activeTab, onSelect, defaultOpen }) {
-  const [open, setOpen] = useState(defaultOpen || group.items.some(i => i.id === activeTab));
+  const isCurrentGroupActive = group.items.some(i => i.id === activeTab);
+  const [open, setOpen] = useState(defaultOpen || isCurrentGroupActive);
 
   useEffect(() => {
-    if (group.items.some(i => i.id === activeTab)) {
+    if (isCurrentGroupActive) {
       setOpen(true);
+    } else if (!defaultOpen) {
+      setOpen(false);
     }
-  }, [activeTab, group.items]);
+  }, [activeTab, isCurrentGroupActive, defaultOpen]);
 
-  const storageKey = 'superadmin_sidebar_order_' + group.label.toLowerCase().replace(/[^a-z0-9]/g, '_');
+  const storageKey = 'superadmin_sidebar_order_v2_' + group.label.toLowerCase().replace(/[^a-z0-9]/g, '_');
 
   const [orderedItems, setOrderedItems] = useState(() => {
     try {
@@ -791,8 +796,7 @@ export default function SuperAdminPortalPage({
           width: sidebarOpen ? '260px' : '0px',
           minWidth: sidebarOpen ? '260px' : '0px',
           height: '100vh',
-          overflowY: 'auto',
-          overflowX: 'hidden',
+          overflow: 'hidden',
           backgroundColor: '#0D1B2E',
           borderRight: '1px solid rgba(255,255,255,0.06)',
           transition: 'all 0.3s ease',
@@ -808,10 +812,26 @@ export default function SuperAdminPortalPage({
         </div>
 
         {/* Nav */}
-        <div className="flex-grow-1 py-2">
-          {SIDEBAR_GROUPS.map((group, idx) => (
-            <SidebarGroup key={group.label} group={group} activeTab={activeTab} onSelect={handleTabChange} defaultOpen={idx < 2} />
-          ))}
+        <div 
+          className="flex-grow-1 py-2 custom-sidebar-scroll"
+          style={{
+            overflowY: 'auto',
+            overflowX: 'hidden'
+          }}
+        >
+          {SIDEBAR_GROUPS.map((group, idx) => {
+            const hasActive = group.items.some(it => it.id === activeTab);
+            const isDefaultOpen = hasActive || (idx === 0 && !SIDEBAR_GROUPS.some(g => g.items.some(it => it.id === activeTab)));
+            return (
+              <SidebarGroup 
+                key={group.label} 
+                group={group} 
+                activeTab={activeTab} 
+                onSelect={handleTabChange} 
+                defaultOpen={isDefaultOpen} 
+              />
+            );
+          })}
         </div>
 
         {/* Logout */}

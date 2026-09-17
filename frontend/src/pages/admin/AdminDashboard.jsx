@@ -4,6 +4,7 @@ import * as api from '../../services/api';
 import AdminWalletSettlements from '../../components/admin/AdminWalletSettlements';
 import AdminActivitiesManagement from './AdminActivitiesManagement';
 import { getTodayDateStr, getNextDayDateStr, validateBookingDates } from '../../utils/dateUtils';
+import AIChatbotToggle from '../../components/common/AIChatbotToggle';
 
 const LocationSuggestions = ({ index, dayWiseItinerary, setDayWiseItinerary }) => {
   const [suggestions, setSuggestions] = useState([]);
@@ -1873,10 +1874,13 @@ export default function AdminDashboard({
         <div className="position-absolute top-0 end-0 p-4 opacity-10">
           <MessageSquare size={120} />
         </div>
-        <div className="d-flex justify-content-between align-items-center position-relative z-index-1">
+        <div className="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 position-relative z-index-1">
           <div>
             <h3 className="fw-bold mb-1" style={{ color: '#0D1B2E', fontSize: '1.5rem', letterSpacing: '-0.5px' }}>AI Chatbot Leads</h3>
             <p className="text-muted mb-0" style={{ fontSize: '0.9rem' }}>Users who interacted with the Goa Trip Guide AI.</p>
+          </div>
+          <div style={{ minWidth: '320px', maxWidth: '420px', width: '100%' }}>
+            <AIChatbotToggle />
           </div>
         </div>
       </div>
@@ -2146,12 +2150,15 @@ export default function AdminDashboard({
       {/* Top Header Card */}
       <div className="p-4 rounded-4 mb-4 shadow-sm position-relative overflow-hidden" style={{ background: 'linear-gradient(135deg, #fff0e6 0%, #ffe0cc 100%)', border: '1px solid rgba(255, 99, 51, 0.1)' }}>
         <div className="position-absolute top-0 end-0 h-100 opacity-25" style={{ width: '40%', background: 'radial-gradient(circle at right, #FF8A00 0%, transparent 70%)', pointerEvents: 'none' }}></div>
-        <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 position-relative z-1">
+        <div className="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 position-relative z-1">
           <div>
             <h4 className="fw-extrabold mb-2 text-dark font-heading" style={{ letterSpacing: '0.5px' }}>AI Chatbot Leads</h4>
             <p className="mb-0 text-secondary fw-medium" style={{ fontSize: '0.95rem' }}>
               Review customer contact information captured by the AI assistant.
             </p>
+          </div>
+          <div style={{ minWidth: '320px', maxWidth: '420px', width: '100%' }}>
+            <AIChatbotToggle />
           </div>
         </div>
       </div>

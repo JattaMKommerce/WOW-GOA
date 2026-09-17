@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { 
   ArrowLeft, Star, MapPin, Users, Fuel, Settings, ShieldCheck, 
   CheckCircle, ChevronRight, Wind, AlertCircle, PhoneCall, FileText, 
@@ -18,12 +18,18 @@ export default function CarDetailsPage({
   dropDate,
   bookingDays = 2,
   onBack,
-  onBook
+  onBook,
+  backLabel,
+  actionLabel,
+  breadcrumbPrefix,
+  memberCount,
+  onMemberCountChange,
+  isCraftMyTrip = false
 }) {
-  if (!car) return null;
+  const [capacityError, setCapacityError] = useState(null);
 
   // 1. Calculate rental days and pricing
-  const pricePerDay = Math.round(parseFloat(car.price || 1500));
+  const pricePerDay = Math.round(parseFloat(car?.price || 1500));
   const originalPricePerDay = Math.round(pricePerDay * 1.25); // 25% strikethrough
 
   const calculatedDays = useMemo(() => {
@@ -40,6 +46,7 @@ export default function CarDetailsPage({
 
   // 2. Normalize all car images from actual DB columns
   const carImages = useMemo(() => {
+    if (!car) return [];
     const list = [];
     const add = (img) => {
       if (!img) return;
@@ -78,13 +85,21 @@ export default function CarDetailsPage({
     return list;
   }, [car]);
 
+  if (!car) return null;
+
   const isAvailable = car.is_available === 1 || car.is_available === true || car.is_available === '1' || car.is_available === undefined;
   const ratingVal = parseFloat(car.rating || 4.8);
+  const seatingCapacity = parseInt(car?.seating, 10) || 4;
 
   const handleBookNowClick = () => {
     if (document.activeElement && typeof document.activeElement.blur === 'function') {
       document.activeElement.blur();
     }
+    if (isCraftMyTrip && memberCount && memberCount > seatingCapacity) {
+      setCapacityError(`This vehicle accommodates up to ${seatingCapacity} passengers. Please choose another vehicle or reduce the number of members.`);
+      return;
+    }
+    setCapacityError(null);
     if (onBook) onBook(car);
   };
 
@@ -103,14 +118,17 @@ export default function CarDetailsPage({
               if (document.activeElement?.blur) document.activeElement.blur();
               onBack();
             }}
-            className="btn btn-light rounded-circle p-2 d-flex align-items-center justify-content-center border hover-scale"
-            title="Back to Car Listings"
+            className={`btn btn-light border hover-scale d-flex align-items-center gap-1.5 ${
+              backLabel ? 'rounded-pill px-3 py-1.5 fw-bold text-xs' : 'rounded-circle p-2 justify-content-center'
+            }`}
+            title={backLabel || "Back to Car Listings"}
           >
-            <ArrowLeft size={18} />
+            <ArrowLeft size={16} />
+            {backLabel && <span>{backLabel.replace(/^←\s*/, '')}</span>}
           </button>
           <div>
             <div className="text-muted text-xxs text-uppercase fw-semibold" style={{ letterSpacing: '0.5px' }}>
-              Self-Drive Rental Cars &gt; {car.category || 'Goa'} &gt; {car.name}
+              {breadcrumbPrefix || 'Self-Drive Rental Cars'} &gt; {car.category || 'Goa'} &gt; {car.name}
             </div>
             <h5 className="mb-0 fw-bold text-dark font-heading">{car.name}</h5>
           </div>
@@ -123,7 +141,7 @@ export default function CarDetailsPage({
             className="btn btn-warning text-dark btn-sm rounded-pill px-3.5 py-1.5 fw-bold d-none d-md-flex align-items-center gap-1.5 shadow-sm font-heading hover-scale"
             style={{ background: '#FF6333', borderColor: '#FF6333', color: '#FFFFFF' }}
           >
-            <span>Book Now</span>
+            <span>{actionLabel || 'Book Now'}</span>
             <ChevronRight size={15} />
           </button>
           <button 
@@ -472,14 +490,53 @@ export default function CarDetailsPage({
                 </div>
               </div>
 
-              {/* Primary CTA: Book Now */}
+              {/* Capacity Validation Notice */}
+              {isCraftMyTrip && (memberCount > seatingCapacity || capacityError) && (
+                <div className="alert alert-warning border border-warning rounded-3 p-3 mb-3 text-xs" style={{ background: '#FFFBEB', borderColor: '#FDE68A' }}>
+                  <div className="d-flex align-items-start gap-2">
+                    <AlertCircle size={17} className="text-warning flex-shrink-0 mt-0.5" />
+                    <div>
+                      <div className="fw-bold text-dark mb-1">Capacity Notice</div>
+                      <div className="text-secondary mb-2">
+                        {capacityError || `This vehicle accommodates up to ${seatingCapacity} passengers. Please choose another vehicle or reduce the number of members.`}
+                      </div>
+                      <div className="d-flex gap-2 flex-wrap">
+                        {onMemberCountChange && (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-warning text-dark fw-bold rounded-pill px-2.5 py-1 text-xxs"
+                            onClick={() => {
+                              onMemberCountChange(seatingCapacity);
+                              setCapacityError(null);
+                            }}
+                          >
+                            Update to {seatingCapacity} members
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-secondary rounded-pill px-2.5 py-1 text-xxs"
+                          onClick={() => {
+                            if (document.activeElement?.blur) document.activeElement.blur();
+                            onBack();
+                          }}
+                        >
+                          Choose Another Vehicle
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Primary CTA: Book Now / Select & Continue */}
               <button
                 type="button"
                 onClick={handleBookNowClick}
                 className="btn btn-primary btn-lg w-100 rounded-pill fw-bold shadow-sm d-flex align-items-center justify-content-center gap-2 hover-scale font-heading"
                 style={{ background: '#FF6333', borderColor: '#FF6333', padding: '12px 20px', fontSize: '15px' }}
               >
-                <span>Continue to Booking</span>
+                <span>{actionLabel || 'Continue to Booking'}</span>
                 <ChevronRight size={18} />
               </button>
 
@@ -493,6 +550,29 @@ export default function CarDetailsPage({
         </div>
 
       </div>
+
+      {/* ─── 5. MOBILE STICKY BOTTOM BAR ─── */}
+      <div 
+        className="d-lg-none fixed-bottom bg-white border-top px-4 py-3 shadow-lg d-flex justify-content-between align-items-center"
+        style={{ zIndex: 1010 }}
+      >
+        <div>
+          <span className="text-muted text-xxs d-block">Total ({calculatedDays} {calculatedDays === 1 ? 'day' : 'days'})</span>
+          <div className="fw-black text-primary font-heading fs-5 mb-0">
+            ₹{estimatedTotal.toLocaleString('en-IN')}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={handleBookNowClick}
+          className="btn btn-primary rounded-pill px-4 py-2 fw-bold d-flex align-items-center gap-1.5 shadow-sm font-heading hover-scale"
+          style={{ background: '#FF6333', borderColor: '#FF6333', color: '#FFFFFF' }}
+        >
+          <span>{actionLabel || 'Continue to Booking'}</span>
+          <ChevronRight size={16} />
+        </button>
+      </div>
+
     </div>
   );
 }

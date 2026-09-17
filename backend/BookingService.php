@@ -84,10 +84,19 @@ class BookingService {
         $last10 = substr($rawPhone, -10);
 
         // 3. Normalise Dates, Service Type & Item
-        $depDate = $payload['start_date'] ?? ($payload['departure_date'] ?? ($payload['pickup_date'] ?? ($payload['check_in_date'] ?? date('Y-m-d'))));
-        $retDate = $payload['end_date'] ?? ($payload['return_date'] ?? ($payload['drop_date'] ?? ($payload['check_out_date'] ?? date('Y-m-d', strtotime('+1 day')))));
-        $depDate = substr(trim($depDate), 0, 10);
-        $retDate = substr(trim($retDate), 0, 10);
+        $rawDepDate = $payload['start_date'] ?? ($payload['departure_date'] ?? ($payload['pickup_date'] ?? ($payload['check_in_date'] ?? null)));
+        $rawRetDate = $payload['end_date'] ?? ($payload['return_date'] ?? ($payload['drop_date'] ?? ($payload['check_out_date'] ?? null)));
+
+        if (empty($rawDepDate) || empty($rawRetDate)) {
+            throw new BookingServiceException("Pickup date and drop date are required.", 400);
+        }
+
+        $depDate = substr(trim($rawDepDate), 0, 10);
+        $retDate = substr(trim($rawRetDate), 0, 10);
+
+        if (empty($depDate) || empty($retDate) || !strtotime($depDate) || !strtotime($retDate)) {
+            throw new BookingServiceException("Pickup date and drop date are required.", 400);
+        }
 
         $calcDays = 1;
         if (!empty($depDate) && !empty($retDate)) {
@@ -165,7 +174,7 @@ class BookingService {
                 } elseif ($serviceType === 'flight') {
                     $authoritativeVendorId = 'vendor-4';
                 } elseif ($serviceType === 'activity' || $serviceType === 'sightseeing') {
-                    $authoritativeVendorId = 'vendor-1';
+                    $authoritativeVendorId = null;
                 }
             }
 
@@ -417,7 +426,7 @@ class BookingService {
                 b2b_original_price, b2b_base_price, b2b_tax_amount,
                 b2b_commission_percentage, b2b_commission_amount, b2b_commission_status,
                 b2b_net_discount_percentage, b2b_net_price, b2b_pricing_rule_id, idempotency_key,
-                vendor_id, physical_unit_id, driver_service_type, hotel_name
+                vendor_id, physical_unit_id, driver_service_type, hotel_name, package_type, package_name
             ) VALUES (
                 ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                 ?, ?, ?, ?, ?, ?, ?,
@@ -429,8 +438,13 @@ class BookingService {
                 ?, ?, ?,
                 ?, ?, ?,
                 ?, ?, ?, ?,
-                ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?
             )";
+
+            $isGenuineB2B = $isB2B && !empty($actor) && in_array(strtolower($actor['role'] ?? ''), ['b2b', 'agent']);
+            $finalChannel = $isGenuineB2B ? 'B2B' : 'D2C';
+            $authoritativeB2BPartnerId = $isGenuineB2B ? ($actor['id'] ?? null) : null;
+            $authoritativeB2BPartnerName = $isGenuineB2B ? ($actor['company_name'] ?? ($actor['name'] ?? null)) : null;
 
             $stmtMaster = $pdo->prepare($sqlMaster);
             $stmtMaster->execute([
@@ -474,10 +488,10 @@ class BookingService {
                 $walletAmountUsed,
                 $cashbackEarned,
                 $cashbackStatus,
-                $channel,
-                $commercials['b2b_mode'] ?? null,
-                $actor['id'] ?? ($payload['b2b_partner_id'] ?? null),
-                $actor['company_name'] ?? ($actor['name'] ?? ($payload['b2b_partner_name'] ?? null)),
+                $finalChannel,
+                $isGenuineB2B ? ($commercials['b2b_mode'] ?? null) : null,
+                $authoritativeB2BPartnerId,
+                $authoritativeB2BPartnerName,
                 $commercials['original_reference_price'] ?? null,
                 $commercials['base_price'] ?? null,
                 $commercials['tax_amount'] ?? null,
@@ -491,7 +505,9 @@ class BookingService {
                 $authoritativeVendorId,
                 $allocatedPhysicalUnitId,
                 $driverServiceType,
-                $payload['hotel_name'] ?? null
+                $payload['hotel_name'] ?? null,
+                $payload['package_type'] ?? null,
+                $payload['package_name'] ?? $itemName
             ]);
 
             // 11. Master-Child Booking Creation for Package Bookings (Phase 6)
@@ -676,7 +692,7 @@ class BookingService {
             $hotelId = $hotel['id'] ?? ('hotel-pkg-' . substr(md5($hotelName), 0, 8));
 
             // Availability validation for hotel component
-            if ($hotel) {
+            if ($hotel && function_exists('checkInventoryAvailability')) {
                 $hAvail = checkInventoryAvailability($pdo, 'hotel', $hotel['id'], $pickupDate, $dropDate);
                 if (!$hAvail['available']) {
                     throw new BookingServiceException("Package Hotel Allocation Failed: " . ($hAvail['reason'] ?? "Hotel unavailable."), 409, true);
@@ -722,7 +738,7 @@ class BookingService {
             // Availability validation for vehicle component
             $vChildUnitId = null;
             $vChildVendorId = $car['vendor_id'] ?? null;
-            if ($car) {
+            if ($car && function_exists('checkInventoryAvailability')) {
                 $vAvail = checkInventoryAvailability($pdo, 'car', $car['id'], $pickupDate, $dropDate);
                 if (!$vAvail['available']) {
                     throw new BookingServiceException("Package Vehicle Allocation Failed: " . ($vAvail['reason'] ?? "Vehicle unavailable."), 409, true);

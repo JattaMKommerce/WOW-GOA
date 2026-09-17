@@ -85,7 +85,7 @@ export default function App() {
       if (p.startsWith('/driver')) return 'driver';
       if (p.startsWith('/customer')) return 'customer';
       if (p.startsWith('/dashboard')) return 'dashboard';
-      if (p.startsWith('/activities')) {
+      if (p.startsWith('/activities') || p.startsWith('/sightseeing-activities') || p.startsWith('/sightseeing')) {
         const urlParams = new URLSearchParams(window.location.search);
         const activityId = urlParams.get('activity') || urlParams.get('id');
         if (activityId) {
@@ -185,11 +185,15 @@ export default function App() {
   const [bikeFilterType, setBikeFilterType] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Checkout Modal state
+  // Checkout Modal state — booking modal overlays must always initialize closed (null) on page reload/refresh
+  // It should only be restored if the user is explicitly on the full-page package customization view (?step=customize)
   const [selectedBookingItem, setSelectedBookingItem] = useState(() => {
     try {
-      const saved = sessionStorage.getItem('tg_selectedBookingItem') || sessionStorage.getItem('tg_selectedDetailItem');
-      if (saved) return JSON.parse(saved);
+      const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+      if (urlParams && urlParams.get('step') === 'customize') {
+        const saved = sessionStorage.getItem('tg_selectedBookingItem') || sessionStorage.getItem('tg_selectedDetailItem');
+        if (saved) return JSON.parse(saved);
+      }
     } catch (e) {}
     return null;
   });
@@ -216,6 +220,7 @@ export default function App() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [lastConfirmedBooking, setLastConfirmedBooking] = useState(null);
   const [enquiryPrefillPackage, setEnquiryPrefillPackage] = useState(null);
+  const [pendingActivityBooking, setPendingActivityBooking] = useState(null);
 
   // Users & Role-Based Auth States
   const [currentUser, setCurrentUser] = useState(() => {
@@ -546,7 +551,7 @@ export default function App() {
       const p = window.location.pathname.toLowerCase();
       const urlParams = new URLSearchParams(window.location.search);
       const activityId = urlParams.get('activity') || urlParams.get('id');
-      if (activityId && p.startsWith('/activities')) {
+      if (activityId && (p.startsWith('/activities') || p.startsWith('/sightseeing-activities') || p.startsWith('/sightseeing'))) {
         if (selectedDetailItem && String(selectedDetailItem.id) === String(activityId)) {
           if (activeTab !== 'activity-details') setActiveTab('activity-details');
           return;
@@ -677,7 +682,7 @@ export default function App() {
           newTab = 'flights';
         }
       }
-      else if (cleanPath === 'activities') {
+      else if (cleanPath === 'activities' || cleanPath === 'sightseeing-activities' || cleanPath === 'sightseeing') {
         const urlParams = new URLSearchParams(window.location.search);
         const activityId = urlParams.get('activity') || urlParams.get('id');
         if (activityId) {
@@ -718,6 +723,7 @@ export default function App() {
     if (normalizedTab === 'self-drive') normalizedTab = 'selfdrive';
     if (normalizedTab === 'craft' || normalizedTab === 'craft-my-trip') normalizedTab = 'craftmytrip';
     if (normalizedTab === 'my-trips' || normalizedTab === 'track-booking' || normalizedTab === 'my-bookings') normalizedTab = 'customer';
+    if (normalizedTab === 'sightseeing' || normalizedTab === 'sightseeing-activities') normalizedTab = 'activities';
 
     if (activeTab === 'customize' && normalizedTab !== 'customize') {
       setSelectedBookingItem(null);
@@ -913,15 +919,21 @@ export default function App() {
         const targetUrl = item?.id ? `/flights?flight=${encodeURIComponent(item.id)}` : '/flights';
         window.history.pushState({}, '', targetUrl);
         setCurrentPath('/flights');
-      } else if (resolvedType === 'activity' || resolvedType === 'sightseeing' || type === 'activity' || type === 'sightseeing') {
-        setActiveTab('activity-details');
-        try {
-          sessionStorage.setItem('tg_activeTab', 'activity-details');
-          sessionStorage.setItem('tg_selectedDetailItem', JSON.stringify(item));
-        } catch (e) {}
-        const targetUrl = item?.id ? `/activities?activity=${encodeURIComponent(item.id)}` : '/activities';
-        window.history.pushState({}, '', targetUrl);
-        setCurrentPath('/activities');
+      } else {
+        const rawType = String(type || item?.type || item?.item_type || '').trim().toLowerCase();
+        const isActivityOrSightseeing = rawType === 'activity' || rawType === 'sightseeing' || rawType === 'addon' ||
+          String(item?.id || '').startsWith('act-') || String(item?.id || '').startsWith('sight-');
+
+        if (isActivityOrSightseeing) {
+          setActiveTab('activity-details');
+          try {
+            sessionStorage.setItem('tg_activeTab', 'activity-details');
+            sessionStorage.setItem('tg_selectedDetailItem', JSON.stringify(item));
+          } catch (e) {}
+          const targetUrl = item?.id ? `/activities?activity=${encodeURIComponent(item.id)}` : '/activities';
+          window.history.pushState({}, '', targetUrl);
+          setCurrentPath('/activities');
+        }
       }
     }
     setTimeout(() => {
@@ -1443,6 +1455,7 @@ export default function App() {
         onNavigateHome={() => {
           handleTabChange('selfdrive');
         }}
+        onViewDetails={(item) => handleOpenDetails(item, item?.type || 'activity', 'customer')}
       />
     );
   }
@@ -2282,6 +2295,8 @@ export default function App() {
                 searchQuery={searchQuery}
                 setSearchQuery={setSearchQuery}
                 onViewDetails={(item) => handleOpenDetails(item, item.type || 'activity', 'activities')}
+                initialBookingItem={pendingActivityBooking}
+                onClearInitialBooking={() => setPendingActivityBooking(null)}
               />
             </div>
           )}
@@ -2301,20 +2316,29 @@ export default function App() {
                       });
                     });
                   }
+                  const origin = sessionStorage.getItem('tg_detailOriginTab') || detailOriginTab || 'activities';
+                  const returnTab = origin === 'customer' ? 'customer' : 'activities';
                   setSelectedDetailItem(null);
-                  setActiveTab('activities');
+                  setActiveTab(returnTab);
                   try {
                     sessionStorage.removeItem('tg_selectedDetailItem');
-                    sessionStorage.setItem('tg_activeTab', 'activities');
+                    sessionStorage.setItem('tg_activeTab', returnTab);
                   } catch (e) {}
-                  window.history.pushState({}, '', '/activities');
-                  setCurrentPath('/activities');
+                  const targetPath = returnTab === 'customer' ? '/customer' : '/activities';
+                  window.history.pushState({}, '', targetPath);
+                  setCurrentPath(targetPath);
                   setTimeout(() => {
                     document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
                   }, 50);
                 }}
                 onBook={(itemToBook) => {
-                  handleOpenBooking(itemToBook || selectedDetailItem);
+                  setPendingActivityBooking(itemToBook || selectedDetailItem);
+                  setActiveTab('activities');
+                  window.history.pushState({}, '', '/activities');
+                  setCurrentPath('/activities');
+                  setTimeout(() => {
+                    document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+                  }, 50);
                 }}
               />
             ) : (

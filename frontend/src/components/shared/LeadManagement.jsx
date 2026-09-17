@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import * as api from '../../services/api';
 import { parseTravelDate } from '../../utils/dateUtils';
+import AIChatbotToggle from '../common/AIChatbotToggle';
 
 const SOURCE_TABS = [
   'All',
@@ -20,6 +21,9 @@ const SOURCE_TABS = [
 
 const STATUS_LIST = [
   'All Statuses',
+  'Pending Inquiry',
+  'Inquiry',
+  'Booked',
   'New',
   'Contacted',
   'In Progress',
@@ -61,6 +65,44 @@ function SourceBadge({ source }) {
       <Icon size={11} /> {source}
     </span>
   );
+}
+
+function isVehicleRentalLead(lead) {
+  if (!lead) return false;
+
+  const cat = String(lead.source || lead.category || lead.service_type || '').toLowerCase();
+  const serv = String(lead.service || '').toLowerCase();
+  const title = String(lead.title || '').toLowerCase();
+  const notes = String(lead.notes || '').toLowerCase();
+
+  // If this is explicitly a Custom Trips lead from the custom enquiry form, let Custom Trips handle it
+  if (cat.includes('custom') && !cat.includes('vehicle')) {
+    return false;
+  }
+
+  // Explicit vehicle rental source / category
+  if (cat.includes('vehicle') || cat.includes('rental') || cat.includes('self-drive') || cat.includes('self drive')) {
+    return true;
+  }
+
+  const combined = `${cat} ${serv} ${title} ${notes}`.trim();
+
+  // Specific Goan self-drive rental vehicle models (Thar, Fortuner, Scorpio, Innova, Activa, scooter, etc.)
+  if (/\b(thar|fortuner|scorpio|innova|activa|scooter)\b/i.test(combined)) {
+    return true;
+  }
+
+  // Generic vehicle keywords with rental / self-drive intent
+  const hasRentalIntent = 
+    /\b(rent|rental|self\s*drive|self-drive|selfdrive|hire|renting)\b/i.test(combined);
+  const hasVehicleKeyword = 
+    /\b(car|bike|vehicle|suv|sedan|jeep|two\s*wheeler|4x4)\b/i.test(combined);
+
+  if (hasRentalIntent && hasVehicleKeyword) {
+    return true;
+  }
+
+  return false;
 }
 
 function getCustomItineraryDays(numDays, enq = {}, lead = {}) {
@@ -569,8 +611,8 @@ export default function LeadManagement({ usersList = [], currentUser }) {
 
   // KPI Calculations
   const totalLeads = leads.length;
-  const newLeadsCount = leads.filter(l => l.status === 'New' || !l.assigned_to || l.assigned_to === 'Unassigned' || l.assignedTo === 'Unassigned').length;
-  const convertedCount = leads.filter(l => l.status === 'Closed-Won').length;
+  const newLeadsCount = leads.filter(l => l.status === 'New' || l.status === 'Pending Inquiry' || l.status === 'Inquiry' || !l.assigned_to || l.assigned_to === 'Unassigned' || l.assignedTo === 'Unassigned').length;
+  const convertedCount = leads.filter(l => l.status === 'Closed-Won' || l.status === 'Booked').length;
   const conversionRate = totalLeads > 0 ? ((convertedCount / totalLeads) * 100).toFixed(1) : '0';
   const lostCount = leads.filter(l => l.status === 'Closed-Lost').length;
 
@@ -789,9 +831,9 @@ export default function LeadManagement({ usersList = [], currentUser }) {
   };
 
   return (
-    <div className="p-4">
+    <div className="p-3">
       {/* Top Header & Live Sync Status */}
-      <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+      <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
         <div>
           <div className="d-flex align-items-center gap-2">
             <h4 className="fw-bold mb-0" style={{ color: '#0D1B2E', fontSize: '20px' }}>
@@ -858,7 +900,7 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                 className="btn px-3 py-2 rounded-3 fw-bold d-flex align-items-center gap-2 shadow-sm text-white" 
                 style={{ background: 'linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)', fontSize: '0.82rem', border: 'none' }}
               >
-                <UserPlus size={16} /> + Create Sub-Admin
+                <UserPlus size={16} /> Create Sub-Admin
               </button>
 
               <button 
@@ -875,77 +917,84 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                 className="btn px-3 py-2 rounded-3 fw-bold d-flex align-items-center gap-2 shadow-sm text-white" 
                 style={{ background: 'linear-gradient(135deg, #FF6333 0%, #FF8A00 100%)', fontSize: '0.82rem', border: 'none' }}
               >
-                <Plus size={16} /> + Add Manual Lead
+                <Plus size={16} /> Add Manual Lead
               </button>
             </>
           )}
         </div>
       </div>
 
+      {/* AI Assistant Chatbot Master Control Banner */}
+      {!isSubAdmin && (
+        <div className="mb-3">
+          <AIChatbotToggle />
+        </div>
+      )}
+
       {/* KPI Cards (Grid of 4) */}
-      <div className="row g-3 mb-4">
+      <div className="row g-2 mb-2.5">
         <div className="col-md-3">
-          <div className="rounded-3 p-3 shadow-sm" style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.07)' }}>
-            <div className="d-flex justify-content-between align-items-center mb-1">
-              <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
+          <div className="rounded-3 py-2 px-3 shadow-sm" style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.07)' }}>
+            <div className="d-flex justify-content-between align-items-center mb-0.5">
+              <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
                 {isSubAdmin ? 'My Assigned Leads' : 'Total Inbound Leads'}
               </span>
-              <div className="rounded-2 p-1 bg-light text-muted"><Users size={16} /></div>
+              <div className="rounded-2 p-1 bg-light text-muted"><Users size={14} /></div>
             </div>
-            <div className="fw-bold" style={{ fontSize: '1.6rem', color: '#0D1B2E' }}>{totalLeads}</div>
-            <div style={{ fontSize: '0.7rem', color: '#16a34a', fontWeight: 600 }}>Active pipeline records</div>
+            <div className="fw-bold" style={{ fontSize: '1.35rem', color: '#0D1B2E', lineHeight: 1.2 }}>{totalLeads}</div>
+            <div style={{ fontSize: '0.68rem', color: '#16a34a', fontWeight: 600 }}>Active pipeline records</div>
           </div>
         </div>
 
         <div className="col-md-3">
-          <div className="rounded-3 p-3 shadow-sm" style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.07)' }}>
-            <div className="d-flex justify-content-between align-items-center mb-1">
-              <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>New / Unassigned</span>
-              <div className="rounded-2 p-1" style={{ background: '#fee2e2', color: '#dc2626' }}><AlertCircle size={16} /></div>
+          <div className="rounded-3 py-2 px-3 shadow-sm" style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.07)' }}>
+            <div className="d-flex justify-content-between align-items-center mb-0.5">
+              <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>New / Unassigned</span>
+              <div className="rounded-2 p-1" style={{ background: '#fee2e2', color: '#dc2626' }}><AlertCircle size={14} /></div>
             </div>
-            <div className="fw-bold" style={{ fontSize: '1.6rem', color: '#dc2626' }}>{newLeadsCount}</div>
-            <div style={{ fontSize: '0.7rem', color: '#dc2626', fontWeight: 600 }}>Requires agent dispatch</div>
+            <div className="fw-bold" style={{ fontSize: '1.35rem', color: '#dc2626', lineHeight: 1.2 }}>{newLeadsCount}</div>
+            <div style={{ fontSize: '0.68rem', color: '#dc2626', fontWeight: 600 }}>Requires agent dispatch</div>
           </div>
         </div>
 
         <div className="col-md-3">
-          <div className="rounded-3 p-3 shadow-sm" style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.07)' }}>
-            <div className="d-flex justify-content-between align-items-center mb-1">
-              <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Converted (Won)</span>
-              <div className="rounded-2 p-1" style={{ background: '#dcfce7', color: '#16a34a' }}><CheckCircle size={16} /></div>
+          <div className="rounded-3 py-2 px-3 shadow-sm" style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.07)' }}>
+            <div className="d-flex justify-content-between align-items-center mb-0.5">
+              <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Converted (Won)</span>
+              <div className="rounded-2 p-1" style={{ background: '#dcfce7', color: '#16a34a' }}><CheckCircle size={14} /></div>
             </div>
             <div className="d-flex align-items-baseline gap-2">
-              <div className="fw-bold" style={{ fontSize: '1.6rem', color: '#16a34a' }}>{convertedCount}</div>
-              <span className="badge bg-success bg-opacity-10 text-success fw-bold" style={{ fontSize: '0.75rem' }}>{conversionRate}% Win Rate</span>
+              <div className="fw-bold" style={{ fontSize: '1.35rem', color: '#16a34a', lineHeight: 1.2 }}>{convertedCount}</div>
+              <span className="badge bg-success bg-opacity-10 text-success fw-bold" style={{ fontSize: '0.7rem' }}>{conversionRate}% Win Rate</span>
             </div>
-            <div style={{ fontSize: '0.7rem', color: '#16a34a', fontWeight: 600 }}>Closed booking revenues</div>
+            <div style={{ fontSize: '0.68rem', color: '#16a34a', fontWeight: 600 }}>Closed booking revenues</div>
           </div>
         </div>
 
         <div className="col-md-3">
-          <div className="rounded-3 p-3 shadow-sm" style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.07)' }}>
-            <div className="d-flex justify-content-between align-items-center mb-1">
-              <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Lost / Dropped</span>
-              <div className="rounded-2 p-1 bg-light text-muted"><XCircle size={16} /></div>
+          <div className="rounded-3 py-2 px-3 shadow-sm" style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.07)' }}>
+            <div className="d-flex justify-content-between align-items-center mb-0.5">
+              <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Lost / Dropped</span>
+              <div className="rounded-2 p-1 bg-light text-muted"><XCircle size={14} /></div>
             </div>
-            <div className="fw-bold" style={{ fontSize: '1.6rem', color: '#64748b' }}>{lostCount}</div>
-            <div style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 600 }}>Price or schedule mismatches</div>
+            <div className="fw-bold" style={{ fontSize: '1.35rem', color: '#64748b', lineHeight: 1.2 }}>{lostCount}</div>
+            <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 600 }}>Price / schedule mismatches</div>
           </div>
         </div>
       </div>
 
       {/* Multi-Filter & Search Bar */}
-      <div className="card shadow-sm border-0 rounded-4 mb-4" style={{ background: '#fff' }}>
-        <div className="card-body p-3">
+      <div className="card shadow-sm border-0 rounded-4 mb-2.5" style={{ background: '#fff' }}>
+        <div className="card-body p-2.5">
           {/* Source Tabs */}
-          <div className="d-flex gap-1 overflow-auto pb-2 mb-3 border-bottom" style={{ scrollbarWidth: 'none' }}>
+          <div className="d-flex gap-1 overflow-auto pb-1.5 mb-2 border-bottom" style={{ scrollbarWidth: 'none' }}>
             {SOURCE_TABS.map(tab => (
               <button
                 key={tab}
                 onClick={() => setActiveSource(tab)}
                 className="btn btn-sm px-3 py-1 rounded-pill fw-bold text-nowrap"
                 style={{
-                  fontSize: '0.76rem',
+                  fontSize: '0.74rem',
                   background: activeSource === tab ? '#0D1B2E' : '#f8fafc',
                   color: activeSource === tab ? '#fff' : '#64748b',
                   border: activeSource === tab ? '1px solid #0D1B2E' : '1px solid rgba(0,0,0,0.06)',
@@ -958,24 +1007,24 @@ export default function LeadManagement({ usersList = [], currentUser }) {
           </div>
 
           {/* Search, Status & Controls */}
-          <div className="d-flex flex-wrap align-items-center justify-content-between gap-3">
-            <div className="position-relative flex-grow-1" style={{ minWidth: '240px', maxWidth: '450px' }}>
-              <Search size={15} className="position-absolute" style={{ top: '50%', left: '12px', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+          <div className="d-flex flex-wrap align-items-center justify-content-between gap-2">
+            <div className="position-relative flex-grow-1" style={{ minWidth: '220px', maxWidth: '420px' }}>
+              <Search size={14} className="position-absolute" style={{ top: '50%', left: '10px', transform: 'translateY(-50%)', color: '#94a3b8' }} />
               <input
                 type="text"
-                className="form-control"
-                style={{ paddingLeft: '36px', borderRadius: '10px', fontSize: '0.84rem' }}
+                className="form-control form-control-sm"
+                style={{ paddingLeft: '32px', borderRadius: '8px', fontSize: '0.8rem' }}
                 placeholder="Search leads by name, phone, email, service, ID, next action..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
             </div>
 
-            <div className="d-flex align-items-center gap-2">
-              <span style={{ fontSize: '0.76rem', color: '#64748b', fontWeight: 600 }}>Stage:</span>
+            <div className="d-flex align-items-center gap-1.5">
+              <span style={{ fontSize: '0.74rem', color: '#64748b', fontWeight: 600 }}>Stage:</span>
               <select
                 className="form-select form-select-sm fw-bold"
-                style={{ width: '150px', fontSize: '0.8rem', borderRadius: '8px' }}
+                style={{ width: '135px', fontSize: '0.76rem', borderRadius: '8px' }}
                 value={selectedStatus}
                 onChange={e => setSelectedStatus(e.target.value)}
               >
@@ -991,14 +1040,16 @@ export default function LeadManagement({ usersList = [], currentUser }) {
       {/* Master Leads Table */}
       <div className="card shadow-sm border-0 rounded-4 overflow-hidden" style={{ background: '#fff' }}>
         <div className="table-responsive">
-          <table className="table align-middle mb-0" style={{ fontSize: '0.83rem' }}>
+          <table className="table align-middle mb-0" style={{ fontSize: '0.82rem' }}>
             <thead style={{ background: '#f8fafc' }}>
               <tr>
-                {['Lead ID', 'Customer Contact', 'Source & Customer Requirement', 'Assignment State', 'Next Actionable Step', 'Pipeline Status', 'Actions'].map(h => (
-                  <th key={h} className="px-3 py-3 fw-bold" style={{ color: '#475569', fontSize: '0.68rem', textTransform: 'uppercase', border: 'none', borderBottom: '1px solid rgba(0,0,0,0.07)' }}>
-                    {h}
-                  </th>
-                ))}
+                <th className="px-2.5 py-2.5 fw-bold" style={{ color: '#475569', fontSize: '0.68rem', textTransform: 'uppercase', border: 'none', borderBottom: '1px solid rgba(0,0,0,0.07)', whiteSpace: 'nowrap', width: '90px', minWidth: '85px' }}>Lead ID</th>
+                <th className="px-2.5 py-2.5 fw-bold" style={{ color: '#475569', fontSize: '0.68rem', textTransform: 'uppercase', border: 'none', borderBottom: '1px solid rgba(0,0,0,0.07)', whiteSpace: 'nowrap', width: '140px', minWidth: '130px' }}>Customer Contact</th>
+                <th className="px-2.5 py-2.5 fw-bold" style={{ color: '#475569', fontSize: '0.68rem', textTransform: 'uppercase', border: 'none', borderBottom: '1px solid rgba(0,0,0,0.07)', width: '180px', minWidth: '150px', maxWidth: '210px' }}>Source & Requirement</th>
+                <th className="px-2.5 py-2.5 fw-bold" style={{ color: '#475569', fontSize: '0.68rem', textTransform: 'uppercase', border: 'none', borderBottom: '1px solid rgba(0,0,0,0.07)', whiteSpace: 'nowrap', width: '145px', minWidth: '135px' }}>Assignment State</th>
+                <th className="px-2.5 py-2.5 fw-bold" style={{ color: '#475569', fontSize: '0.68rem', textTransform: 'uppercase', border: 'none', borderBottom: '1px solid rgba(0,0,0,0.07)', width: '140px', minWidth: '125px', maxWidth: '165px' }}>Next Action</th>
+                <th className="px-2.5 py-2.5 fw-bold" style={{ color: '#475569', fontSize: '0.68rem', textTransform: 'uppercase', border: 'none', borderBottom: '1px solid rgba(0,0,0,0.07)', whiteSpace: 'nowrap', width: '115px', minWidth: '110px' }}>Pipeline Status</th>
+                <th className="px-2.5 py-2.5 fw-bold text-center" style={{ color: '#475569', fontSize: '0.68rem', textTransform: 'uppercase', border: 'none', borderBottom: '1px solid rgba(0,0,0,0.07)', whiteSpace: 'nowrap', width: '125px', minWidth: '125px' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -1017,92 +1068,80 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                     }}
                   >
                     {/* Lead ID */}
-                    <td className="px-3 py-3">
-                      <span className="fw-bold font-monospace text-primary" style={{ fontSize: '0.78rem' }}>
+                    <td className="px-2.5 py-2" style={{ whiteSpace: 'nowrap', width: '90px', minWidth: '85px' }}>
+                      <span className="fw-bold font-monospace text-primary d-block" style={{ fontSize: '0.78rem', whiteSpace: 'nowrap' }}>
                         #{item.id}
                       </span>
-                      <div className="text-muted" style={{ fontSize: '0.68rem' }}>
+                      <div className="text-muted" style={{ fontSize: '0.68rem', whiteSpace: 'nowrap' }}>
                         {(item.created_at || item.createdAt || '').slice(0, 10)}
                       </div>
                     </td>
 
                     {/* Customer Contact */}
-                    <td className="px-3 py-3">
-                      <div className="fw-bold" style={{ color: '#0D1B2E' }}>{item.name}</div>
-                      <div className="d-flex align-items-center gap-2 mt-0.5" style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                    <td className="px-2.5 py-2" style={{ whiteSpace: 'nowrap', width: '140px', minWidth: '130px' }}>
+                      <div className="fw-bold text-truncate" title={item.name} style={{ color: '#0D1B2E', maxWidth: '135px' }}>{item.name}</div>
+                      <div className="d-flex align-items-center gap-1 mt-0.5 text-nowrap" style={{ fontSize: '0.72rem', color: '#64748b' }}>
                         <span>{item.phone}</span>
-                        {item.email && <span className="text-muted">· {item.email}</span>}
                       </div>
                     </td>
 
                     {/* Lead Source & Customer Requirement */}
-                    <td className="px-3 py-3" style={{ maxWidth: '260px' }}>
-                      <div className="d-flex align-items-center gap-1.5 mb-1 flex-wrap">
+                    <td className="px-2.5 py-2" style={{ width: '180px', minWidth: '150px', maxWidth: '210px' }}>
+                      <div className="d-flex align-items-center gap-1 mb-1 flex-wrap">
                         <SourceBadge source={item.source || 'Hotel Enquiries'} />
                         {item.pax && (
-                          <span className="badge rounded-pill bg-light text-dark border px-2 py-0.5" style={{ fontSize: '0.67rem' }}>
-                            👥 {item.pax} Pax
+                          <span className="badge rounded-pill bg-light text-dark border px-1.5 py-0.5" style={{ fontSize: '0.65rem' }}>
+                            👥 {item.pax}
                           </span>
                         )}
                         {item.budget && (
-                          <span className="badge rounded-pill bg-success-subtle text-success border border-success-subtle px-2 py-0.5 fw-bold" style={{ fontSize: '0.67rem' }}>
+                          <span className="badge rounded-pill bg-success-subtle text-success border border-success-subtle px-1.5 py-0.5 fw-bold" style={{ fontSize: '0.65rem' }}>
                             {item.budget}
                           </span>
                         )}
                       </div>
-                      {/* Prominently display Customer Requirement */}
                       {item.notes && !item.notes.includes('Inquired via') ? (
-                        <div className="fw-bold text-dark text-truncate" title={item.notes} style={{ fontSize: '0.78rem', color: '#0F172A' }}>
+                        <div className="fw-bold text-dark text-truncate" title={item.notes} style={{ fontSize: '0.76rem', color: '#0F172A' }}>
                           <span className="text-primary me-1">📌</span>{item.notes}
                         </div>
                       ) : (
-                        <div className="fw-semibold text-truncate" title={item.service} style={{ color: '#0D1B2E', fontSize: '0.78rem' }}>
+                        <div className="fw-semibold text-truncate" title={item.service} style={{ color: '#0D1B2E', fontSize: '0.76rem' }}>
                           {item.service || 'General Trip Consultation'}
-                        </div>
-                      )}
-                      {item.service && item.notes && !item.notes.includes('Inquired via') && (
-                        <div className="text-muted text-truncate mt-0.5" style={{ fontSize: '0.68rem' }}>
-                          {item.service}
                         </div>
                       )}
                     </td>
 
                     {/* Assignment State & Action */}
-                    <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                    <td className="px-2.5 py-2" style={{ whiteSpace: 'nowrap', width: '145px', minWidth: '135px' }} onClick={e => e.stopPropagation()}>
                       {isAssigned ? (
                         <div>
-                          <div className="d-flex align-items-center gap-1.5">
-                            <span className="badge rounded-pill px-2 py-1 fw-bold" style={{ background: '#faf5ff', color: '#7c3aed', border: '1px solid #e9d5ff', fontSize: '0.72rem' }}>
-                              <UserCheck size={11} className="me-1 inline" /> {assignee}
+                          <div className="d-flex align-items-center gap-1">
+                            <span className="badge rounded-pill px-2 py-0.5 fw-bold text-truncate" style={{ background: '#faf5ff', color: '#7c3aed', border: '1px solid #e9d5ff', fontSize: '0.7rem', maxWidth: '95px' }}>
+                              <UserCheck size={10} className="me-1 inline" /> {assignee}
                             </span>
                             {isSuperAdmin && (
                               <button 
                                 onClick={() => handleOpenAssignModal(item)}
                                 className="btn btn-sm btn-link p-0 text-decoration-none fw-bold"
-                                style={{ fontSize: '0.72rem', color: '#7c3aed' }}
+                                style={{ fontSize: '0.7rem', color: '#7c3aed' }}
                               >
-                                Reassign
+                                Edit
                               </button>
                             )}
                           </div>
-                          {item.assigned_at && (
-                            <div className="text-muted mt-0.5" style={{ fontSize: '0.66rem' }}>
-                              Assigned: {String(item.assigned_at).slice(0, 16)}
-                            </div>
-                          )}
                         </div>
                       ) : (
-                        <div className="d-flex align-items-center gap-2">
-                          <span className="badge rounded-pill px-2 py-1 fw-bold" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', fontSize: '0.7rem' }}>
+                        <div className="d-flex align-items-center gap-1.5">
+                          <span className="badge rounded-pill px-2 py-0.5 fw-bold" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', fontSize: '0.68rem' }}>
                             Unassigned
                           </span>
                           {isSuperAdmin && (
                             <button 
                               onClick={() => handleOpenAssignModal(item)}
                               className="btn btn-sm px-2 py-0.5 rounded-pill fw-bold text-white shadow-none"
-                              style={{ background: 'linear-gradient(135deg, #FF6333 0%, #FF8A00 100%)', fontSize: '0.7rem' }}
+                              style={{ background: 'linear-gradient(135deg, #FF6333 0%, #FF8A00 100%)', fontSize: '0.68rem' }}
                             >
-                              Assign Lead
+                              Assign
                             </button>
                           )}
                         </div>
@@ -1110,26 +1149,26 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                     </td>
 
                     {/* Next Actionable Step */}
-                    <td className="px-3 py-3" style={{ maxWidth: '220px' }}>
+                    <td className="px-2.5 py-2" style={{ width: '140px', minWidth: '125px', maxWidth: '165px' }}>
                       {nextAct ? (
-                        <div className="d-inline-flex align-items-center gap-1.5 px-2.5 py-1 rounded-pill" style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#b45309', fontSize: '0.72rem', fontWeight: 600, maxWidth: '210px' }}>
-                          <Clock size={12} className="flex-shrink-0 text-amber-600" />
+                        <div className="d-inline-flex align-items-center gap-1 px-2 py-0.5 rounded-pill" style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#b45309', fontSize: '0.7rem', fontWeight: 600, maxWidth: '155px' }}>
+                          <Clock size={11} className="flex-shrink-0 text-amber-600" />
                           <span className="text-truncate" title={nextAct}>{nextAct}</span>
                         </div>
                       ) : (
-                        <span className="text-muted fst-italic" style={{ fontSize: '0.72rem' }}>No next action set</span>
+                        <span className="text-muted fst-italic" style={{ fontSize: '0.7rem' }}>None</span>
                       )}
                     </td>
 
                     {/* Status Dropdown / Pill */}
-                    <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                    <td className="px-2.5 py-2" style={{ whiteSpace: 'nowrap', width: '115px', minWidth: '110px' }} onClick={e => e.stopPropagation()}>
                       <select
-                        className="form-select form-select-sm border-0 fw-bold"
+                        className="form-select form-select-sm border-0 fw-bold py-0.5"
                         style={{ 
-                          fontSize: '0.74rem', 
-                          width: 'auto',
-                          background: item.status === 'New' ? '#fee2e2' : item.status === 'Closed-Won' ? '#dcfce7' : item.status === 'In Progress' ? '#dbeafe' : item.status === 'Qualified' ? '#f5f3ff' : '#f8fafc',
-                          color: item.status === 'New' ? '#dc2626' : item.status === 'Closed-Won' ? '#16a34a' : item.status === 'In Progress' ? '#2563eb' : item.status === 'Qualified' ? '#7c3aed' : '#475569'
+                          fontSize: '0.72rem', 
+                          width: '105px',
+                          background: (item.status === 'Closed-Won' || item.status === 'Booked') ? '#dcfce7' : (item.status === 'Pending Inquiry' || item.status === 'Pending') ? '#fef3c7' : (item.status === 'Inquiry' || item.status === 'In Progress') ? '#dbeafe' : item.status === 'New' ? '#fee2e2' : item.status === 'Qualified' ? '#f5f3ff' : '#f8fafc',
+                          color: (item.status === 'Closed-Won' || item.status === 'Booked') ? '#15803d' : (item.status === 'Pending Inquiry' || item.status === 'Pending') ? '#d97706' : (item.status === 'Inquiry' || item.status === 'In Progress') ? '#0284c7' : item.status === 'New' ? '#dc2626' : item.status === 'Qualified' ? '#7c3aed' : '#475569'
                         }}
                         value={item.status || 'New'}
                         onChange={e => handleUpdateLeadStatus(item.id, e.target.value)}
@@ -1141,15 +1180,16 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                     </td>
 
                     {/* Quick Actions */}
-                    <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
-                      <div className="d-flex align-items-center gap-1">
+                    <td className="px-2.5 py-2 text-center" style={{ whiteSpace: 'nowrap', width: '125px', minWidth: '125px' }} onClick={e => e.stopPropagation()}>
+                      <div className="d-flex align-items-center justify-content-center gap-1 flex-nowrap">
                         {/* WhatsApp Quick Action */}
                         {item.phone && (
                           <a
                             href={`https://wa.me/${String(item.phone).replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hi ${item.name}, thank you for contacting TripGalileo regarding ${item.service || 'your trip'}!`)}`}
                             target="_blank"
                             rel="noreferrer"
-                            className="btn btn-sm btn-light p-1.5 rounded-2 text-success"
+                            className="btn btn-sm btn-light p-1 rounded-2 text-success d-inline-flex align-items-center justify-content-center"
+                            style={{ width: '26px', height: '26px' }}
                             title="Chat on WhatsApp"
                           >
                             <MessageSquare size={13} />
@@ -1160,7 +1200,8 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                         {item.phone && (
                           <a
                             href={`tel:${item.phone}`}
-                            className="btn btn-sm btn-light p-1.5 rounded-2 text-primary"
+                            className="btn btn-sm btn-light p-1 rounded-2 text-primary d-inline-flex align-items-center justify-content-center"
+                            style={{ width: '26px', height: '26px' }}
                             title="Call Customer"
                           >
                             <Phone size={13} />
@@ -1169,7 +1210,9 @@ export default function LeadManagement({ usersList = [], currentUser }) {
 
                         {/* View Details Drawer */}
                         <button
-                          className="btn btn-sm btn-light p-1.5 rounded-2 text-secondary"
+                          type="button"
+                          className="btn btn-sm btn-light p-1 rounded-2 text-secondary d-inline-flex align-items-center justify-content-center"
+                          style={{ width: '26px', height: '26px' }}
                           onClick={() => setSelectedLead(item)}
                           title="View Lead Details & Discussion"
                         >
@@ -1179,7 +1222,9 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                         {/* Delete (Admin only) */}
                         {!isSubAdmin && (
                           <button
-                            className="btn btn-sm btn-light p-1.5 rounded-2 text-danger"
+                            type="button"
+                            className="btn btn-sm btn-light p-1 rounded-2 text-danger d-inline-flex align-items-center justify-content-center"
+                            style={{ width: '26px', height: '26px' }}
                             onClick={() => handleDeleteLead(item.id)}
                             title="Delete Lead"
                           >
@@ -2083,7 +2128,16 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                   <div className="d-flex align-items-center gap-2">
                     <h5 className="mb-0 fw-bold text-white font-heading">{previewLead.name || 'Lead Details'}</h5>
                     <span className="badge bg-secondary font-monospace" style={{ fontSize: '0.7rem' }}>#{previewLead.id}</span>
-                    <span className="badge rounded-pill bg-warning text-dark fw-bold" style={{ fontSize: '0.68rem' }}>{previewLead.status || 'New'}</span>
+                    <span 
+                      className="badge rounded-pill fw-bold" 
+                      style={{ 
+                        fontSize: '0.68rem',
+                        background: (previewLead.status === 'Closed-Won' || previewLead.status === 'Booked') ? '#dcfce7' : (previewLead.status === 'Pending Inquiry' || previewLead.status === 'Pending') ? '#fef3c7' : (previewLead.status === 'Inquiry' || previewLead.status === 'In Progress') ? '#dbeafe' : '#fee2e2',
+                        color: (previewLead.status === 'Closed-Won' || previewLead.status === 'Booked') ? '#15803d' : (previewLead.status === 'Pending Inquiry' || previewLead.status === 'Pending') ? '#d97706' : (previewLead.status === 'Inquiry' || previewLead.status === 'In Progress') ? '#0284c7' : '#dc2626'
+                      }}
+                    >
+                      {previewLead.status || 'New'}
+                    </span>
                   </div>
                   <div className="text-white-50" style={{ fontSize: '0.75rem' }}>
                     {previewLead.source} · Created {previewLead.created_at || previewLead.createdAt || 'Recently'}
@@ -2271,27 +2325,37 @@ export default function LeadManagement({ usersList = [], currentUser }) {
 
               {/* Dynamic Lead Schedule: Vehicle Rental Handover vs Tour Package Itinerary */}
               {(() => {
-                const leadCat = String(previewLead.source || previewLead.category || previewLead.service_type || '').toLowerCase();
-                const leadServ = String(previewLead.service || previewLead.title || previewLead.notes || '').toLowerCase();
-                const isVehicleRental = 
-                  leadCat.includes('vehicle') || 
-                  leadCat.includes('car') || 
-                  leadCat.includes('bike') || 
-                  leadCat.includes('rental') || 
-                  leadServ.includes('vehicle rental') || 
-                  leadServ.includes('car rental') || 
-                  leadServ.includes('bike rental') ||
-                  leadServ.includes('fortuner') || 
-                  leadServ.includes('thar') || 
-                  leadServ.includes('scorpio') || 
-                  leadServ.includes('innova') || 
-                  leadServ.includes('activa') || 
-                  leadServ.includes('self drive');
+                const isVehicleRental = isVehicleRentalLead(previewLead);
 
                 if (isVehicleRental) {
-                  const pickupInfo = previewLead.notes?.includes('|') 
-                    ? previewLead.notes.split('|')[1]?.trim() 
-                    : (previewLead.notes || 'Goa Airport (Dabolim / Mopa) / Doorstep Delivery');
+                  const defaultPickup = 'Goa Airport (Dabolim / Mopa) / Doorstep Delivery';
+                  let pickupInfo = defaultPickup;
+                  if (previewLead.notes) {
+                    if (previewLead.notes.includes('|')) {
+                      const parts = previewLead.notes.split('|').map(s => s.trim()).filter(Boolean);
+                      const locPart = parts.find(p => /airport|mopa|dabolim|doorstep|delivery|hotel|station|calangute|candolim|baga|panjim/i.test(p));
+                      pickupInfo = (locPart && !/^(thar|car|bike|scooter|rental)/i.test(locPart)) ? locPart : (parts[1] || defaultPickup);
+                    } else {
+                      const isVehicleReqOnly = /^(?:rent\s+a\s+|need\s+a\s+|self\s+drive\s+)?(?:thar|car|bike|scooter|fortuner|scorpio|innova|activa)(?:\s+rental|\s+rent)?$/i.test(previewLead.notes.trim()) ||
+                        previewLead.notes.trim().toLowerCase() === 'thar rental';
+                      if (!isVehicleReqOnly && /airport|mopa|dabolim|doorstep|delivery|hotel|station|calangute|candolim|baga|panjim/i.test(previewLead.notes)) {
+                        pickupInfo = previewLead.notes.trim();
+                      }
+                    }
+                  }
+
+                  const vehicleTitle = (() => {
+                    const serv = (previewLead.service || '').trim();
+                    const isGenericChat = /ai\s*(?:travel\s*assistant|planner|chat)/i.test(serv) || serv.toLowerCase() === 'general inquiry';
+                    if (!isGenericChat && serv) {
+                      return serv;
+                    }
+                    if (previewLead.notes && !previewLead.notes.toLowerCase().startsWith('inquired via')) {
+                      const cleanNote = previewLead.notes.split('|')[0].trim();
+                      if (cleanNote) return cleanNote;
+                    }
+                    return 'Self-Drive Vehicle';
+                  })();
 
                   return (
                     <div className="bg-white rounded-3 shadow-xs border p-4 mb-3">
@@ -2304,7 +2368,7 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                           <span className="text-muted small">Fleet allocation &amp; handover schedule for {previewLead.name}</span>
                         </div>
                         <span className="badge rounded-pill bg-light text-dark border px-3 py-1.5 fw-bold" style={{ fontSize: '0.75rem' }}>
-                          {previewLead.service || 'Self-Drive Vehicle'}
+                          {vehicleTitle}
                         </span>
                       </div>
 
@@ -2547,10 +2611,46 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                 }
 
                 // ── Fallback: Tour / Package Leads without linked custom enquiry ──
+                const dMatch = (previewLead.service || previewLead.title || previewLead.notes || '').match(/(\d+)\s*(?:days?|d\b)/i);
+                const hasExplicitDuration = Boolean(dMatch || previewLead.booking_days);
+                const isGenericAiEnquiry = (
+                  previewLead.source === 'AI Planner' || 
+                  (previewLead.service || '').toLowerCase().includes('ai travel assistant')
+                ) && !hasExplicitDuration;
+
+                // For generic AI enquiries without requested trip duration, do NOT fabricate a fake 4-day itinerary
+                if (isGenericAiEnquiry) {
+                  return (
+                    <div className="bg-white rounded-3 shadow-xs border p-4 mb-3">
+                      <div className="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+                        <div>
+                          <h6 className="fw-bold text-dark mb-0 font-heading d-flex align-items-center gap-2">
+                            <Sparkles size={18} style={{ color: '#FF6333' }} />
+                            <span>AI Travel Consultation Overview</span>
+                          </h6>
+                          <span className="text-muted small">Inquiry consultation details for {previewLead.name}</span>
+                        </div>
+                        <span className="badge rounded-pill bg-light text-primary border px-3 py-1.5 fw-bold" style={{ fontSize: '0.75rem' }}>
+                          AI Inbound Inquiry
+                        </span>
+                      </div>
+
+                      <div className="p-3 rounded-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                        <div className="d-flex align-items-center justify-content-between mb-2">
+                          <span className="badge bg-primary text-white fw-bold px-2 py-1" style={{ fontSize: '0.72rem' }}>Requirement</span>
+                          <span className="fw-bold text-dark small">{previewLead.notes || 'General Trip Consultation'}</span>
+                        </div>
+                        <p className="text-muted mb-0" style={{ fontSize: '0.8rem' }}>
+                          The customer connected via Sophia AI Assistant. Review the conversation transcript above for full context and use the quick action buttons to follow up.
+                        </p>
+                      </div>
+                    </div>
+                  );
+                }
+
                 let fallbackDays = 4;
                 let fallbackDuration = '4 Days / 3 Nights';
 
-                const dMatch = (previewLead.service || previewLead.title || previewLead.notes || '').match(/(\d+)\s*(?:days?|d\b)/i);
                 if (dMatch) {
                   fallbackDays = Math.max(1, parseInt(dMatch[1], 10));
                   const nights = Math.max(0, fallbackDays - 1);
@@ -2634,25 +2734,7 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                   style={{ fontSize: '0.8rem' }}
                   onClick={() => window.print()}
                 >
-                  {(() => {
-                    const leadCat = String(previewLead.source || previewLead.category || previewLead.service_type || '').toLowerCase();
-                    const leadServ = String(previewLead.service || previewLead.title || previewLead.notes || '').toLowerCase();
-                    const isVehicleRental = 
-                      leadCat.includes('vehicle') || 
-                      leadCat.includes('car') || 
-                      leadCat.includes('bike') || 
-                      leadCat.includes('rental') || 
-                      leadServ.includes('vehicle rental') || 
-                      leadServ.includes('car rental') || 
-                      leadServ.includes('bike rental') ||
-                      leadServ.includes('fortuner') || 
-                      leadServ.includes('thar') || 
-                      leadServ.includes('scorpio') || 
-                      leadServ.includes('innova') || 
-                      leadServ.includes('activa') || 
-                      leadServ.includes('self drive');
-                    return isVehicleRental ? 'Print Rental Summary' : 'Print Itinerary';
-                  })()}
+                  {isVehicleRentalLead(previewLead) ? 'Print Rental Summary' : 'Print Itinerary'}
                 </button>
                 <button 
                   type="button" 

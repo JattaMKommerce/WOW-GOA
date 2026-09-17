@@ -68,7 +68,8 @@ export default function CustomerPortalPage({
   hotels = [],
   flights = [],
   activities = [],
-  onNavigateHome
+  onNavigateHome,
+  onViewDetails
 }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -79,19 +80,22 @@ export default function CustomerPortalPage({
     if (currentUser && currentUser.role === 'customer') return currentUser;
     try {
       const saved = localStorage.getItem('customerUser');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsedSaved = JSON.parse(saved);
+        if (parsedSaved && (parsedSaved.role === 'customer' || !parsedSaved.role)) return parsedSaved;
+      }
       const curr = localStorage.getItem('currentUser');
       if (curr) {
         const parsed = JSON.parse(curr);
-        if (parsed.role === 'customer' || parsed.phone || parsed.email) return parsed;
+        if (parsed && parsed.role === 'customer') return parsed;
       }
     } catch (e) {}
     return null;
   });
 
-  // Keep customer session synced
+  // Keep customer session synced strictly for customer roles
   useEffect(() => {
-    if (currentUser) {
+    if (currentUser && currentUser.role === 'customer') {
       setCustomerUser(currentUser);
       try {
         localStorage.setItem('customerUser', JSON.stringify(currentUser));
@@ -1343,6 +1347,7 @@ export default function CustomerPortalPage({
                     bookings={customerBookings}
                     onOpenBookingDetails={handleOpenBookingDetails}
                     onNavigateTab={(tab, optCat) => handleNavClick(tab, optCat)}
+                    onViewDetails={onViewDetails}
                   />
                 )}
 

@@ -23,7 +23,10 @@ export default function CustomerActivitiesTab({
   setAppliedFilters,
   searchQuery: parentSearchQuery = '',
   setSearchQuery: setParentSearchQuery,
-  onViewDetails
+  onViewDetails,
+  onBook,
+  initialBookingItem = null,
+  onClearInitialBooking
 }) {
   const [items, setItems] = useState(filterActiveActivities(activities));
   const [loading, setLoading] = useState(false);
@@ -37,6 +40,16 @@ export default function CustomerActivitiesTab({
       setSearchQuery(parentSearchQuery);
     }
   }, [parentSearchQuery]);
+
+  // Handle external or pre-selected booking requests (e.g. from ActivityDetailsPage)
+  useEffect(() => {
+    if (initialBookingItem) {
+      handleOpenBooking(initialBookingItem);
+      if (typeof onClearInitialBooking === 'function') {
+        onClearInitialBooking();
+      }
+    }
+  }, [initialBookingItem]);
   
   // Booking Form State
   const [travelDate, setTravelDate] = useState(getTodayDateStr());
@@ -258,9 +271,10 @@ export default function CustomerActivitiesTab({
   }, [bookings, localCreatedBookings, currentUser, contactPhone, contactEmail]);
 
   const handleOpenBooking = (item) => {
+    if (!item) return;
     setBookingModalItem(item);
-    setTravelDate(getTodayDateStr());
-    setGuests(2);
+    setTravelDate(item.pickup_date || item.pickupDate || getTodayDateStr());
+    setGuests(Math.max(1, Number(item.guests || item.adults || item.totalMembers || 2)));
     setFormError('');
     setBookingSuccess(null);
 
@@ -372,9 +386,9 @@ export default function CustomerActivitiesTab({
         item_id: bookingModalItem.id || `act-${Date.now()}`,
         item_name: bookingModalItem.title || bookingModalItem.name,
         package_name: bookingModalItem.title || bookingModalItem.name,
-        package_type: bookingModalItem.type === 'sightseeing' ? 'Sightseeing' : 'Activity',
-        type: (bookingModalItem.type || 'activity').toLowerCase(),
-        service_type: (bookingModalItem.type || 'activity').toUpperCase(),
+        package_type: String(bookingModalItem.type || bookingModalItem.item_type || '').toLowerCase() === 'sightseeing' ? 'Sightseeing' : 'Activity',
+        type: String(bookingModalItem.type || bookingModalItem.item_type || 'activity').toLowerCase(),
+        service_type: String(bookingModalItem.type || bookingModalItem.item_type || 'activity').toUpperCase(),
         pickup_date: travelDate,
         pickup_time: '09:00 AM',
         drop_date: travelDate,
@@ -568,7 +582,9 @@ export default function CustomerActivitiesTab({
                 <div 
                   className="card border-0 shadow-sm rounded-4 h-100 bg-white overflow-hidden d-flex flex-column hover-shadow transition-all" 
                   style={{ border: '1px solid #eef2f6', cursor: 'pointer' }}
-                  onClick={() => onViewDetails ? onViewDetails(item) : handleOpenBooking(item)}
+                  onClick={() => {
+                    if (onViewDetails) onViewDetails(item);
+                  }}
                 >
                   {/* Card Image */}
                   <div className="position-relative" style={{ height: '200px', overflow: 'hidden', background: '#f1f5f9' }}>
@@ -634,8 +650,6 @@ export default function CustomerActivitiesTab({
                             e.stopPropagation();
                             if (onViewDetails) {
                               onViewDetails(item);
-                            } else {
-                              handleOpenBooking(item);
                             }
                           }}
                           className="btn btn-sm btn-outline-dark fw-bold rounded-pill px-3 py-1.5 text-xs d-flex align-items-center gap-1"
@@ -647,8 +661,8 @@ export default function CustomerActivitiesTab({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (onViewDetails) {
-                              onViewDetails(item);
+                            if (onBook) {
+                              onBook(item);
                             } else {
                               handleOpenBooking(item);
                             }
@@ -802,7 +816,7 @@ export default function CustomerActivitiesTab({
                         Book Experience
                       </h5>
                       <span className="text-warning text-xxs fw-semibold">
-                        {bookingModalItem.type === 'sightseeing' ? '🏛️ Curated Sightseeing Tour' : '⚡ Adventure & Activity Experience'}
+                        {String(bookingModalItem.type || bookingModalItem.item_type || '').toLowerCase() === 'sightseeing' ? '🏛️ Curated Sightseeing Tour' : '⚡ Adventure & Activity Experience'}
                       </span>
                     </div>
                   </div>
@@ -1369,7 +1383,7 @@ export default function CustomerActivitiesTab({
                               )}
                               <div className="position-absolute top-2 start-2">
                                 <span className="badge bg-dark bg-opacity-80 backdrop-blur text-white text-xxs px-2.5 py-1 rounded-pill fw-bold">
-                                  {bookingModalItem.type === 'sightseeing' ? '🏛️ Sightseeing' : '⚡ Adventure'}
+                                  {String(bookingModalItem.type || bookingModalItem.item_type || '').toLowerCase() === 'sightseeing' ? '🏛️ Sightseeing' : '⚡ Adventure'}
                                 </span>
                               </div>
                               <div className="position-absolute bottom-2 end-2">

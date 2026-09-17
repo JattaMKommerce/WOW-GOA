@@ -1,8 +1,7 @@
 import React, { useMemo } from 'react';
 import { 
   ArrowLeft, Plane, Clock, ShieldCheck, CheckCircle2, ChevronRight, 
-  Luggage, AlertCircle, Calendar, MapPin, Tag, Info, UserCheck, 
-  Sparkles, Check, PhoneCall, HelpCircle
+  Luggage, Info, Check, Calendar
 } from 'lucide-react';
 import { formatDisplayDate } from '../../utils/dateUtils';
 
@@ -30,11 +29,27 @@ export default function FlightDetailsPage({
   flightClass = 'economy',
   pickupDate,
   onBack,
-  onBook
+  onBook,
+  isCraftMyTrip = false,
+  backLabel,
+  actionLabel,
+  breadcrumbPrefix,
+  isSelected = false,
+  memberCount
 }) {
+  // 1. Travel date resolution (declared unconditionally for React rules of hooks)
+  const travelDate = useMemo(() => {
+    if (!flight) return '';
+    if (flight.departureDate) return flight.departureDate;
+    if (flight.departure && String(flight.departure).includes('T')) {
+      return String(flight.departure).split('T')[0];
+    }
+    return pickupDate || new Date().toISOString().split('T')[0];
+  }, [flight, pickupDate]);
+
   if (!flight) return null;
 
-  // 1. Resolve basic flight information
+  // 2. Resolve basic flight information
   const airlineName = flight.airline?.name || flight.airline || 'Commercial Airline';
   const airlineLogo = flight.logo || flight.image || `https://images.unsplash.com/photo-1436491865332-7a61a109cc05?auto=format&fit=crop&w=120&q=80`;
   const flightCode = flight.flight?.iata || flight.id || 'FL-Schedule';
@@ -47,7 +62,7 @@ export default function FlightDetailsPage({
   const originInfo = AIRPORT_DIRECTORY[fromCode] || { name: `${fromCode} Airport`, city: flight.from_city || fromCode, terminal: 'Domestic Terminal' };
   const destinationInfo = AIRPORT_DIRECTORY[toCode] || { name: `${toCode} Airport`, city: flight.to_city || toCode, terminal: 'Domestic Terminal' };
 
-  // 2. Format departure and arrival times
+  // 3. Format departure and arrival times
   const formatTimeStr = (tStr) => {
     if (!tStr) return '10:00 AM';
     if (typeof tStr === 'string' && tStr.includes(':') && tStr.length <= 8) return tStr;
@@ -56,28 +71,20 @@ export default function FlightDetailsPage({
       if (!isNaN(d.getTime())) {
         return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
       }
-    } catch (e) {}
+    } catch {}
     return String(tStr);
   };
 
   const departureTime = formatTimeStr(flight.departure?.scheduled || flight.departure);
   const arrivalTime = formatTimeStr(flight.arrival?.scheduled || flight.arrival);
 
-  // 3. Travel date resolution
-  const travelDate = useMemo(() => {
-    if (flight.departureDate) return flight.departureDate;
-    if (flight.departure && String(flight.departure).includes('T')) {
-      return String(flight.departure).split('T')[0];
-    }
-    return pickupDate || new Date().toISOString().split('T')[0];
-  }, [flight, pickupDate]);
-
   // 4. Passenger counts and pricing
-  const adultsCount = Number(flight.adults || flightAdults || 1);
-  const childrenCount = Number(flight.children || flightChildren || 0);
-  const infantsCount = Number(flight.infants || flightInfants || 0);
+  const effectiveAdults = isCraftMyTrip ? (memberCount || flightAdults || 1) : Number(flight.adults || flightAdults || 1);
+  const adultsCount = effectiveAdults;
+  const childrenCount = isCraftMyTrip ? 0 : Number(flight.children || flightChildren || 0);
+  const infantsCount = isCraftMyTrip ? 0 : Number(flight.infants || flightInfants || 0);
   const totalPayingPassengers = Math.max(1, adultsCount + childrenCount);
-  const totalPassengers = adultsCount + childrenCount + infantsCount;
+  const _totalPassengers = adultsCount + childrenCount + infantsCount;
 
   const farePerPassenger = Math.round(Number(flight.price || 4500));
   const totalFare = farePerPassenger * totalPayingPassengers;
@@ -122,14 +129,25 @@ export default function FlightDetailsPage({
           <div className="d-flex align-items-center gap-3">
             <button 
               type="button" 
-              onClick={onBack}
-              className="btn btn-light rounded-circle p-2 d-flex align-items-center justify-content-center border"
-              style={{ width: '40px', height: '40px' }}
-              title="Return to Flights Search"
+              onClick={() => {
+                if (document.activeElement?.blur) document.activeElement.blur();
+                onBack();
+              }}
+              className={`btn btn-light border hover-scale d-flex align-items-center gap-1.5 ${
+                backLabel ? 'rounded-pill px-3 py-1.5 fw-bold text-xs' : 'rounded-circle p-2 justify-content-center'
+              }`}
+              style={backLabel ? {} : { width: '40px', height: '40px' }}
+              title={backLabel || "Return to Flights Search"}
             >
-              <ArrowLeft size={18} className="text-dark" />
+              <ArrowLeft size={16} className="text-dark" />
+              {backLabel && <span>{backLabel.replace(/^←\s*/, '')}</span>}
             </button>
             <div>
+              {breadcrumbPrefix && (
+                <div className="text-muted text-xxs text-uppercase fw-semibold" style={{ letterSpacing: '0.5px' }}>
+                  {breadcrumbPrefix} &gt; {fromCode} → {toCode} &gt; {airlineName}
+                </div>
+              )}
               <div className="d-flex align-items-center gap-2">
                 <span className="fw-bold text-dark fs-5">{airlineName}</span>
                 <span className="badge bg-light text-secondary border px-2 py-0.5 text-xxs font-monospace">
@@ -138,6 +156,11 @@ export default function FlightDetailsPage({
                 <span className="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 px-2.5 py-0.5 rounded-pill text-xxs fw-bold">
                   {cabinClassDisplay}
                 </span>
+                {isSelected && (
+                  <span className="badge bg-success text-white rounded-pill px-2.5 py-0.5 text-xxs fw-bold d-inline-flex align-items-center gap-1">
+                    <Check size={11} /> Selected Flight
+                  </span>
+                )}
               </div>
               <div className="text-muted text-xs d-flex align-items-center gap-2 mt-0.5">
                 <span>{fromCode} ({originInfo.city})</span>
@@ -150,21 +173,39 @@ export default function FlightDetailsPage({
             </div>
           </div>
 
-          <div className="d-none d-md-flex align-items-center gap-3">
-            <div className="text-end">
-              <span className="text-muted text-xxs d-block">Starting from</span>
-              <span className="fw-black text-primary fs-5">₹{farePerPassenger.toLocaleString('en-IN')}</span>
-              <span className="text-muted text-xxs"> / pax</span>
+          <div className="d-flex align-items-center gap-2">
+            <div className="d-none d-md-flex align-items-center gap-3">
+              <div className="text-end">
+                <span className="text-muted text-xxs d-block">
+                  {isCraftMyTrip ? `Total (${totalPayingPassengers} pax)` : 'Starting from'}
+                </span>
+                <span className="fw-black text-primary fs-5">
+                  ₹{(isCraftMyTrip ? totalFare : farePerPassenger).toLocaleString('en-IN')}
+                </span>
+                {!isCraftMyTrip && <span className="text-muted text-xxs"> / pax</span>}
+              </div>
+              <button
+                type="button"
+                onClick={handleProceedToBooking}
+                className="btn btn-primary rounded-pill px-4 py-2 fw-bold d-flex align-items-center gap-1.5 shadow-sm font-heading hover-scale"
+                style={{ background: '#FF6333', borderColor: '#FF6333', color: '#FFFFFF' }}
+              >
+                <span>{actionLabel || (isCraftMyTrip ? (isSelected ? 'Continue to Review' : 'Select & Continue') : 'Book Flight')}</span>
+                <ChevronRight size={16} />
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={handleProceedToBooking}
-              className="btn btn-primary rounded-pill px-4 py-2 fw-bold d-flex align-items-center gap-1.5 shadow-sm"
-              style={{ background: '#FF6333', borderColor: '#FF6333' }}
-            >
-              <span>Book Flight</span>
-              <ChevronRight size={16} />
-            </button>
+            {isCraftMyTrip && (
+              <button 
+                type="button"
+                onClick={() => {
+                  if (document.activeElement?.blur) document.activeElement.blur();
+                  onBack();
+                }}
+                className="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1.5 rounded-pill px-3 py-1"
+              >
+                <ArrowLeft size={14} /> Back
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -411,15 +452,30 @@ export default function FlightDetailsPage({
                   <span className="text-success fw-semibold">INCLUDED</span>
                 </div>
 
-                <hr className="my-1 border-secondary border-opacity-25" />
-
-                <div className="d-flex justify-content-between align-items-baseline">
-                  <div>
-                    <span className="fw-bold text-dark fs-6 d-block">Total Payable</span>
-                    <span className="text-muted text-xxs">All taxes &amp; fees included</span>
-                  </div>
-                  <span className="fw-black text-primary fs-4">₹{totalFare.toLocaleString('en-IN')}</span>
-                </div>
+                {isCraftMyTrip ? (
+                  <>
+                    <div className="text-muted text-xxs">+ Taxes &amp; fees calculated at checkout</div>
+                    <hr className="my-1 border-secondary border-opacity-25" />
+                    <div className="d-flex justify-content-between align-items-baseline">
+                      <div>
+                        <span className="fw-bold text-dark fs-6 d-block">Flight Total</span>
+                        <span className="text-muted text-xxs">For {totalPayingPassengers} traveller{totalPayingPassengers > 1 ? 's' : ''}</span>
+                      </div>
+                      <span className="fw-black text-primary fs-4">₹{totalFare.toLocaleString('en-IN')}</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <hr className="my-1 border-secondary border-opacity-25" />
+                    <div className="d-flex justify-content-between align-items-baseline">
+                      <div>
+                        <span className="fw-bold text-dark fs-6 d-block">Total Payable</span>
+                        <span className="text-muted text-xxs">All taxes &amp; fees included</span>
+                      </div>
+                      <span className="fw-black text-primary fs-4">₹{totalFare.toLocaleString('en-IN')}</span>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Primary Action: Book Flight */}
@@ -429,7 +485,7 @@ export default function FlightDetailsPage({
                 className="btn btn-primary btn-lg w-100 rounded-pill fw-bold shadow-sm d-flex align-items-center justify-content-center gap-2 hover-scale font-heading"
                 style={{ background: '#FF6333', borderColor: '#FF6333', padding: '12px 20px', fontSize: '15px' }}
               >
-                <span>Book Flight</span>
+                <span>{actionLabel || (isCraftMyTrip ? (isSelected ? 'Continue to Review' : 'Select & Continue') : 'Book Flight')}</span>
                 <ChevronRight size={18} />
               </button>
 
@@ -441,6 +497,30 @@ export default function FlightDetailsPage({
           </div>
 
         </div>
+      </div>
+
+      {/* ─── 4. MOBILE STICKY BOTTOM BAR ─── */}
+      <div 
+        className="d-lg-none fixed-bottom bg-white border-top px-4 py-3 shadow-lg d-flex justify-content-between align-items-center"
+        style={{ zIndex: 1010 }}
+      >
+        <div>
+          <span className="text-muted text-xxs d-block">
+            {isCraftMyTrip ? `Total (${totalPayingPassengers} ${totalPayingPassengers === 1 ? 'traveller' : 'travellers'})` : 'Total Payable'}
+          </span>
+          <div className="fw-black font-heading fs-5 mb-0" style={{ color: '#FF6333' }}>
+            ₹{totalFare.toLocaleString('en-IN')}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={handleProceedToBooking}
+          className="btn btn-primary rounded-pill px-4 py-2 fw-bold d-flex align-items-center gap-1.5 shadow-sm font-heading hover-scale"
+          style={{ background: '#FF6333', borderColor: '#FF6333', color: '#FFFFFF' }}
+        >
+          <span>{actionLabel || (isCraftMyTrip ? (isSelected ? 'Continue to Review' : 'Select & Continue') : 'Book Flight')}</span>
+          <ChevronRight size={16} />
+        </button>
       </div>
 
     </div>
