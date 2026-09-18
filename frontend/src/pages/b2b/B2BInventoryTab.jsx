@@ -57,7 +57,8 @@ export default function B2BInventoryTab({
   partnerUser,
   initialService = 'selfdrive',
   initialActivities = [],
-  onInitiateBooking
+  onInitiateBooking,
+  onNavigateTab
 }) {
   const [activeService, setActiveService] = useState(initialService);
   const [items, setItems] = useState(() => {
@@ -419,6 +420,11 @@ export default function B2BInventoryTab({
           activeMode={mode}
           onBookingSuccess={(res) => {
             if (onInitiateBooking) onInitiateBooking(res);
+          }}
+          onNavigateToBookings={() => {
+            if (onNavigateTab) {
+              onNavigateTab(mode === 'COMMISSION' ? 'commission_bookings' : 'non_commission_bookings');
+            }
           }}
         />
       ) : loading ? (

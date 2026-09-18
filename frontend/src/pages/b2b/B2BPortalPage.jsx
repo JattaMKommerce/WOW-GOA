@@ -7,6 +7,7 @@ import {
 import * as api from '../../services/api';
 import B2BLoginPage from './B2BLoginPage';
 import B2BRegisterPage from './B2BRegisterPage';
+import RegistrationFlow from '../auth/RegistrationFlow';
 import B2BDashboardTab from './B2BDashboardTab';
 import B2BInventoryTab from './B2BInventoryTab';
 import B2BBookingsTab from './B2BBookingsTab';
@@ -134,7 +135,7 @@ export default function B2BPortalPage({
   if (!partnerUser) {
     if (authSubView === 'register') {
       return (
-        <B2BRegisterPage 
+        <RegistrationFlow 
           onNavigateLogin={() => {
             if (typeof window !== 'undefined') window.history.pushState(null, '', '/b2b/login');
             setAuthSubView('login');
@@ -505,6 +506,7 @@ export default function B2BPortalPage({
               initialService={activeServiceTab}
               initialActivities={activities}
               onInitiateBooking={() => loadDashboard()}
+              onNavigateTab={(tab) => setActiveTab(tab)}
             />
           )}
 
@@ -516,6 +518,7 @@ export default function B2BPortalPage({
               initialService={activeServiceTab}
               initialActivities={activities}
               onInitiateBooking={() => loadDashboard()}
+              onNavigateTab={(tab) => setActiveTab(tab)}
             />
           )}
 

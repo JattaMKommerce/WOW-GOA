@@ -2440,6 +2440,32 @@ function handleAuthoritativeLogin($pdo, $username, $password) {
     }
 
     if ($isValid && $user) {
+        $status = strtolower($user['status'] ?? 'active');
+        if ($status === 'pending' && in_array($user['role'], ['vendor', 'hotel_vendor', 'flight_vendor', 'b2b'])) {
+            http_response_code(403);
+            return [
+                "success" => false,
+                "status" => "pending",
+                "error" => "Your account registration is currently pending administrator verification and approval. You will be notified once activated."
+            ];
+        }
+        if ($status === 'rejected' && in_array($user['role'], ['vendor', 'hotel_vendor', 'flight_vendor', 'b2b'])) {
+            http_response_code(403);
+            return [
+                "success" => false,
+                "status" => "rejected",
+                "error" => "Your account registration was not approved. " . (!empty($user['rejection_reason']) ? "Reason: {$user['rejection_reason']}" : "Please contact WOW GOA support.")
+            ];
+        }
+        if ($status !== 'active' && !empty($user['status']) && in_array($user['role'], ['vendor', 'hotel_vendor', 'flight_vendor', 'b2b'])) {
+            http_response_code(403);
+            return [
+                "success" => false,
+                "status" => $status,
+                "error" => "Your account is currently inactive. Please contact administrator."
+            ];
+        }
+
         unset($user['password_hash']);
         unset($user['plain_password']);
         $now = date('Y-m-d H:i:s');
@@ -4754,7 +4780,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit();
         } elseif ($action === 'b2b_register') {
             $companyName = trim($payload['company_name'] ?? ($payload['agency_name'] ?? ''));
-            $businessType = trim($payload['business_type'] ?? 'Travel Agency');
+            $businessType = trim($payload['business_type'] ?? 'B2B Partner');
+            if (!$businessType) $businessType = 'B2B Partner';
             $email = strtolower(trim($payload['email'] ?? ($payload['business_email'] ?? '')));
             $phone = preg_replace('/[^0-9]/', '', trim($payload['phone'] ?? ($payload['business_phone'] ?? '')));
             $website = trim($payload['website'] ?? '');
@@ -4887,6 +4914,158 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 "partner_id" => $partnerId
             ]);
             exit();
+        } elseif ($action === 'vendor_register') {
+            $vendorType = strtolower(trim($payload['vendor_type'] ?? ($payload['vendor_role'] ?? '')));
+            // Strictly enforce allowed vendor types (Hotel, Vehicle, Flight only)
+            $allowedRoles = [
+                'hotel_vendor' => 'Hotel Vendor',
+                'vendor' => 'Vehicle Vendor',
+                'vehicle_vendor' => 'Vehicle Vendor',
+                'flight_vendor' => 'Flight Vendor'
+            ];
+            if (!isset($allowedRoles[$vendorType])) {
+                http_response_code(400);
+                echo json_encode(["success" => false, "error" => "Invalid vendor category. Allowed: Hotel Vendor, Vehicle Vendor, Flight Vendor."]);
+                exit();
+            }
+            // Normalize vehicle_vendor to canonical role 'vendor'
+            $canonicalRole = ($vendorType === 'vehicle_vendor') ? 'vendor' : $vendorType;
+            $businessTypeLabel = $allowedRoles[$vendorType];
+
+            $companyName = trim($payload['company_name'] ?? ($payload['name'] ?? ($payload['business_name'] ?? '')));
+            $email = strtolower(trim($payload['email'] ?? ''));
+            $phone = preg_replace('/[^0-9]/', '', trim($payload['phone'] ?? ''));
+            $website = trim($payload['website'] ?? '');
+            $contactName = trim($payload['contact_name'] ?? ($payload['name'] ?? ''));
+            $contactEmail = strtolower(trim($payload['contact_email'] ?? $email));
+            $contactPhone = preg_replace('/[^0-9]/', '', trim($payload['contact_phone'] ?? $phone));
+            $address = trim($payload['address'] ?? '');
+            $city = trim($payload['city'] ?? 'Goa');
+            $state = trim($payload['state'] ?? 'Goa');
+            $country = trim($payload['country'] ?? 'India');
+            $pincode = trim($payload['pincode'] ?? '');
+            $username = strtolower(trim($payload['username'] ?? ''));
+            $password = trim($payload['password'] ?? '');
+            $confirmPassword = trim($payload['confirm_password'] ?? '');
+            $termsAccepted = !empty($payload['terms_accepted']) || !empty($payload['terms']);
+
+            // Validations
+            if (!$companyName || !$email || !$phone || !$contactName || !$city || !$username || !$password) {
+                http_response_code(400);
+                echo json_encode(["success" => false, "error" => "Please fill in all mandatory fields marked with an asterisk (*)."]);
+                exit();
+            }
+
+            if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                http_response_code(400);
+                echo json_encode(["success" => false, "error" => "Please provide a valid email address."]);
+                exit();
+            }
+
+            if (strlen($phone) < 10) {
+                http_response_code(400);
+                echo json_encode(["success" => false, "error" => "Please provide a valid 10-digit phone number."]);
+                exit();
+            }
+
+            if (strlen($password) < 6) {
+                http_response_code(400);
+                echo json_encode(["success" => false, "error" => "Password must be at least 6 characters long."]);
+                exit();
+            }
+
+            if ($password !== $confirmPassword) {
+                http_response_code(400);
+                echo json_encode(["success" => false, "error" => "Password and Confirm Password do not match."]);
+                exit();
+            }
+
+            if (!$termsAccepted) {
+                http_response_code(400);
+                echo json_encode(["success" => false, "error" => "Please accept the WOW GOA Vendor Terms & Conditions to proceed."]);
+                exit();
+            }
+
+            // Check Uniqueness in users table
+            $dupStmt = $pdo->prepare("SELECT id, username, email FROM users WHERE LOWER(username) = ? OR LOWER(email) = ?");
+            $dupStmt->execute([$username, $email]);
+            $dupUser = $dupStmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($dupUser) {
+                http_response_code(400);
+                if (strtolower($dupUser['username']) === $username) {
+                    echo json_encode(["success" => false, "error" => "Username '$username' is already registered. Please choose another username."]);
+                } else {
+                    echo json_encode(["success" => false, "error" => "Email address '$email' is already registered. Please login or use a different email."]);
+                }
+                exit();
+            }
+
+            $vendorId = 'vnd_' . uniqid();
+            $pwHash = password_hash($password, PASSWORD_DEFAULT);
+            $now = date('Y-m-d H:i:s');
+            $today = date('Y-m-d');
+
+            $pdo->beginTransaction();
+            try {
+                // 1. Insert into users table
+                $insUser = $pdo->prepare("INSERT INTO users (
+                    id, username, company_name, business_type, name, phone, email, website,
+                    contact_name, contact_email, contact_phone, address, city, state, country, pincode,
+                    password_hash, plain_password, role, status, created_at
+                ) VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, 'pending', ?
+                )");
+                $insUser->execute([
+                    $vendorId, $username, $companyName, $businessTypeLabel, $contactName, $phone, $email, $website,
+                    $contactName, $contactEmail, $contactPhone, $address, $city, $state, $country, $pincode,
+                    $pwHash, $password, $canonicalRole, $now
+                ]);
+
+                // 2. Insert into vendors table
+                $insVendor = $pdo->prepare("INSERT INTO vendors (
+                    id, name, email, phone, city, role, admin_id, created_at
+                ) VALUES (
+                    ?, ?, ?, ?, ?, ?, 'admin', ?
+                )");
+                $insVendor->execute([
+                    $vendorId, $companyName, $email, $phone, $city, $canonicalRole, $today
+                ]);
+
+                // 3. Create admin notification
+                createB2BNotification(
+                    $pdo,
+                    $vendorId,
+                    'admin',
+                    'vendor_registration',
+                    "New $businessTypeLabel Registration",
+                    "Vendor '$companyName' has registered as $businessTypeLabel and is pending approval.",
+                    'vendor',
+                    $vendorId
+                );
+
+                $pdo->commit();
+
+                // Determine dedicated login route for client
+                $loginRoute = ($canonicalRole === 'hotel_vendor') ? '/hotel/login' : (($canonicalRole === 'flight_vendor') ? '/flight/login' : '/vehicle/login');
+
+                echo json_encode([
+                    "success" => true,
+                    "status" => "pending",
+                    "role" => $canonicalRole,
+                    "vendor_id" => $vendorId,
+                    "login_route" => $loginRoute,
+                    "message" => "Vendor registration application submitted successfully. Your account is under verification."
+                ]);
+                exit();
+            } catch (Exception $e) {
+                if ($pdo->inTransaction()) $pdo->rollBack();
+                http_response_code(500);
+                echo json_encode(["success" => false, "error" => "Registration transaction failed: " . $e->getMessage()]);
+                exit();
+            }
         } elseif ($action === 'b2b_approve_partner') {
             $actor = authenticateRequest($pdo, false);
             if (!$actor || !in_array($actor['role'], ['admin', 'superadmin'])) {

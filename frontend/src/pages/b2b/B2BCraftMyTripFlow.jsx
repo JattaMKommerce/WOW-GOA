@@ -24,7 +24,7 @@ const FLIGHT_ORIGINS = [
   'Ahmedabad (AMD)', 'Kolkata (CCU)'
 ];
 
-export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSuccess }) {
+export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSuccess, onNavigateToBookings }) {
   const mode = activeMode || (partner?.allow_commission ? 'COMMISSION' : 'NON_COMMISSION');
   const commRate = parseFloat(partner?.default_commission_rate || 10.00);
   const netDiscountRate = parseFloat(partner?.default_net_discount_rate || 10.00);
@@ -255,15 +255,18 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
     const bookingId = bookingSuccess.booking_id || bookingSuccess.id || `CMT-${Date.now().toString().slice(-6)}`;
     return (
       <div className="card border-0 shadow-sm rounded-4 p-4 p-md-5 bg-white text-center animate-fade-in my-3">
-        <div className="d-inline-flex p-3 rounded-circle bg-success bg-opacity-10 text-success mb-3">
-          <CheckCircle2 size={48} />
+        <div 
+          className="rounded-circle bg-success bg-opacity-10 text-success mx-auto mb-3 d-flex align-items-center justify-content-center shadow-xs"
+          style={{ width: '72px', height: '72px', minWidth: '72px', minHeight: '72px', flexShrink: 0 }}
+        >
+          <CheckCircle2 size={40} />
         </div>
         <h3 className="fw-bold text-dark font-heading mb-1">Bespoke Trip Confirmed!</h3>
         <p className="text-muted small mb-4">
           The custom holiday package for <strong>{guestDetails.name}</strong> has been confirmed and registered in your B2B ledger.
         </p>
 
-        <div className="bg-light p-3.5 rounded-4 border text-start mx-auto mb-4" style={{ maxWidth: '560px' }}>
+        <div className="bg-light p-4 rounded-4 border text-start mx-auto mb-4" style={{ maxWidth: '560px' }}>
           <div className="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
             <span className="text-muted text-xs">Reference ID:</span>
             <span className="fw-bold font-monospace text-dark text-xs">{bookingId}</span>
@@ -313,7 +316,16 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
           )}
         </div>
 
-        <div className="d-flex gap-2 justify-content-center">
+        <div className="d-flex flex-wrap gap-2 justify-content-center">
+          {onNavigateToBookings && (
+            <button 
+              type="button" 
+              className="btn btn-dark rounded-pill px-4 py-2 text-xs fw-bold text-white shadow-xs"
+              onClick={onNavigateToBookings}
+            >
+              View in {mode === 'COMMISSION' ? 'Commission' : 'Net'} Bookings
+            </button>
+          )}
           <button 
             type="button" 
             className="btn btn-outline-secondary rounded-pill px-4 py-2 text-xs fw-semibold"
@@ -323,7 +335,7 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
           </button>
           <button 
             type="button" 
-            className="btn btn-warning rounded-pill px-4 py-2 text-xs fw-bold text-dark"
+            className="btn btn-warning rounded-pill px-4 py-2 text-xs fw-bold text-dark shadow-xs"
             onClick={() => {
               setBookingSuccess(null);
               setStep(1);
