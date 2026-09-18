@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, CheckCircle, ShieldCheck, User, Users, BedDouble, Calendar, ArrowRight, ArrowLeft, Download, MessageCircle, Info, Compass, Cake, Gift, Wallet, Clock } from 'lucide-react';
+import { X, CheckCircle, ShieldCheck, User, Users, BedDouble, Calendar, ArrowRight, ArrowLeft, Download, MessageCircle, Info, Compass, Cake, Gift, Wallet, Clock, Crown } from 'lucide-react';
 import * as api from '../services/api';
 import { validateBookingDates, getTodayDateStr, addDays, formatDisplayDate } from '../utils/dateUtils';
 import ImageCarousel from './common/ImageCarousel';
@@ -143,11 +143,12 @@ export default function HotelBookingModal({
     selectedBookingItem?.preselected_rate_plan
   ]);
 
-  // Customer Wallet Cashback State
+  // Customer Wallet Cashback & Loyalty State
   const [walletBalance, setWalletBalance] = useState(0);
   const [useWalletCashback, setUseWalletCashback] = useState(false);
+  const [loyaltyInfo, setLoyaltyInfo] = useState(null);
 
-  // Repeat customer lookup for Date of Birth & Wallet Balance
+  // Repeat customer lookup for Date of Birth & Wallet Balance & Loyalty Tier
   useEffect(() => {
     const clean = String(guestPhone || '').replace(/\D/g, '');
     if (clean.length >= 10) {
@@ -171,7 +172,7 @@ export default function HotelBookingModal({
         setDobChecking(false);
       });
 
-      // Fetch customer wallet balance
+      // Fetch customer wallet balance & loyalty tier
       api.fetchCustomerWallet(clean).then(w => {
         if (w && w.available_balance > 0) {
           setWalletBalance(w.available_balance);
@@ -179,13 +180,20 @@ export default function HotelBookingModal({
           setWalletBalance(0);
           setUseWalletCashback(false);
         }
+        if (w && w.loyalty) {
+          setLoyaltyInfo(w.loyalty);
+        } else {
+          setLoyaltyInfo(null);
+        }
       }).catch(() => {
         setWalletBalance(0);
+        setLoyaltyInfo(null);
       });
     } else {
       setIsDobSaved(false);
       setWalletBalance(0);
       setUseWalletCashback(false);
+      setLoyaltyInfo(null);
     }
   }, [guestPhone]);
 
@@ -318,10 +326,27 @@ export default function HotelBookingModal({
     else if (driverServiceType === 'entire_stay') driverCharge = 1500 * nights;
   }
 
-  const totalAmount = roomTotal + gst + platformFee + driverCharge;
+  const rawTotalAmount = roomTotal + gst + platformFee + driverCharge;
+
+  // Authoritative Loyalty Tier & Tier Discount Enforcement
+  const customerTier = loyaltyInfo?.tier || loyaltyInfo?.current_tier || 'New Member';
+  const isGold = customerTier === 'Gold';
+  const isPlatinum = customerTier === 'Platinum';
+
+  const isGoldEligible = isGold && rawTotalAmount > 5000;
+  const isPlatinumEligible = isPlatinum && rawTotalAmount > 10000;
+
+  let tierDiscount = 0;
+  if (isGoldEligible) {
+    tierDiscount = 500;
+  } else if (isPlatinumEligible) {
+    tierDiscount = 1000;
+  }
+
+  const totalAmount = Math.max(0, rawTotalAmount - tierDiscount);
   const advanceAmount = Math.round(totalAmount * 0.20); // 20% advance
 
-  // Wallet Deduction (Strictly 10% Discount/Benefit Only) & 10% Cashback Calculations
+  // Wallet Deduction (Strictly 10% Discount/Benefit Only on net) & 10% Cashback Calculations
   const maxWalletBenefit = Math.round(totalAmount * 0.10);
   const appliedWalletAmount = (useWalletCashback && walletBalance > 0) ? Math.min(walletBalance, maxWalletBenefit) : 0;
   const finalTotalPayable = Math.max(0, totalAmount - appliedWalletAmount);
@@ -384,6 +409,9 @@ export default function HotelBookingModal({
           driver_charge: driverCharge,
           gst: gst,
           platform_fee: platformFee,
+          raw_total_price: rawTotalAmount,
+          tier_discount_applied: tierDiscount,
+          customer_tier_at_booking: customerTier,
           total_price: totalAmount,
           wallet_amount_used: appliedWalletAmount,
           final_payable: finalTotalPayable,
@@ -434,7 +462,9 @@ export default function HotelBookingModal({
         vehicle_image: selectedBookingItem.image || selectedBookingItem.image_url || '',
         booking_days: nights,
         duration: `${nights} Nights / ${nights + 1} Days`,
-        total_amount: totalAmount,
+        total_amount: rawTotalAmount,
+        tier_discount_applied: tierDiscount,
+        customer_tier_at_booking: customerTier,
         wallet_amount_used: appliedWalletAmount,
         amount_paid: payableNow,
         total_paid: totalAmount,
@@ -1370,6 +1400,50 @@ export default function HotelBookingModal({
                               <div className="d-flex justify-content-between mb-1.5 text-muted">
                                   <span>Chauffeur Service ({driverServiceType}):</span>
                                   <span>₹{driverCharge.toLocaleString('en-IN')}</span>
+                              </div>
+                            )}
+
+                            {/* Loyalty Tier Recognition & Perks */}
+                            {loyaltyInfo && customerTier !== 'New Member' && (
+                              <div className="p-2 rounded-3 my-2 d-flex align-items-center justify-content-between" style={{
+                                background: customerTier === 'Platinum' ? 'linear-gradient(135deg, #1e1b4b, #312e81)' :
+                                            customerTier === 'Gold' ? 'linear-gradient(135deg, #78350f, #b45309)' :
+                                            customerTier === 'Silver' ? 'linear-gradient(135deg, #334155, #475569)' :
+                                            'linear-gradient(135deg, #7c2d12, #9a3412)',
+                                color: '#fff'
+                              }}>
+                                <div className="d-flex align-items-center gap-1.5">
+                                  <Crown size={14} className="text-warning" />
+                                  <div>
+                                    <span className="fw-bold text-xs">{customerTier} Member</span>
+                                    <span className="text-white-50 ms-1" style={{ fontSize: '10px' }}>({loyaltyInfo.qualifying_trips_count || 0} qualifying trips)</span>
+                                  </div>
+                                </div>
+                                {customerTier === 'Gold' && !isGoldEligible && (
+                                  <span className="badge bg-warning text-dark text-xxs">₹500 off on &gt;₹5k</span>
+                                )}
+                                {customerTier === 'Platinum' && !isPlatinumEligible && (
+                                  <span className="badge bg-light text-dark text-xxs">₹1,000 off on &gt;₹10k</span>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Gold/Platinum Discount Alerts */}
+                            {isGoldEligible && (
+                              <div className="p-2 rounded-3 my-2 text-xs fw-semibold" style={{ background: '#fef3c7', border: '1px solid #f59e0b', color: '#92400e' }}>
+                                🥇 <strong>Gold Member Privilege:</strong> Flat ₹500 instant discount applied!
+                              </div>
+                            )}
+                            {isPlatinumEligible && (
+                              <div className="p-2 rounded-3 my-2 text-xs fw-semibold" style={{ background: '#f5f3ff', border: '1px solid #a855f7', color: '#581c87' }}>
+                                💎 <strong>Platinum VIP Privilege:</strong> Flat ₹1,000 instant discount applied!
+                              </div>
+                            )}
+
+                            {tierDiscount > 0 && (
+                              <div className="d-flex justify-content-between mb-2 text-warning fw-bold">
+                                <span>Tier Privilege Discount:</span>
+                                <span>-₹{tierDiscount.toLocaleString('en-IN')}</span>
                               </div>
                             )}
 

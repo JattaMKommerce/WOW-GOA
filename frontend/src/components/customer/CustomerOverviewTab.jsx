@@ -211,6 +211,7 @@ export default function CustomerOverviewTab({
   hotels = [],
   flights = [],
   activities = [],
+  exploreFocus = '',
   onViewDetails,
   onNavigateTab,
   onSelectBooking,
@@ -234,6 +235,12 @@ export default function CustomerOverviewTab({
   // Category state for Explore More WOW GOA
   const [exploreCategory, setExploreCategory] = useState('selfdrive'); // 'selfdrive' | 'packages' | 'hotels' | 'cars' | 'flights'
   const [selfDriveSubcategory, setSelfDriveSubcategory] = useState('all');
+
+  useEffect(() => {
+    if (exploreFocus === 'explore' || exploreFocus === 'fleets' || exploreFocus === 'book' || exploreFocus === 'selfdrive') {
+      setExploreCategory('selfdrive');
+    }
+  }, [exploreFocus]);
 
   // Bookings passed from CustomerPortalPage are already strictly isolated for the customer
   const myBookings = Array.isArray(bookings) ? bookings : [];
@@ -377,7 +384,7 @@ export default function CustomerOverviewTab({
       </div>
 
       {/* ─── 2. Dedicated Loyalty Tier & Membership Card ─── */}
-      <CustomerLoyaltyCard bookings={myBookings} />
+      <CustomerLoyaltyCard bookings={myBookings} currentUser={currentUser} onNavigateTab={onNavigateTab} />
 
       {/* ─── 2B. Dedicated Cashback Wallet Summary Card ─── */}
       <div className="card border-0 rounded-4 shadow-sm mb-4 overflow-hidden" style={{ background: '#ffffff', border: '1px solid #eef2f6' }}>
@@ -907,8 +914,10 @@ export default function CustomerOverviewTab({
 
       {/* ─── 5. Explore More WOW GOA (Complete Categories & Direct Booking) ─── */}
       <div 
+        id="explore-more-section"
         className="card border-0 rounded-4 overflow-hidden mb-4 bg-white p-3 p-md-4 position-relative" 
         style={{ 
+          scrollMarginTop: '80px',
           border: '2px solid #FFC107', 
           boxShadow: '0 12px 36px rgba(255, 193, 7, 0.15)',
           background: 'linear-gradient(180deg, #FFFFFF 0%, #FFFDF8 100%)'

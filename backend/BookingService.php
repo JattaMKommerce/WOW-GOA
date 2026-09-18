@@ -460,7 +460,35 @@ class BookingService {
             // 8. Generate Authoritative Master Booking ID
             $bookingId = !empty($payload['id']) ? $payload['id'] : ($isB2B ? ('TG-B2B-' . strtoupper(substr(uniqid(), -6))) : ('TG-' . rand(100000, 999999)));
 
-            // 9. Customer Wallet Deduction (D2C - strictly 10% discount/benefit only)
+            // 9a. Server-Side Tier Discount Enforcement (D2C only)
+            $tierDiscountApplied = 0.00;
+            $customerTierAtBooking = 'New Member';
+            if (!$isB2B && function_exists('calculateCustomerTiers')) {
+                try {
+                    $tierData = calculateCustomerTiers($pdo, $rawPhone);
+                    $resolvedTier = $tierData['resolved_tier'] ?? 'New Member';
+                    $customerTierAtBooking = $resolvedTier;
+                    // Gold: ₹500 flat discount on bookings > ₹5,000
+                    if ($resolvedTier === 'Gold' && $totalAmount > 5000) {
+                        $tierDiscountApplied = 500.00;
+                    }
+                    // Platinum: ₹1,000 flat discount on bookings > ₹10,000
+                    // (only if upgrade not requested — mutually exclusive)
+                    elseif ($resolvedTier === 'Platinum' && $totalAmount > 10000) {
+                        $customizations = $payload['customizations'] ?? [];
+                        if (is_string($customizations)) $customizations = json_decode($customizations, true) ?? [];
+                        $upgradeRequested = !empty($customizations['platinum_upgrade_requested']);
+                        if (!$upgradeRequested) {
+                            $tierDiscountApplied = 1000.00;
+                        }
+                    }
+                    $totalAmount = max(0, $totalAmount - $tierDiscountApplied);
+                } catch (Exception $tierEx) {
+                    $tierDiscountApplied = 0.00;
+                }
+            }
+
+            // 9b. Customer Wallet Deduction (D2C - strictly 10% of post-tier-discount total)
             $walletAmountUsed = max(0, round(floatval($payload['wallet_amount_used'] ?? 0), 2));
             $maxAllowedWalletBenefit = round($totalAmount * 0.10, 2);
             if ($walletAmountUsed > $maxAllowedWalletBenefit) {
@@ -497,6 +525,7 @@ class BookingService {
                 customizations, created_at, payment_method, admin_id, driver_required, driver_charge,
                 driver_days, driver_earning, driver_payment_status, image, vehicle_image, date_of_birth,
                 type, wallet_amount_used, cashback_earned, cashback_status,
+                tier_discount_applied, customer_tier_at_booking,
                 booking_channel, b2b_mode, b2b_partner_id, b2b_partner_name,
                 b2b_original_price, b2b_base_price, b2b_tax_amount,
                 b2b_commission_percentage, b2b_commission_amount, b2b_commission_status,
@@ -509,6 +538,7 @@ class BookingService {
                 ?, ?, ?, ?, ?, ?,
                 ?, ?, ?, ?, ?, ?,
                 ?, ?, ?, ?,
+                ?, ?,
                 ?, ?, ?, ?,
                 ?, ?, ?,
                 ?, ?, ?,
@@ -563,6 +593,8 @@ class BookingService {
                 $walletAmountUsed,
                 $cashbackEarned,
                 $cashbackStatus,
+                $tierDiscountApplied,
+                $customerTierAtBooking,
                 $finalChannel,
                 $isGenuineB2B ? ($commercials['b2b_mode'] ?? null) : null,
                 $authoritativeB2BPartnerId,

@@ -102,6 +102,36 @@ export default function PackageCustomizationPage({
   // Payment Options State
   const [paymentMode, setPaymentMode] = useState('full'); // 'full' or 'advance'
   const [serverPriceData, setServerPriceData] = useState(null);
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [useWalletCashback, setUseWalletCashback] = useState(false);
+  const [loyaltyInfo, setLoyaltyInfo] = useState(null);
+
+  // Fetch customer wallet & loyalty tier when contactPhone is entered
+  useEffect(() => {
+    const clean = String(contactPhone || '').replace(/\D/g, '');
+    if (clean.length >= 10) {
+      api.fetchCustomerWallet(clean).then(w => {
+        if (w && w.available_balance > 0) {
+          setWalletBalance(w.available_balance);
+        } else {
+          setWalletBalance(0);
+          setUseWalletCashback(false);
+        }
+        if (w && w.loyalty) {
+          setLoyaltyInfo(w.loyalty);
+        } else {
+          setLoyaltyInfo(null);
+        }
+      }).catch(() => {
+        setWalletBalance(0);
+        setLoyaltyInfo(null);
+      });
+    } else {
+      setWalletBalance(0);
+      setUseWalletCashback(false);
+      setLoyaltyInfo(null);
+    }
+  }, [contactPhone]);
 
   // Persist non-sensitive draft state to sessionStorage
   useEffect(() => {
@@ -453,9 +483,34 @@ export default function PackageCustomizationPage({
 
     const lead = travellers[0] || {};
     const leadName = `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || 'Valued Guest';
-    const actualTotal = Number(priceData.total_price || totalPrice || resolvedPricing.price || 0);
+    const rawTotal = Number(priceData.total_price || totalPrice || resolvedPricing.price || 0);
+
+    // Authoritative Loyalty Tier & Tier Discount Enforcement
+    const customerTier = loyaltyInfo?.tier || loyaltyInfo?.current_tier || 'New Member';
+    const isGold = customerTier === 'Gold';
+    const isPlatinum = customerTier === 'Platinum';
+
+    const isGoldEligible = isGold && rawTotal > 5000;
+    const isPlatinumEligible = isPlatinum && rawTotal > 10000;
+
+    let tierDiscount = 0;
+    if (isGoldEligible) {
+      tierDiscount = 500;
+    } else if (isPlatinumEligible) {
+      tierDiscount = 1000;
+    }
+
+    const actualTotal = Math.max(0, rawTotal - tierDiscount);
+    const maxWalletBenefit = Math.round(actualTotal * 0.10);
+    const appliedWalletAmount = (useWalletCashback && walletBalance > 0) ? Math.min(walletBalance, maxWalletBenefit) : 0;
+    const finalTotalPayable = Math.max(0, actualTotal - appliedWalletAmount);
+
     const isAdvance = paymentMode === 'advance';
-    const actualPaid = isAdvance ? Number(priceData.advance_amount || Math.round((actualTotal * 25) / 100)) : actualTotal;
+    const advancePercent = pkg.advance_percentage || 25;
+    const advanceAmount = Math.round((actualTotal * advancePercent) / 100);
+    const actualPaid = isAdvance 
+      ? Math.max(0, advanceAmount - appliedWalletAmount) 
+      : finalTotalPayable;
 
     const durationStr = pkg?.duration || `${nights} Nights / ${days} Days`;
 
@@ -492,12 +547,15 @@ export default function PackageCustomizationPage({
       image: pkg.image || pkg.image_url || '',
       hotel_name: customizations?.hotel?.name || pkg.hotel_included || '',
       booking_days: nights,
-      total_paid: actualPaid,
-      total_amount: actualTotal,
+      total_paid: isAdvance ? (advanceAmount + appliedWalletAmount) : actualTotal,
+      total_amount: rawTotal,
+      tier_discount_applied: tierDiscount,
+      customer_tier_at_booking: customerTier,
+      wallet_amount_used: appliedWalletAmount,
       amount_paid: actualPaid,
       paid_amount: actualPaid,
-      remaining_amount: actualTotal - actualPaid,
-      pending_amount: actualTotal - actualPaid,
+      remaining_amount: Math.max(0, actualTotal - (actualPaid + appliedWalletAmount)),
+      pending_amount: Math.max(0, actualTotal - (actualPaid + appliedWalletAmount)),
       status: 'Confirmed',
       payment_status: isAdvance ? 'Partial' : 'Full',
       payment_mode: paymentMode,
@@ -1188,6 +1246,10 @@ export default function PackageCustomizationPage({
           setPaymentMode={setPaymentMode} 
           departureDate={activeDepDate}
           returnDate={activeRetDate}
+          walletBalance={walletBalance}
+          useWalletCashback={useWalletCashback}
+          setUseWalletCashback={setUseWalletCashback}
+          loyaltyInfo={loyaltyInfo}
           onBack={() => {
             if (document.activeElement && typeof document.activeElement.blur === 'function') {
               document.activeElement.blur();

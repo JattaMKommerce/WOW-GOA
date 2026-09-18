@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import {
   Compass, MapPin, Clock, Users, Calendar, CheckCircle2,
   Search, Sparkles, Filter, ChevronRight, AlertCircle, Eye,
-  ArrowRight, ShieldCheck, Tag, X, Check, User, Mail, Phone, Cake
+  ArrowRight, ShieldCheck, Tag, X, Check, User, Mail, Phone, Cake,
+  Wallet, Crown, Gift
 } from 'lucide-react';
 import * as api from '../../services/api';
 import { getTodayDateStr, getNextDayDateStr } from '../../utils/dateUtils';
@@ -55,11 +56,14 @@ export default function CustomerActivitiesTab({
   const [travelDate, setTravelDate] = useState(getTodayDateStr());
   const [guests, setGuests] = useState(2);
   const [contactName, setContactName] = useState(currentUser?.name || '');
-  const [contactPhone, setContactPhone] = useState(currentUser?.phone || '');
   const [contactEmail, setContactEmail] = useState(currentUser?.email || '');
+  const [contactPhone, setContactPhone] = useState(currentUser?.phone || '');
   const [contactDob, setContactDob] = useState(currentUser?.date_of_birth || '');
-  const [isDobSaved, setIsDobSaved] = useState(false);
+  const [isDobSaved, setIsDobSaved] = useState(Boolean(currentUser?.date_of_birth));
   const [dobChecking, setDobChecking] = useState(false);
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [useWalletCashback, setUseWalletCashback] = useState(false);
+  const [loyaltyInfo, setLoyaltyInfo] = useState(null);
 
   // Optional Private Driver States
   const [driverRequired, setDriverRequired] = useState(false);
@@ -86,7 +90,7 @@ export default function CustomerActivitiesTab({
     }
   });
 
-  // Repeat customer lookup for Date of Birth & name pre-population
+  // Repeat customer lookup for Date of Birth & Wallet Balance & Loyalty Tier
   useEffect(() => {
     const clean = String(contactPhone || '').replace(/\D/g, '');
     if (clean.length >= 10) {
@@ -106,8 +110,29 @@ export default function CustomerActivitiesTab({
       }).finally(() => {
         setDobChecking(false);
       });
+
+      // Fetch customer wallet balance & loyalty tier
+      api.fetchCustomerWallet(clean).then(w => {
+        if (w && w.available_balance > 0) {
+          setWalletBalance(w.available_balance);
+        } else {
+          setWalletBalance(0);
+          setUseWalletCashback(false);
+        }
+        if (w && w.loyalty) {
+          setLoyaltyInfo(w.loyalty);
+        } else {
+          setLoyaltyInfo(null);
+        }
+      }).catch(() => {
+        setWalletBalance(0);
+        setLoyaltyInfo(null);
+      });
     } else {
       setIsDobSaved(false);
+      setWalletBalance(0);
+      setUseWalletCashback(false);
+      setLoyaltyInfo(null);
     }
   }, [contactPhone]);
 
@@ -344,7 +369,27 @@ export default function CustomerActivitiesTab({
       const driverCharge = driverRequired ? (driverServiceType === 'FULL' ? 800 : 400) : 0;
       const subtotal = baseActivityCost + driverCharge;
       const gst = Math.round(subtotal * 0.05); // 5% GST
-      const totalCost = subtotal + gst;
+      const rawTotalCost = subtotal + gst;
+
+      // Authoritative Loyalty Tier & Tier Discount Enforcement
+      const customerTier = loyaltyInfo?.tier || loyaltyInfo?.current_tier || 'New Member';
+      const isGold = customerTier === 'Gold';
+      const isPlatinum = customerTier === 'Platinum';
+
+      const isGoldEligible = isGold && rawTotalCost > 5000;
+      const isPlatinumEligible = isPlatinum && rawTotalCost > 10000;
+
+      let tierDiscount = 0;
+      if (isGoldEligible) {
+        tierDiscount = 500;
+      } else if (isPlatinumEligible) {
+        tierDiscount = 1000;
+      }
+
+      const postTierTotal = Math.max(0, rawTotalCost - tierDiscount);
+      const maxWalletBenefit = Math.round(postTierTotal * 0.10);
+      const appliedWalletAmount = (useWalletCashback && walletBalance > 0) ? Math.min(walletBalance, maxWalletBenefit) : 0;
+      const finalPayable = Math.max(0, postTierTotal - appliedWalletAmount);
 
       const finalPickupLocResolved = driverPickupLoc === 'Custom Address' ? driverPickupCustomLoc : driverPickupLoc;
       const finalDropLocResolved = driverDropLoc === 'Custom Address' ? driverDropCustomLoc : driverDropLoc;
@@ -402,9 +447,12 @@ export default function CustomerActivitiesTab({
         driver_details: driverDetailsPayload,
         subtotal: subtotal,
         tax: gst,
-        total_amount: totalCost,
-        amount_paid: totalCost,
-        total_paid: totalCost,
+        total_amount: rawTotalCost,
+        tier_discount_applied: tierDiscount,
+        customer_tier_at_booking: customerTier,
+        wallet_amount_used: appliedWalletAmount,
+        amount_paid: finalPayable,
+        total_paid: postTierTotal,
         pending_amount: 0,
         status: 'Confirmed',
         notes: `Guests: ${guests} | Category: ${bookingModalItem.category || 'Experience'} | DOB: ${contactDob}${driverRequired ? ` | Driver: ${driverServiceType} (₹${driverCharge})` : ''}`
@@ -772,7 +820,25 @@ export default function CustomerActivitiesTab({
         const baseActivityCost = pricePerPerson * guests;
         const subtotal = baseActivityCost + driverCharge;
         const gst = Math.round(subtotal * 0.05); // 5% GST
-        const finalTotal = subtotal + gst;
+        const rawTotal = subtotal + gst;
+
+        // Authoritative Loyalty Tier & Tier Discount Enforcement
+        const customerTier = loyaltyInfo?.tier || loyaltyInfo?.current_tier || 'New Member';
+        const isGold = customerTier === 'Gold';
+        const isPlatinum = customerTier === 'Platinum';
+        const isGoldEligible = isGold && rawTotal > 5000;
+        const isPlatinumEligible = isPlatinum && rawTotal > 10000;
+
+        let tierDiscount = 0;
+        if (isGoldEligible) tierDiscount = 500;
+        else if (isPlatinumEligible) tierDiscount = 1000;
+
+        const postTierTotal = Math.max(0, rawTotal - tierDiscount);
+        const maxWalletBenefit = Math.round(postTierTotal * 0.10);
+        const appliedWalletAmount = (useWalletCashback && walletBalance > 0) ? Math.min(walletBalance, maxWalletBenefit) : 0;
+        const finalTotal = Math.max(0, postTierTotal - appliedWalletAmount);
+        const projectedCashback = Math.round(finalTotal * 0.10);
+
         const itemThumbnail = bookingModalItem.image_url ||
           bookingModalItem.image ||
           bookingModalItem.thumbnail ||
@@ -1458,12 +1524,96 @@ export default function CustomerActivitiesTab({
                                 <span className="text-dark fw-semibold">₹{gst.toLocaleString('en-IN')}</span>
                               </div>
 
+                              {/* Loyalty Tier Recognition & Perks */}
+                              {loyaltyInfo && customerTier !== 'New Member' && (
+                                <div className="p-2 rounded-3 my-2 d-flex align-items-center justify-content-between" style={{
+                                  background: customerTier === 'Platinum' ? 'linear-gradient(135deg, #1e1b4b, #312e81)' :
+                                              customerTier === 'Gold' ? 'linear-gradient(135deg, #78350f, #b45309)' :
+                                              customerTier === 'Silver' ? 'linear-gradient(135deg, #334155, #475569)' :
+                                              'linear-gradient(135deg, #7c2d12, #9a3412)',
+                                  color: '#fff'
+                                }}>
+                                  <div className="d-flex align-items-center gap-1.5">
+                                    <Crown size={14} className="text-warning" />
+                                    <div>
+                                      <span className="fw-bold text-xs">{customerTier} Member</span>
+                                    </div>
+                                  </div>
+                                  {customerTier === 'Gold' && !isGoldEligible && (
+                                    <span className="badge bg-warning text-dark text-xxs">₹500 off on &gt;₹5k</span>
+                                  )}
+                                  {customerTier === 'Platinum' && !isPlatinumEligible && (
+                                    <span className="badge bg-light text-dark text-xxs">₹1,000 off on &gt;₹10k</span>
+                                  )}
+                                </div>
+                              )}
+
+                              {isGoldEligible && (
+                                <div className="p-2 rounded-3 my-2 text-xs fw-semibold" style={{ background: '#fef3c7', border: '1px solid #f59e0b', color: '#92400e' }}>
+                                  🥇 <strong>Gold Privilege:</strong> -₹500 applied!
+                                </div>
+                              )}
+                              {isPlatinumEligible && (
+                                <div className="p-2 rounded-3 my-2 text-xs fw-semibold" style={{ background: '#f5f3ff', border: '1px solid #a855f7', color: '#581c87' }}>
+                                  💎 <strong>Platinum Privilege:</strong> -₹1,000 applied!
+                                </div>
+                              )}
+
+                              {tierDiscount > 0 && (
+                                <div className="d-flex justify-content-between align-items-center text-xs text-warning fw-bold mb-2">
+                                  <span>Tier Privilege Discount:</span>
+                                  <span>-₹{tierDiscount.toLocaleString('en-IN')}</span>
+                                </div>
+                              )}
+
+                              {walletBalance > 0 && (
+                                <div className="p-2 rounded-3 my-2" style={{ background: '#ecfdf5', border: '1px solid #a7f3d0' }}>
+                                  <div className="d-flex align-items-center justify-content-between">
+                                    <div className="d-flex align-items-center gap-1.5">
+                                      <Wallet size={14} className="text-success" />
+                                      <div>
+                                        <div className="fw-bold text-dark text-xs">WOW GOA Wallet</div>
+                                        <div className="text-muted" style={{ fontSize: '10px' }}>Available: ₹{walletBalance.toLocaleString('en-IN')}</div>
+                                      </div>
+                                    </div>
+                                    <div className="form-check form-switch mb-0">
+                                      <input 
+                                        type="checkbox" 
+                                        className="form-check-input" 
+                                        id="useActivityWallet"
+                                        checked={useWalletCashback}
+                                        onChange={(e) => setUseWalletCashback(e.target.checked)}
+                                        style={{ cursor: 'pointer' }}
+                                      />
+                                      <label className="form-check-label text-xs fw-bold text-success" htmlFor="useActivityWallet">
+                                        Use ₹{Math.min(walletBalance, maxWalletBenefit).toLocaleString('en-IN')}
+                                      </label>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {appliedWalletAmount > 0 && (
+                                <div className="d-flex justify-content-between align-items-center text-xs text-success fw-bold mb-2">
+                                  <span>Wallet Cashback Applied:</span>
+                                  <span>-₹{appliedWalletAmount.toLocaleString('en-IN')}</span>
+                                </div>
+                              )}
+
                               <div className="d-flex justify-content-between align-items-center pt-2.5 border-top border-slate-200">
                                 <div>
                                   <span className="text-xxs text-uppercase fw-bold text-muted d-block">Final Total Payable</span>
                                 </div>
                                 <div className="fs-4 fw-black text-dark font-heading">
                                   ₹{finalTotal.toLocaleString('en-IN')}
+                                </div>
+                              </div>
+
+                              {/* 10% Cashback Earning Preview */}
+                              <div className="mt-2.5 p-2 rounded-3 text-center" style={{ background: '#fef3c7', border: '1px solid #fde68a' }}>
+                                <div className="text-xs fw-bold text-dark d-flex align-items-center justify-content-center gap-1">
+                                  <Gift size={13} className="text-warning" />
+                                  <span>10% Cashback You Will Earn: <strong className="text-success font-heading">₹{projectedCashback.toLocaleString('en-IN')}</strong></span>
                                 </div>
                               </div>
                             </div>

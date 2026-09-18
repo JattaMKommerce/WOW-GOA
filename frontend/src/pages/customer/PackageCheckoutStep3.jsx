@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeft, CheckCircle2, ShieldCheck, CreditCard, ChevronRight, Calendar } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, ShieldCheck, CreditCard, ChevronRight, Calendar, Wallet, Crown, Gift } from 'lucide-react';
 import { formatDisplayDate } from '../../utils/dateUtils';
 
 export default function PackageCheckoutStep3({
@@ -9,14 +9,37 @@ export default function PackageCheckoutStep3({
   serverPriceData,
   paymentMode,
   setPaymentMode,
+  walletBalance = 0,
+  useWalletCashback = false,
+  setUseWalletCashback = () => {},
+  loyaltyInfo = null,
   onBack,
   onCheckout
 }) {
   if (!serverPriceData) return null;
 
-  const total = serverPriceData.total_price;
+  const rawTotal = serverPriceData.total_price;
+  const customerTier = loyaltyInfo?.tier || loyaltyInfo?.current_tier || 'New Member';
+  const isGold = customerTier === 'Gold';
+  const isPlatinum = customerTier === 'Platinum';
+
+  const isGoldEligible = isGold && rawTotal > 5000;
+  const isPlatinumEligible = isPlatinum && rawTotal > 10000;
+
+  let tierDiscount = 0;
+  if (isGoldEligible) tierDiscount = 500;
+  else if (isPlatinumEligible) tierDiscount = 1000;
+
+  const total = Math.max(0, rawTotal - tierDiscount);
   const advancePercent = serverPriceData.advance_percentage || 25;
-  const advance = serverPriceData.advance_amount || Math.round((total * advancePercent) / 100);
+  const advance = Math.round((total * advancePercent) / 100);
+
+  const maxWalletBenefit = Math.round(total * 0.10);
+  const appliedWalletAmount = (useWalletCashback && walletBalance > 0) ? Math.min(walletBalance, maxWalletBenefit) : 0;
+  const finalPayableTotal = Math.max(0, total - appliedWalletAmount);
+  const finalPayableAdvance = Math.max(0, advance - appliedWalletAmount);
+  const payableAmount = paymentMode === 'full' ? finalPayableTotal : finalPayableAdvance;
+  const projectedCashback = Math.round(finalPayableTotal * 0.10);
 
   const handleCheckoutClick = (e) => {
     if (e && e.preventDefault) e.preventDefault();
@@ -93,7 +116,7 @@ export default function PackageCheckoutStep3({
                          <div className="flex-grow-1">
                              <div className="fw-bold d-flex justify-content-between">
                                  <span>Pay Full Amount</span>
-                                 <span>₹{total.toLocaleString('en-IN')}</span>
+                                 <span>₹{finalPayableTotal.toLocaleString('en-IN')}</span>
                              </div>
                              <div className="small text-muted mt-1">Pay the complete amount now and travel hassle-free.</div>
                          </div>
@@ -112,9 +135,9 @@ export default function PackageCheckoutStep3({
                          <div className="flex-grow-1">
                              <div className="fw-bold d-flex justify-content-between">
                                  <span>Pay To Hold ({advancePercent}%)</span>
-                                 <span>₹{advance.toLocaleString('en-IN')}</span>
+                                 <span>₹{finalPayableAdvance.toLocaleString('en-IN')}</span>
                              </div>
-                             <div className="small text-muted mt-1">Pay ₹{advance.toLocaleString('en-IN')} now to confirm your booking. The remaining ₹{(total - advance).toLocaleString('en-IN')} must be paid before travel.</div>
+                             <div className="small text-muted mt-1">Pay ₹{finalPayableAdvance.toLocaleString('en-IN')} now to confirm your booking. The remaining ₹{(total - advance).toLocaleString('en-IN')} must be paid before travel.</div>
                          </div>
                      </div>
                   </div>
@@ -129,14 +152,89 @@ export default function PackageCheckoutStep3({
                      
                      <div className="d-flex justify-content-between mb-2 small">
                          <span className="text-muted">Total Package Cost</span>
-                         <span className="fw-bold">₹{total.toLocaleString('en-IN')}</span>
+                         <span className="fw-bold">₹{rawTotal.toLocaleString('en-IN')}</span>
                      </div>
+
+                     {/* Loyalty Tier Recognition & Perks */}
+                     {loyaltyInfo && customerTier !== 'New Member' && (
+                       <div className="p-2 rounded-3 my-2 d-flex align-items-center justify-content-between" style={{
+                         background: customerTier === 'Platinum' ? 'linear-gradient(135deg, #1e1b4b, #312e81)' :
+                                     customerTier === 'Gold' ? 'linear-gradient(135deg, #78350f, #b45309)' :
+                                     customerTier === 'Silver' ? 'linear-gradient(135deg, #334155, #475569)' :
+                                     'linear-gradient(135deg, #7c2d12, #9a3412)',
+                         color: '#fff',
+                         fontSize: '12px'
+                       }}>
+                         <div className="d-flex align-items-center gap-1.5">
+                           <Crown size={14} className="text-warning" />
+                           <span className="fw-bold">{customerTier} Member</span>
+                         </div>
+                         {customerTier === 'Gold' && !isGoldEligible && (
+                           <span className="badge bg-warning text-dark text-xxs">₹500 off on &gt;₹5k</span>
+                         )}
+                         {customerTier === 'Platinum' && !isPlatinumEligible && (
+                           <span className="badge bg-light text-dark text-xxs">₹1,000 off on &gt;₹10k</span>
+                         )}
+                       </div>
+                     )}
+
+                     {isGoldEligible && (
+                       <div className="p-2 rounded-3 my-2 text-xs fw-semibold" style={{ background: '#fef3c7', border: '1px solid #f59e0b', color: '#92400e' }}>
+                         🥇 <strong>Gold Privilege:</strong> -₹500 instant discount applied!
+                       </div>
+                     )}
+                     {isPlatinumEligible && (
+                       <div className="p-2 rounded-3 my-2 text-xs fw-semibold" style={{ background: '#f5f3ff', border: '1px solid #a855f7', color: '#581c87' }}>
+                         💎 <strong>Platinum Privilege:</strong> -₹1,000 instant discount applied!
+                       </div>
+                     )}
+
+                     {tierDiscount > 0 && (
+                       <div className="d-flex justify-content-between mb-2 small text-warning fw-bold">
+                         <span>Tier Privilege Discount</span>
+                         <span>-₹{tierDiscount.toLocaleString('en-IN')}</span>
+                       </div>
+                     )}
+
+                     {walletBalance > 0 && (
+                       <div className="p-2.5 rounded-3 my-2" style={{ background: '#ecfdf5', border: '1px solid #a7f3d0' }}>
+                         <div className="d-flex align-items-center justify-content-between">
+                           <div className="d-flex align-items-center gap-1.5">
+                             <Wallet size={14} className="text-success" />
+                             <div>
+                               <div className="fw-bold text-dark text-xs">WOW GOA Wallet</div>
+                               <div className="text-muted" style={{ fontSize: '10px' }}>Available: ₹{walletBalance.toLocaleString('en-IN')}</div>
+                             </div>
+                           </div>
+                           <div className="form-check form-switch mb-0">
+                             <input 
+                               type="checkbox" 
+                               className="form-check-input" 
+                               id="usePkgWallet"
+                               checked={useWalletCashback}
+                               onChange={(e) => setUseWalletCashback(e.target.checked)}
+                               style={{ cursor: 'pointer' }}
+                             />
+                             <label className="form-check-label text-xs fw-bold text-success" htmlFor="usePkgWallet">
+                               Use ₹{Math.min(walletBalance, maxWalletBenefit).toLocaleString('en-IN')}
+                             </label>
+                           </div>
+                         </div>
+                       </div>
+                     )}
+
+                     {appliedWalletAmount > 0 && (
+                       <div className="d-flex justify-content-between mb-2 small text-success fw-bold">
+                         <span>Wallet Cashback Applied</span>
+                         <span>-₹{appliedWalletAmount.toLocaleString('en-IN')}</span>
+                       </div>
+                     )}
                      
                      <hr className="my-3 text-muted"/>
                      
                      <div className="d-flex justify-content-between mb-3">
                          <span className="fw-bold fs-5 text-dark">Amount Payable</span>
-                         <span className="fw-bold fs-5 text-primary">₹{(paymentMode === 'full' ? total : advance).toLocaleString('en-IN')}</span>
+                         <span className="fw-bold fs-5 text-primary">₹{payableAmount.toLocaleString('en-IN')}</span>
                      </div>
 
                      <button 
@@ -145,9 +243,18 @@ export default function PackageCheckoutStep3({
                        onClick={handleCheckoutClick}
                        style={{ background: 'linear-gradient(90deg, #FF6333, #FF8A00)', borderColor: '#FF6333' }}
                      >
-                         <span>Confirm &amp; Pay ₹{(paymentMode === 'full' ? total : advance).toLocaleString('en-IN')}</span>
+                         <span>Confirm &amp; Pay ₹{payableAmount.toLocaleString('en-IN')}</span>
                          <ChevronRight size={18}/>
                      </button>
+
+                     {/* 10% Cashback Earning Preview */}
+                     <div className="mt-2.5 p-2 rounded-3 text-center" style={{ background: '#fef3c7', border: '1px solid #fde68a' }}>
+                       <div className="text-xs fw-bold text-dark d-flex align-items-center justify-content-center gap-1">
+                         <Gift size={13} className="text-warning" />
+                         <span>10% Cashback You Will Earn: <strong className="text-success">₹{projectedCashback.toLocaleString('en-IN')}</strong></span>
+                       </div>
+                     </div>
+
                      <p className="text-center text-muted mt-3 mb-0" style={{fontSize: '11px'}}>By proceeding, you agree to our Terms &amp; Conditions.</p>
                   </div>
                </div>
