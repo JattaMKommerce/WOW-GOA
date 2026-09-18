@@ -732,10 +732,23 @@ function UserManagementTab({ usersList = [] }) {
 }
 
 // ─── VENDOR MANAGEMENT TAB (With Eye Icon / Details Modal) ──────────────────────
-function VendorManagementTab({ vendors = [], cars = [], bikes = [], hotels = [] }) {
+function VendorManagementTab({ vendors = [], cars = [], bikes = [], hotels = [], onApproveVendor }) {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   const [viewVendor, setViewVendor] = useState(null);
+  const [approvingId, setApprovingId] = useState(null);
+
+  const handleApprove = async (vendorId) => {
+    if (!onApproveVendor || approvingId) return;
+    setApprovingId(vendorId);
+    try {
+      await onApproveVendor(vendorId);
+    } catch (err) {
+      alert(err.message || 'Failed to approve vendor');
+    } finally {
+      setApprovingId(null);
+    }
+  };
   
   const filtered = vendors.filter(v => {
     let matchType = true;
@@ -789,15 +802,29 @@ function VendorManagementTab({ vendors = [], cars = [], bikes = [], hotels = [] 
             <td className="px-3 py-2"><StatusBadge status={v.status || 'active'} /></td>
             <td className="px-3 py-2" style={{ color: '#16a34a', fontWeight: 700 }}>10%</td>
             <td className="px-3 py-2">
-              <button
-                type="button"
-                className="btn btn-sm px-2.5 py-1 rounded-2 d-inline-flex align-items-center gap-1"
-                style={{ background: '#dbeafe', color: '#2563eb', fontSize: '0.72rem', fontWeight: 600 }}
-                onClick={() => setViewVendor(v)}
-                title="View Vendor Details"
-              >
-                <Eye size={12} /> View Details
-              </button>
+              <div className="d-flex align-items-center gap-1.5">
+                {(String(v.status || v.user_status || '').toLowerCase() === 'pending') && onApproveVendor && (
+                  <button
+                    type="button"
+                    className="btn btn-sm px-2.5 py-1 rounded-2 fw-bold d-inline-flex align-items-center gap-1"
+                    style={{ background: '#dcfce7', color: '#16a34a', fontSize: '0.72rem' }}
+                    disabled={approvingId === v.id}
+                    onClick={() => handleApprove(v.id)}
+                    title="Approve Pending Vendor"
+                  >
+                    <CheckCircle size={12} /> {approvingId === v.id ? 'Approving...' : 'Approve'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-sm px-2.5 py-1 rounded-2 d-inline-flex align-items-center gap-1"
+                  style={{ background: '#dbeafe', color: '#2563eb', fontSize: '0.72rem', fontWeight: 600 }}
+                  onClick={() => setViewVendor(v)}
+                  title="View Vendor Details"
+                >
+                  <Eye size={12} /> View Details
+                </button>
+              </div>
             </td>
           </tr>
         ))}
@@ -812,6 +839,23 @@ function VendorManagementTab({ vendors = [], cars = [], bikes = [], hotels = [] 
                 <h6 className="fw-bold mb-0 text-primary" style={{ fontSize: '14px' }}>{viewVendor.name || viewVendor.username}</h6>
                 <StatusBadge status={viewVendor.status || 'active'} />
               </div>
+              {(String(viewVendor.status || viewVendor.user_status || '').toLowerCase() === 'pending') && onApproveVendor && (
+                <div className="p-2.5 rounded-2 d-flex align-items-center justify-content-between mb-2" style={{ background: '#fef3c7', border: '1px solid #fde68a' }}>
+                  <small className="text-warning-emphasis fw-bold">Pending verification & approval</small>
+                  <button
+                    type="button"
+                    className="btn btn-sm px-3 py-1 rounded-2 fw-bold d-inline-flex align-items-center gap-1 text-white"
+                    style={{ background: '#16a34a', fontSize: '0.75rem' }}
+                    disabled={approvingId === viewVendor.id}
+                    onClick={async () => {
+                      await handleApprove(viewVendor.id);
+                      setViewVendor(prev => prev ? { ...prev, status: 'active', user_status: 'active', verified: 1 } : null);
+                    }}
+                  >
+                    <CheckCircle size={13} /> {approvingId === viewVendor.id ? 'Approving...' : 'Approve Account'}
+                  </button>
+                </div>
+              )}
               <div className="row g-2" style={{ fontSize: '13px' }}>
                 <div className="col-6"><span className="text-muted">Vendor ID:</span> <strong>{viewVendor.id}</strong></div>
                 <div className="col-6"><span className="text-muted">Category:</span> <strong>{getRoleLabel(viewVendor.role)}</strong></div>
@@ -1165,30 +1209,69 @@ function LeadManagementTab({ aiLeads = [], customEnquiries = [], onRefresh, user
 }
 
 // ─── KYC & VERIFICATION TAB ──────────────────────────────────────────────────
-function KYCTab({ vendors = [] }) {
-  const pending = vendors.filter(v => !v.verified);
+function KYCTab({ vendors = [], onApproveVendor }) {
+  const [approvingId, setApprovingId] = useState(null);
+
+  const isApproved = (v) => {
+    const s = String(v.status || v.user_status || '').toLowerCase().trim();
+    return s === 'active' || (s !== 'pending' && Boolean(v.verified));
+  };
+
+  const pending = vendors.filter(v => !isApproved(v));
+  const approvedList = vendors.filter(v => isApproved(v));
+
+  const handleApprove = async (vendorId) => {
+    if (!onApproveVendor || approvingId) return;
+    setApprovingId(vendorId);
+    try {
+      await onApproveVendor(vendorId);
+    } catch (err) {
+      alert(err.message || 'Failed to approve vendor');
+    } finally {
+      setApprovingId(null);
+    }
+  };
+
   return (
     <Section title="KYC & Vendor Verification" subtitle="Review and approve vendor documents, GST, PAN, and bank details">
       <div className="row g-3 mb-4">
         <div className="col-md-4"><StatCard label="Pending Verification" value={pending.length} icon={<AlertTriangle size={18} />} color="#ca8a04" /></div>
-        <div className="col-md-4"><StatCard label="Approved Vendors" value={vendors.filter(v => v.verified).length} icon={<CheckCircle size={18} />} color="#16a34a" /></div>
+        <div className="col-md-4"><StatCard label="Approved Vendors" value={approvedList.length} icon={<CheckCircle size={18} />} color="#16a34a" /></div>
         <div className="col-md-4"><StatCard label="Total Registered Vendors" value={vendors.length} icon={<Building size={18} />} color="#2563eb" /></div>
       </div>
       <DataTable headers={['Vendor', 'Email Address', 'Type', 'GST Status', 'PAN Status', 'Bank Status', 'Verification', 'Action']} empty={vendors.length === 0 ? 'No vendors found' : null}>
-        {vendors.map(v => (
-          <tr key={v.id}>
-            <td className="px-3 py-2 fw-bold">{v.name || v.username}</td>
-            <td className="px-3 py-2 text-muted">{v.email || '—'}</td>
-            <td className="px-3 py-2"><StatusBadge status={v.role === 'hotel_vendor' ? 'hotel_vendor' : 'vendor'} /></td>
-            <td className="px-3 py-2"><StatusBadge status={v.gst_number ? 'approved' : 'pending'} /></td>
-            <td className="px-3 py-2"><StatusBadge status={v.pan_number ? 'approved' : 'pending'} /></td>
-            <td className="px-3 py-2"><StatusBadge status={v.bank_account ? 'approved' : 'pending'} /></td>
-            <td className="px-3 py-2"><StatusBadge status={v.verified ? 'approved' : 'pending'} /></td>
-            <td className="px-3 py-2">
-              <button type="button" className="btn btn-sm px-2.5 py-1 rounded-2 fw-bold" style={{ background: '#dcfce7', color: '#16a34a', fontSize: '0.72rem' }}>Approve</button>
-            </td>
-          </tr>
-        ))}
+        {vendors.map(v => {
+          const approved = isApproved(v);
+          const isCurrentLoading = approvingId === v.id;
+          return (
+            <tr key={v.id}>
+              <td className="px-3 py-2 fw-bold">{v.name || v.username}</td>
+              <td className="px-3 py-2 text-muted">{v.email || '—'}</td>
+              <td className="px-3 py-2"><StatusBadge status={v.role === 'hotel_vendor' ? 'hotel_vendor' : (v.role === 'flight_vendor' ? 'flight_vendor' : 'vendor')} /></td>
+              <td className="px-3 py-2"><StatusBadge status={v.gst_number ? 'approved' : 'pending'} /></td>
+              <td className="px-3 py-2"><StatusBadge status={v.pan_number ? 'approved' : 'pending'} /></td>
+              <td className="px-3 py-2"><StatusBadge status={v.bank_account ? 'approved' : 'pending'} /></td>
+              <td className="px-3 py-2"><StatusBadge status={approved ? 'approved' : 'pending'} /></td>
+              <td className="px-3 py-2">
+                {approved ? (
+                  <span className="badge rounded-pill fw-bold" style={{ background: '#dcfce7', color: '#16a34a', fontSize: '0.72rem', padding: '5px 10px' }}>
+                    ✓ Approved
+                  </span>
+                ) : (
+                  <button 
+                    type="button" 
+                    className="btn btn-sm px-2.5 py-1 rounded-2 fw-bold" 
+                    style={{ background: '#dcfce7', color: '#16a34a', fontSize: '0.72rem' }}
+                    disabled={isCurrentLoading}
+                    onClick={() => handleApprove(v.id)}
+                  >
+                    {isCurrentLoading ? 'Approving...' : 'Approve'}
+                  </button>
+                )}
+              </td>
+            </tr>
+          );
+        })}
       </DataTable>
     </Section>
   );
@@ -2328,6 +2411,7 @@ export default function SuperAdminDashboard({
   onAddUser,
   onUpdateUser,
   onDeleteUser,
+  onApproveVendor,
 }) {
   switch (activeTab) {
     case 'dashboard':
@@ -2365,9 +2449,9 @@ export default function SuperAdminDashboard({
     case 'user_management':
       return <UserManagementTab usersList={usersList} />;
     case 'vendor_management':
-      return <VendorManagementTab vendors={vendors} cars={cars} bikes={bikes} hotels={hotels} />;
+      return <VendorManagementTab vendors={vendors} cars={cars} bikes={bikes} hotels={hotels} onApproveVendor={onApproveVendor} />;
     case 'vendor_verification':
-      return <KYCTab vendors={vendors} />;
+      return <KYCTab vendors={vendors} onApproveVendor={onApproveVendor} />;
     case 'lead_management':
       return <LeadManagement usersList={usersList} currentUser={currentUser} />;
     case 'hotel_bookings':

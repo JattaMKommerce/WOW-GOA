@@ -525,6 +525,37 @@ export default function SuperAdminPortalPage({
     }
   };
 
+  const handlePortalApproveVendor = async (vendorId) => {
+    try {
+      const res = await api.approveVendor(vendorId);
+      if (res && res.success) {
+        setSuperToasts(prev => [
+          ...prev.slice(-4),
+          {
+            toastId: `stoast-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+            title: 'Vendor Approved',
+            message: res.message || 'Vendor account successfully approved and activated.'
+          }
+        ]);
+        await loadAllPortalData();
+        return res;
+      } else {
+        throw new Error(res?.error || 'Failed to approve vendor.');
+      }
+    } catch (err) {
+      console.error('Approve vendor error:', err);
+      setSuperToasts(prev => [
+        ...prev.slice(-4),
+        {
+          toastId: `stoast-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+          title: 'Approval Failed',
+          message: err.message || 'Error occurred while approving vendor.'
+        }
+      ]);
+      throw err;
+    }
+  };
+
   useEffect(() => {
     loadAllPortalData();
     const interval = setInterval(loadAllPortalData, 3500); // 3.5s real-time periodic polling
@@ -1096,6 +1127,7 @@ export default function SuperAdminPortalPage({
             onAddUser={handlePortalAddUser}
             onUpdateUser={handlePortalUpdateUser}
             onDeleteUser={handlePortalDeleteUser}
+            onApproveVendor={handlePortalApproveVendor}
           />
         </div>
       </div>

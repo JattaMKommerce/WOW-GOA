@@ -73,10 +73,17 @@ export default function VehiclePMSDashboard({ currentUser, cars = [], bikes = []
   const [selectedStatusModal, setSelectedStatusModal] = useState(null); // 'available' | 'on_rent' | 'pending' | 'maintenance'
   const [selectedBookingDetails, setSelectedBookingDetails] = useState(null);
 
+  // Defense-in-depth: Ensure vehicles strictly belong to current vendor
+  const isVehicleOwner = (v) => {
+    if (!currentUser || currentUser.role !== 'vendor') return true;
+    const vId = v.vendor_id || v.vendorId;
+    return String(vId) === String(currentUser?.id) || String(vId) === String(currentUser?.username);
+  };
+
   // Combine all vehicles across fleet
   const allVehicles = [
-    ...(cars || []).map(c => ({ ...c, _type: 'car' })),
-    ...(bikes || []).map(b => ({ ...b, _type: 'bike' }))
+    ...(cars || []).filter(isVehicleOwner).map(c => ({ ...c, _type: 'car' })),
+    ...(bikes || []).filter(isVehicleOwner).map(b => ({ ...b, _type: 'bike' }))
   ];
 
   const today = new Date();

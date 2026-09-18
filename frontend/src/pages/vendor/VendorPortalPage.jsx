@@ -123,16 +123,27 @@ export default function VendorPortalPage({
     );
   }
 
+  // Strict Vehicle Vendor Inventory Isolation (Defense-in-depth)
+  const vendorCars = (cars || []).filter(c => {
+    const vId = c.vendor_id || c.vendorId;
+    return String(vId) === String(currentUser?.id) || String(vId) === String(currentUser?.username);
+  });
+
+  const vendorBikes = (bikes || []).filter(b => {
+    const vId = b.vendor_id || b.vendorId;
+    return String(vId) === String(currentUser?.id) || String(vId) === String(currentUser?.username);
+  });
+
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
-        return <VehiclePMSDashboard currentUser={currentUser} cars={cars} bikes={bikes} bookings={bookings} onNavigate={handleNavigate} />;
+        return <VehiclePMSDashboard currentUser={currentUser} cars={vendorCars} bikes={vendorBikes} bookings={bookings} onNavigate={handleNavigate} />;
       case 'fleet':
         return (
           <VehicleFleetManagement
             currentUser={currentUser}
-            cars={cars}
-            bikes={bikes}
+            cars={vendorCars}
+            bikes={vendorBikes}
             initialFilter={tabParams.filter}
             onAddCar={onAddCar}
             onAddBike={onAddBike}
@@ -146,17 +157,17 @@ export default function VendorPortalPage({
         return (
           <VehicleBookingManagement
             bookings={bookings}
-            cars={cars}
-            bikes={bikes}
+            cars={vendorCars}
+            bikes={vendorBikes}
             initialStatus={tabParams.statusFilter || tabParams.filter}
             setBookingsList={setBookingsList}
             currentUser={currentUser}
           />
         );
       case 'calendar':
-        return <VehicleFleetCalendar cars={cars} bikes={bikes} bookings={bookings} />;
+        return <VehicleFleetCalendar cars={vendorCars} bikes={vendorBikes} bookings={bookings} />;
       case 'pricing':
-        return <VehiclePricing cars={cars} bikes={bikes} onUpdateCar={onUpdateCar} onUpdateBike={onUpdateBike} />;
+        return <VehiclePricing cars={vendorCars} bikes={vendorBikes} onUpdateCar={onUpdateCar} onUpdateBike={onUpdateBike} />;
       case 'customers':
         return <VehicleCustomerManagement bookings={bookings} />;
       case 'wallet':
@@ -164,11 +175,11 @@ export default function VendorPortalPage({
       case 'payment_settings':
         return <PMSPaymentSettings currentUser={currentUser} />;
       case 'reports':
-        return <VehicleReports cars={cars} bikes={bikes} bookings={bookings} onNavigate={handleNavigate} />;
+        return <VehicleReports cars={vendorCars} bikes={vendorBikes} bookings={bookings} onNavigate={handleNavigate} />;
       case 'settings':
         return <VehicleVendorProfileSettings currentUser={currentUser} />;
       default:
-        return <VehiclePMSDashboard currentUser={currentUser} cars={cars} bikes={bikes} bookings={bookings} onNavigate={handleNavigate} />;
+        return <VehiclePMSDashboard currentUser={currentUser} cars={vendorCars} bikes={vendorBikes} bookings={bookings} onNavigate={handleNavigate} />;
     }
   };
 

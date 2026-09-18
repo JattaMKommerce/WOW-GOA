@@ -3046,11 +3046,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             echo "Packages truncated";
             exit();
         } elseif ($resource === 'cars') {
+            $actor = authenticateRequest($pdo, false);
+
+            // Strict Vendor Isolation: Authenticated vehicle vendors ALWAYS see ONLY their own vehicles
+            if ($actor && in_array($actor['role'], ['vendor', 'vehicle_vendor'])) {
+                $vendorId = $actor['id'] ?? '';
+                $stmt = $pdo->prepare("SELECT * FROM cars WHERE vendor_id = ?");
+                $stmt->execute([$vendorId]);
+                $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                echo json_encode($data);
+                exit;
+            }
+
+            // Public customer / Guest / Admin / Super Admin broad visibility
             $stmt = $pdo->prepare("SELECT * FROM cars WHERE (admin_id = ? OR admin_id IS NULL OR admin_id = '' OR admin_id = 'admin' OR ? = 'superadmin' OR ? = 'admin')");
             $stmt->execute([$tenant_id, $tenant_id, $tenant_id]);
             $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
             echo json_encode($data);
-            exit;} elseif ($resource === 'bikes') {
+            exit;
+        } elseif ($resource === 'bikes') {
+            $actor = authenticateRequest($pdo, false);
+
+            // Strict Vendor Isolation: Authenticated vehicle vendors ALWAYS see ONLY their own vehicles
+            if ($actor && in_array($actor['role'], ['vendor', 'vehicle_vendor'])) {
+                $vendorId = $actor['id'] ?? '';
+                $stmt = $pdo->prepare("SELECT * FROM bikes WHERE vendor_id = ?");
+                $stmt->execute([$vendorId]);
+                $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                echo json_encode($data);
+                exit;
+            }
+
+            // Public customer / Guest / Admin / Super Admin broad visibility
             $stmt = $pdo->prepare("SELECT * FROM bikes WHERE (admin_id = ? OR admin_id IS NULL OR admin_id = '' OR admin_id = 'admin' OR ? = 'superadmin' OR ? = 'admin')");
             $stmt->execute([$tenant_id, $tenant_id, $tenant_id]);
             $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -3456,7 +3483,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             }
             echo json_encode($data);
             exit;} elseif ($resource === 'vendors') {
-            $stmt = $pdo->prepare("SELECT * FROM vendors WHERE (admin_id = ? OR admin_id IS NULL OR admin_id = '' OR admin_id = 'admin' OR ? = 'superadmin' OR ? = 'admin')");
+            $stmt = $pdo->prepare("SELECT v.*, 
+                    u.status AS user_status, 
+                    COALESCE(u.status, 'active') AS status,
+                    u.kyc_status,
+                    u.gst_number,
+                    CASE WHEN COALESCE(u.status, 'active') = 'active' THEN 1 ELSE 0 END AS verified
+                FROM vendors v
+                LEFT JOIN users u ON v.id = u.id
+                WHERE (v.admin_id = ? OR v.admin_id IS NULL OR v.admin_id = '' OR v.admin_id = 'admin' OR ? = 'superadmin' OR ? = 'admin')");
             $stmt->execute([$tenant_id, $tenant_id, $tenant_id]);
             $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
             echo json_encode($data);
@@ -5064,6 +5099,104 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($pdo->inTransaction()) $pdo->rollBack();
                 http_response_code(500);
                 echo json_encode(["success" => false, "error" => "Registration transaction failed: " . $e->getMessage()]);
+                exit();
+            }
+        } elseif ($action === 'approve_vendor') {
+            $actor = authenticateRequest($pdo, false);
+            $actorRole = strtolower(trim($actor['role'] ?? ($payload['user_role'] ?? ($_SERVER['HTTP_X_USER_ROLE'] ?? ''))));
+            if (!$actor || !in_array($actorRole, ['admin', 'superadmin', 'super_admin'])) {
+                http_response_code(403);
+                echo json_encode(["success" => false, "error" => "Forbidden: Only Super Admin or Admin can approve vendors."]);
+                exit();
+            }
+            $actorId = $actor['id'] ?? ($tenant_id ?: 'admin');
+
+            $vendorId = trim($payload['vendor_id'] ?? ($payload['id'] ?? ''));
+            if (!$vendorId) {
+                http_response_code(400);
+                echo json_encode(["success" => false, "error" => "Vendor ID is required."]);
+                exit();
+            }
+
+            // 1. Find corresponding user
+            $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
+            $stmt->execute([$vendorId]);
+            $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            // Fallback: If not found by ID, look up vendor in vendors table to see if ID matches email or username
+            if (!$user) {
+                $stmtV = $pdo->prepare("SELECT * FROM vendors WHERE id = ?");
+                $stmtV->execute([$vendorId]);
+                $vRow = $stmtV->fetch(PDO::FETCH_ASSOC);
+                if ($vRow && !empty($vRow['email'])) {
+                    $stmt = $pdo->prepare("SELECT * FROM users WHERE email = ? OR username = ?");
+                    $stmt->execute([$vRow['email'], $vRow['name']]);
+                    $user = $stmt->fetch(PDO::FETCH_ASSOC);
+                }
+            }
+
+            // 2. Confirm user exists
+            if (!$user) {
+                http_response_code(404);
+                echo json_encode(["success" => false, "error" => "Vendor account not found in users registry."]);
+                exit();
+            }
+
+            // 3. Confirm role is one of: vendor, hotel_vendor, flight_vendor
+            $userRole = strtolower(trim($user['role'] ?? ''));
+            $allowedVendorRoles = ['vendor', 'hotel_vendor', 'flight_vendor'];
+            if (!in_array($userRole, $allowedVendorRoles)) {
+                http_response_code(400);
+                echo json_encode(["success" => false, "error" => "Invalid role '$userRole'. Only Vehicle, Hotel, and Flight vendors can be approved through this endpoint."]);
+                exit();
+            }
+
+            // 4. Check if already active
+            $currentStatus = strtolower(trim($user['status'] ?? ''));
+            if ($currentStatus === 'active') {
+                echo json_encode([
+                    "success" => true,
+                    "already_active" => true,
+                    "vendor_id" => $user['id'],
+                    "role" => $userRole,
+                    "status" => "active",
+                    "message" => "Vendor account is already active."
+                ]);
+                exit();
+            }
+
+            // 5. Update authoritative user account
+            try {
+                $now = date('Y-m-d H:i:s');
+                $upd = $pdo->prepare("UPDATE users SET status = 'active', approved_at = ?, approved_by = ?, rejection_reason = NULL WHERE id = ?");
+                $upd->execute([$now, $actorId, $user['id']]);
+
+                // Create notification
+                try {
+                    $roleLabel = ($userRole === 'hotel_vendor') ? 'Hotel Vendor' : (($userRole === 'flight_vendor') ? 'Flight Vendor' : 'Vehicle Vendor');
+                    createB2BNotification(
+                        $pdo,
+                        $user['id'],
+                        $user['id'],
+                        'vendor_approved',
+                        'Vendor Account Approved',
+                        "Your $roleLabel account registration has been approved by administrator. You may now log in to your dedicated portal.",
+                        'vendor',
+                        $user['id']
+                    );
+                } catch (Exception $ne) {}
+
+                echo json_encode([
+                    "success" => true,
+                    "vendor_id" => $user['id'],
+                    "role" => $userRole,
+                    "status" => "active",
+                    "message" => "Vendor approved successfully. Account is now active."
+                ]);
+                exit();
+            } catch (Exception $e) {
+                http_response_code(500);
+                echo json_encode(["success" => false, "error" => "Database failure updating vendor status: " . $e->getMessage()]);
                 exit();
             }
         } elseif ($action === 'b2b_approve_partner') {
@@ -6993,7 +7126,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                    || in_array(strtolower(trim($payload['category'] ?? '')), $bikeCats);
             $isCar = !$isBike;
             $id = !empty($payload['id']) ? $payload['id'] : (($isCar ? 'car-' : 'bike-') . uniqid());
-            $vendorId = $payload['vendor_id'] ?? ($payload['vendorId'] ?? 'vendor-1');
+            
+            // Authoritative vendor ownership from token
+            $actor = authenticateRequest($pdo, false);
+            if ($actor && in_array($actor['role'], ['vendor', 'vehicle_vendor'])) {
+                $vendorId = $actor['id'] ?? '';
+            } else {
+                $vendorId = $payload['vendor_id'] ?? ($payload['vendorId'] ?? 'vendor-1');
+            }
             
             // Multi-image handling
             $imagesList = [];
@@ -7049,84 +7189,147 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $id = $payload['id'] ?? null;
             if (!$id) throw new Exception("Missing vehicle ID.");
 
+            // 1. Fetch existing vehicle
+            $checkCar = $pdo->prepare("SELECT * FROM cars WHERE id = ?");
+            $checkCar->execute([$id]);
+            $existingCar = $checkCar->fetch(PDO::FETCH_ASSOC);
+
+            $checkBike = null;
+            $existingBike = null;
+            if (!$existingCar) {
+                $checkBike = $pdo->prepare("SELECT * FROM bikes WHERE id = ?");
+                $checkBike->execute([$id]);
+                $existingBike = $checkBike->fetch(PDO::FETCH_ASSOC);
+            }
+
+            if (!$existingCar && !$existingBike) {
+                http_response_code(404);
+                echo json_encode(["success" => false, "error" => "Vehicle not found."]);
+                exit;
+            }
+
+            // 2. Strict Ownership Authorization
+            $actor = authenticateRequest($pdo, false);
+            if ($actor && in_array($actor['role'], ['vendor', 'vehicle_vendor'])) {
+                $ownerVendor = $existingCar ? ($existingCar['vendor_id'] ?? '') : ($existingBike['vendor_id'] ?? '');
+                $actorId = $actor['id'] ?? '';
+                $actorUser = $actor['username'] ?? '';
+                $isAllowed = ($ownerVendor === $actorId || $ownerVendor === $actorUser);
+                if (!$isAllowed) {
+                    http_response_code(403);
+                    echo json_encode(["success" => false, "error" => "Forbidden: You are not authorized to update another vendor's vehicle."]);
+                    exit;
+                }
+            }
+
             // Check if car or bike
             $bikeCats = ['scooter', 'scooter / moped', 'sports bike', 'cruiser', 'tourer / adventure', 'electric scooter (ev)', 'superbike', 'dirt / off-road', 'cafe racer', 'standard / commuter', 'bike'];
             $isBike = ($action === 'update_bike') 
                    || (($payload['type'] ?? '') === 'bike') 
                    || in_array(strtolower(trim($payload['category'] ?? '')), $bikeCats);
             $isCar = !$isBike;
-            if ($action === 'update_vehicle') {
-                $checkCar = $pdo->prepare("SELECT * FROM cars WHERE id = ?");
-                $checkCar->execute([$id]);
-                $existingCar = $checkCar->fetch(PDO::FETCH_ASSOC);
 
-                $checkBike = null;
-                $existingBike = null;
-                if (!$existingCar) {
-                    $checkBike = $pdo->prepare("SELECT * FROM bikes WHERE id = ?");
-                    $checkBike->execute([$id]);
-                    $existingBike = $checkBike->fetch(PDO::FETCH_ASSOC);
-                }
-
-                if ($existingCar || $isCar) {
-                    $existing = $existingCar ?: [];
-                    $vName = !empty($payload['name']) ? $payload['name'] : ($existing['name'] ?? '');
-                    $vCat = !empty($payload['category']) ? $payload['category'] : ($existing['category'] ?? 'Hatchback');
-                    $vPrice = (isset($payload['price']) && $payload['price'] !== '') ? intval($payload['price']) : intval($existing['price'] ?? 0);
-                    $vSeating = !empty($payload['seating']) ? $payload['seating'] : (!empty($payload['seats']) ? $payload['seats'] : ($existing['seating'] ?? '5 Seater'));
-                    $vFuel = !empty($payload['fuel']) ? $payload['fuel'] : ($existing['fuel'] ?? 'Petrol');
-                    $vTrans = !empty($payload['transmission']) ? $payload['transmission'] : ($existing['transmission'] ?? 'Automatic');
-                    $vImage = !empty($image) ? $image : ($existing['image'] ?? '');
-                    $vImagesJson = !empty($images_json) ? $images_json : ($existing['images_json'] ?? null);
-                    $vLoc = !empty($payload['location']) ? $payload['location'] : ($existing['location'] ?? 'Goa Delivery');
-                    $vMileage = !empty($payload['mileage']) ? $payload['mileage'] : ($existing['mileage'] ?? '');
-
-                    $stmt = $pdo->prepare("UPDATE cars SET name=?, category=?, price=?, seating=?, fuel=?, transmission=?, image=?, images_json=?, location=?, mileage=? WHERE id=?");
-                    $stmt->execute([
-                        $vName,
-                        $vCat,
-                        $vPrice,
-                        $vSeating,
-                        $vFuel,
-                        $vTrans,
-                        $vImage,
-                        $vImagesJson,
-                        $vLoc,
-                        $vMileage,
-                        $id
-                    ]);
-                } else {
-                    $existing = $existingBike ?: [];
-                    $vName = !empty($payload['name']) ? $payload['name'] : ($existing['name'] ?? '');
-                    $vCat = !empty($payload['category']) ? $payload['category'] : ($existing['category'] ?? 'Scooter');
-                    $vPrice = (isset($payload['price']) && $payload['price'] !== '') ? intval($payload['price']) : intval($existing['price'] ?? 0);
-                    $vEngine = !empty($payload['engine']) ? $payload['engine'] : ($existing['engine'] ?? '150cc');
-                    $vFuel = !empty($payload['fuel']) ? $payload['fuel'] : ($existing['fuel'] ?? 'Petrol');
-                    $vMileage = !empty($payload['mileage']) ? $payload['mileage'] : ($existing['mileage'] ?? '40 km/l');
-                    $vImage = !empty($image) ? $image : ($existing['image'] ?? '');
-                    $vImagesJson = !empty($images_json) ? $images_json : ($existing['images_json'] ?? null);
-                    $vLoc = !empty($payload['location']) ? $payload['location'] : ($existing['location'] ?? 'Goa Delivery');
-
-                    $stmt = $pdo->prepare("UPDATE bikes SET name=?, category=?, price=?, engine=?, fuel=?, mileage=?, image=?, images_json=?, location=? WHERE id=?");
-                    $stmt->execute([
-                        $vName,
-                        $vCat,
-                        $vPrice,
-                        $vEngine,
-                        $vFuel,
-                        $vMileage,
-                        $vImage,
-                        $vImagesJson,
-                        $vLoc,
-                        $id
-                    ]);
-                }
-                echo json_encode(["success" => true, "message" => "Vehicle updated successfully."]);
-                exit;
+            // Multi-image handling for updates
+            $imagesList = [];
+            if (!empty($payload['images']) && is_array($payload['images'])) {
+                $imagesList = array_values(array_filter($payload['images']));
+            } elseif (!empty($payload['images_json'])) {
+                $decoded = json_decode($payload['images_json'], true);
+                if (is_array($decoded)) $imagesList = array_values(array_filter($decoded));
             }
+            if (empty($imagesList) && !empty($payload['image'])) {
+                $imagesList = [$payload['image']];
+            }
+            $image = !empty($imagesList) ? $imagesList[0] : ($payload['image'] ?? '');
+            $images_json = !empty($imagesList) ? json_encode($imagesList) : null;
+
+            if ($existingCar || $isCar) {
+                $existing = $existingCar ?: [];
+                $vName = !empty($payload['name']) ? $payload['name'] : ($existing['name'] ?? '');
+                $vCat = !empty($payload['category']) ? $payload['category'] : ($existing['category'] ?? 'Hatchback');
+                $vPrice = (isset($payload['price']) && $payload['price'] !== '') ? intval($payload['price']) : intval($existing['price'] ?? 0);
+                $vSeating = !empty($payload['seating']) ? $payload['seating'] : (!empty($payload['seats']) ? $payload['seats'] : ($existing['seating'] ?? '5 Seater'));
+                $vFuel = !empty($payload['fuel']) ? $payload['fuel'] : ($existing['fuel'] ?? 'Petrol');
+                $vTrans = !empty($payload['transmission']) ? $payload['transmission'] : ($existing['transmission'] ?? 'Automatic');
+                $vImage = !empty($image) ? $image : ($existing['image'] ?? '');
+                $vImagesJson = !empty($images_json) ? $images_json : ($existing['images_json'] ?? null);
+                $vLoc = !empty($payload['location']) ? $payload['location'] : ($existing['location'] ?? 'Goa Delivery');
+                $vMileage = !empty($payload['mileage']) ? $payload['mileage'] : ($existing['mileage'] ?? '');
+
+                $stmt = $pdo->prepare("UPDATE cars SET name=?, category=?, price=?, seating=?, fuel=?, transmission=?, image=?, images_json=?, location=?, mileage=? WHERE id=?");
+                $stmt->execute([
+                    $vName,
+                    $vCat,
+                    $vPrice,
+                    $vSeating,
+                    $vFuel,
+                    $vTrans,
+                    $vImage,
+                    $vImagesJson,
+                    $vLoc,
+                    $vMileage,
+                    $id
+                ]);
+            } else {
+                $existing = $existingBike ?: [];
+                $vName = !empty($payload['name']) ? $payload['name'] : ($existing['name'] ?? '');
+                $vCat = !empty($payload['category']) ? $payload['category'] : ($existing['category'] ?? 'Scooter');
+                $vPrice = (isset($payload['price']) && $payload['price'] !== '') ? intval($payload['price']) : intval($existing['price'] ?? 0);
+                $vEngine = !empty($payload['engine']) ? $payload['engine'] : ($existing['engine'] ?? '150cc');
+                $vFuel = !empty($payload['fuel']) ? $payload['fuel'] : ($existing['fuel'] ?? 'Petrol');
+                $vMileage = !empty($payload['mileage']) ? $payload['mileage'] : ($existing['mileage'] ?? '40 km/l');
+                $vImage = !empty($image) ? $image : ($existing['image'] ?? '');
+                $vImagesJson = !empty($images_json) ? $images_json : ($existing['images_json'] ?? null);
+                $vLoc = !empty($payload['location']) ? $payload['location'] : ($existing['location'] ?? 'Goa Delivery');
+
+                $stmt = $pdo->prepare("UPDATE bikes SET name=?, category=?, price=?, engine=?, fuel=?, mileage=?, image=?, images_json=?, location=? WHERE id=?");
+                $stmt->execute([
+                    $vName,
+                    $vCat,
+                    $vPrice,
+                    $vEngine,
+                    $vFuel,
+                    $vMileage,
+                    $vImage,
+                    $vImagesJson,
+                    $vLoc,
+                    $id
+                ]);
+            }
+            echo json_encode(["success" => true, "message" => "Vehicle updated successfully."]);
+            exit;
         } elseif ($action === 'toggle_vehicle_availability') {
             $id = $payload['id'] ?? null;
             if (!$id) throw new Exception("Missing vehicle ID.");
+
+            // Verify existence and ownership
+            $checkCar = $pdo->prepare("SELECT vendor_id FROM cars WHERE id = ?");
+            $checkCar->execute([$id]);
+            $cRow = $checkCar->fetch(PDO::FETCH_ASSOC);
+            $bRow = null;
+            if (!$cRow) {
+                $checkBike = $pdo->prepare("SELECT vendor_id FROM bikes WHERE id = ?");
+                $checkBike->execute([$id]);
+                $bRow = $checkBike->fetch(PDO::FETCH_ASSOC);
+            }
+            if (!$cRow && !$bRow) {
+                http_response_code(404);
+                echo json_encode(["success" => false, "error" => "Vehicle not found."]);
+                exit;
+            }
+            $actor = authenticateRequest($pdo, false);
+            if ($actor && in_array($actor['role'], ['vendor', 'vehicle_vendor'])) {
+                $ownerVendor = $cRow ? ($cRow['vendor_id'] ?? '') : ($bRow['vendor_id'] ?? '');
+                $actorId = $actor['id'] ?? '';
+                $actorUser = $actor['username'] ?? '';
+                $isAllowed = ($ownerVendor === $actorId || $ownerVendor === $actorUser);
+                if (!$isAllowed) {
+                    http_response_code(403);
+                    echo json_encode(["success" => false, "error" => "Forbidden: You are not authorized to modify another vendor's vehicle."]);
+                    exit;
+                }
+            }
+
             $avail = (!empty($payload['is_available']) || $payload['is_available'] === 1 || $payload['is_available'] === true || $payload['is_available'] === '1') ? 1 : 0;
 
             $stmt1 = $pdo->prepare("UPDATE cars SET is_available = ? WHERE id = ?");
@@ -7139,6 +7342,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($action === 'delete_vehicle' || $action === 'delete_car' || $action === 'delete_bike') {
             $id = $payload['id'] ?? null;
             if (!$id) throw new Exception("Missing vehicle ID.");
+
+            // Verify existence and ownership
+            $checkCar = $pdo->prepare("SELECT vendor_id FROM cars WHERE id = ?");
+            $checkCar->execute([$id]);
+            $cRow = $checkCar->fetch(PDO::FETCH_ASSOC);
+            $bRow = null;
+            if (!$cRow) {
+                $checkBike = $pdo->prepare("SELECT vendor_id FROM bikes WHERE id = ?");
+                $checkBike->execute([$id]);
+                $bRow = $checkBike->fetch(PDO::FETCH_ASSOC);
+            }
+            if (!$cRow && !$bRow) {
+                http_response_code(404);
+                echo json_encode(["success" => false, "error" => "Vehicle not found."]);
+                exit;
+            }
+            $actor = authenticateRequest($pdo, false);
+            if ($actor && in_array($actor['role'], ['vendor', 'vehicle_vendor'])) {
+                $ownerVendor = $cRow ? ($cRow['vendor_id'] ?? '') : ($bRow['vendor_id'] ?? '');
+                $actorId = $actor['id'] ?? '';
+                $actorUser = $actor['username'] ?? '';
+                $isAllowed = ($ownerVendor === $actorId || $ownerVendor === $actorUser);
+                if (!$isAllowed) {
+                    http_response_code(403);
+                    echo json_encode(["success" => false, "error" => "Forbidden: You are not authorized to delete another vendor's vehicle."]);
+                    exit;
+                }
+            }
 
             $stmt1 = $pdo->prepare("DELETE FROM cars WHERE id = ?");
             $stmt1->execute([$id]);
