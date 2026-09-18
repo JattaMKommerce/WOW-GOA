@@ -55,6 +55,8 @@ import {
 import CustomTripEnquiryPage from './pages/customer/CustomTripEnquiryPage';
 import B2BPortalPage from './pages/b2b/B2BPortalPage';
 import CustomerActivitiesTab from './components/customer/CustomerActivitiesTab';
+import VendorLoginPage from './pages/vendor/VendorLoginPage';
+import RoleAccessDeniedModal from './components/vendor/RoleAccessDeniedModal';
 
 // Import Mock Data & API Service
 import { 
@@ -80,8 +82,8 @@ export default function App() {
     try {
       const p = typeof window !== 'undefined' ? window.location.pathname.toLowerCase() : '/';
       // Derive tab directly from URL path — most reliable on refresh
-      if (p.startsWith('/admin') || p === '/portal' || p.startsWith('/sub-admin') || p.startsWith('/subadmin') || p.startsWith('/superadmin') || p.startsWith('/super-admin') || p === '/vendor' || p === '/hotel-vendor' || p === '/flight-vendor') return 'portal';
-      if (p.startsWith('/b2b')) return 'b2b';
+      if (p.startsWith('/admin') || p === '/portal' || p.startsWith('/sub-admin') || p.startsWith('/subadmin') || p.startsWith('/superadmin') || p.startsWith('/super-admin') || p === '/vendor' || p === '/hotel-vendor' || p === '/flight-vendor' || p === '/vehicle/login' || p === '/hotel/login' || p === '/flight/login') return 'portal';
+      if (p.startsWith('/b2b') || p === '/register' || p.startsWith('/vendor/register')) return 'b2b';
       if (p.startsWith('/driver')) return 'driver';
       if (p.startsWith('/customer')) return 'customer';
       if (p.startsWith('/dashboard')) return 'dashboard';
@@ -701,9 +703,9 @@ export default function App() {
       else if (cleanPath === 'craft' || cleanPath === 'craftmytrip') newTab = 'craftmytrip';
       else if (cleanPath === 'custom-trip') newTab = 'custom-trip';
       else if (cleanPath === 'customer' || cleanPath.startsWith('customer') || cleanPath === 'my-bookings') newTab = 'customer';
-      else if (cleanPath === 'admin' || cleanPath === 'portal' || cleanPath === 'superadmin' || cleanPath === 'vendor' || cleanPath === 'hotel-vendor' || cleanPath === 'hotel-pms' || cleanPath === 'flight-vendor' || cleanPath === 'sub-admin' || cleanPath === 'subadmin') newTab = 'portal';
+      else if (cleanPath === 'admin' || cleanPath === 'portal' || cleanPath === 'superadmin' || cleanPath === 'vendor' || cleanPath === 'hotel-vendor' || cleanPath === 'hotel-pms' || cleanPath === 'flight-vendor' || cleanPath === 'sub-admin' || cleanPath === 'subadmin' || p === '/vehicle/login' || p === '/hotel/login' || p === '/flight/login') newTab = 'portal';
       else if (cleanPath === 'dashboard') newTab = 'dashboard';
-      else if (cleanPath === 'b2b' || cleanPath.startsWith('b2b')) newTab = 'b2b';
+      else if (cleanPath === 'b2b' || cleanPath.startsWith('b2b') || p === '/register' || p.startsWith('/vendor/register')) newTab = 'b2b';
       else if (cleanPath === 'driver') newTab = 'driver';
       if (newTab) {
         setActiveTab(newTab);
@@ -1043,6 +1045,18 @@ export default function App() {
       console.error(e);
     }
     return false;
+  };
+
+  const handleVendorLoginSuccess = (user, destination) => {
+    setCurrentUser(user);
+    try {
+      localStorage.setItem('currentUser', JSON.stringify(user));
+      if (user?.token) localStorage.setItem('auth_token', user.token);
+    } catch (e) {}
+    setActiveTab('portal');
+    window.history.pushState(null, '', destination);
+    setCurrentPath(destination.toLowerCase());
+    try { sessionStorage.setItem('tg_activeTab', 'portal'); } catch (e) {}
   };
 
   const handleLogout = () => {
@@ -1400,7 +1414,7 @@ export default function App() {
   }
 
   // ─── B2B TRAVEL AGENT / PARTNER PORTAL ROUTING ────────────────────────────
-  if (path.startsWith('/b2b') || activeTab === 'b2b') {
+  if (path.startsWith('/b2b') || path === '/register' || path.startsWith('/vendor/register') || activeTab === 'b2b') {
     return (
       <B2BPortalPage
         activities={activities}
@@ -1461,7 +1475,68 @@ export default function App() {
   }
 
   // ─── ADMIN / SUPERADMIN / VENDOR / SUBADMIN PORTALS ───────────────────────
-  if (activeTab === 'portal' || path.startsWith('/admin') || path === '/portal' || path.startsWith('/sub-admin') || path.startsWith('/subadmin') || path.startsWith('/superadmin') || path.startsWith('/super-admin') || path === '/vendor' || path === '/hotel-vendor' || path === '/flight-vendor' || currentUser?.role === 'subadmin' || currentUser?.role === 'sub_admin') {
+  if (activeTab === 'portal' || path.startsWith('/admin') || path === '/portal' || path.startsWith('/sub-admin') || path.startsWith('/subadmin') || path.startsWith('/superadmin') || path.startsWith('/super-admin') || path === '/vendor' || path === '/hotel-vendor' || path === '/flight-vendor' || path === '/vehicle/login' || path === '/hotel/login' || path === '/flight/login' || currentUser?.role === 'subadmin' || currentUser?.role === 'sub_admin') {
+    // ── Dedicated Vendor Login Routes ─────────────────────────────────────────
+    if (path === '/vehicle/login') {
+      if (currentUser && (currentUser.role === 'vendor' || currentUser.role === 'vehicle_vendor')) {
+        window.history.replaceState(null, '', '/vendor');
+        setCurrentPath('/vendor');
+      } else {
+        return (
+          <VendorLoginPage
+            vendorType="vehicle"
+            onLoginSuccess={(u) => handleVendorLoginSuccess(u, '/vendor')}
+            onNavigateHome={() => handleTabChange('selfdrive')}
+            onNavigateRegister={() => {
+              handleTabChange('b2b');
+              window.history.pushState(null, '', '/b2b/register?vendor=vendor');
+              setCurrentPath('/b2b/register');
+            }}
+          />
+        );
+      }
+    }
+
+    if (path === '/hotel/login') {
+      if (currentUser && currentUser.role === 'hotel_vendor') {
+        window.history.replaceState(null, '', '/hotel-vendor');
+        setCurrentPath('/hotel-vendor');
+      } else {
+        return (
+          <VendorLoginPage
+            vendorType="hotel"
+            onLoginSuccess={(u) => handleVendorLoginSuccess(u, '/hotel-vendor')}
+            onNavigateHome={() => handleTabChange('selfdrive')}
+            onNavigateRegister={() => {
+              handleTabChange('b2b');
+              window.history.pushState(null, '', '/b2b/register?vendor=hotel_vendor');
+              setCurrentPath('/b2b/register');
+            }}
+          />
+        );
+      }
+    }
+
+    if (path === '/flight/login') {
+      if (currentUser && currentUser.role === 'flight_vendor') {
+        window.history.replaceState(null, '', '/flight-vendor');
+        setCurrentPath('/flight-vendor');
+      } else {
+        return (
+          <VendorLoginPage
+            vendorType="flight"
+            onLoginSuccess={(u) => handleVendorLoginSuccess(u, '/flight-vendor')}
+            onNavigateHome={() => handleTabChange('selfdrive')}
+            onNavigateRegister={() => {
+              handleTabChange('b2b');
+              window.history.pushState(null, '', '/b2b/register?vendor=flight_vendor');
+              setCurrentPath('/b2b/register');
+            }}
+          />
+        );
+      }
+    }
+
     // Superadmin route guard
     if (path.startsWith('/superadmin') || path.startsWith('/super-admin') || currentUser?.role === 'superadmin') {
       if (!currentUser || currentUser.role !== 'superadmin') {
@@ -1509,12 +1584,29 @@ export default function App() {
       );
     }
     // Hotel Vendor route guard
-    if (path === '/hotel-vendor' || currentUser?.role === 'hotel_vendor') {
-      if (!currentUser || currentUser.role !== 'hotel_vendor') {
+    if (path === '/hotel-vendor' || (currentUser?.role === 'hotel_vendor' && (path === '/portal' || path === '/hotel-vendor'))) {
+      if (!currentUser) {
         return (
-          <>
-            <LoginModal isOpen={true} onClose={() => { setShowLoginModal(false); handleTabChange('selfdrive'); }} onLogin={handleLogin} />
-          </>
+          <VendorLoginPage
+            vendorType="hotel"
+            onLoginSuccess={(u) => handleVendorLoginSuccess(u, '/hotel-vendor')}
+            onNavigateHome={() => handleTabChange('selfdrive')}
+            onNavigateRegister={() => {
+              handleTabChange('b2b');
+              window.history.pushState(null, '', '/b2b/register?vendor=hotel_vendor');
+              setCurrentPath('/b2b/register');
+            }}
+          />
+        );
+      }
+      if (currentUser.role !== 'hotel_vendor' && currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return (
+          <RoleAccessDeniedModal
+            currentUser={currentUser}
+            expectedRole="Hotel Vendor"
+            onLogout={handleLogout}
+            onNavigateHome={() => handleTabChange('selfdrive')}
+          />
         );
       }
       return (
@@ -1534,12 +1626,29 @@ export default function App() {
       );
     }
     // Flight Vendor route guard
-    if (path === '/flight-vendor' || currentUser?.role === 'flight_vendor') {
-      if (!currentUser || currentUser.role !== 'flight_vendor') {
+    if (path === '/flight-vendor' || (currentUser?.role === 'flight_vendor' && (path === '/portal' || path === '/flight-vendor'))) {
+      if (!currentUser) {
         return (
-          <>
-            <LoginModal isOpen={true} onClose={() => { setShowLoginModal(false); handleTabChange('selfdrive'); }} onLogin={handleLogin} />
-          </>
+          <VendorLoginPage
+            vendorType="flight"
+            onLoginSuccess={(u) => handleVendorLoginSuccess(u, '/flight-vendor')}
+            onNavigateHome={() => handleTabChange('selfdrive')}
+            onNavigateRegister={() => {
+              handleTabChange('b2b');
+              window.history.pushState(null, '', '/b2b/register?vendor=flight_vendor');
+              setCurrentPath('/b2b/register');
+            }}
+          />
+        );
+      }
+      if (currentUser.role !== 'flight_vendor' && currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return (
+          <RoleAccessDeniedModal
+            currentUser={currentUser}
+            expectedRole="Flight Vendor"
+            onLogout={handleLogout}
+            onNavigateHome={() => handleTabChange('selfdrive')}
+          />
         );
       }
       return (
@@ -1559,12 +1668,29 @@ export default function App() {
       );
     }
     // Vehicle Vendor route guard
-    if (path === '/vendor' || currentUser?.role === 'vendor') {
-      if (!currentUser || currentUser.role !== 'vendor') {
+    if (path === '/vendor' || ((currentUser?.role === 'vendor' || currentUser?.role === 'vehicle_vendor') && (path === '/portal' || path === '/vendor'))) {
+      if (!currentUser) {
         return (
-          <>
-            <LoginModal isOpen={true} onClose={() => { setShowLoginModal(false); handleTabChange('selfdrive'); }} onLogin={handleLogin} />
-          </>
+          <VendorLoginPage
+            vendorType="vehicle"
+            onLoginSuccess={(u) => handleVendorLoginSuccess(u, '/vendor')}
+            onNavigateHome={() => handleTabChange('selfdrive')}
+            onNavigateRegister={() => {
+              handleTabChange('b2b');
+              window.history.pushState(null, '', '/b2b/register?vendor=vendor');
+              setCurrentPath('/b2b/register');
+            }}
+          />
+        );
+      }
+      if (currentUser.role !== 'vendor' && currentUser.role !== 'vehicle_vendor' && currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
+        return (
+          <RoleAccessDeniedModal
+            currentUser={currentUser}
+            expectedRole="Vehicle Vendor"
+            onLogout={handleLogout}
+            onNavigateHome={() => handleTabChange('selfdrive')}
+          />
         );
       }
       return (

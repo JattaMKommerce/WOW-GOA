@@ -129,13 +129,13 @@ export default function B2BLoginPage({ onLoginSuccess, onNavigateHome, onNavigat
             </form>
 
             <div className="mt-3 text-center">
-              <span className="text-muted text-xs">New to WOW GOA B2B? </span>
+              <span className="text-muted text-xs">New to WOW GOA Partner Network? </span>
               <button
                 type="button"
                 className="btn btn-link p-0 text-xs fw-bold text-dark text-decoration-underline font-heading"
                 onClick={onNavigateRegister}
               >
-                Register as B2B Partner
+                Register as Partner / Vendor
               </button>
             </div>
 

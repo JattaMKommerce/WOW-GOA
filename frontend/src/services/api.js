@@ -783,6 +783,19 @@ export async function b2bRegister(formData) {
   return data;
 }
 
+export async function vendorRegister(formData) {
+  const res = await apiFetch(`${API_BASE}?action=vendor_register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'vendor_register', ...formData })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || 'Failed to submit vendor registration.');
+  }
+  return data;
+}
+
 export async function b2bApprovePartner(partnerId) {
   const res = await apiFetch(`${API_BASE}?action=b2b_approve_partner`, {
     method: 'POST',
