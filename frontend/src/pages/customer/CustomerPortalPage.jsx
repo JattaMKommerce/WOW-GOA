@@ -12,7 +12,6 @@ import CustomerSelfDriveTab from '../../components/customer/CustomerSelfDriveTab
 import CustomerDriverTripsTab from '../../components/customer/CustomerDriverTripsTab';
 import CustomerBookingsTab from '../../components/customer/CustomerBookingsTab';
 import CustomerWalletTab from '../../components/customer/CustomerWalletTab';
-import CustomerCashbackTab from '../../components/customer/CustomerCashbackTab';
 import CustomerPaymentsTab from '../../components/customer/CustomerPaymentsTab';
 import CustomerNotificationsTab from '../../components/customer/CustomerNotificationsTab';
 import CustomerProfileTab from '../../components/customer/CustomerProfileTab';
@@ -51,8 +50,7 @@ const SIDEBAR_GROUPS = [
   {
     label: 'Finances',
     items: [
-      { id: 'wallet', label: 'My Wallet', icon: <Wallet size={16} /> },
-      { id: 'cashback', label: 'Cashback & Rewards', icon: <Gift size={16} /> },
+      { id: 'wallet', label: 'Wallet & Rewards', icon: <Wallet size={16} /> },
       { id: 'payments', label: 'Payments & Invoices', icon: <CreditCard size={16} /> },
     ]
   },
@@ -480,20 +478,7 @@ export default function CustomerPortalPage({
     if (onLogout) onLogout();
   };
 
-  // Wallet & Cashback state
-  const [walletBalance, setWalletBalance] = useState(2500);
-  const [cashbackBalance, setCashbackBalance] = useState(1200);
-
-  // Fallback demo transactions
-  const walletTransactions = [
-    { id: 'WT-801', description: 'Self Drive Early Bird Bonus', type: 'credit', amount: 500, created_at: '2026-08-28 14:30:00', status: 'Completed' },
-    { id: 'WT-802', description: 'Promotional Welcome Cashback', type: 'credit', amount: 2000, created_at: '2026-08-15 10:00:00', status: 'Completed' }
-  ];
-
-  const cashbackHistory = [
-    { id: 'CB-901', booking_title: 'Goa Coastal Bliss Self Drive', promo_name: '5% Holiday Cashback', amount: 750, created_at: '2026-08-25', status: 'Credited' },
-    { id: 'CB-902', booking_title: 'Mahindra Thar Weekend Drive', promo_name: 'SUV Special Reward', amount: 450, created_at: '2026-08-10', status: 'Credited' }
-  ];
+  // Wallet & Rewards — real-time data handled inside CustomerWalletTab via API
 
   const handleOpenBookingDetails = (booking) => {
     if (!booking) return;
@@ -608,9 +593,14 @@ export default function CustomerPortalPage({
         booking_days: days,
         duration: `${days} Days`,
         total_amount: totalCost,
-        amount_paid: totalCost,
+        amount_paid: typeof details.amount_paid === 'number' ? details.amount_paid : totalCost,
         total_paid: totalCost,
-        pending_amount: 0,
+        pending_amount: details.pending_amount !== undefined ? details.pending_amount : Math.max(0, totalCost - ((typeof details.amount_paid === 'number' ? details.amount_paid : totalCost) + (details.wallet_amount_used || 0))),
+        wallet_amount_used: details.wallet_amount_used || 0,
+        tier_discount_applied: details.tier_discount_applied || 0,
+        customer_tier_at_booking: details.customer_tier_at_booking || 'New Member',
+        customizations: details.customizations ? (typeof details.customizations === 'string' ? details.customizations : JSON.stringify(details.customizations)) : '',
+        payment_method: (typeof paymentMethod === 'string' && paymentMethod) ? paymentMethod : 'Cash / Online',
         driver_required: details.driver_required ? 1 : 0,
         driver_service_type: details.driver_service_type || (details.driver_required ? 'FULL' : null),
         driver_charge: typeof details.driver_charge === 'number' ? details.driver_charge : 0,
@@ -639,6 +629,9 @@ export default function CustomerPortalPage({
 
       setLastConfirmedDirectBooking(confirmedBooking);
       setDirectBookingSuccess(true);
+      
+      // Refresh customer data so wallet balance and bookings update immediately
+      refreshCustomerData();
       
       // Prepend to live bookings list so customer dashboard reflects the new trip immediately
       if (bookings && Array.isArray(bookings)) {
@@ -676,7 +669,25 @@ export default function CustomerPortalPage({
     }
     setMobileMenuOpen(false);
     setProfileDropdownOpen(false);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (optCategory === 'explore' || optCategory === 'fleets' || optCategory === 'book') {
+      const tryScroll = () => {
+        const el = document.getElementById('explore-more-section');
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          return true;
+        }
+        return false;
+      };
+      if (!tryScroll()) {
+        setTimeout(() => {
+          if (!tryScroll()) {
+            setTimeout(tryScroll, 200);
+          }
+        }, 80);
+      }
+    } else {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   const TOP_NAV_ITEMS = [
@@ -685,8 +696,7 @@ export default function CustomerPortalPage({
     { id: 'activities', label: 'Sightseeing & Activities', icon: <Sparkles size={15} /> },
     { id: 'bookings', label: 'My Bookings', icon: <Calendar size={15} /> },
     { id: 'explore', label: 'Explore', icon: <Sparkles size={15} /> },
-    { id: 'wallet', label: 'Wallet', icon: <Wallet size={15} /> },
-    { id: 'cashback', label: 'Cashback', icon: <Gift size={15} /> },
+    { id: 'wallet', label: 'Wallet & Rewards', icon: <Wallet size={15} /> },
     { id: 'payments', label: 'Payments', icon: <CreditCard size={15} /> },
   ];
 
@@ -731,7 +741,7 @@ export default function CustomerPortalPage({
     <div className="min-vh-100 bg-light d-flex flex-column" style={{ fontFamily: 'Inter, system-ui, -apple-system, sans-serif' }}>
       
       {/* ─── 1. TOP FULL-WIDTH NAVBAR ─── */}
-      <header className="sticky-top bg-white border-bottom shadow-xs" style={{ zIndex: 1030 }}>
+      <header className="sticky-top bg-white border-bottom shadow-xs customer-portal-header" style={{ zIndex: 1030, ...(selectedBookingDetails ? { display: 'none' } : {}) }}>
         <div className="container-fluid px-3 px-md-4 px-xl-5" style={{ maxWidth: '1440px' }}>
           <div className="d-flex align-items-center justify-content-between py-2.5" style={{ minHeight: '68px' }}>
             
@@ -770,7 +780,7 @@ export default function CustomerPortalPage({
                     <button
                       key={item.id}
                       type="button"
-                      onClick={() => handleNavClick(item.id === 'explore' ? 'overview' : item.id)}
+                      onClick={() => handleNavClick(item.id === 'explore' ? 'overview' : item.id, item.id === 'explore' ? 'explore' : 'all')}
                       className={`btn btn-sm rounded-pill px-2.5 px-xl-3 py-1.5 py-xl-2 text-xs fw-bold d-flex align-items-center gap-1.5 transition-all border-0 text-nowrap flex-shrink-0 ${
                         isActive
                           ? 'btn-warning text-dark shadow-xs'
@@ -1110,7 +1120,7 @@ export default function CustomerPortalPage({
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => handleNavClick(item.id === 'explore' ? 'overview' : item.id)}
+                    onClick={() => handleNavClick(item.id === 'explore' ? 'overview' : item.id, item.id === 'explore' ? 'explore' : 'all')}
                     className={`btn text-start d-flex align-items-center justify-content-between px-3 py-2.5 rounded-3 border-0 transition-all text-xs fw-bold ${
                       isActive 
                         ? 'btn-warning text-dark shadow-xs' 
@@ -1470,12 +1480,11 @@ export default function CustomerPortalPage({
                     hotels={hotels}
                     flights={flights}
                     activities={activities}
+                    exploreFocus={bookingsCategoryFilter}
                     onNavigateTab={(tab, optCat) => handleNavClick(tab, optCat)}
                     onSelectBooking={handleOpenBookingDetails}
                     onViewDetails={handleOpenDetail}
                     onDirectBook={(item) => handleOpenDetail(item)}
-                    walletBalance={walletBalance}
-                    cashbackBalance={cashbackBalance}
                   />
                 )}
 
@@ -1523,18 +1532,10 @@ export default function CustomerPortalPage({
                 )}
 
                 {activeTab === 'wallet' && (
-                  <CustomerWalletTab 
+                  <CustomerWalletTab
                     currentUser={customerUser}
-                    walletBalance={walletBalance}
-                    transactions={walletTransactions}
-                  />
-                )}
-
-                {activeTab === 'cashback' && (
-                  <CustomerCashbackTab 
-                    currentUser={customerUser}
-                    cashbackBalance={cashbackBalance}
-                    cashbackHistory={cashbackHistory}
+                    onNavigateTab={(tab, optCat) => handleNavClick(tab, optCat)}
+                    onNavigateHome={onNavigateHome}
                   />
                 )}
 

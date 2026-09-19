@@ -200,6 +200,8 @@ if (!$connected) {
             "ALTER TABLE bookings ADD COLUMN wallet_amount_used DECIMAL(10,2) DEFAULT 0.00",
             "ALTER TABLE bookings ADD COLUMN cashback_earned DECIMAL(10,2) DEFAULT 0.00",
             "ALTER TABLE bookings ADD COLUMN cashback_status VARCHAR(50) DEFAULT 'Pending'",
+            "ALTER TABLE bookings ADD COLUMN tier_discount_applied DECIMAL(10,2) DEFAULT 0.00",
+            "ALTER TABLE bookings ADD COLUMN customer_tier_at_booking VARCHAR(20) DEFAULT 'New Member'",
             "CREATE TABLE IF NOT EXISTS customer_wallet_transactions (
                 id VARCHAR(50) PRIMARY KEY,
                 customer_id VARCHAR(50) NOT NULL,
@@ -215,6 +217,25 @@ if (!$connected) {
                 description TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )",
+            "CREATE TABLE IF NOT EXISTS customer_loyalty (
+                id VARCHAR(50) PRIMARY KEY,
+                customer_id VARCHAR(50) UNIQUE NOT NULL,
+                customer_phone VARCHAR(50) NOT NULL,
+                current_tier VARCHAR(20) NOT NULL DEFAULT 'Bronze',
+                qualifying_trips_count INT DEFAULT 0,
+                qualifying_spend DECIMAL(12,2) DEFAULT 0.00,
+                tier_achieved_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )",
+            "CREATE TABLE IF NOT EXISTS customer_loyalty_history (
+                id VARCHAR(50) PRIMARY KEY,
+                customer_id VARCHAR(50) NOT NULL,
+                booking_id VARCHAR(50) DEFAULT NULL,
+                previous_tier VARCHAR(20) NOT NULL,
+                new_tier VARCHAR(20) NOT NULL,
+                change_type VARCHAR(50) NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )",
             "ALTER TABLE users ADD COLUMN company_name VARCHAR(255) DEFAULT NULL",
             "ALTER TABLE users ADD COLUMN business_type VARCHAR(100) DEFAULT 'Travel Agency'",
@@ -597,6 +618,8 @@ function seedDatabaseIfEmpty($pdo) {
         "ALTER TABLE bookings ADD COLUMN wallet_amount_used DECIMAL(10,2) DEFAULT 0.00",
         "ALTER TABLE bookings ADD COLUMN cashback_earned DECIMAL(10,2) DEFAULT 0.00",
         "ALTER TABLE bookings ADD COLUMN cashback_status VARCHAR(50) DEFAULT 'Pending'",
+        "ALTER TABLE bookings ADD COLUMN tier_discount_applied DECIMAL(10,2) DEFAULT 0.00",
+        "ALTER TABLE bookings ADD COLUMN customer_tier_at_booking VARCHAR(20) DEFAULT 'New Member'",
         "CREATE TABLE IF NOT EXISTS customer_wallet_transactions (
             id VARCHAR(50) PRIMARY KEY,
             customer_id VARCHAR(50) NOT NULL,
@@ -615,6 +638,25 @@ function seedDatabaseIfEmpty($pdo) {
             INDEX idx_cust_phone (customer_phone),
             INDEX idx_cust_id (customer_id),
             INDEX idx_booking_id (booking_id)
+        )",
+        "CREATE TABLE IF NOT EXISTS customer_loyalty (
+            id VARCHAR(50) PRIMARY KEY,
+            customer_id VARCHAR(50) UNIQUE NOT NULL,
+            customer_phone VARCHAR(50) NOT NULL,
+            current_tier VARCHAR(20) NOT NULL DEFAULT 'Bronze',
+            qualifying_trips_count INT DEFAULT 0,
+            qualifying_spend DECIMAL(12,2) DEFAULT 0.00,
+            tier_achieved_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+        "CREATE TABLE IF NOT EXISTS customer_loyalty_history (
+            id VARCHAR(50) PRIMARY KEY,
+            customer_id VARCHAR(50) NOT NULL,
+            booking_id VARCHAR(50) DEFAULT NULL,
+            previous_tier VARCHAR(20) NOT NULL,
+            new_tier VARCHAR(20) NOT NULL,
+            change_type VARCHAR(50) NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )",
         "CREATE TABLE IF NOT EXISTS drivers (id VARCHAR(50) PRIMARY KEY, name VARCHAR(255) NOT NULL, phone VARCHAR(50) NOT NULL, email VARCHAR(255) NOT NULL, password_hash VARCHAR(255), plain_password VARCHAR(255), address TEXT, profile_photo TEXT, aadhaar_card TEXT, pan_card TEXT, license_number VARCHAR(100), license_card TEXT, experience_years VARCHAR(50), vehicle_details TEXT, status VARCHAR(50) DEFAULT 'Pending', admin_id VARCHAR(50) DEFAULT 'admin', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)",
         "CREATE TABLE IF NOT EXISTS driver_assignments (id VARCHAR(50) PRIMARY KEY, driver_id VARCHAR(50) NOT NULL, booking_id VARCHAR(50) NOT NULL, customer_name VARCHAR(255), customer_phone VARCHAR(50), pickup_loc VARCHAR(255), drop_loc VARCHAR(255), date VARCHAR(50), time VARCHAR(50), status VARCHAR(50) DEFAULT 'Assigned', assigned_by VARCHAR(50) DEFAULT 'admin', assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, notes TEXT)",
@@ -771,22 +813,50 @@ function seedDatabaseIfEmpty($pdo) {
 }
 
 /**
- * Authoritative Server-Side Tier Calculation Engine for WOW GOA
- * Categories: Car (Cars/Bikes), Hotel (Hotel Stays), Trip (Packages/Tours)
- * Only Completed bookings count.
- * Progression: Bronze (1-3) -> Silver (4-6) -> Gold (7-9) -> Platinum (10+)
+ * Persist the calculated tier to customer_loyalty and record history if changed.
+ * Only called when qualifying_trips_count >= 1 (never persists New Member).
+ */
+function persistCustomerLoyalty($pdo, $customerId, $phone, $tier, $tripCount, $totalSpend, $bookingId = null) {
+    try {
+        $now = date('Y-m-d H:i:s');
+        $existStmt = $pdo->prepare("SELECT current_tier FROM customer_loyalty WHERE customer_id = ?");
+        $existStmt->execute([$customerId]);
+        $existing = $existStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$existing) {
+            $pdo->prepare("INSERT INTO customer_loyalty (id, customer_id, customer_phone, current_tier, qualifying_trips_count, qualifying_spend, tier_achieved_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+               ->execute(['loy_' . uniqid(), $customerId, $phone, $tier, $tripCount, $totalSpend, $now, $now]);
+            $pdo->prepare("INSERT INTO customer_loyalty_history (id, customer_id, booking_id, previous_tier, new_tier, change_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+               ->execute(['loyh_' . uniqid(), $customerId, $bookingId, 'New Member', $tier, 'TIER_GRANTED', $now]);
+        } elseif ($existing['current_tier'] !== $tier) {
+            $pdo->prepare("UPDATE customer_loyalty SET current_tier = ?, qualifying_trips_count = ?, qualifying_spend = ?, updated_at = ? WHERE customer_id = ?")
+               ->execute([$tier, $tripCount, $totalSpend, $now, $customerId]);
+            $pdo->prepare("INSERT INTO customer_loyalty_history (id, customer_id, booking_id, previous_tier, new_tier, change_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+               ->execute(['loyh_' . uniqid(), $customerId, $bookingId, $existing['current_tier'], $tier, 'TIER_UPGRADED', $now]);
+        } else {
+            $pdo->prepare("UPDATE customer_loyalty SET qualifying_trips_count = ?, qualifying_spend = ?, updated_at = ? WHERE customer_id = ?")
+               ->execute([$tripCount, $totalSpend, $now, $customerId]);
+        }
+    } catch (Exception $e) {}
+}
+
+/**
+ * AUTHORITATIVE TIER CALCULATION — WOW GOA Unified Wallet & Rewards
+ *
+ * Rules:
+ *  - Qualifying: LOWER(status)='completed' AND total_amount >= 1500.00 (gross, before discounts)
+ *  - B2B/Flight exclusion: multi-field guard (booking_channel, b2b_partner_id, b2b_mode, id prefix, type)
+ *  - 365-day rolling window: COALESCE(drop_date, check_out_date, return_date, created_at)
+ *  - ONE unified tier (not per-category)
+ *  - 0 trips = New Member (never persisted to customer_loyalty)
+ *  - 1-3 = Bronze, 4-7 = Silver, 8-11 = Gold, 12+ = Platinum
  */
 function calculateCustomerTiers($pdo, $phone, $customerId = null) {
     $clean = preg_replace('/\D/', '', $phone ?? '');
     $last10 = strlen($clean) >= 10 ? substr($clean, -10) : $clean;
-    
-    // Customer profile info (DOB, name, email)
-    $customerInfo = [
-        'name' => '',
-        'phone' => $clean,
-        'email' => '',
-        'date_of_birth' => ''
-    ];
+
+    // Customer profile info
+    $customerInfo = ['name' => '', 'phone' => $clean, 'email' => '', 'date_of_birth' => ''];
 
     if (!empty($last10)) {
         try {
@@ -814,201 +884,145 @@ function calculateCustomerTiers($pdo, $phone, $customerId = null) {
         } catch (Exception $e) {}
     }
 
+    $resolvedCustomerId = !empty($customerId) ? $customerId : ('c_' . $last10);
+
+    $newMemberBase = [
+        'customer' => $customerInfo,
+        'unified_tier' => 'New Member',
+        'resolved_tier' => 'New Member',
+        'qualifying_trips_count' => 0,
+        'qualifying_spend' => 0.00,
+        'badge' => '🆕 New Member',
+        'icon' => '🆕',
+        'progress' => 0,
+        'target' => 1,
+        'remaining' => 1,
+        'next_tier' => 'Bronze',
+        'next_tier_callout' => '1 qualifying booking (₹1,500+) to earn Bronze',
+        'benefits' => ['10% Wallet Cashback on eligible bookings'],
+        'is_new_member' => true,
+        'is_platinum' => false,
+        'description' => 'Complete your first qualifying booking (₹1,500+) to earn Bronze.',
+        'car' => ['tier' => 'New Member', 'count' => 0, 'progress' => 0],
+        'hotel' => ['tier' => 'New Member', 'count' => 0, 'progress' => 0],
+        'trip' => ['tier' => 'New Member', 'count' => 0, 'progress' => 0],
+        'highest_tier' => 'New Member'
+    ];
+
     if (empty($last10) && empty($customerId)) {
-        $emptyTier = [
-            'count' => 0,
-            'tier' => 'Bronze',
-            'tier_name' => 'Bronze',
-            'badge' => '🥉 Bronze',
-            'icon' => '🥉',
-            'target' => 1,
-            'remaining' => 1,
-            'progress' => 0,
-            'is_platinum' => false,
-            'description' => '1 completed booking to activate Bronze'
-        ];
-        return [
-            'customer' => $customerInfo,
-            'car' => $emptyTier,
-            'hotel' => $emptyTier,
-            'trip' => $emptyTier,
-            'highest_tier' => 'Bronze'
-        ];
+        return $newMemberBase;
     }
 
-    // Query strictly completed bookings
-    $completedBookings = [];
+    // --- AUTHORITATIVE QUALIFYING BOOKING QUERY ---
+    $qualifyingTrips = [];
+    $qualifyingSql = "
+        SELECT id, total_amount FROM bookings
+        WHERE (%PHONE_FILTER%)
+          AND LOWER(status) = 'completed'
+          AND CAST(total_amount AS REAL) >= 1500.00
+          AND (booking_channel IS NULL OR UPPER(booking_channel) = 'D2C')
+          AND (b2b_partner_id IS NULL OR b2b_partner_id = '')
+          AND (b2b_mode IS NULL OR b2b_mode = '')
+          AND id NOT LIKE 'TG-B2B-%'
+          AND (type IS NULL OR LOWER(type) != 'flight')
+          AND COALESCE(
+                NULLIF(drop_date, ''),
+                NULLIF(check_out_date, ''),
+                NULLIF(return_date, ''),
+                created_at
+              ) >= date('now', '-365 days')
+    ";
     try {
         if (!empty($last10)) {
-            $stmt = $pdo->prepare("SELECT * FROM bookings WHERE (phone LIKE ? OR phone LIKE ?) AND LOWER(status) = 'completed'");
+            $stmt = $pdo->prepare(str_replace('%PHONE_FILTER%', 'phone LIKE ? OR phone LIKE ?', $qualifyingSql));
             $stmt->execute(["%$last10", "%$clean"]);
-            $completedBookings = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        } elseif (!empty($customerId)) {
-            $stmt = $pdo->prepare("SELECT * FROM bookings WHERE (id = ? OR email = ?) AND LOWER(status) = 'completed'");
-            $stmt->execute([$customerId, $customerId]);
-            $completedBookings = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $qualifyingTrips = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        }
+        if (empty($qualifyingTrips) && !empty($customerId)) {
+            $stmt = $pdo->prepare(str_replace('%PHONE_FILTER%', 'customer_id = ?', $qualifyingSql));
+            $stmt->execute([$customerId]);
+            $qualifyingTrips = $stmt->fetchAll(PDO::FETCH_ASSOC);
         }
     } catch (Exception $e) {
-        $completedBookings = [];
+        $qualifyingTrips = [];
     }
 
-    $carCount = 0;
-    $hotelCount = 0;
-    $tripCount = 0;
+    $tripCount = count($qualifyingTrips);
+    $totalSpend = array_sum(array_column($qualifyingTrips, 'total_amount'));
 
-    foreach ($completedBookings as $b) {
-        $type = strtolower($b['type'] ?? '');
-        $pkgType = strtolower($b['package_type'] ?? '');
-        $itemName = strtolower($b['item_name'] ?? '');
-        $hotelName = strtolower($b['hotel_name'] ?? '');
-        $vehicleName = strtolower($b['vehicle_name'] ?? '');
-
-        if ($type === 'hotel' || !empty($hotelName) || strpos($pkgType, 'hotel') !== false || strpos($itemName, 'resort') !== false || strpos($itemName, 'hotel') !== false) {
-            $hotelCount++;
-        } elseif ($type === 'car' || $type === 'bike' || !empty($vehicleName) || strpos($pkgType, 'rental') !== false || strpos($pkgType, 'car') !== false || strpos($pkgType, 'bike') !== false || strpos($pkgType, 'vehicle') !== false) {
-            $carCount++;
-        } else {
-            // Packages, tours, self-drive holidays, craft my trip
-            $tripCount++;
-        }
+    if ($tripCount === 0) {
+        return $newMemberBase;
     }
 
-    $buildTier = function($count) {
-        if ($count >= 10) {
-            return [
-                'count' => $count,
-                'tier' => 'Platinum',
-                'tier_name' => 'Platinum',
-                'badge' => '💎 Platinum',
-                'icon' => '💎',
-                'target' => 10,
-                'remaining' => 0,
-                'progress' => 100,
-                'is_platinum' => true,
-                'benefits' => [
-                    '10% cashback',
-                    'Free upgrade / VIP benefits'
-                ],
-                'next_tier' => null,
-                'next_perk' => null,
-                'next_tier_callout' => 'Highest Tier Reached',
-                'next_perk_callout' => 'Platinum VIP Benefits Active',
-                'description' => '10+ Completed Bookings (Highest Tier)'
-            ];
-        } elseif ($count >= 7) {
-            $rem = 10 - $count;
-            return [
-                'count' => $count,
-                'tier' => 'Gold',
-                'tier_name' => 'Gold',
-                'badge' => '🥇 Gold',
-                'icon' => '🥇',
-                'target' => 10,
-                'remaining' => $rem,
-                'progress' => round(($count / 10) * 100),
-                'is_platinum' => false,
-                'benefits' => [
-                    '10% cashback',
-                    '₹500 extra discount on eligible bookings'
-                ],
-                'next_tier' => 'Platinum',
-                'next_perk' => 'Free upgrade / VIP benefits',
-                'next_tier_callout' => "$rem booking" . ($rem > 1 ? 's' : '') . " away from Platinum",
-                'next_perk_callout' => 'Unlock Free upgrade / VIP benefits',
-                'description' => "$rem more completed bookings to reach Platinum"
-            ];
-        } elseif ($count >= 4) {
-            $rem = 7 - $count;
-            return [
-                'count' => $count,
-                'tier' => 'Silver',
-                'tier_name' => 'Silver',
-                'badge' => '🥈 Silver',
-                'icon' => '🥈',
-                'target' => 7,
-                'remaining' => $rem,
-                'progress' => round(($count / 7) * 100),
-                'is_platinum' => false,
-                'benefits' => [
-                    '10% cashback',
-                    'Priority support'
-                ],
-                'next_tier' => 'Gold',
-                'next_perk' => '₹500 extra discount on eligible bookings',
-                'next_tier_callout' => "$rem booking" . ($rem > 1 ? 's' : '') . " away from Gold",
-                'next_perk_callout' => 'Unlock ₹500 extra discount on eligible bookings',
-                'description' => "$rem more completed bookings to reach Gold"
-            ];
-        } elseif ($count >= 1) {
-            $rem = 4 - $count;
-            return [
-                'count' => $count,
-                'tier' => 'Bronze',
-                'tier_name' => 'Bronze',
-                'badge' => '🥉 Bronze',
-                'icon' => '🥉',
-                'target' => 4,
-                'remaining' => $rem,
-                'progress' => round(($count / 4) * 100),
-                'is_platinum' => false,
-                'benefits' => [
-                    'Standard 10% cashback'
-                ],
-                'next_tier' => 'Silver',
-                'next_perk' => 'Priority support',
-                'next_tier_callout' => "$rem booking" . ($rem > 1 ? 's' : '') . " away from Silver",
-                'next_perk_callout' => 'Unlock Priority support',
-                'description' => "$rem more completed bookings to reach Silver"
-            ];
-        } else {
-            return [
-                'count' => 0,
-                'tier' => 'Bronze',
-                'tier_name' => 'Bronze',
-                'badge' => '🥉 Bronze (New Member)',
-                'icon' => '🥉',
-                'target' => 1,
-                'remaining' => 1,
-                'progress' => 0,
-                'is_platinum' => false,
-                'benefits' => [
-                    'Standard 10% cashback'
-                ],
-                'next_tier' => 'Bronze',
-                'next_perk' => 'Standard 10% cashback',
-                'next_tier_callout' => '1 booking away from Bronze',
-                'next_perk_callout' => 'Unlock Standard 10% cashback',
-                'description' => '1 completed booking to activate Bronze'
-            ];
-        }
-    };
-
-    $carData = $buildTier($carCount);
-    $hotelData = $buildTier($hotelCount);
-    $tripData = $buildTier($tripCount);
-
-    $tierRank = ['Bronze' => 1, 'Silver' => 2, 'Gold' => 3, 'Platinum' => 4];
-    $highestTier = 'Bronze';
-    $maxR = 1;
-    foreach ([$carData['tier'], $hotelData['tier'], $tripData['tier']] as $t) {
-        if (($tierRank[$t] ?? 1) > $maxR) {
-            $maxR = $tierRank[$t];
-            $highestTier = $t;
-        }
+    // --- TIER RESOLUTION (1-3 Bronze, 4-7 Silver, 8-11 Gold, 12+ Platinum) ---
+    if ($tripCount >= 12) {
+        $tier = 'Platinum';
+        $progress = 100;
+        $target = 12;
+        $remaining = 0;
+        $nextTier = null;
+        $nextTierCallout = 'Highest Tier Reached — Platinum VIP';
+        $benefits = ['10% Wallet Cashback', '₹1,000 instant discount on bookings > ₹10,000 (OR Free vehicle class upgrade request)', 'VIP Priority Concierge'];
+        $isPlatinum = true;
+    } elseif ($tripCount >= 8) {
+        $tier = 'Gold';
+        $remaining = 12 - $tripCount;
+        $progress = round(($tripCount / 12) * 100);
+        $target = 12;
+        $nextTier = 'Platinum';
+        $nextTierCallout = "$remaining qualifying booking" . ($remaining > 1 ? 's' : '') . " away from Platinum";
+        $benefits = ['10% Wallet Cashback', '₹500 flat discount on bookings > ₹5,000', 'Priority Concierge'];
+        $isPlatinum = false;
+    } elseif ($tripCount >= 4) {
+        $tier = 'Silver';
+        $remaining = 8 - $tripCount;
+        $progress = round(($tripCount / 8) * 100);
+        $target = 8;
+        $nextTier = 'Gold';
+        $nextTierCallout = "$remaining qualifying booking" . ($remaining > 1 ? 's' : '') . " away from Gold";
+        $benefits = ['10% Wallet Cashback', 'Priority Concierge Support'];
+        $isPlatinum = false;
+    } else {
+        $tier = 'Bronze';
+        $remaining = 4 - $tripCount;
+        $progress = round(($tripCount / 4) * 100);
+        $target = 4;
+        $nextTier = 'Silver';
+        $nextTierCallout = "$remaining qualifying booking" . ($remaining > 1 ? 's' : '') . " away from Silver";
+        $benefits = ['10% Wallet Cashback'];
+        $isPlatinum = false;
     }
+
+    persistCustomerLoyalty($pdo, $resolvedCustomerId, $clean ?: $last10, $tier, $tripCount, $totalSpend);
+
+    $tierIcons = ['Bronze' => '🥉', 'Silver' => '🥈', 'Gold' => '🥇', 'Platinum' => '💎'];
+    $icon = $tierIcons[$tier] ?? '🥉';
 
     return [
         'customer' => $customerInfo,
-        'car' => $carData,
-        'hotel' => $hotelData,
-        'trip' => $tripData,
-        'highest_tier' => $highestTier
+        'unified_tier' => $tier,
+        'resolved_tier' => $tier,
+        'qualifying_trips_count' => $tripCount,
+        'qualifying_spend' => round($totalSpend, 2),
+        'badge' => "$icon $tier",
+        'icon' => $icon,
+        'progress' => $progress,
+        'target' => $target,
+        'remaining' => $remaining,
+        'next_tier' => $nextTier,
+        'next_tier_callout' => $nextTierCallout,
+        'benefits' => $benefits,
+        'is_new_member' => false,
+        'is_platinum' => $isPlatinum,
+        'description' => "$tripCount qualifying trip" . ($tripCount !== 1 ? 's' : '') . " in the last 365 days",
+        'car' => ['tier' => $tier, 'count' => $tripCount, 'progress' => $progress],
+        'hotel' => ['tier' => $tier, 'count' => $tripCount, 'progress' => $progress],
+        'trip' => ['tier' => $tier, 'count' => $tripCount, 'progress' => $progress],
+        'highest_tier' => $tier
     ];
 }
 
-/**
- * Daily Birthday Cron Processor
- */
+
 function parseCustomerDobToMonthDay($dob) {
     if (empty($dob)) return false;
     $clean = trim((string)$dob);
@@ -1219,7 +1233,7 @@ function getCustomerWalletSummary($pdo, $phone, $customerId = '') {
         $rem = floatval($tx['remaining_amount'] ?? 0);
         $expTime = !empty($tx['expires_at']) ? strtotime($tx['expires_at']) : 0;
 
-        if ($type === 'CASHBACK_CREDIT' && $st !== 'REVERSED') {
+        if (($type === 'CASHBACK_CREDIT' || $type === 'WALLET_REFUND') && $st !== 'REVERSED') {
             $totalEarned += $amt;
             if (($st === 'AVAILABLE' || $st === 'PARTIALLY_USED') && $rem > 0 && $expTime > $nowTime) {
                 $availableBalance += $rem;
@@ -3046,11 +3060,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             echo "Packages truncated";
             exit();
         } elseif ($resource === 'cars') {
+            $actor = authenticateRequest($pdo, false);
+
+            // Strict Vendor Isolation: Authenticated vehicle vendors ALWAYS see ONLY their own vehicles
+            if ($actor && in_array($actor['role'], ['vendor', 'vehicle_vendor'])) {
+                $vendorId = $actor['id'] ?? '';
+                $stmt = $pdo->prepare("SELECT * FROM cars WHERE vendor_id = ?");
+                $stmt->execute([$vendorId]);
+                $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                echo json_encode($data);
+                exit;
+            }
+
+            // Public customer / Guest / Admin / Super Admin broad visibility
             $stmt = $pdo->prepare("SELECT * FROM cars WHERE (admin_id = ? OR admin_id IS NULL OR admin_id = '' OR admin_id = 'admin' OR ? = 'superadmin' OR ? = 'admin')");
             $stmt->execute([$tenant_id, $tenant_id, $tenant_id]);
             $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
             echo json_encode($data);
-            exit;} elseif ($resource === 'bikes') {
+            exit;
+        } elseif ($resource === 'bikes') {
+            $actor = authenticateRequest($pdo, false);
+
+            // Strict Vendor Isolation: Authenticated vehicle vendors ALWAYS see ONLY their own vehicles
+            if ($actor && in_array($actor['role'], ['vendor', 'vehicle_vendor'])) {
+                $vendorId = $actor['id'] ?? '';
+                $stmt = $pdo->prepare("SELECT * FROM bikes WHERE vendor_id = ?");
+                $stmt->execute([$vendorId]);
+                $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                echo json_encode($data);
+                exit;
+            }
+
+            // Public customer / Guest / Admin / Super Admin broad visibility
             $stmt = $pdo->prepare("SELECT * FROM bikes WHERE (admin_id = ? OR admin_id IS NULL OR admin_id = '' OR admin_id = 'admin' OR ? = 'superadmin' OR ? = 'admin')");
             $stmt->execute([$tenant_id, $tenant_id, $tenant_id]);
             $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -3456,7 +3497,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             }
             echo json_encode($data);
             exit;} elseif ($resource === 'vendors') {
-            $stmt = $pdo->prepare("SELECT * FROM vendors WHERE (admin_id = ? OR admin_id IS NULL OR admin_id = '' OR admin_id = 'admin' OR ? = 'superadmin' OR ? = 'admin')");
+            $stmt = $pdo->prepare("SELECT v.*, 
+                    u.status AS user_status, 
+                    COALESCE(u.status, 'active') AS status,
+                    u.kyc_status,
+                    u.gst_number,
+                    CASE WHEN COALESCE(u.status, 'active') = 'active' THEN 1 ELSE 0 END AS verified
+                FROM vendors v
+                LEFT JOIN users u ON v.id = u.id
+                WHERE (v.admin_id = ? OR v.admin_id IS NULL OR v.admin_id = '' OR v.admin_id = 'admin' OR ? = 'superadmin' OR ? = 'admin')");
             $stmt->execute([$tenant_id, $tenant_id, $tenant_id]);
             $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
             echo json_encode($data);
@@ -3471,10 +3520,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $loyalty = calculateCustomerTiers($pdo, $phone, $customerId);
             echo json_encode($loyalty);
             exit;} elseif ($resource === 'customer_wallet') {
+            // Phase 3 - Unified Wallet & Rewards endpoint (wallet + loyalty tier in one response)
             $phone = $_GET['phone'] ?? ($_GET['mobile'] ?? '');
             $customerId = $_GET['customer_id'] ?? ($_GET['id'] ?? '');
             $wallet = getCustomerWalletSummary($pdo, $phone, $customerId);
-            echo json_encode($wallet);
+            $loyalty = calculateCustomerTiers($pdo, $phone, $customerId);
+            $unified = array_merge($wallet, [
+                'loyalty' => [
+                    'unified_tier'            => $loyalty['unified_tier'] ?? 'New Member',
+                    'resolved_tier'           => $loyalty['resolved_tier'] ?? 'New Member',
+                    'qualifying_trips_count'  => $loyalty['qualifying_trips_count'] ?? 0,
+                    'qualifying_spend'        => $loyalty['qualifying_spend'] ?? 0.00,
+                    'badge'                   => $loyalty['badge'] ?? '🆕 New Member',
+                    'icon'                    => $loyalty['icon'] ?? '🆕',
+                    'progress'                => $loyalty['progress'] ?? 0,
+                    'target'                  => $loyalty['target'] ?? 1,
+                    'remaining'               => $loyalty['remaining'] ?? 1,
+                    'next_tier'               => $loyalty['next_tier'] ?? 'Bronze',
+                    'next_tier_callout'       => $loyalty['next_tier_callout'] ?? '',
+                    'benefits'                => $loyalty['benefits'] ?? [],
+                    'is_new_member'           => $loyalty['is_new_member'] ?? true,
+                    'is_platinum'             => $loyalty['is_platinum'] ?? false,
+                    'description'             => $loyalty['description'] ?? '',
+                ]
+            ]);
+            echo json_encode($unified);
             exit;} elseif ($resource === 'customer_wallet_transactions') {
             $phone = $_GET['phone'] ?? ($_GET['mobile'] ?? '');
             $customerId = $_GET['customer_id'] ?? ($_GET['id'] ?? '');
@@ -5064,6 +5134,104 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($pdo->inTransaction()) $pdo->rollBack();
                 http_response_code(500);
                 echo json_encode(["success" => false, "error" => "Registration transaction failed: " . $e->getMessage()]);
+                exit();
+            }
+        } elseif ($action === 'approve_vendor') {
+            $actor = authenticateRequest($pdo, false);
+            $actorRole = strtolower(trim($actor['role'] ?? ($payload['user_role'] ?? ($_SERVER['HTTP_X_USER_ROLE'] ?? ''))));
+            if (!$actor || !in_array($actorRole, ['admin', 'superadmin', 'super_admin'])) {
+                http_response_code(403);
+                echo json_encode(["success" => false, "error" => "Forbidden: Only Super Admin or Admin can approve vendors."]);
+                exit();
+            }
+            $actorId = $actor['id'] ?? ($tenant_id ?: 'admin');
+
+            $vendorId = trim($payload['vendor_id'] ?? ($payload['id'] ?? ''));
+            if (!$vendorId) {
+                http_response_code(400);
+                echo json_encode(["success" => false, "error" => "Vendor ID is required."]);
+                exit();
+            }
+
+            // 1. Find corresponding user
+            $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
+            $stmt->execute([$vendorId]);
+            $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            // Fallback: If not found by ID, look up vendor in vendors table to see if ID matches email or username
+            if (!$user) {
+                $stmtV = $pdo->prepare("SELECT * FROM vendors WHERE id = ?");
+                $stmtV->execute([$vendorId]);
+                $vRow = $stmtV->fetch(PDO::FETCH_ASSOC);
+                if ($vRow && !empty($vRow['email'])) {
+                    $stmt = $pdo->prepare("SELECT * FROM users WHERE email = ? OR username = ?");
+                    $stmt->execute([$vRow['email'], $vRow['name']]);
+                    $user = $stmt->fetch(PDO::FETCH_ASSOC);
+                }
+            }
+
+            // 2. Confirm user exists
+            if (!$user) {
+                http_response_code(404);
+                echo json_encode(["success" => false, "error" => "Vendor account not found in users registry."]);
+                exit();
+            }
+
+            // 3. Confirm role is one of: vendor, hotel_vendor, flight_vendor
+            $userRole = strtolower(trim($user['role'] ?? ''));
+            $allowedVendorRoles = ['vendor', 'hotel_vendor', 'flight_vendor'];
+            if (!in_array($userRole, $allowedVendorRoles)) {
+                http_response_code(400);
+                echo json_encode(["success" => false, "error" => "Invalid role '$userRole'. Only Vehicle, Hotel, and Flight vendors can be approved through this endpoint."]);
+                exit();
+            }
+
+            // 4. Check if already active
+            $currentStatus = strtolower(trim($user['status'] ?? ''));
+            if ($currentStatus === 'active') {
+                echo json_encode([
+                    "success" => true,
+                    "already_active" => true,
+                    "vendor_id" => $user['id'],
+                    "role" => $userRole,
+                    "status" => "active",
+                    "message" => "Vendor account is already active."
+                ]);
+                exit();
+            }
+
+            // 5. Update authoritative user account
+            try {
+                $now = date('Y-m-d H:i:s');
+                $upd = $pdo->prepare("UPDATE users SET status = 'active', approved_at = ?, approved_by = ?, rejection_reason = NULL WHERE id = ?");
+                $upd->execute([$now, $actorId, $user['id']]);
+
+                // Create notification
+                try {
+                    $roleLabel = ($userRole === 'hotel_vendor') ? 'Hotel Vendor' : (($userRole === 'flight_vendor') ? 'Flight Vendor' : 'Vehicle Vendor');
+                    createB2BNotification(
+                        $pdo,
+                        $user['id'],
+                        $user['id'],
+                        'vendor_approved',
+                        'Vendor Account Approved',
+                        "Your $roleLabel account registration has been approved by administrator. You may now log in to your dedicated portal.",
+                        'vendor',
+                        $user['id']
+                    );
+                } catch (Exception $ne) {}
+
+                echo json_encode([
+                    "success" => true,
+                    "vendor_id" => $user['id'],
+                    "role" => $userRole,
+                    "status" => "active",
+                    "message" => "Vendor approved successfully. Account is now active."
+                ]);
+                exit();
+            } catch (Exception $e) {
+                http_response_code(500);
+                echo json_encode(["success" => false, "error" => "Database failure updating vendor status: " . $e->getMessage()]);
                 exit();
             }
         } elseif ($action === 'b2b_approve_partner') {
@@ -6993,7 +7161,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                    || in_array(strtolower(trim($payload['category'] ?? '')), $bikeCats);
             $isCar = !$isBike;
             $id = !empty($payload['id']) ? $payload['id'] : (($isCar ? 'car-' : 'bike-') . uniqid());
-            $vendorId = $payload['vendor_id'] ?? ($payload['vendorId'] ?? 'vendor-1');
+            
+            // Authoritative vendor ownership from token
+            $actor = authenticateRequest($pdo, false);
+            if ($actor && in_array($actor['role'], ['vendor', 'vehicle_vendor'])) {
+                $vendorId = $actor['id'] ?? '';
+            } else {
+                $vendorId = $payload['vendor_id'] ?? ($payload['vendorId'] ?? 'vendor-1');
+            }
             
             // Multi-image handling
             $imagesList = [];
@@ -7049,84 +7224,147 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $id = $payload['id'] ?? null;
             if (!$id) throw new Exception("Missing vehicle ID.");
 
+            // 1. Fetch existing vehicle
+            $checkCar = $pdo->prepare("SELECT * FROM cars WHERE id = ?");
+            $checkCar->execute([$id]);
+            $existingCar = $checkCar->fetch(PDO::FETCH_ASSOC);
+
+            $checkBike = null;
+            $existingBike = null;
+            if (!$existingCar) {
+                $checkBike = $pdo->prepare("SELECT * FROM bikes WHERE id = ?");
+                $checkBike->execute([$id]);
+                $existingBike = $checkBike->fetch(PDO::FETCH_ASSOC);
+            }
+
+            if (!$existingCar && !$existingBike) {
+                http_response_code(404);
+                echo json_encode(["success" => false, "error" => "Vehicle not found."]);
+                exit;
+            }
+
+            // 2. Strict Ownership Authorization
+            $actor = authenticateRequest($pdo, false);
+            if ($actor && in_array($actor['role'], ['vendor', 'vehicle_vendor'])) {
+                $ownerVendor = $existingCar ? ($existingCar['vendor_id'] ?? '') : ($existingBike['vendor_id'] ?? '');
+                $actorId = $actor['id'] ?? '';
+                $actorUser = $actor['username'] ?? '';
+                $isAllowed = ($ownerVendor === $actorId || $ownerVendor === $actorUser);
+                if (!$isAllowed) {
+                    http_response_code(403);
+                    echo json_encode(["success" => false, "error" => "Forbidden: You are not authorized to update another vendor's vehicle."]);
+                    exit;
+                }
+            }
+
             // Check if car or bike
             $bikeCats = ['scooter', 'scooter / moped', 'sports bike', 'cruiser', 'tourer / adventure', 'electric scooter (ev)', 'superbike', 'dirt / off-road', 'cafe racer', 'standard / commuter', 'bike'];
             $isBike = ($action === 'update_bike') 
                    || (($payload['type'] ?? '') === 'bike') 
                    || in_array(strtolower(trim($payload['category'] ?? '')), $bikeCats);
             $isCar = !$isBike;
-            if ($action === 'update_vehicle') {
-                $checkCar = $pdo->prepare("SELECT * FROM cars WHERE id = ?");
-                $checkCar->execute([$id]);
-                $existingCar = $checkCar->fetch(PDO::FETCH_ASSOC);
 
-                $checkBike = null;
-                $existingBike = null;
-                if (!$existingCar) {
-                    $checkBike = $pdo->prepare("SELECT * FROM bikes WHERE id = ?");
-                    $checkBike->execute([$id]);
-                    $existingBike = $checkBike->fetch(PDO::FETCH_ASSOC);
-                }
-
-                if ($existingCar || $isCar) {
-                    $existing = $existingCar ?: [];
-                    $vName = !empty($payload['name']) ? $payload['name'] : ($existing['name'] ?? '');
-                    $vCat = !empty($payload['category']) ? $payload['category'] : ($existing['category'] ?? 'Hatchback');
-                    $vPrice = (isset($payload['price']) && $payload['price'] !== '') ? intval($payload['price']) : intval($existing['price'] ?? 0);
-                    $vSeating = !empty($payload['seating']) ? $payload['seating'] : (!empty($payload['seats']) ? $payload['seats'] : ($existing['seating'] ?? '5 Seater'));
-                    $vFuel = !empty($payload['fuel']) ? $payload['fuel'] : ($existing['fuel'] ?? 'Petrol');
-                    $vTrans = !empty($payload['transmission']) ? $payload['transmission'] : ($existing['transmission'] ?? 'Automatic');
-                    $vImage = !empty($image) ? $image : ($existing['image'] ?? '');
-                    $vImagesJson = !empty($images_json) ? $images_json : ($existing['images_json'] ?? null);
-                    $vLoc = !empty($payload['location']) ? $payload['location'] : ($existing['location'] ?? 'Goa Delivery');
-                    $vMileage = !empty($payload['mileage']) ? $payload['mileage'] : ($existing['mileage'] ?? '');
-
-                    $stmt = $pdo->prepare("UPDATE cars SET name=?, category=?, price=?, seating=?, fuel=?, transmission=?, image=?, images_json=?, location=?, mileage=? WHERE id=?");
-                    $stmt->execute([
-                        $vName,
-                        $vCat,
-                        $vPrice,
-                        $vSeating,
-                        $vFuel,
-                        $vTrans,
-                        $vImage,
-                        $vImagesJson,
-                        $vLoc,
-                        $vMileage,
-                        $id
-                    ]);
-                } else {
-                    $existing = $existingBike ?: [];
-                    $vName = !empty($payload['name']) ? $payload['name'] : ($existing['name'] ?? '');
-                    $vCat = !empty($payload['category']) ? $payload['category'] : ($existing['category'] ?? 'Scooter');
-                    $vPrice = (isset($payload['price']) && $payload['price'] !== '') ? intval($payload['price']) : intval($existing['price'] ?? 0);
-                    $vEngine = !empty($payload['engine']) ? $payload['engine'] : ($existing['engine'] ?? '150cc');
-                    $vFuel = !empty($payload['fuel']) ? $payload['fuel'] : ($existing['fuel'] ?? 'Petrol');
-                    $vMileage = !empty($payload['mileage']) ? $payload['mileage'] : ($existing['mileage'] ?? '40 km/l');
-                    $vImage = !empty($image) ? $image : ($existing['image'] ?? '');
-                    $vImagesJson = !empty($images_json) ? $images_json : ($existing['images_json'] ?? null);
-                    $vLoc = !empty($payload['location']) ? $payload['location'] : ($existing['location'] ?? 'Goa Delivery');
-
-                    $stmt = $pdo->prepare("UPDATE bikes SET name=?, category=?, price=?, engine=?, fuel=?, mileage=?, image=?, images_json=?, location=? WHERE id=?");
-                    $stmt->execute([
-                        $vName,
-                        $vCat,
-                        $vPrice,
-                        $vEngine,
-                        $vFuel,
-                        $vMileage,
-                        $vImage,
-                        $vImagesJson,
-                        $vLoc,
-                        $id
-                    ]);
-                }
-                echo json_encode(["success" => true, "message" => "Vehicle updated successfully."]);
-                exit;
+            // Multi-image handling for updates
+            $imagesList = [];
+            if (!empty($payload['images']) && is_array($payload['images'])) {
+                $imagesList = array_values(array_filter($payload['images']));
+            } elseif (!empty($payload['images_json'])) {
+                $decoded = json_decode($payload['images_json'], true);
+                if (is_array($decoded)) $imagesList = array_values(array_filter($decoded));
             }
+            if (empty($imagesList) && !empty($payload['image'])) {
+                $imagesList = [$payload['image']];
+            }
+            $image = !empty($imagesList) ? $imagesList[0] : ($payload['image'] ?? '');
+            $images_json = !empty($imagesList) ? json_encode($imagesList) : null;
+
+            if ($existingCar || $isCar) {
+                $existing = $existingCar ?: [];
+                $vName = !empty($payload['name']) ? $payload['name'] : ($existing['name'] ?? '');
+                $vCat = !empty($payload['category']) ? $payload['category'] : ($existing['category'] ?? 'Hatchback');
+                $vPrice = (isset($payload['price']) && $payload['price'] !== '') ? intval($payload['price']) : intval($existing['price'] ?? 0);
+                $vSeating = !empty($payload['seating']) ? $payload['seating'] : (!empty($payload['seats']) ? $payload['seats'] : ($existing['seating'] ?? '5 Seater'));
+                $vFuel = !empty($payload['fuel']) ? $payload['fuel'] : ($existing['fuel'] ?? 'Petrol');
+                $vTrans = !empty($payload['transmission']) ? $payload['transmission'] : ($existing['transmission'] ?? 'Automatic');
+                $vImage = !empty($image) ? $image : ($existing['image'] ?? '');
+                $vImagesJson = !empty($images_json) ? $images_json : ($existing['images_json'] ?? null);
+                $vLoc = !empty($payload['location']) ? $payload['location'] : ($existing['location'] ?? 'Goa Delivery');
+                $vMileage = !empty($payload['mileage']) ? $payload['mileage'] : ($existing['mileage'] ?? '');
+
+                $stmt = $pdo->prepare("UPDATE cars SET name=?, category=?, price=?, seating=?, fuel=?, transmission=?, image=?, images_json=?, location=?, mileage=? WHERE id=?");
+                $stmt->execute([
+                    $vName,
+                    $vCat,
+                    $vPrice,
+                    $vSeating,
+                    $vFuel,
+                    $vTrans,
+                    $vImage,
+                    $vImagesJson,
+                    $vLoc,
+                    $vMileage,
+                    $id
+                ]);
+            } else {
+                $existing = $existingBike ?: [];
+                $vName = !empty($payload['name']) ? $payload['name'] : ($existing['name'] ?? '');
+                $vCat = !empty($payload['category']) ? $payload['category'] : ($existing['category'] ?? 'Scooter');
+                $vPrice = (isset($payload['price']) && $payload['price'] !== '') ? intval($payload['price']) : intval($existing['price'] ?? 0);
+                $vEngine = !empty($payload['engine']) ? $payload['engine'] : ($existing['engine'] ?? '150cc');
+                $vFuel = !empty($payload['fuel']) ? $payload['fuel'] : ($existing['fuel'] ?? 'Petrol');
+                $vMileage = !empty($payload['mileage']) ? $payload['mileage'] : ($existing['mileage'] ?? '40 km/l');
+                $vImage = !empty($image) ? $image : ($existing['image'] ?? '');
+                $vImagesJson = !empty($images_json) ? $images_json : ($existing['images_json'] ?? null);
+                $vLoc = !empty($payload['location']) ? $payload['location'] : ($existing['location'] ?? 'Goa Delivery');
+
+                $stmt = $pdo->prepare("UPDATE bikes SET name=?, category=?, price=?, engine=?, fuel=?, mileage=?, image=?, images_json=?, location=? WHERE id=?");
+                $stmt->execute([
+                    $vName,
+                    $vCat,
+                    $vPrice,
+                    $vEngine,
+                    $vFuel,
+                    $vMileage,
+                    $vImage,
+                    $vImagesJson,
+                    $vLoc,
+                    $id
+                ]);
+            }
+            echo json_encode(["success" => true, "message" => "Vehicle updated successfully."]);
+            exit;
         } elseif ($action === 'toggle_vehicle_availability') {
             $id = $payload['id'] ?? null;
             if (!$id) throw new Exception("Missing vehicle ID.");
+
+            // Verify existence and ownership
+            $checkCar = $pdo->prepare("SELECT vendor_id FROM cars WHERE id = ?");
+            $checkCar->execute([$id]);
+            $cRow = $checkCar->fetch(PDO::FETCH_ASSOC);
+            $bRow = null;
+            if (!$cRow) {
+                $checkBike = $pdo->prepare("SELECT vendor_id FROM bikes WHERE id = ?");
+                $checkBike->execute([$id]);
+                $bRow = $checkBike->fetch(PDO::FETCH_ASSOC);
+            }
+            if (!$cRow && !$bRow) {
+                http_response_code(404);
+                echo json_encode(["success" => false, "error" => "Vehicle not found."]);
+                exit;
+            }
+            $actor = authenticateRequest($pdo, false);
+            if ($actor && in_array($actor['role'], ['vendor', 'vehicle_vendor'])) {
+                $ownerVendor = $cRow ? ($cRow['vendor_id'] ?? '') : ($bRow['vendor_id'] ?? '');
+                $actorId = $actor['id'] ?? '';
+                $actorUser = $actor['username'] ?? '';
+                $isAllowed = ($ownerVendor === $actorId || $ownerVendor === $actorUser);
+                if (!$isAllowed) {
+                    http_response_code(403);
+                    echo json_encode(["success" => false, "error" => "Forbidden: You are not authorized to modify another vendor's vehicle."]);
+                    exit;
+                }
+            }
+
             $avail = (!empty($payload['is_available']) || $payload['is_available'] === 1 || $payload['is_available'] === true || $payload['is_available'] === '1') ? 1 : 0;
 
             $stmt1 = $pdo->prepare("UPDATE cars SET is_available = ? WHERE id = ?");
@@ -7139,6 +7377,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($action === 'delete_vehicle' || $action === 'delete_car' || $action === 'delete_bike') {
             $id = $payload['id'] ?? null;
             if (!$id) throw new Exception("Missing vehicle ID.");
+
+            // Verify existence and ownership
+            $checkCar = $pdo->prepare("SELECT vendor_id FROM cars WHERE id = ?");
+            $checkCar->execute([$id]);
+            $cRow = $checkCar->fetch(PDO::FETCH_ASSOC);
+            $bRow = null;
+            if (!$cRow) {
+                $checkBike = $pdo->prepare("SELECT vendor_id FROM bikes WHERE id = ?");
+                $checkBike->execute([$id]);
+                $bRow = $checkBike->fetch(PDO::FETCH_ASSOC);
+            }
+            if (!$cRow && !$bRow) {
+                http_response_code(404);
+                echo json_encode(["success" => false, "error" => "Vehicle not found."]);
+                exit;
+            }
+            $actor = authenticateRequest($pdo, false);
+            if ($actor && in_array($actor['role'], ['vendor', 'vehicle_vendor'])) {
+                $ownerVendor = $cRow ? ($cRow['vendor_id'] ?? '') : ($bRow['vendor_id'] ?? '');
+                $actorId = $actor['id'] ?? '';
+                $actorUser = $actor['username'] ?? '';
+                $isAllowed = ($ownerVendor === $actorId || $ownerVendor === $actorUser);
+                if (!$isAllowed) {
+                    http_response_code(403);
+                    echo json_encode(["success" => false, "error" => "Forbidden: You are not authorized to delete another vendor's vehicle."]);
+                    exit;
+                }
+            }
 
             $stmt1 = $pdo->prepare("DELETE FROM cars WHERE id = ?");
             $stmt1->execute([$id]);
@@ -8791,13 +9057,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt->execute([$payment_status, $payload['id']]);
             }
 
-            // 10% Cashback Lifecycle Integration on Booking Completion / Cancellation
+            // Cashback & Loyalty Lifecycle Integration on Booking Completion / Cancellation
             if ($status) {
                 $cleanStatus = strtolower(trim($status));
                 if ($cleanStatus === 'completed') {
+                    // Credit 10% cashback to customer wallet
                     creditBookingCashback($pdo, $payload['id']);
+                    // Re-evaluate and persist customer loyalty tier
+                    try {
+                        $cBooking = $pdo->prepare('SELECT phone, customer_id FROM bookings WHERE id = ?');
+                        $cBooking->execute([$payload['id']]);
+                        $cBRow = $cBooking->fetch(PDO::FETCH_ASSOC);
+                        if ($cBRow) {
+                            calculateCustomerTiers($pdo, $cBRow['phone'] ?? '', $cBRow['customer_id'] ?? null);
+                        }
+                    } catch (Exception $loyEx) {}
                 } elseif (in_array($cleanStatus, ['cancelled', 'rejected', 'refunded'])) {
+                    // Reverse earned cashback
                     reverseBookingCashback($pdo, $payload['id']);
+                    // WALLET_REFUND: restore any wallet credits spent on this booking
+                    try {
+                        $refStmt = $pdo->prepare('SELECT phone, customer_id, wallet_amount_used FROM bookings WHERE id = ?');
+                        $refStmt->execute([$payload['id']]);
+                        $refRow = $refStmt->fetch(PDO::FETCH_ASSOC);
+                        if ($refRow && floatval($refRow['wallet_amount_used'] ?? 0) > 0) {
+                            $chkRef = $pdo->prepare("SELECT id FROM customer_wallet_transactions WHERE booking_id = ? AND transaction_type = 'WALLET_REFUND' LIMIT 1");
+                            $chkRef->execute([$payload['id']]);
+                            if (!$chkRef->fetch(PDO::FETCH_ASSOC)) {
+                                $refAmt = floatval($refRow['wallet_amount_used']);
+                                $refPhone = preg_replace('/\D/', '', $refRow['phone'] ?? '');
+                                $refLast10 = strlen($refPhone) >= 10 ? substr($refPhone, -10) : $refPhone;
+                                $refCustId = !empty($refRow['customer_id']) ? $refRow['customer_id'] : ('c_' . $refLast10);
+                                $refExpiry = date('Y-m-d H:i:s', strtotime('+30 days'));
+                                $refNow = date('Y-m-d H:i:s');
+                                $insRef = $pdo->prepare('INSERT INTO customer_wallet_transactions (id, customer_id, customer_phone, booking_id, transaction_type, amount, used_amount, remaining_amount, earned_at, expires_at, status, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 0.00, ?, ?, ?, ?, ?, ?, ?)');
+                                $insRef->execute([
+                                    'wref_' . uniqid(), $refCustId, $refLast10, $payload['id'],
+                                    'WALLET_REFUND', $refAmt, $refAmt,
+                                    $refNow, $refExpiry, 'AVAILABLE',
+                                    'Wallet refund for cancelled booking #' . $payload['id'],
+                                    $refNow, $refNow
+                                ]);
+                            }
+                        }
+                        // Re-evaluate loyalty tier after cancellation
+                        if (!empty($refRow['phone'])) {
+                            calculateCustomerTiers($pdo, $refRow['phone'], $refRow['customer_id'] ?? null);
+                        }
+                    } catch (Exception $wRefEx) {}
                 }
                 // B2B Commission Lifecycle Transition
                 updateB2BBookingStatusTransitions($pdo, $payload['id'], $status, $tenant_id);

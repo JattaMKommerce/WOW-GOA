@@ -123,9 +123,12 @@ import {
 // GET (Read) Functions with Resilient Fallbacks
 // ==========================================
 
-export async function fetchCars() {
+export async function fetchCars(params = {}) {
   try {
-    const res = await apiFetch(`${API_BASE}?resource=cars`);
+    let url = `${API_BASE}?resource=cars`;
+    if (params.scope) url += `&scope=${encodeURIComponent(params.scope)}`;
+    const fetchOpts = params.skipAuth ? { skipAuth: true } : {};
+    const res = await apiFetch(url, fetchOpts);
     if (!res.ok) return [];
     const data = await res.json();
     return Array.isArray(data) ? data : [];
@@ -135,9 +138,12 @@ export async function fetchCars() {
   }
 }
 
-export async function fetchBikes() {
+export async function fetchBikes(params = {}) {
   try {
-    const res = await apiFetch(`${API_BASE}?resource=bikes`);
+    let url = `${API_BASE}?resource=bikes`;
+    if (params.scope) url += `&scope=${encodeURIComponent(params.scope)}`;
+    const fetchOpts = params.skipAuth ? { skipAuth: true } : {};
+    const res = await apiFetch(url, fetchOpts);
     if (!res.ok) return [];
     const data = await res.json();
     return Array.isArray(data) ? data : [];
@@ -236,6 +242,20 @@ export async function fetchVendors() {
     console.warn('[API] Vendors fetch fallback used:', err.message);
     return [];
   }
+}
+
+export async function approveVendor(vendorId) {
+  const res = await apiFetch(`${API_BASE}?action=approve_vendor`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'approve_vendor', vendor_id: vendorId })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || 'Failed to approve vendor application.');
+  }
+  broadcastNotificationUpdate({ type: 'vendor', title: 'Vendor Account Approved' });
+  return data;
 }
 
 export async function fetchUsers() {
@@ -1259,25 +1279,44 @@ export async function loginUser(username, password) {
   const cleanU = (username || '').trim().toLowerCase();
   const cleanP = (password || '').trim();
 
+  let res = null;
+  let data = null;
+
   try {
-    const res = await apiFetch(`${API_BASE}?action=login`, {
+    res = await apiFetch(`${API_BASE}?action=login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: cleanU, password: cleanP })
     });
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.success && data.user) {
-        if (data.token) {
-          try {
-            localStorage.setItem('auth_token', data.token);
-          } catch (e) {}
-        }
-        return data.user;
-      }
+    if (res) {
+      try {
+        data = await res.json();
+      } catch (e) {}
     }
   } catch (err) {
     console.warn('[API] Server login request error:', err.message);
+  }
+
+  // Handle successful server login
+  if (res && res.ok) {
+    if (data && data.success && data.user) {
+      if (data.token) {
+        try {
+          localStorage.setItem('auth_token', data.token);
+        } catch (e) {}
+      }
+      return data.user;
+    }
+  }
+
+  // Handle authoritative server error response (e.g. HTTP 403 Forbidden for pending or rejected vendor accounts)
+  if (data && (data.error || data.status === 'pending' || data.status === 'rejected')) {
+    if ((res && res.status === 403) || data.status === 'pending' || data.status === 'rejected') {
+      const errorMsg = data.error || (data.status === 'pending'
+        ? 'Your account registration is currently pending administrator verification and approval. You will be notified once activated.'
+        : 'Your account registration was not approved. Please contact WOW GOA support.');
+      throw new Error(errorMsg);
+    }
   }
 
   // Check demo accounts
@@ -1973,11 +2012,13 @@ export async function createBooking(bookingData, options = {}) {
     }
   }
 
+  let serverCashbackPreview = null;
   const res = await apiFetch(`${API_BASE}?action=book`, fetchOptions);
   if (res.ok) {
     const data = await res.json();
     if (data && data.success) {
       createdBookingId = data.booking_id;
+      serverCashbackPreview = data.cashback_preview || null;
     } else {
       throw new Error(data?.error || data?.message || 'Server rejected booking request.');
     }
@@ -2046,7 +2087,9 @@ export async function createBooking(bookingData, options = {}) {
     created_at: new Date().toISOString().replace('T', ' ').slice(0, 19),
     traveller_details_json: bookingData.traveller_details_json || null,
     price_breakdown_json: bookingData.price_breakdown_json || null,
-    customizations: bookingData.customizations || null
+    customizations: bookingData.customizations || null,
+    cashback_preview: serverCashbackPreview,
+    cashback_earned: (serverCashbackPreview && typeof serverCashbackPreview.amount === 'number') ? serverCashbackPreview.amount : 0
   };
 
   try {
@@ -2063,6 +2106,7 @@ export async function createBooking(bookingData, options = {}) {
   return {
     success: true,
     booking_id: assignedId,
+    cashback_preview: serverCashbackPreview,
     message: "Booking confirmed successfully!",
     booking: newBookingRecord
   };

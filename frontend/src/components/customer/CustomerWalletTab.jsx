@@ -1,448 +1,390 @@
 // frontend/src/components/customer/CustomerWalletTab.jsx
-import React, { useState, useEffect } from 'react';
-import { 
-  Wallet, Clock, Gift, ArrowUpRight, ArrowDownLeft, ShieldCheck, 
-  AlertCircle, Sparkles, RefreshCw, CheckCircle2, ChevronRight, Info, AlertTriangle, Calendar
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  Wallet, Clock, Gift, ArrowUpRight, ArrowDownLeft, ShieldCheck,
+  AlertCircle, Sparkles, RefreshCw, CheckCircle2, ChevronRight, Info,
+  AlertTriangle, Star, Crown, Award, Zap, Shield, Trophy, TrendingUp
 } from 'lucide-react';
 import * as api from '../../services/api';
 
-export default function CustomerWalletTab({ currentUser, onNavigateToBookings }) {
+// ─── Tier config ──────────────────────────────────────────────────────────────
+const TIER_CONFIG = {
+  'New Member': {
+    icon: '🆕', color: '#6b7280', gradient: 'linear-gradient(135deg, #6b7280, #9ca3af)',
+    bg: '#f3f4f6', border: '#d1d5db', label: 'New Member'
+  },
+  Bronze: {
+    icon: '🥉', color: '#b45309', gradient: 'linear-gradient(135deg, #92400e, #d97706)',
+    bg: '#fef3c7', border: '#fbbf24', label: 'Bronze'
+  },
+  Silver: {
+    icon: '🥈', color: '#374151', gradient: 'linear-gradient(135deg, #4b5563, #9ca3af)',
+    bg: '#f3f4f6', border: '#9ca3af', label: 'Silver'
+  },
+  Gold: {
+    icon: '🥇', color: '#92400e', gradient: 'linear-gradient(135deg, #d97706, #f59e0b)',
+    bg: '#fffbeb', border: '#f59e0b', label: 'Gold'
+  },
+  Platinum: {
+    icon: '💎', color: '#1e3a5f', gradient: 'linear-gradient(135deg, #1e40af, #7c3aed)',
+    bg: '#eef2ff', border: '#818cf8', label: 'Platinum'
+  }
+};
+
+const TRANSACTION_TYPE_CONFIG = {
+  CASHBACK_CREDIT:   { label: 'Cashback Earned',    icon: <Gift size={14} />,           color: '#16a34a', bg: '#dcfce7' },
+  CASHBACK_USED:     { label: 'Cashback Redeemed',  icon: <ArrowUpRight size={14} />,   color: '#2563eb', bg: '#dbeafe' },
+  CASHBACK_REVERSED: { label: 'Cashback Reversed',  icon: <ArrowDownLeft size={14} />,  color: '#dc2626', bg: '#fee2e2' },
+  CASHBACK_EXPIRED:  { label: 'Cashback Expired',   icon: <Clock size={14} />,          color: '#6b7280', bg: '#f3f4f6' },
+  WALLET_REFUND:     { label: 'Wallet Refund',       icon: <CheckCircle2 size={14} />,   color: '#0891b2', bg: '#cffafe' },
+};
+
+function fmtCurrency(v) { return '₹' + Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function fmtDate(d) { if (!d) return '—'; try { return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return d; } }
+function fmtDatetime(d) { if (!d) return '—'; try { return new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return d; } }
+
+// ─── Countdown hook ───────────────────────────────────────────────────────────
+function useCountdown(secondsRemaining) {
+  const [display, setDisplay] = useState('');
+  useEffect(() => {
+    if (!secondsRemaining || secondsRemaining <= 0) { setDisplay(''); return; }
+    const tick = () => {
+      const now = Math.floor(Date.now() / 1000);
+      const remaining = secondsRemaining - (now - startRef.current);
+      if (remaining <= 0) { setDisplay('Expired'); clearInterval(interval); return; }
+      const d = Math.floor(remaining / 86400);
+      const h = Math.floor((remaining % 86400) / 3600);
+      const m = Math.floor((remaining % 3600) / 60);
+      const s = remaining % 60;
+      setDisplay(d > 0 ? `${d}d ${h}h ${m}m` : `${h}h ${m}m ${String(s).padStart(2,'0')}s`);
+    };
+    const startRef = { current: Math.floor(Date.now() / 1000) };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [secondsRemaining]);
+  return display;
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+export default function CustomerWalletTab({ currentUser, onNavigateTab, onNavigateHome }) {
   const [wallet, setWallet] = useState({
-    available_balance: 0,
-    total_earned: 0,
-    total_used: 0,
-    total_expired: 0,
-    nearest_expiring: null,
-    server_time: new Date().toISOString(),
-    transactions: []
+    available_balance: 0, total_earned: 0, total_used: 0, total_expired: 0,
+    nearest_expiring: null, server_time: new Date().toISOString(), transactions: []
+  });
+  const [loyalty, setLoyalty] = useState({
+    unified_tier: 'New Member', resolved_tier: 'New Member', qualifying_trips_count: 0,
+    qualifying_spend: 0, badge: '🆕 New Member', icon: '🆕', progress: 0,
+    target: 1, remaining: 1, next_tier: 'Bronze',
+    next_tier_callout: '1 qualifying booking to earn Bronze',
+    benefits: ['10% Wallet Cashback on eligible bookings'],
+    is_new_member: true, is_platinum: false, description: ''
   });
   const [loading, setLoading] = useState(true);
-  const [filterType, setFilterType] = useState('ALL'); // 'ALL' | 'EARNED' | 'USED' | 'EXPIRED'
-  const [countdownText, setCountdownText] = useState('');
-  const [secondsRemaining, setSecondsRemaining] = useState(0);
+  const [filterType, setFilterType] = useState('ALL');
 
   const phone = currentUser?.phone || currentUser?.username || '';
   const customerId = currentUser?.id || '';
 
-  const loadWallet = async () => {
+  const countdown = useCountdown(wallet.nearest_expiring?.seconds_remaining || 0);
+
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const data = await api.fetchCustomerWallet(phone, customerId);
-      if (data) {
-        setWallet(data);
-        if (data.nearest_expiring && data.nearest_expiring.seconds_remaining > 0) {
-          setSecondsRemaining(data.nearest_expiring.seconds_remaining);
-        } else {
-          setSecondsRemaining(0);
-        }
+      // New unified API returns loyalty inside the wallet response
+      if (data.loyalty) {
+        setLoyalty(data.loyalty);
       }
-    } catch (e) {
-      console.warn("Failed to load customer wallet", e);
+      setWallet({
+        available_balance: data.available_balance ?? 0,
+        total_earned: data.total_earned ?? 0,
+        total_used: data.total_used ?? 0,
+        total_expired: data.total_expired ?? 0,
+        nearest_expiring: data.nearest_expiring ?? null,
+        server_time: data.server_time ?? new Date().toISOString(),
+        transactions: data.transactions ?? []
+      });
+    } catch (err) {
+      console.error('CustomerWalletTab fetch error:', err);
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    loadWallet();
   }, [phone, customerId]);
 
-  // Live countdown timer ticker (ticks every second)
-  useEffect(() => {
-    if (secondsRemaining <= 0) {
-      setCountdownText('Expired or No Active Expiry');
-      return;
-    }
+  useEffect(() => { loadData(); }, [loadData]);
 
-    const formatCountdown = (totalSec) => {
-      const days = Math.floor(totalSec / (3600 * 24));
-      const hours = Math.floor((totalSec % (3600 * 24)) / 3600);
-      const minutes = Math.floor((totalSec % 3600) / 60);
-      const seconds = totalSec % 60;
-
-      if (days > 0) {
-        return `${days} Day${days > 1 ? 's' : ''} ${hours}h ${minutes}m ${seconds}s`;
-      } else if (hours > 0) {
-        return `${hours} Hours ${minutes} Minutes ${seconds} Seconds`;
-      } else {
-        return `${minutes} Minutes ${seconds} Seconds`;
-      }
-    };
-
-    setCountdownText(formatCountdown(secondsRemaining));
-
-    const interval = setInterval(() => {
-      setSecondsRemaining(prev => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          setCountdownText('Expired');
-          return 0;
-        }
-        const next = prev - 1;
-        setCountdownText(formatCountdown(next));
-        return next;
-      });
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [secondsRemaining]);
-
-  const transactions = wallet.transactions || [];
-
-  const filteredTransactions = transactions.filter(t => {
-    const type = (t.transaction_type || '').toUpperCase();
-    const st = (t.status || '').toUpperCase();
-    if (filterType === 'EARNED') return type === 'CASHBACK_CREDIT';
-    if (filterType === 'USED') return type === 'CASHBACK_USED';
-    if (filterType === 'EXPIRED') return type === 'CASHBACK_EXPIRED' || st === 'EXPIRED';
+  const filteredTx = (wallet.transactions || []).filter(tx => {
+    if (filterType === 'ALL') return true;
+    if (filterType === 'EARNED') return tx.transaction_type === 'CASHBACK_CREDIT' || tx.transaction_type === 'WALLET_REFUND';
+    if (filterType === 'USED')    return tx.transaction_type === 'CASHBACK_USED';
+    if (filterType === 'EXPIRED') return tx.transaction_type === 'CASHBACK_EXPIRED' || tx.transaction_type === 'CASHBACK_REVERSED';
     return true;
   });
 
-  const formatExpiryRelative = (tx) => {
-    if (tx.status === 'EXPIRED') return <span className="text-danger fw-bold">❌ Expired</span>;
-    if (tx.status === 'USED') return <span className="text-muted">✅ Fully Used</span>;
-    if (tx.status === 'REVERSED') return <span className="text-secondary">↩️ Reversed</span>;
-    if (!tx.expires_at) return '—';
+  const tierCfg = TIER_CONFIG[loyalty.unified_tier] || TIER_CONFIG['New Member'];
 
-    const exp = new Date(tx.expires_at).getTime();
-    const diff = exp - Date.now();
-    if (diff <= 0) return <span className="text-danger fw-bold">❌ Expired</span>;
-
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-
-    if (days >= 1) {
-      return (
-        <span className={`fw-bold ${days <= 3 ? 'text-danger' : 'text-warning'}`}>
-          ⏳ Expires in {days} day{days > 1 ? 's' : ''}
-        </span>
-      );
-    }
+  if (loading) {
     return (
-      <span className="fw-bold text-danger animate-pulse">
-        ⏳ Expires in {hours}h {Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))}m
-      </span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 300, gap: 10 }}>
+        <RefreshCw size={18} style={{ animation: 'spin 1s linear infinite', color: '#6366f1' }} />
+        <span style={{ color: '#6b7280', fontSize: '0.9rem' }}>Loading your Wallet & Rewards…</span>
+        <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+      </div>
     );
-  };
+  }
 
   return (
-    <div className="customer-tab-content animate-fade-in">
-      
-      {/* ─── Top Balance Hero Card ─── */}
-      <div className="card border-0 rounded-4 shadow-sm mb-4 overflow-hidden" style={{ background: 'linear-gradient(135deg, #0B192C 0%, #1E3E62 100%)' }}>
-        <div className="card-body p-4 text-white">
-          <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
-            <div className="d-flex align-items-center gap-3">
-              <div className="rounded-4 p-3 text-warning d-flex align-items-center justify-content-center shadow" style={{ background: 'rgba(255, 255, 255, 0.12)', backdropFilter: 'blur(10px)' }}>
-                <Wallet size={28} />
-              </div>
-              <div>
-                <div className="d-flex align-items-center gap-2">
-                  <h4 className="fw-black mb-0 font-heading text-white" style={{ fontSize: '22px' }}>
-                    WOW GOA Cashback Wallet
-                  </h4>
-                  <span className="badge bg-warning text-dark fw-bold text-xs px-2.5 py-0.5 rounded-pill">
-                    10% Cashback Active
-                  </span>
-                </div>
-                <p className="text-white-50 text-xs mb-0 mt-0.5">
-                  Earn 10% instant cashback on customer-paid amounts across Cars, Hotels, and Tours upon trip completion.
-                </p>
-              </div>
-            </div>
+    <div style={{ maxWidth: 900, margin: '0 auto', padding: '0 0 40px' }}>
 
-            <button 
-              onClick={loadWallet} 
-              disabled={loading}
-              className="btn btn-sm btn-light bg-white bg-opacity-20 text-white border-0 rounded-pill px-3 py-1.5 text-xs fw-bold d-flex align-items-center gap-1.5"
-            >
-              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} /> Refresh Balance
-            </button>
-          </div>
-
-          <div className="row g-3 align-items-center pt-2">
-            {/* Main Balance Display */}
-            <div className="col-12 col-md-5">
-              <div className="p-3.5 rounded-4" style={{ background: 'rgba(0, 0, 0, 0.25)', border: '1px solid rgba(255, 255, 255, 0.15)' }}>
-                <div className="text-white-50 text-xs text-uppercase fw-bold tracking-wider mb-1">
-                  Available Cashback Balance
-                </div>
-                <div className="fs-1 fw-black text-warning font-heading mb-1 d-flex align-items-baseline gap-1">
-                  <span>₹{wallet.available_balance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                </div>
-                <div className="text-white-50 text-xs d-flex align-items-center gap-1">
-                  <ShieldCheck size={13} className="text-success" />
-                  <span>Usable during checkout on your next Goa booking</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Nearest Expiry Countdown */}
-            <div className="col-12 col-md-7">
-              <div className="p-3.5 rounded-4 h-100 d-flex flex-column justify-content-center" style={{ background: 'rgba(255, 255, 255, 0.08)', border: '1px solid rgba(255, 255, 255, 0.15)' }}>
-                {wallet.nearest_expiring && wallet.available_balance > 0 ? (
-                  <div>
-                    <div className="d-flex align-items-center justify-content-between mb-1">
-                      <span className="text-warning text-xs fw-bold d-flex align-items-center gap-1">
-                        <Clock size={14} /> Nearest Expiry Countdown (30-Day Policy)
-                      </span>
-                      <span className="badge bg-danger bg-opacity-75 text-white text-xs px-2 py-0.5 rounded-pill">
-                        ₹{wallet.nearest_expiring.amount} expiring
-                      </span>
-                    </div>
-
-                    <div className="fw-black text-white font-monospace fs-4 my-1">
-                      ⏳ {countdownText}
-                    </div>
-
-                    <div className="text-white-50 text-xs mt-1">
-                      Expires on: <strong>{wallet.nearest_expiring.formatted_expires_at}</strong>. Use before expiry on any eligible booking.
-                    </div>
-                  </div>
-                ) : (
-                  <div className="py-2 text-center text-md-start">
-                    <div className="text-white fw-bold text-sm mb-1 d-flex align-items-center gap-1">
-                      <Sparkles size={16} className="text-warning" /> No Urgent Expiring Cashback
-                    </div>
-                    <div className="text-white-50 text-xs">
-                      Complete an upcoming booking to earn 10% Cashback credited directly to your WOW GOA Wallet.
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+      {/* ── PAGE HEADER ── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+        <div>
+          <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#111827', margin: 0 }}>
+            🏆 WOW GOA Wallet & Rewards
+          </h2>
+          <p style={{ fontSize: '0.82rem', color: '#6b7280', marginTop: 4 }}>
+            Your real-time cashback balance, tier status, and transaction history
+          </p>
         </div>
+        <button
+          onClick={loadData}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', border: '1px solid #e5e7eb', borderRadius: 8, background: '#fff', cursor: 'pointer', fontSize: '0.82rem', color: '#374151', fontWeight: 500 }}
+        >
+          <RefreshCw size={14} /> Refresh
+        </button>
       </div>
 
-      {/* ─── Metric Cards ─── */}
-      <div className="row g-3 mb-4">
-        <div className="col-6 col-md-3">
-          <div className="card border-0 rounded-4 shadow-sm p-3 bg-white" style={{ border: '1px solid #eef2f6' }}>
-            <div className="d-flex align-items-center justify-content-between mb-1">
-              <span className="text-xs fw-bold text-muted text-uppercase tracking-wider">Total Earned</span>
-              <div className="rounded-circle p-1.5 bg-success bg-opacity-10 text-success">
-                <ArrowDownLeft size={16} />
-              </div>
-            </div>
-            <div className="fs-4 fw-black text-success font-heading">
-              ₹{wallet.total_earned.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-            </div>
-            <div className="text-muted" style={{ fontSize: '11px' }}>10% cashback credited</div>
-          </div>
+      {/* ── TIER BANNER ── */}
+      <div style={{
+        borderRadius: 16, padding: '24px 28px', marginBottom: 20,
+        background: tierCfg.gradient, color: '#fff', position: 'relative', overflow: 'hidden'
+      }}>
+        <div style={{ position: 'absolute', top: -20, right: -20, fontSize: 120, opacity: 0.12, userSelect: 'none' }}>
+          {tierCfg.icon}
         </div>
-
-        <div className="col-6 col-md-3">
-          <div className="card border-0 rounded-4 shadow-sm p-3 bg-white" style={{ border: '1px solid #eef2f6' }}>
-            <div className="d-flex align-items-center justify-content-between mb-1">
-              <span className="text-xs fw-bold text-muted text-uppercase tracking-wider">Total Used</span>
-              <div className="rounded-circle p-1.5 bg-primary bg-opacity-10 text-primary">
-                <ArrowUpRight size={16} />
-              </div>
-            </div>
-            <div className="fs-4 fw-black text-primary font-heading">
-              ₹{wallet.total_used.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-            </div>
-            <div className="text-muted" style={{ fontSize: '11px' }}>Deducted on bookings</div>
-          </div>
-        </div>
-
-        <div className="col-6 col-md-3">
-          <div className="card border-0 rounded-4 shadow-sm p-3 bg-white" style={{ border: '1px solid #eef2f6' }}>
-            <div className="d-flex align-items-center justify-content-between mb-1">
-              <span className="text-xs fw-bold text-muted text-uppercase tracking-wider">Total Expired</span>
-              <div className="rounded-circle p-1.5 bg-danger bg-opacity-10 text-danger">
-                <Clock size={16} />
-              </div>
-            </div>
-            <div className="fs-4 fw-black text-danger font-heading">
-              ₹{wallet.total_expired.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-            </div>
-            <div className="text-muted" style={{ fontSize: '11px' }}>Past 30-day window</div>
-          </div>
-        </div>
-
-        <div className="col-6 col-md-3">
-          <div className="card border-0 rounded-4 shadow-sm p-3 bg-white" style={{ border: '1px solid #eef2f6' }}>
-            <div className="d-flex align-items-center justify-content-between mb-1">
-              <span className="text-xs fw-bold text-muted text-uppercase tracking-wider">Cashback Rate</span>
-              <div className="rounded-circle p-1.5 bg-warning bg-opacity-10 text-warning">
-                <Gift size={16} />
-              </div>
-            </div>
-            <div className="fs-4 fw-black text-dark font-heading">
-              10%
-            </div>
-            <div className="text-muted" style={{ fontSize: '11px' }}>On customer-paid amount</div>
-          </div>
-        </div>
-      </div>
-
-      {/* ─── Transaction History Table ─── */}
-      <div className="card border-0 rounded-4 shadow-sm bg-white overflow-hidden mb-4" style={{ border: '1px solid #eef2f6' }}>
-        <div className="p-3.5 border-bottom d-flex flex-wrap align-items-center justify-content-between gap-3">
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
           <div>
-            <h6 className="fw-black text-dark mb-0 font-heading" style={{ fontSize: '16px' }}>
-              Cashback Transaction History
-            </h6>
-            <span className="text-muted text-xs">Complete ledger of your cashback credits, redemptions, and 30-day expiries.</span>
+            <div style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1, opacity: 0.85, marginBottom: 4 }}>
+              YOUR LOYALTY STATUS
+            </div>
+            <div style={{ fontSize: '2rem', fontWeight: 800, marginBottom: 4 }}>
+              {tierCfg.icon} {loyalty.unified_tier}
+            </div>
+            <div style={{ fontSize: '0.85rem', opacity: 0.9, marginBottom: 12 }}>
+              {loyalty.description || (loyalty.is_new_member ? 'Complete your first qualifying trip to start earning tier benefits.' : `${loyalty.qualifying_trips_count} qualifying trip${loyalty.qualifying_trips_count !== 1 ? 's' : ''} in last 365 days`)}
+            </div>
+            {/* Progress bar */}
+            {!loyalty.is_platinum && (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, fontSize: '0.75rem', opacity: 0.85, marginBottom: 4 }}>
+                  <span>{loyalty.qualifying_trips_count} / {loyalty.target} qualifying trips</span>
+                  <span>{loyalty.next_tier_callout}</span>
+                </div>
+                <div style={{ height: 8, background: 'rgba(255,255,255,0.25)', borderRadius: 4, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', background: '#fff', borderRadius: 4, width: `${Math.max(3, loyalty.progress)}%`, transition: 'width 0.6s ease' }} />
+                </div>
+              </div>
+            )}
+            {loyalty.is_platinum && (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.2)', borderRadius: 20, padding: '4px 12px', fontSize: '0.8rem', fontWeight: 600 }}>
+                <Crown size={13} /> Highest Tier — Platinum VIP
+              </div>
+            )}
           </div>
+          {/* Qualifying spend */}
+          {loyalty.qualifying_spend > 0 && (
+            <div style={{ textAlign: 'right', minWidth: 120 }}>
+              <div style={{ fontSize: '0.72rem', opacity: 0.8, marginBottom: 2 }}>365-day qualifying spend</div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>{fmtCurrency(loyalty.qualifying_spend)}</div>
+            </div>
+          )}
+        </div>
+      </div>
 
-          <div className="d-flex flex-wrap gap-1.5">
-            {['ALL', 'EARNED', 'USED', 'EXPIRED'].map(filter => (
+      {/* ── PERKS CARD ── */}
+      <div style={{ borderRadius: 14, border: `2px solid ${tierCfg.border}`, background: tierCfg.bg, padding: '16px 20px', marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+          <Sparkles size={15} style={{ color: tierCfg.color }} />
+          <span style={{ fontSize: '0.85rem', fontWeight: 700, color: tierCfg.color }}>
+            {loyalty.is_new_member ? 'Welcome Perks' : `${loyalty.unified_tier} Tier Perks`}
+          </span>
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {(loyalty.benefits || []).map((b, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, padding: '6px 12px', fontSize: '0.82rem', color: '#374151' }}>
+              <CheckCircle2 size={13} style={{ color: tierCfg.color, flexShrink: 0 }} /> {b}
+            </div>
+          ))}
+        </div>
+        {loyalty.next_tier && (
+          <div style={{ marginTop: 10, fontSize: '0.78rem', color: '#6b7280', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <TrendingUp size={12} />
+            Next: <strong style={{ color: '#374151' }}>{loyalty.next_tier_callout}</strong>
+          </div>
+        )}
+      </div>
+
+      {/* ── WALLET BALANCE CARDS ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 20 }}>
+        {/* Available */}
+        <div style={{ borderRadius: 14, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff', padding: '20px 18px', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ position: 'absolute', bottom: -10, right: -10, opacity: 0.15 }}><Wallet size={60} /></div>
+          <div style={{ fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.8, opacity: 0.85, marginBottom: 6 }}>Available Balance</div>
+          <div style={{ fontSize: '1.6rem', fontWeight: 800 }}>{fmtCurrency(wallet.available_balance)}</div>
+          <div style={{ fontSize: '0.73rem', opacity: 0.8, marginTop: 4 }}>Use up to 10% on your next booking</div>
+        </div>
+        {/* Earned */}
+        <div style={{ borderRadius: 14, background: '#f0fdf4', border: '1.5px solid #bbf7d0', padding: '20px 18px' }}>
+          <div style={{ fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.8, color: '#15803d', marginBottom: 6 }}>Total Earned</div>
+          <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#166534' }}>{fmtCurrency(wallet.total_earned)}</div>
+          <div style={{ fontSize: '0.73rem', color: '#16a34a', marginTop: 4 }}>10% cashback on completed trips</div>
+        </div>
+        {/* Used */}
+        <div style={{ borderRadius: 14, background: '#eff6ff', border: '1.5px solid #bfdbfe', padding: '20px 18px' }}>
+          <div style={{ fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.8, color: '#1d4ed8', marginBottom: 6 }}>Total Redeemed</div>
+          <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#1e40af' }}>{fmtCurrency(wallet.total_used)}</div>
+          <div style={{ fontSize: '0.73rem', color: '#3b82f6', marginTop: 4 }}>Applied on bookings</div>
+        </div>
+        {/* Expired */}
+        <div style={{ borderRadius: 14, background: '#f9fafb', border: '1.5px solid #e5e7eb', padding: '20px 18px' }}>
+          <div style={{ fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.8, color: '#6b7280', marginBottom: 6 }}>Expired</div>
+          <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#374151' }}>{fmtCurrency(wallet.total_expired)}</div>
+          <div style={{ fontSize: '0.73rem', color: '#9ca3af', marginTop: 4 }}>Unused after 30 days</div>
+        </div>
+      </div>
+
+      {/* ── EXPIRY COUNTDOWN ── */}
+      {wallet.nearest_expiring && countdown && (
+        <div style={{ borderRadius: 12, background: '#fff7ed', border: '1.5px solid #fed7aa', padding: '14px 18px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 8, background: '#fff', border: '1.5px solid #fdba74', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Clock size={16} style={{ color: '#ea580c' }} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: '0.87rem', color: '#c2410c' }}>
+              ⏳ {fmtCurrency(wallet.nearest_expiring.amount)} expires in {countdown}
+            </div>
+            <div style={{ fontSize: '0.77rem', color: '#9a3412', marginTop: 2 }}>
+              Expires on {fmtDate(wallet.nearest_expiring.expires_at)} — Use it on your next booking!
+            </div>
+          </div>
+          {(onNavigateTab || onNavigateHome) && (
+            <button
+              onClick={() => {
+                if (onNavigateTab) {
+                  onNavigateTab('overview', 'explore');
+                } else if (onNavigateHome) {
+                  onNavigateHome();
+                }
+              }}
+              style={{ padding: '7px 14px', borderRadius: 8, background: '#ea580c', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, whiteSpace: 'nowrap' }}
+            >
+              Book Now
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ── HOW IT WORKS ── */}
+      <div style={{ borderRadius: 12, background: '#f8fafc', border: '1px solid #e2e8f0', padding: '14px 18px', marginBottom: 20 }}>
+        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Info size={13} /> How WOW GOA Wallet & Rewards Works
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 8 }}>
+          {[
+            { icon: '🎯', title: 'Complete Trips', desc: 'Finish bookings ₹1,500+' },
+            { icon: '💰', title: 'Earn 10% Cashback', desc: 'Credited after completion' },
+            { icon: '⏱️', title: '30-Day Validity', desc: 'FIFO expiry — use early!' },
+            { icon: '🔒', title: '10% Redemption Cap', desc: 'Max 10% of next booking' },
+          ].map((item, i) => (
+            <div key={i} style={{ background: '#fff', borderRadius: 8, border: '1px solid #e2e8f0', padding: '10px 12px' }}>
+              <div style={{ fontSize: '1.1rem', marginBottom: 4 }}>{item.icon}</div>
+              <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#1e293b' }}>{item.title}</div>
+              <div style={{ fontSize: '0.73rem', color: '#64748b', marginTop: 2 }}>{item.desc}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── LEDGER ── */}
+      <div style={{ borderRadius: 14, border: '1.5px solid #e5e7eb', background: '#fff', overflow: 'hidden' }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid #f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+          <span style={{ fontWeight: 700, fontSize: '0.95rem', color: '#111827' }}>Transaction History</span>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {['ALL', 'EARNED', 'USED', 'EXPIRED'].map(f => (
               <button
-                key={filter}
-                onClick={() => setFilterType(filter)}
-                className={`btn btn-sm px-3 py-1 rounded-pill text-xs fw-bold border-0 ${filterType === filter ? 'bg-dark text-white shadow-sm' : 'bg-light text-muted'}`}
+                key={f}
+                onClick={() => setFilterType(f)}
+                style={{
+                  padding: '5px 12px', borderRadius: 20, border: 'none', cursor: 'pointer',
+                  fontSize: '0.75rem', fontWeight: 600,
+                  background: filterType === f ? '#6366f1' : '#f3f4f6',
+                  color: filterType === f ? '#fff' : '#6b7280',
+                  transition: 'all 0.2s'
+                }}
               >
-                {filter === 'ALL' ? 'All Transactions' : filter}
+                {f}
               </button>
             ))}
           </div>
         </div>
 
-        <div className="table-responsive">
-          <table className="table align-middle mb-0" style={{ fontSize: '0.82rem' }}>
-            <thead style={{ background: '#f8fafc' }}>
-              <tr>
-                <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Transaction Type</th>
-                <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Booking Reference</th>
-                <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Amount</th>
-                <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Validity / Expiry</th>
-                <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Status</th>
-                <th className="px-3 py-3 fw-bold text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase' }}>Date & Time</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredTransactions.map(tx => {
-                const isCredit = tx.transaction_type === 'CASHBACK_CREDIT';
-                const isUsed = tx.transaction_type === 'CASHBACK_USED';
-                const isExpired = tx.transaction_type === 'CASHBACK_EXPIRED' || tx.status === 'EXPIRED';
-                const isReversed = tx.transaction_type === 'CASHBACK_REVERSED' || tx.status === 'REVERSED';
-
-                return (
-                  <tr key={tx.id} style={{ borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
-                    <td className="px-3 py-3">
-                      <div className="d-flex align-items-center gap-2">
-                        <div 
-                          className="rounded-circle d-flex align-items-center justify-content-center text-white" 
-                          style={{ 
-                            width: '32px', 
-                            height: '32px', 
-                            minWidth: '32px',
-                            background: isCredit ? '#10b981' : (isUsed ? '#3b82f6' : (isExpired ? '#ef4444' : '#6b7280'))
-                          }}
-                        >
-                          {isCredit ? <Gift size={14} /> : (isUsed ? <ArrowUpRight size={14} /> : <Clock size={14} />)}
-                        </div>
-                        <div>
-                          <div className="fw-bold text-dark">
-                            {isCredit ? '🎁 Cashback Earned' : (isUsed ? '💳 Cashback Used' : (isExpired ? '❌ Cashback Expired' : '↩️ Cashback Reversed'))}
-                          </div>
-                          <div className="text-muted" style={{ fontSize: '11px' }}>
-                            {tx.description || (isCredit ? '10% Cashback Credited' : 'Redeemed on Booking')}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-
-                    <td className="px-3 py-3">
-                      {tx.booking_id ? (
-                        <span className="badge bg-light text-dark border px-2.5 py-1 font-monospace fw-bold">
-                          #{tx.booking_id}
-                        </span>
-                      ) : (
-                        <span className="text-muted">—</span>
-                      )}
-                    </td>
-
-                    <td className="px-3 py-3">
-                      <div className={`fw-black fs-6 font-heading ${isCredit ? 'text-success' : (isUsed ? 'text-primary' : 'text-danger')}`}>
-                        {isCredit ? `+₹${parseFloat(tx.amount).toLocaleString('en-IN')}` : `-₹${parseFloat(tx.amount).toLocaleString('en-IN')}`}
-                      </div>
-                      {isCredit && tx.remaining_amount !== undefined && tx.status !== 'EXPIRED' && tx.status !== 'USED' && (
-                        <div className="text-muted" style={{ fontSize: '10px' }}>
-                          Remaining: ₹{parseFloat(tx.remaining_amount).toLocaleString('en-IN')}
-                        </div>
-                      )}
-                    </td>
-
-                    <td className="px-3 py-3">
-                      {isCredit ? (
-                        <div>
-                          <div>{formatExpiryRelative(tx)}</div>
-                          {tx.expires_at && (
-                            <div className="text-muted" style={{ fontSize: '10px' }}>
-                              Expires: {new Date(tx.expires_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-muted">—</span>
-                      )}
-                    </td>
-
-                    <td className="px-3 py-3">
-                      <span className={`badge text-xs px-2.5 py-1 rounded-pill fw-bold ${
-                        tx.status === 'AVAILABLE' ? 'bg-success bg-opacity-10 text-success border border-success border-opacity-25' :
-                        tx.status === 'PARTIALLY_USED' ? 'bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25' :
-                        tx.status === 'USED' ? 'bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25' :
-                        tx.status === 'REVERSED' ? 'bg-secondary bg-opacity-10 text-secondary border' :
-                        'bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25'
-                      }`}>
-                        {tx.status}
-                      </span>
-                    </td>
-
-                    <td className="px-3 py-3 text-muted" style={{ fontSize: '11px' }}>
-                      {tx.created_at || tx.earned_at || '—'}
-                    </td>
-                  </tr>
-                );
-              })}
-
-              {filteredTransactions.length === 0 && (
-                <tr>
-                  <td colSpan="6" className="text-center py-5 text-muted">
-                    <Wallet size={36} className="mx-auto text-secondary opacity-50 mb-2" />
-                    <h6 className="fw-bold text-dark mb-1">No Wallet Transactions Found</h6>
-                    <p className="text-muted text-xs mb-0">
-                      When you book cars, hotels, or packages, your 10% cashback movements will appear here.
-                    </p>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* ─── Cashback Rules Explanatory Banner ─── */}
-      <div className="card border-0 rounded-4 shadow-sm p-4 bg-light">
-        <div className="d-flex align-items-start gap-3">
-          <div className="rounded-3 p-2 bg-primary text-white mt-1">
-            <Info size={20} />
-          </div>
-          <div>
-            <h6 className="fw-bold text-dark mb-1">How WOW GOA 10% Cashback Works</h6>
-            <div className="row g-3 mt-1 text-xs text-muted">
-              <div className="col-12 col-md-4">
-                <div className="fw-bold text-dark mb-0.5">1. Automatic Calculation</div>
-                <div>You receive 10% cashback on the actual eligible amount you paid (Cash, Online, UPI, Card). Wallet discounts used are excluded.</div>
-              </div>
-              <div className="col-12 col-md-4">
-                <div className="fw-bold text-dark mb-0.5">2. Credited on Trip Completion</div>
-                <div>Cashback is added to your wallet once your booking is marked <strong>Completed</strong>.</div>
-              </div>
-              <div className="col-12 col-md-4">
-                <div className="fw-bold text-dark mb-0.5">3. 30-Day Validity & Earliest First</div>
-                <div>Each cashback credit expires 30 days after being earned. When you book again, your earliest-expiring cashback is deducted first.</div>
-              </div>
+        {filteredTx.length === 0 ? (
+          <div style={{ padding: 40, textAlign: 'center', color: '#9ca3af' }}>
+            <Wallet size={32} style={{ marginBottom: 10, opacity: 0.4 }} />
+            <div style={{ fontWeight: 600, color: '#6b7280', marginBottom: 4 }}>No transactions yet</div>
+            <div style={{ fontSize: '0.82rem' }}>
+              {wallet.available_balance === 0
+                ? 'Complete your first qualifying booking to earn cashback!'
+                : 'No transactions match this filter.'}
             </div>
           </div>
-        </div>
+        ) : (
+          <div>
+            {filteredTx.map((tx, idx) => {
+              const cfg = TRANSACTION_TYPE_CONFIG[tx.transaction_type] || TRANSACTION_TYPE_CONFIG['CASHBACK_CREDIT'];
+              const isCredit = tx.transaction_type === 'CASHBACK_CREDIT' || tx.transaction_type === 'WALLET_REFUND';
+              return (
+                <div
+                  key={tx.id || idx}
+                  style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 20px', borderBottom: idx < filteredTx.length - 1 ? '1px solid #f3f4f6' : 'none' }}
+                >
+                  <div style={{ width: 36, height: 36, borderRadius: 9, background: cfg.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: cfg.color, flexShrink: 0 }}>
+                    {cfg.icon}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.87rem', color: '#111827' }}>{cfg.label}</div>
+                    {tx.description && (
+                      <div style={{ fontSize: '0.77rem', color: '#6b7280', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tx.description}</div>
+                    )}
+                    <div style={{ fontSize: '0.73rem', color: '#9ca3af', marginTop: 2 }}>
+                      {fmtDatetime(tx.created_at)}
+                      {tx.expires_at && tx.status === 'AVAILABLE' && (
+                        <span style={{ marginLeft: 8, color: '#f59e0b' }}>· Expires {fmtDate(tx.expires_at)}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: '0.95rem', color: isCredit ? '#16a34a' : '#2563eb' }}>
+                      {isCredit ? '+' : '-'}{fmtCurrency(tx.amount)}
+                    </div>
+                    <div style={{ fontSize: '0.73rem', color: '#9ca3af', marginTop: 2 }}>
+                      {tx.status === 'AVAILABLE' && tx.remaining_amount > 0
+                        ? `₹${Number(tx.remaining_amount).toLocaleString('en-IN')} remaining`
+                        : tx.status}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
+      <p style={{ fontSize: '0.75rem', color: '#9ca3af', textAlign: 'center', marginTop: 16 }}>
+        Wallet data refreshed as of {wallet.server_time ? new Date(wallet.server_time).toLocaleString('en-IN') : '—'} ·
+        <button onClick={loadData} style={{ background: 'none', border: 'none', color: '#6366f1', cursor: 'pointer', fontSize: '0.75rem', marginLeft: 4 }}>Refresh now</button>
+      </p>
     </div>
   );
 }

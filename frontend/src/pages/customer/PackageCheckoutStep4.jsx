@@ -1,5 +1,6 @@
 import React from 'react';
 import { CheckCircle2, ShieldCheck, Download, Printer, ArrowRight, Plane, Car, Hotel, MapPin, Calendar, Users, Phone, Mail, Compass, MessageCircle } from 'lucide-react';
+import { CashbackRewardCard } from '../../components/common/BookingConfirmationCard';
 
 export default function PackageCheckoutStep4({
   pkg,
@@ -21,6 +22,12 @@ export default function PackageCheckoutStep4({
   const balanceDue = total - amountPaid;
   const leadTraveller = travellers?.[0] || { firstName: 'Valued', lastName: 'Guest' };
   const leadName = `${leadTraveller.firstName || ''} ${leadTraveller.lastName || ''}`.trim() || 'Valued Guest';
+
+  const step4Nights = (pickupDate && dropDate) 
+    ? Math.max(0, Math.round((new Date(dropDate) - new Date(pickupDate)) / 86400000))
+    : (bookingRecord?.duration_nights !== undefined ? Number(bookingRecord.duration_nights) : 0);
+  const step4Days = step4Nights + 1;
+  const step4Duration = bookingRecord?.duration || `${step4Nights} Nights / ${step4Days} Days`;
 
   const handlePrint = () => {
     window.print();
@@ -101,6 +108,14 @@ export default function PackageCheckoutStep4({
             </div>
           </div>
 
+          {/* WOW GOA Cashback Reward Card */}
+          <div className="mb-4">
+            <CashbackRewardCard 
+              cashbackPreview={bookingRecord?.cashback_preview}
+              isModalView={false}
+            />
+          </div>
+
           {/* Customer Portal Tracking Card */}
           <div className="card border-0 shadow-sm rounded-4 p-4 mb-4 text-start bg-white" style={{ border: '1px solid #e2e8f0' }}>
             <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
@@ -141,7 +156,7 @@ export default function PackageCheckoutStep4({
               <div>
                 <h4 className="fw-bold text-dark mb-1">{pkg?.name}</h4>
                 <div className="text-muted small d-flex align-items-center gap-2">
-                  <MapPin size={14} className="text-danger" /> Goa, India • {pkg?.duration || '4 Days / 3 Nights'}
+                  <MapPin size={14} className="text-danger" /> Goa, India • {step4Duration}
                 </div>
               </div>
               <div className="text-end">
@@ -161,7 +176,7 @@ export default function PackageCheckoutStep4({
                       <Calendar size={15} className="text-primary" /> Trip Schedule &amp; Dates
                     </h6>
                     <span className="badge bg-primary bg-opacity-10 text-primary fw-bold" style={{ fontSize: '0.7rem' }}>
-                      {pkg?.duration || '3 Nights / 4 Days'}
+                      {step4Duration}
                     </span>
                   </div>
                   <div className="d-flex justify-content-between mb-1.5">
@@ -170,7 +185,7 @@ export default function PackageCheckoutStep4({
                   </div>
                   <div className="d-flex justify-content-between">
                     <span className="text-muted small">End / Check-Out Date:</span>
-                    <span className="fw-bold text-success small">{dropDate ? (new Date(dropDate).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })) : 'Scheduled on departure'} ({pkg?.duration || '3 Nights / 4 Days'})</span>
+                    <span className="fw-bold text-success small">{dropDate ? (new Date(dropDate).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })) : 'Scheduled on departure'} ({step4Duration})</span>
                   </div>
                 </div>
               </div>

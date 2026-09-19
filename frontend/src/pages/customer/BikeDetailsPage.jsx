@@ -215,7 +215,14 @@ export default function BikeDetailsPage({
                   ✓ WOW GOA Certified Fleet
                 </span>
                 {bike.badge && (
-                  <span className="badge bg-warning bg-opacity-15 text-warning border border-warning border-opacity-25 rounded-pill px-2.5 py-1 text-xxs fw-bold">
+                  <span
+                    className="badge rounded-pill px-2.5 py-1 text-xxs fw-bold"
+                    style={{
+                      background: 'rgba(245, 158, 11, 0.12)',
+                      color: '#B45309',
+                      border: '1px solid rgba(245, 158, 11, 0.3)'
+                    }}
+                  >
                     ★ {bike.badge}
                   </span>
                 )}

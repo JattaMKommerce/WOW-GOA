@@ -231,10 +231,17 @@ export default function VehicleFleetManagement({ currentUser, cars = [], bikes =
   const addFileInputRef = useRef(null);
   const editFileInputRef = useRef(null);
 
-  const displayCars = (cars || []).filter(c => !isBikeItem(c));
+  // Defense-in-depth: Ensure vehicles strictly belong to current vendor
+  const isVehicleOwner = (v) => {
+    if (!currentUser || currentUser.role !== 'vendor') return true;
+    const vId = v.vendor_id || v.vendorId;
+    return String(vId) === String(currentUser?.id) || String(vId) === String(currentUser?.username);
+  };
+
+  const displayCars = (cars || []).filter(isVehicleOwner).filter(c => !isBikeItem(c));
   const displayBikes = [
-    ...(bikes || []),
-    ...(cars || []).filter(c => isBikeItem(c))
+    ...(bikes || []).filter(isVehicleOwner),
+    ...(cars || []).filter(isVehicleOwner).filter(c => isBikeItem(c))
   ];
 
   const allCombined = [...displayCars.map(v => ({ ...v, _type: 'car' })), ...displayBikes.map(v => ({ ...v, _type: 'bike' }))];

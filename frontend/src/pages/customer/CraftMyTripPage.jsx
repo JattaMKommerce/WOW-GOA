@@ -3,9 +3,10 @@ import {
   Car, Bike, Hotel, Plane, Users, CheckCircle, ArrowLeft, ArrowRight,
   Search, Star, MapPin, Zap, X, CreditCard, Shield, PlaneTakeoff, PlaneLanding, Calendar, User,
   Wand2, AlertCircle, BadgeCheck, Check, Loader2, Compass, Clock,
-  ChevronLeft, ChevronRight
+  ChevronLeft, ChevronRight, Wallet, Crown, Gift
 } from 'lucide-react';
 import * as api from '../../services/api';
+import BookingConfirmationCard from '../../components/common/BookingConfirmationCard';
 import HotelImageGallery from '../../components/HotelImageGallery';
 import CraftServiceDetailsModal from '../../components/customer/CraftServiceDetailsModal';
 import CarDetailsPage from './CarDetailsPage';
@@ -1413,7 +1414,6 @@ function Step4Flight({ selectedFlight, setSelectedFlight, withFlight, setWithFli
   );
 }
 
-// ─── Step 5: Review & Pay ────────────────────────────────────────────────────
 function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [], selectedFlight, withFlight, memberCount, pickupDate, dropDate, onBack, onConfirm }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -1422,10 +1422,15 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
   const [dob, setDob] = useState('');
   const [paymentMode, setPaymentMode] = useState('full');
   const [showSuccess, setShowSuccess] = useState(false);
+  const [confirmedBookingId, setConfirmedBookingId] = useState(null);
+  const [confirmedCashbackPreview, setConfirmedCashbackPreview] = useState(null);
   const [booking, setBooking] = useState(false);
   const [error, setError] = useState('');
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [useWalletCashback, setUseWalletCashback] = useState(false);
+  const [loyaltyInfo, setLoyaltyInfo] = useState(null);
 
-  // Auto-fetch DOB for repeat customer by phone
+  // Auto-fetch DOB & Wallet & Loyalty for repeat customer by phone
   useEffect(() => {
     const clean = String(phone || '').replace(/\D/g, '');
     if (clean.length >= 10) {
@@ -1435,6 +1440,27 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
           setName(prev => prev || res.name || '');
         }
       }).catch(() => {});
+
+      api.fetchCustomerWallet(clean).then(w => {
+        if (w && w.available_balance > 0) {
+          setWalletBalance(w.available_balance);
+        } else {
+          setWalletBalance(0);
+          setUseWalletCashback(false);
+        }
+        if (w && w.loyalty) {
+          setLoyaltyInfo(w.loyalty);
+        } else {
+          setLoyaltyInfo(null);
+        }
+      }).catch(() => {
+        setWalletBalance(0);
+        setLoyaltyInfo(null);
+      });
+    } else {
+      setWalletBalance(0);
+      setUseWalletCashback(false);
+      setLoyaltyInfo(null);
     }
   }, [phone]);
 
@@ -1450,9 +1476,34 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
   const subtotal = vehiclePrice + hotelPrice + flightPrice + activitiesPrice;
   const gst = Math.round(subtotal * 0.18);
   const serviceFee = subtotal > 0 ? 250 : 0;
-  const grandTotal = subtotal + gst + serviceFee;
+  const rawGrandTotal = subtotal + gst + serviceFee;
+
+  // Authoritative Loyalty Tier & Tier Discount Enforcement
+  const customerTier = loyaltyInfo?.tier || loyaltyInfo?.current_tier || 'New Member';
+  const isGold = customerTier === 'Gold';
+  const isPlatinum = customerTier === 'Platinum';
+
+  const isGoldEligible = isGold && rawGrandTotal > 5000;
+  const isPlatinumEligible = isPlatinum && rawGrandTotal > 10000;
+
+  let tierDiscount = 0;
+  if (isGoldEligible) {
+    tierDiscount = 500;
+  } else if (isPlatinumEligible) {
+    tierDiscount = 1000;
+  }
+
+  const grandTotal = Math.max(0, rawGrandTotal - tierDiscount);
+  const maxWalletBenefit = Math.round(grandTotal * 0.10);
+  const appliedWalletAmount = (useWalletCashback && walletBalance > 0) ? Math.min(walletBalance, maxWalletBenefit) : 0;
+  const finalPayableTotal = Math.max(0, grandTotal - appliedWalletAmount);
+
   const advanceAmount = Math.round(grandTotal * 0.3);
-  const amountDue = paymentMode === 'full' ? grandTotal : advanceAmount;
+  const amountDue = paymentMode === 'full' 
+    ? finalPayableTotal 
+    : Math.max(0, advanceAmount - appliedWalletAmount);
+
+  const projectedCashback = Math.round(finalPayableTotal * 0.10);
 
   const handleConfirm = async () => {
     if (!selectedVehicle && !selectedHotel && (!withFlight || !selectedFlight) && (!selectedActivities || selectedActivities.length === 0)) {
@@ -1516,12 +1567,15 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
       hotel_name: selectedHotel?.name || '',
       booking_days: nights,
       duration: `${nights} Nights / ${nights + 1} Days`,
-      total_amount: grandTotal,
+      total_amount: rawGrandTotal,
+      tier_discount_applied: tierDiscount,
+      customer_tier_at_booking: customerTier,
+      wallet_amount_used: appliedWalletAmount,
       amount_paid: amountDue,
-      total_paid: amountDue,
+      total_paid: paymentMode === 'full' ? grandTotal : (advanceAmount + appliedWalletAmount),
       paid_amount: amountDue,
-      remaining_amount: grandTotal - amountDue,
-      pending_amount: grandTotal - amountDue,
+      remaining_amount: Math.max(0, grandTotal - (amountDue + appliedWalletAmount)),
+      pending_amount: Math.max(0, grandTotal - (amountDue + appliedWalletAmount)),
       status: 'Confirmed',
       payment_status: paymentMode === 'full' ? 'Full' : 'Partial',
       customizations: JSON.stringify({
@@ -1558,7 +1612,8 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
     try {
       const res = await api.createBooking(cmtPayload);
       const bookingId = res?.booking_id || res?.id || `CMT-${Date.now()}`;
-      const fullRecord = { ...cmtPayload, id: bookingId };
+      const cashbackPreview = res?.cashback_preview || null;
+      const fullRecord = { ...cmtPayload, id: bookingId, cashback_preview: cashbackPreview };
       try {
         sessionStorage.setItem('customer_login_phone', cleanPhone);
         sessionStorage.setItem('last_created_booking', JSON.stringify(fullRecord));
@@ -1567,6 +1622,8 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
         const existing = JSON.parse(localStorage.getItem('local_bookings') || '[]');
         localStorage.setItem('local_bookings', JSON.stringify([fullRecord, ...existing.filter(b => String(b.id) !== String(bookingId))]));
       } catch (e) {}
+      setConfirmedBookingId(bookingId);
+      setConfirmedCashbackPreview(cashbackPreview);
       setShowSuccess(true);
       if (onConfirm) onConfirm();
     } catch (e) {
@@ -1577,77 +1634,64 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
   };
 
   if (showSuccess) {
+    const confirmationDetails = [
+      selectedVehicle ? { label: 'Vehicle Ride', value: selectedVehicle.name, icon: <Car size={13} /> } : null,
+      selectedHotel ? { 
+        label: 'Hotel Stay', 
+        value: `${selectedHotel.name}${selectedHotel.preselected_room?.name ? ` (${selectedHotel.preselected_room.name})` : ''}`, 
+        icon: <Hotel size={13} /> 
+      } : null,
+      (selectedActivities && selectedActivities.length > 0) ? { 
+        label: 'Sightseeing & Activities', 
+        value: selectedActivities.map(a => a.title || a.name).join(', '), 
+        icon: <Compass size={13} /> 
+      } : null,
+      (withFlight && selectedFlight) ? { 
+        label: 'Flight Included', 
+        value: `${selectedFlight.airline?.name || selectedFlight.airline}${selectedFlight.flight_number ? ` (${selectedFlight.flight_number})` : ''}`, 
+        icon: <Plane size={13} /> 
+      } : null,
+      {
+        label: 'Trip Duration',
+        value: `${validPickup} to ${validDrop} (${nights} Nights / ${nights + 1} Days)`,
+        icon: <Calendar size={13} />
+      },
+      memberCount ? {
+        label: 'Travelers',
+        value: `${memberCount} Guest${memberCount > 1 ? 's' : ''}`,
+        icon: <Users size={13} />
+      } : null
+    ].filter(Boolean);
+
     return (
-      <div className="cmt-success-screen animate-fade-in-up">
-        <div className="cmt-success-circle">
-          <CheckCircle size={64} color="#10b981" />
-        </div>
-        <h2>Booking Confirmed! 🎉</h2>
-        <p>Your custom Goa trip has been booked successfully.</p>
-        <div className="cmt-success-summary">
-          {selectedVehicle && (
-            <div>
-              <strong>Vehicle:</strong> {selectedVehicle.name}
-            </div>
-          )}
-          {selectedHotel && (
-            <div>
-              <strong>Hotel:</strong> {selectedHotel.name}
-              {selectedHotel.preselected_room?.name && ` (${selectedHotel.preselected_room.name})`}
-            </div>
-          )}
-          {selectedActivities && selectedActivities.length > 0 && (
-            <div><strong>Sightseeing & Activities:</strong> {selectedActivities.map(a => a.title || a.name).join(', ')}</div>
-          )}
-          {withFlight && selectedFlight && (
-            <div>
-              <strong>Flight:</strong> {selectedFlight.airline?.name || selectedFlight.airline}
-              {selectedFlight.flight_number ? ` (${selectedFlight.flight_number})` : ''}
-            </div>
-          )}
-          <div><strong>Total Amount:</strong> ₹{grandTotal.toLocaleString('en-IN')}</div>
-          <div><strong>Amount Paid:</strong> ₹{amountDue.toLocaleString('en-IN')} ({paymentMode === 'full' ? 'Full' : '30% Advance'})</div>
-        </div>
-        <p className="cmt-success-note">Our team will contact you at <strong>{phone}</strong> shortly to confirm details.</p>
-
-        {/* Customer Portal Tracking Card */}
-        <div className="card border-0 shadow-sm rounded-4 p-4 my-4 text-start bg-light mx-auto" style={{ maxWidth: '440px', border: '1px solid #e2e8f0' }}>
-          <div className="d-flex align-items-center gap-2 mb-1.5">
-            <Compass size={20} className="text-warning" />
-            <h6 className="fw-bold text-dark mb-0 font-heading" style={{ fontSize: '15px' }}>
-              Track in WOW GOA Customer Portal
-            </h6>
-          </div>
-          <p className="text-muted text-xs mb-3">
-            Track your custom holiday itinerary, vehicle allocation, hotel stay, activities and payment receipts.
-          </p>
-          <button 
-            type="button" 
-            className="btn btn-warning text-dark fw-bold rounded-pill px-4 py-2.5 text-xs d-flex align-items-center justify-content-center gap-2 shadow-sm w-100 font-heading"
-            onClick={() => {
-              if (phone) {
-                try {
-                  sessionStorage.setItem('customer_login_phone', phone);
-                  localStorage.removeItem('customerUser');
-                } catch (e) {}
-              }
-              window.location.href = '/customer';
-            }}
-          >
-            <span>View My Booking →</span>
-          </button>
-        </div>
-
-        <button 
-          type="button" 
-          className="btn btn-link text-muted text-xs text-decoration-none mt-1"
-          onClick={() => {
-            if (onConfirm) onConfirm();
-            window.location.href = '/';
-          }}
-        >
-          Return to Home
-        </button>
+      <div className="cmt-success-screen animate-fade-in-up" style={{ maxWidth: '580px', margin: '0 auto', padding: '1rem' }}>
+        <BookingConfirmationCard 
+          bookingId={confirmedBookingId || 'TG-CMT'}
+          customerName={name || 'Valued Guest'}
+          customerPhone={phone}
+          serviceTitle="Custom Crafted Goa Trip"
+          serviceSubtitle={`${nights} Nights / ${nights + 1} Days Custom Itinerary`}
+          cashbackPreview={confirmedCashbackPreview}
+          details={confirmationDetails}
+          amountPaid={amountDue}
+          totalAmount={grandTotal}
+          remainingBalance={paymentMode === 'full' ? 0 : Math.max(0, grandTotal - amountDue)}
+          paymentStatus={paymentMode === 'full' ? 'Fully Paid' : '30% Advance Paid'}
+          paymentMode={paymentMode === 'full' ? 'Full Payment' : '30% Advance Payment'}
+          isModalView={true}
+          actions={
+            <button 
+              type="button" 
+              className="btn btn-outline-secondary rounded-pill px-4 py-2 text-xs fw-bold"
+              onClick={() => {
+                if (onConfirm) onConfirm();
+                window.location.href = '/';
+              }}
+            >
+              Return to Home
+            </button>
+          }
+        />
       </div>
     );
   }
@@ -1800,9 +1844,93 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
               <span>Convenience / Service Fee</span>
               <span>₹{serviceFee}</span>
             </div>
+
+            {/* Loyalty Tier Recognition & Perks */}
+            {loyaltyInfo && customerTier !== 'New Member' && (
+              <div className="p-2 rounded-3 my-2 d-flex align-items-center justify-content-between" style={{
+                background: customerTier === 'Platinum' ? 'linear-gradient(135deg, #1e1b4b, #312e81)' :
+                            customerTier === 'Gold' ? 'linear-gradient(135deg, #78350f, #b45309)' :
+                            customerTier === 'Silver' ? 'linear-gradient(135deg, #334155, #475569)' :
+                            'linear-gradient(135deg, #7c2d12, #9a3412)',
+                color: '#fff',
+                fontSize: '12px'
+              }}>
+                <div className="d-flex align-items-center gap-1.5">
+                  <Crown size={14} className="text-warning" />
+                  <span className="fw-bold">{customerTier} Member</span>
+                </div>
+                {customerTier === 'Gold' && !isGoldEligible && (
+                  <span className="badge bg-warning text-dark text-xxs">₹500 off on &gt;₹5k</span>
+                )}
+                {customerTier === 'Platinum' && !isPlatinumEligible && (
+                  <span className="badge bg-light text-dark text-xxs">₹1,000 off on &gt;₹10k</span>
+                )}
+              </div>
+            )}
+
+            {isGoldEligible && (
+              <div className="p-2 rounded-3 my-2 text-xs fw-semibold" style={{ background: '#fef3c7', border: '1px solid #f59e0b', color: '#92400e' }}>
+                🥇 <strong>Gold Privilege:</strong> -₹500 instant discount applied!
+              </div>
+            )}
+            {isPlatinumEligible && (
+              <div className="p-2 rounded-3 my-2 text-xs fw-semibold" style={{ background: '#f5f3ff', border: '1px solid #a855f7', color: '#581c87' }}>
+                💎 <strong>Platinum Privilege:</strong> -₹1,000 instant discount applied!
+              </div>
+            )}
+
+            {tierDiscount > 0 && (
+              <div className="cmt-price-row text-warning fw-bold">
+                <span>Tier Privilege Discount</span>
+                <span>-₹{tierDiscount.toLocaleString('en-IN')}</span>
+              </div>
+            )}
+
+            {walletBalance > 0 && (
+              <div className="p-2.5 rounded-3 my-2" style={{ background: '#ecfdf5', border: '1px solid #a7f3d0' }}>
+                <div className="d-flex align-items-center justify-content-between">
+                  <div className="d-flex align-items-center gap-1.5">
+                    <Wallet size={14} className="text-success" />
+                    <div>
+                      <div className="fw-bold text-dark text-xs">WOW GOA Wallet</div>
+                      <div className="text-muted" style={{ fontSize: '10px' }}>Available: ₹{walletBalance.toLocaleString('en-IN')}</div>
+                    </div>
+                  </div>
+                  <div className="form-check form-switch mb-0">
+                    <input 
+                      type="checkbox" 
+                      className="form-check-input" 
+                      id="useCmtWallet"
+                      checked={useWalletCashback}
+                      onChange={(e) => setUseWalletCashback(e.target.checked)}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <label className="form-check-label text-xs fw-bold text-success" htmlFor="useCmtWallet">
+                      Use ₹{Math.min(walletBalance, maxWalletBenefit).toLocaleString('en-IN')}
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {appliedWalletAmount > 0 && (
+              <div className="cmt-price-row text-success fw-bold">
+                <span>Wallet Cashback Applied</span>
+                <span>-₹{appliedWalletAmount.toLocaleString('en-IN')}</span>
+              </div>
+            )}
+
             <div className="cmt-grand-total">
-              <span>Grand Total</span>
-              <span className="cmt-grand-total-val">₹{grandTotal.toLocaleString('en-IN')}</span>
+              <span>Total Payable</span>
+              <span className="cmt-grand-total-val">₹{finalPayableTotal.toLocaleString('en-IN')}</span>
+            </div>
+
+            {/* 10% Cashback Earning Preview */}
+            <div className="mt-2 p-2 rounded-3 text-center" style={{ background: '#fef3c7', border: '1px solid #fde68a' }}>
+              <div className="text-xs fw-bold text-dark d-flex align-items-center justify-content-center gap-1">
+                <Gift size={13} className="text-warning" />
+                <span>10% Cashback You Will Earn: <strong className="text-success">₹{projectedCashback.toLocaleString('en-IN')}</strong></span>
+              </div>
             </div>
           </div>
 
@@ -1814,7 +1942,7 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
               onClick={() => setPaymentMode('full')}
             >
               <Shield size={15} /> Pay Full
-              <span>₹{grandTotal.toLocaleString('en-IN')}</span>
+              <span>₹{finalPayableTotal.toLocaleString('en-IN')}</span>
             </button>
             <button
               type="button"
@@ -1822,7 +1950,7 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
               onClick={() => setPaymentMode('advance')}
             >
               <Zap size={15} /> Pay 30% Advance
-              <span>₹{advanceAmount.toLocaleString('en-IN')}</span>
+              <span>₹{Math.max(0, advanceAmount - appliedWalletAmount).toLocaleString('en-IN')}</span>
             </button>
           </div>
         </div>

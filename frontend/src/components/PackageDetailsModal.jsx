@@ -97,35 +97,84 @@ export default function PackageDetailsModal({ pkg, isOpen, onClose, onBook }) {
     setActiveTab('overview');
   }, [pkg?.id, coverImg]);
 
-  // Duration Parsing
-  const getPackageNights = () => {
-    let nights = 0;
+  // Maximum duration allowed from master package definition
+  const getPackageMaxNights = () => {
+    let maxN = 0;
     const rawItinerary = pkg.day_wise_itinerary || pkg.itinerary || pkg.day_plan || pkg.dayPlan || pkg.dayWiseItinerary;
     if (rawItinerary) {
       try {
         const parsed = typeof rawItinerary === 'string' ? JSON.parse(rawItinerary) : rawItinerary;
         if (Array.isArray(parsed) && parsed.length > 0) {
-          nights = Math.max(1, parsed.length - 1);
+          maxN = Math.max(1, parsed.length - 1);
         }
       } catch (e) {}
     }
-    if (nights === 0 && pkg.duration) {
+    if (maxN === 0 && pkg.duration_nights) {
+      maxN = parseInt(pkg.duration_nights, 10);
+    }
+    if (maxN === 0 && pkg.duration) {
        const nMatch = String(pkg.duration).match(/(\d+)\s*Nights?/i);
-       if (nMatch) nights = parseInt(nMatch[1]);
+       if (nMatch) maxN = parseInt(nMatch[1]);
        else {
            const dMatch = String(pkg.duration).match(/(\d+)\s*Days?/i);
-           if (dMatch) nights = Math.max(1, parseInt(dMatch[1]) - 1);
+           if (dMatch) maxN = Math.max(1, parseInt(dMatch[1]) - 1);
            else {
              const shortMatch = String(pkg.duration).match(/(\d+)\s*N/i);
-             if (shortMatch) nights = parseInt(shortMatch[1]);
+             if (shortMatch) maxN = parseInt(shortMatch[1]);
            }
        }
     }
-    return nights || 3;
+    return maxN || 3;
   };
 
-  const nights = getPackageNights();
+  const packageMaxNights = getPackageMaxNights();
+
+  // Authoritative Customer Selected Dates
+  const initialDep = pkg.pickupDate || pkg.departureDate || pkg.pickup_date || getTodayDateStr();
+  const initialRet = pkg.returnDate || pkg.dropDate || pkg.drop_date || addDays(initialDep, packageMaxNights);
+  const [departureDate, setDepartureDate] = useState(initialDep);
+  const [returnDate, setReturnDate] = useState(initialRet);
+
+  // Sync departure and return dates if pkg changes
+  useEffect(() => {
+    if (pkg?.pickupDate || pkg?.departureDate) {
+      const newDep = pkg.pickupDate || pkg.departureDate;
+      setDepartureDate(newDep);
+      const newRet = pkg.returnDate || pkg.dropDate || addDays(newDep, packageMaxNights);
+      setReturnDate(newRet);
+    }
+  }, [pkg?.id, pkg?.pickupDate, pkg?.departureDate, pkg?.returnDate, pkg?.dropDate, packageMaxNights]);
+
+  // Authoritative nights & days derived strictly from customer-selected dates
+  const nights = useMemo(() => {
+    if (!departureDate || !returnDate) return 0;
+    const diff = Math.round((new Date(returnDate) - new Date(departureDate)) / 86400000);
+    const calculated = Math.max(0, diff);
+    return Math.min(calculated, packageMaxNights);
+  }, [departureDate, returnDate, packageMaxNights]);
+
   const days = nights + 1;
+
+  // Preserve duration when start date changes, safely clamping within max allowed
+  const handleDepartureDateChange = (newStart) => {
+    if (!newStart) return;
+    const currentSelectedNights = nights;
+    setDepartureDate(newStart);
+    const maxEnd = addDays(newStart, packageMaxNights);
+    let targetEnd = addDays(newStart, currentSelectedNights);
+    if (targetEnd > maxEnd) targetEnd = maxEnd;
+    if (targetEnd < newStart) targetEnd = newStart;
+    setReturnDate(targetEnd);
+  };
+
+  const handleReturnDateChange = (newEnd) => {
+    if (!newEnd) return;
+    const minEnd = departureDate;
+    const maxEnd = addDays(departureDate, packageMaxNights);
+    if (newEnd < minEnd) setReturnDate(minEnd);
+    else if (newEnd > maxEnd) setReturnDate(maxEnd);
+    else setReturnDate(newEnd);
+  };
 
   // Itinerary parsing with full fallbacks
   let itinerary = [];
@@ -244,16 +293,6 @@ export default function PackageDetailsModal({ pkg, isOpen, onClose, onBook }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  const [departureDate, setDepartureDate] = useState(pkg.pickupDate || pkg.departureDate || getTodayDateStr());
-  const returnDate = useMemo(() => addDays(departureDate, nights), [departureDate, nights]);
-
-  // Sync departure date if pkg changes
-  useEffect(() => {
-    if (pkg?.pickupDate || pkg?.departureDate) {
-      setDepartureDate(pkg.pickupDate || pkg.departureDate);
-    }
-  }, [pkg?.id, pkg?.pickupDate, pkg?.departureDate]);
-
   const handleBookClick = () => {
     onClose();
     onBook({
@@ -266,7 +305,8 @@ export default function PackageDetailsModal({ pkg, isOpen, onClose, onBook }) {
       drop_date: returnDate,
       duration: `${nights} Nights / ${days} Days`,
       duration_nights: nights,
-      duration_days: days
+      duration_days: days,
+      package_max_nights: packageMaxNights
     });
   };
 
@@ -356,14 +396,14 @@ export default function PackageDetailsModal({ pkg, isOpen, onClose, onBook }) {
                 </p>
               </div>
 
-              {/* ─── DATE SELECTION & AUTO RETURN DATE CALCULATION ─────────── */}
+              {/* ─── DATE SELECTION & DURATION ─────────── */}
               <div className="p-3 bg-light rounded-3 border mb-2" style={{ backgroundColor: '#f8fafc' }}>
                 <div className="d-flex align-items-center justify-content-between mb-2 pb-1 border-bottom">
                   <span className="fw-bold text-dark small d-flex align-items-center gap-1.5">
                     <Calendar size={15} className="text-primary" /> Trip Dates &amp; Duration
                   </span>
                   <span className="badge bg-primary bg-opacity-10 text-primary fw-bold" style={{ fontSize: '0.7rem' }}>
-                    {nights}N / {days}D
+                    {nights}N / {days}D (Max: {packageMaxNights}N)
                   </span>
                 </div>
 
@@ -377,7 +417,7 @@ export default function PackageDetailsModal({ pkg, isOpen, onClose, onBook }) {
                       className="form-control form-control-sm fw-bold border bg-white" 
                       min={getTodayDateStr()} 
                       value={departureDate} 
-                      onChange={(e) => setDepartureDate(e.target.value)} 
+                      onChange={(e) => handleDepartureDateChange(e.target.value)} 
                       style={{ fontSize: '0.82rem', borderRadius: '8px' }}
                     />
                     <span className="text-muted text-xxs d-block mt-1" style={{ fontSize: '10.5px' }}>
@@ -388,17 +428,19 @@ export default function PackageDetailsModal({ pkg, isOpen, onClose, onBook }) {
                   <div className="col-6">
                     <label className="form-label text-muted small fw-bold mb-1 d-flex align-items-center justify-content-between" style={{ fontSize: '0.72rem' }}>
                       <span>End / Check-Out:</span>
-                      <span className="badge bg-success bg-opacity-10 text-success p-0" style={{ fontSize: '9px' }}>Auto</span>
+                      <span className="badge bg-info bg-opacity-10 text-info p-0" style={{ fontSize: '9px' }}>Customizable</span>
                     </label>
-                    <div 
-                      className="p-1.5 px-2 bg-white rounded border fw-bold text-success text-truncate d-flex align-items-center justify-content-between"
-                      style={{ fontSize: '0.82rem', height: '31px', backgroundColor: '#f0fdf4' }}
-                      title={`${formatDisplayDate(returnDate)} (${nights} Nights / ${days} Days)`}
-                    >
-                      <span className="text-truncate">{formatDisplayDate(returnDate)}</span>
-                    </div>
+                    <input 
+                      type="date" 
+                      className="form-control form-control-sm fw-bold border bg-white" 
+                      min={departureDate}
+                      max={addDays(departureDate, packageMaxNights)}
+                      value={returnDate} 
+                      onChange={(e) => handleReturnDateChange(e.target.value)} 
+                      style={{ fontSize: '0.82rem', borderRadius: '8px' }}
+                    />
                     <span className="text-success fw-semibold text-xxs d-block mt-1" style={{ fontSize: '10.5px' }}>
-                      ({nights} Nights / {days} Days)
+                      {formatDisplayDate(returnDate)} ({nights}N / {days}D)
                     </span>
                   </div>
                 </div>
@@ -509,7 +551,7 @@ export default function PackageDetailsModal({ pkg, isOpen, onClose, onBook }) {
           {/* TAB 2: ITINERARY */}
           {activeTab === 'itinerary' && (
             <div className="animate-fade-in d-flex flex-column gap-3">
-              {itinerary.map((day, idx) => {
+              {activeItinerary.map((day, idx) => {
                 const isExp = expandedDay === idx;
                 return (
                   <div key={idx} className="border rounded-3 overflow-hidden bg-white shadow-sm">

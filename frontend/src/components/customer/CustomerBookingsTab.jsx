@@ -491,7 +491,13 @@ export default function CustomerBookingsTab({
 
                 <div>
                   <button 
-                    onClick={() => setSelectedVoucherBooking(b)}
+                    onClick={() => {
+                      if (onOpenBookingDetails && typeof onOpenBookingDetails === 'function') {
+                        onOpenBookingDetails(b);
+                      } else {
+                        setSelectedVoucherBooking(b);
+                      }
+                    }}
                     className="btn btn-sm btn-dark text-white fw-bold rounded-pill py-2 w-100 text-xs d-flex align-items-center justify-content-center gap-1.5 shadow-xs"
                     title="View & Print Booking Voucher"
                   >
@@ -578,7 +584,13 @@ export default function CustomerBookingsTab({
 
                     <td className="text-end pe-4">
                       <button 
-                        onClick={() => setSelectedVoucherBooking(b)}
+                        onClick={() => {
+                          if (onOpenBookingDetails && typeof onOpenBookingDetails === 'function') {
+                            onOpenBookingDetails(b);
+                          } else {
+                            setSelectedVoucherBooking(b);
+                          }
+                        }}
                         className="btn btn-sm btn-dark text-white fw-bold rounded-pill px-3 py-1 text-xs d-inline-flex align-items-center gap-1.5 shadow-xs"
                         title="View & Print Booking Voucher"
                       >
