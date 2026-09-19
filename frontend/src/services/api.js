@@ -2012,11 +2012,13 @@ export async function createBooking(bookingData, options = {}) {
     }
   }
 
+  let serverCashbackPreview = null;
   const res = await apiFetch(`${API_BASE}?action=book`, fetchOptions);
   if (res.ok) {
     const data = await res.json();
     if (data && data.success) {
       createdBookingId = data.booking_id;
+      serverCashbackPreview = data.cashback_preview || null;
     } else {
       throw new Error(data?.error || data?.message || 'Server rejected booking request.');
     }
@@ -2085,7 +2087,9 @@ export async function createBooking(bookingData, options = {}) {
     created_at: new Date().toISOString().replace('T', ' ').slice(0, 19),
     traveller_details_json: bookingData.traveller_details_json || null,
     price_breakdown_json: bookingData.price_breakdown_json || null,
-    customizations: bookingData.customizations || null
+    customizations: bookingData.customizations || null,
+    cashback_preview: serverCashbackPreview,
+    cashback_earned: (serverCashbackPreview && typeof serverCashbackPreview.amount === 'number') ? serverCashbackPreview.amount : 0
   };
 
   try {
@@ -2102,6 +2106,7 @@ export async function createBooking(bookingData, options = {}) {
   return {
     success: true,
     booking_id: assignedId,
+    cashback_preview: serverCashbackPreview,
     message: "Booking confirmed successfully!",
     booking: newBookingRecord
   };

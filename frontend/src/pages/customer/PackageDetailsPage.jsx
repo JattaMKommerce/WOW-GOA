@@ -39,38 +39,74 @@ export default function PackageDetailsPage({ pkg, onBack, onBook, onEnquire, mar
     galleryImages = [pkg.image, ...defaultImages.slice(1)];
   }
 
-  // Duration Parsing
-  const getPackageNights = () => {
-    let nights = 0;
+  // Maximum duration allowed from master package definition
+  const getPackageMaxNights = () => {
+    let maxN = 0;
     const rawItinerary = pkg.day_wise_itinerary || pkg.itinerary || pkg.day_plan || pkg.dayPlan || pkg.dayWiseItinerary;
     if (rawItinerary) {
       try {
         const parsed = typeof rawItinerary === 'string' ? JSON.parse(rawItinerary) : rawItinerary;
         if (Array.isArray(parsed) && parsed.length > 0) {
-          nights = Math.max(1, parsed.length - 1);
+          maxN = Math.max(1, parsed.length - 1);
         }
       } catch (e) {}
     }
-    if (nights === 0 && pkg.duration) {
+    if (maxN === 0 && pkg.duration_nights) {
+      maxN = parseInt(pkg.duration_nights, 10);
+    }
+    if (maxN === 0 && pkg.duration) {
        const nMatch = String(pkg.duration).match(/(\d+)\s*Nights?/i);
-       if (nMatch) nights = parseInt(nMatch[1]);
+       if (nMatch) maxN = parseInt(nMatch[1]);
        else {
            const dMatch = String(pkg.duration).match(/(\d+)\s*Days?/i);
-           if (dMatch) nights = Math.max(1, parseInt(dMatch[1]) - 1);
+           if (dMatch) maxN = Math.max(1, parseInt(dMatch[1]) - 1);
            else {
              const shortMatch = String(pkg.duration).match(/(\d+)\s*N/i);
-             if (shortMatch) nights = parseInt(shortMatch[1]);
+             if (shortMatch) maxN = parseInt(shortMatch[1]);
            }
        }
     }
-    return nights || 3;
+    return maxN || 3;
   };
 
-  const nights = getPackageNights();
+  const packageMaxNights = getPackageMaxNights();
+
+  // Authoritative Customer Selected Dates
+  const initialDep = pkg.pickupDate || pkg.departureDate || pkg.pickup_date || getTodayDateStr();
+  const initialRet = pkg.returnDate || pkg.dropDate || pkg.drop_date || addDays(initialDep, packageMaxNights);
+  const [departureDate, setDepartureDate] = useState(initialDep);
+  const [returnDate, setReturnDate] = useState(initialRet);
+
+  // Authoritative nights & days derived strictly from customer-selected dates
+  const nights = useMemo(() => {
+    if (!departureDate || !returnDate) return 0;
+    const diff = Math.round((new Date(returnDate) - new Date(departureDate)) / 86400000);
+    const calculated = Math.max(0, diff);
+    return Math.min(calculated, packageMaxNights);
+  }, [departureDate, returnDate, packageMaxNights]);
+
   const days = nights + 1;
 
-  const [departureDate, setDepartureDate] = useState(pkg.pickupDate || pkg.departureDate || getTodayDateStr());
-  const returnDate = useMemo(() => addDays(departureDate, nights), [departureDate, nights]);
+  // Preserve duration when start date changes, safely clamping within max allowed
+  const handleDepartureDateChange = (newStart) => {
+    if (!newStart) return;
+    const currentSelectedNights = nights;
+    setDepartureDate(newStart);
+    const maxEnd = addDays(newStart, packageMaxNights);
+    let targetEnd = addDays(newStart, currentSelectedNights);
+    if (targetEnd > maxEnd) targetEnd = maxEnd;
+    if (targetEnd < newStart) targetEnd = newStart;
+    setReturnDate(targetEnd);
+  };
+
+  const handleReturnDateChange = (newEnd) => {
+    if (!newEnd) return;
+    const minEnd = departureDate;
+    const maxEnd = addDays(departureDate, packageMaxNights);
+    if (newEnd < minEnd) setReturnDate(minEnd);
+    else if (newEnd > maxEnd) setReturnDate(maxEnd);
+    else setReturnDate(newEnd);
+  };
 
   // Itinerary parsing strictly from package data
   let itinerary = [];
@@ -85,6 +121,11 @@ export default function PackageDetailsPage({ pkg, onBack, onBook, onEnquire, mar
     }
   }
   if (!Array.isArray(itinerary)) itinerary = [];
+
+  // Active Itinerary slice for customer's selected duration (0N/1D -> Day 1, 1N/2D -> Day 1-2, etc.)
+  const activeItinerary = useMemo(() => {
+    return itinerary.slice(0, days);
+  }, [itinerary, days]);
 
   // Inclusions & Exclusions parsing strictly from package data
   let inclusions = [];
@@ -379,12 +420,12 @@ export default function PackageDetailsPage({ pkg, onBack, onBook, onEnquire, mar
             {/* Day Wise Itinerary */}
             <div className="card border-0 shadow-sm rounded-4 p-4 mb-4 bg-white">
               <h5 className="fw-bold mb-3 d-flex align-items-center gap-2" style={{ color: '#0D1B2E' }}>
-                <Calendar size={18} className="text-primary" /> Detailed Day-by-Day Itinerary
+                <Calendar size={18} className="text-primary" /> Detailed Day-by-Day Itinerary ({days} Days Plan)
               </h5>
               
-              {itinerary.length > 0 ? (
+              {activeItinerary.length > 0 ? (
                 <div className="d-flex flex-column gap-3">
-                  {itinerary.map((day, idx) => (
+                  {activeItinerary.map((day, idx) => (
                     <div key={idx} className="p-3.5 rounded-3 border bg-light">
                       <div className="d-flex align-items-center justify-content-between mb-2">
                         <h6 className="fw-bold mb-0 text-dark d-flex align-items-center gap-2">
@@ -548,14 +589,14 @@ export default function PackageDetailsPage({ pkg, onBack, onBook, onEnquire, mar
                 )}
               </div>
 
-              {/* Trip Schedule & Auto Return Date Box */}
+              {/* Trip Schedule & Dates Selection Box */}
               <div className="p-3 bg-light rounded-3 mb-3 border">
                 <div className="d-flex align-items-center justify-content-between mb-2 pb-1 border-bottom">
                   <span className="fw-bold text-dark small d-flex align-items-center gap-1.5">
                     <Calendar size={14} className="text-primary" /> Trip Schedule &amp; Dates
                   </span>
                   <span className="badge bg-primary bg-opacity-10 text-primary fw-bold" style={{ fontSize: '0.7rem' }}>
-                    {nights}N / {days}D
+                    {nights}N / {days}D (Max: {packageMaxNights}N)
                   </span>
                 </div>
 
@@ -568,7 +609,7 @@ export default function PackageDetailsPage({ pkg, onBack, onBook, onEnquire, mar
                     className="form-control form-control-sm fw-bold border bg-white" 
                     min={getTodayDateStr()} 
                     value={departureDate} 
-                    onChange={(e) => setDepartureDate(e.target.value)} 
+                    onChange={(e) => handleDepartureDateChange(e.target.value)} 
                     style={{ fontSize: '0.82rem', borderRadius: '8px' }}
                   />
                   <span className="text-muted text-xxs d-block mt-1" style={{ fontSize: '10.5px' }}>
@@ -579,25 +620,31 @@ export default function PackageDetailsPage({ pkg, onBack, onBook, onEnquire, mar
                 <div>
                   <label className="form-label text-muted small fw-bold mb-1 d-flex align-items-center justify-content-between" style={{ fontSize: '0.72rem' }}>
                     <span>End / Check-Out Date:</span>
-                    <span className="badge bg-success bg-opacity-10 text-success p-0" style={{ fontSize: '9px' }}>Auto</span>
+                    <span className="badge bg-info bg-opacity-10 text-info p-0" style={{ fontSize: '9px' }}>Customizable</span>
                   </label>
-                  <div 
-                    className="p-1.5 px-2 bg-white rounded border fw-bold text-success text-truncate d-flex align-items-center justify-content-between"
-                    style={{ fontSize: '0.82rem', backgroundColor: '#f0fdf4' }}
-                    title={`${formatDisplayDate(returnDate)} (${nights} Nights / ${days} Days)`}
-                  >
-                    <span>{formatDisplayDate(returnDate)}</span>
-                  </div>
+                  <input 
+                    type="date" 
+                    className="form-control form-control-sm fw-bold border bg-white" 
+                    min={departureDate}
+                    max={addDays(departureDate, packageMaxNights)}
+                    value={returnDate} 
+                    onChange={(e) => handleReturnDateChange(e.target.value)} 
+                    style={{ fontSize: '0.82rem', borderRadius: '8px' }}
+                  />
                   <span className="text-success fw-semibold text-xxs d-block mt-1" style={{ fontSize: '10.5px' }}>
-                    ({nights} Nights / {days} Days)
+                    {formatDisplayDate(returnDate)} ({nights} Nights / {days} Days)
                   </span>
                 </div>
               </div>
 
               <div className="d-flex flex-column gap-2.5 mb-4 small text-muted">
                 <div className="d-flex justify-content-between">
-                  <span>Duration:</span>
+                  <span>Selected Duration:</span>
                   <span className="fw-bold text-dark">{nights} Nights / {days} Days</span>
+                </div>
+                <div className="d-flex justify-content-between">
+                  <span>Package Maximum:</span>
+                  <span className="fw-bold text-secondary">{packageMaxNights} Nights / {packageMaxNights + 1} Days</span>
                 </div>
                 <div className="d-flex justify-content-between">
                   <span>Destination:</span>
@@ -606,7 +653,7 @@ export default function PackageDetailsPage({ pkg, onBack, onBook, onEnquire, mar
                 {pkg.hotel_included && (
                   <div className="d-flex justify-content-between">
                     <span>Hotel Stay:</span>
-                    <span className="fw-bold text-dark text-truncate ms-2" title={pkg.hotel_included}>{pkg.hotel_included}</span>
+                    <span className="fw-bold text-dark text-truncate ms-2" title={pkg.hotel_included}>{nights > 0 ? `${pkg.hotel_included} (${nights} Nights)` : 'Day Package (No Overnight Stay)'}</span>
                   </div>
                 )}
                 {pkg.car_included && (
@@ -638,7 +685,8 @@ export default function PackageDetailsPage({ pkg, onBack, onBook, onEnquire, mar
                       drop_date: returnDate,
                       duration: `${nights} Nights / ${days} Days`,
                       duration_nights: nights,
-                      duration_days: days
+                      duration_days: days,
+                      package_max_nights: packageMaxNights
                     });
                   }}
                   className="btn btn-primary w-100 py-3 rounded-pill fw-bold shadow-sm d-flex align-items-center justify-content-center gap-2"

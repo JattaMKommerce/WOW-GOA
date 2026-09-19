@@ -1,10 +1,33 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { X, CheckCircle, ShieldCheck, Compass, Calendar, Clock, MapPin, Cake, Award, Sparkles, Gift, Wallet, Users, Crown } from 'lucide-react';
+import { X, CheckCircle, ShieldCheck, Compass, Calendar, Clock, MapPin, Cake, Award, Sparkles, Gift, Wallet, Users, Crown, Car, Bike } from 'lucide-react';
 import { getTodayDateStr, addDays, validateVehicleBookingEligibility } from '../utils/dateUtils';
 import * as api from '../services/api';
 import { checkCustomerDob } from '../services/api';
 import UnifiedGalleryViewer from './UnifiedGalleryViewer';
 import DobPicker from './common/DobPicker';
+import BookingConfirmationCard from './common/BookingConfirmationCard';
+
+// Helper to normalize time strings (e.g. '10:00' -> '10:00 AM') so dropdown options match cleanly
+function normalizeTimeStr(t) {
+  if (!t || typeof t !== 'string') return '10:00 AM';
+  const trimmed = t.trim();
+  if (/^\d{1,2}:\d{2}\s*(AM|PM)$/i.test(trimmed)) {
+    const parts = trimmed.split(/\s+/);
+    let [hh, mm] = parts[0].split(':');
+    hh = hh.padStart(2, '0');
+    return `${hh}:${mm} ${parts[1].toUpperCase()}`;
+  }
+  const match24 = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+  if (match24) {
+    let hours = parseInt(match24[1], 10);
+    const minutes = match24[2];
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    if (hours === 0) hours = 12;
+    return `${String(hours).padStart(2, '0')}:${minutes} ${ampm}`;
+  }
+  return trimmed;
+}
 
 export default function BookingModal({
   selectedBookingItem,
@@ -32,8 +55,8 @@ export default function BookingModal({
 
   const [modalPickupDate, setModalPickupDate] = useState(pickupDate || getTodayDateStr());
   const [modalDropDate, setModalDropDate] = useState(dropDate || addDays(pickupDate || getTodayDateStr(), bookingDays || 2));
-  const [modalPickupTime, setModalPickupTime] = useState(pickupTime || '10:00 AM');
-  const [modalDropTime, setModalDropTime] = useState(dropTime || '10:00 AM');
+  const [modalPickupTime, setModalPickupTime] = useState(normalizeTimeStr(pickupTime || '10:00 AM'));
+  const [modalDropTime, setModalDropTime] = useState(normalizeTimeStr(dropTime || '10:00 AM'));
   const [modalPickupLoc, setModalPickupLoc] = useState(pickupLoc || 'Goa Airport (Dabolim / Mopa)');
   const [userDob, setUserDob] = useState('');
   const [isDobSaved, setIsDobSaved] = useState(false);
@@ -48,8 +71,8 @@ export default function BookingModal({
   useEffect(() => {
     if (pickupDate) setModalPickupDate(pickupDate);
     if (dropDate) setModalDropDate(dropDate);
-    if (pickupTime) setModalPickupTime(pickupTime);
-    if (dropTime) setModalDropTime(dropTime);
+    if (pickupTime) setModalPickupTime(normalizeTimeStr(pickupTime));
+    if (dropTime) setModalDropTime(normalizeTimeStr(dropTime));
     if (pickupLoc) setModalPickupLoc(pickupLoc);
   }, [pickupDate, dropDate, pickupTime, dropTime, pickupLoc]);
 
@@ -157,34 +180,84 @@ export default function BookingModal({
   const driverPickupEnabled = driverRequired && driverServiceType === 'PICKUP';
   const driverDropEnabled = driverRequired && driverServiceType === 'DROP';
   const driverFullDayEnabled = driverRequired && driverServiceType === 'FULL';
-  const [driverPickupDate, setDriverPickupDate] = useState('');
-  const [driverPickupTime, setDriverPickupTime] = useState('10:00 AM');
+  const [driverPickupDate, setDriverPickupDate] = useState(pickupDate || '');
+  const [driverPickupTime, setDriverPickupTime] = useState(modalPickupTime || '10:00 AM');
+  const [isDriverPickupTimeManual, setIsDriverPickupTimeManual] = useState(false);
   const [driverPickupLoc, setDriverPickupLoc] = useState('Goa Airport (Dabolim)');
   const [driverPickupCustomLoc, setDriverPickupCustomLoc] = useState('');
 
-  const [driverDropDate, setDriverDropDate] = useState('');
-  const [driverDropTime, setDriverDropTime] = useState('10:00 AM');
+  const [driverDropDate, setDriverDropDate] = useState(dropDate || '');
+  const [driverDropTime, setDriverDropTime] = useState(modalDropTime || '10:00 AM');
+  const [isDriverDropTimeManual, setIsDriverDropTimeManual] = useState(false);
   const [driverDropLoc, setDriverDropLoc] = useState('Goa Airport (Dabolim)');
   const [driverDropCustomLoc, setDriverDropCustomLoc] = useState('');
 
-  const [driverFullDayStart, setDriverFullDayStart] = useState('');
-  const [driverFullDayEnd, setDriverFullDayEnd] = useState('');
+  const [driverFullDayStart, setDriverFullDayStart] = useState(pickupDate || '');
+  const [driverFullDayEnd, setDriverFullDayEnd] = useState(dropDate || '');
   const [driverFullDayStartLoc, setDriverFullDayStartLoc] = useState('Hotel');
   const [driverFullDayCustomStartLoc, setDriverFullDayCustomStartLoc] = useState('');
   const [driverFullDayEndLoc, setDriverFullDayEndLoc] = useState('Hotel');
   const [driverFullDayCustomEndLoc, setDriverFullDayCustomEndLoc] = useState('');
 
-  // Default driver dates from modal trip dates
+  // Synchronize and safely clamp driver service dates within authoritative vehicle boundaries [modalPickupDate, modalDropDate]
   useEffect(() => {
-    if (modalPickupDate) {
-      if (!driverPickupDate) setDriverPickupDate(modalPickupDate);
-      if (!driverFullDayStart) setDriverFullDayStart(modalPickupDate);
+    if (!modalPickupDate) return;
+
+    // Driver Pickup Date
+    setDriverPickupDate(prev => {
+      if (!prev || !driverRequired) return modalPickupDate;
+      if (prev < modalPickupDate) return modalPickupDate;
+      if (modalDropDate && prev > modalDropDate) return modalDropDate;
+      return prev;
+    });
+
+    // Driver Drop Date
+    setDriverDropDate(prev => {
+      const fallbackDrop = modalDropDate || modalPickupDate;
+      if (!prev || !driverRequired) return fallbackDrop;
+      if (prev < modalPickupDate) return modalPickupDate;
+      if (modalDropDate && prev > modalDropDate) return modalDropDate;
+      return prev;
+    });
+
+    // Driver Full Day Start
+    setDriverFullDayStart(prev => {
+      if (!prev || !driverRequired) return modalPickupDate;
+      if (prev < modalPickupDate) return modalPickupDate;
+      if (modalDropDate && prev > modalDropDate) return modalDropDate;
+      return prev;
+    });
+
+    // Driver Full Day End
+    setDriverFullDayEnd(prev => {
+      const fallbackDrop = modalDropDate || modalPickupDate;
+      if (!prev || !driverRequired) return fallbackDrop;
+      if (modalDropDate && prev > modalDropDate) return modalDropDate;
+      if (prev < modalPickupDate) return modalPickupDate;
+      return prev;
+    });
+  }, [modalPickupDate, modalDropDate, driverRequired]);
+
+  // Ensure Driver Full-Day End date is never before Start date
+  useEffect(() => {
+    if (driverFullDayStart && driverFullDayEnd && driverFullDayEnd < driverFullDayStart) {
+      setDriverFullDayEnd(driverFullDayStart);
     }
-    if (modalDropDate) {
-      if (!driverDropDate) setDriverDropDate(modalDropDate);
-      if (!driverFullDayEnd) setDriverFullDayEnd(modalDropDate);
+  }, [driverFullDayStart, driverFullDayEnd]);
+
+  // Synchronize driver pickup time with vehicle pickup time unless customer manually customized driver pickup time
+  useEffect(() => {
+    if (!isDriverPickupTimeManual && modalPickupTime) {
+      setDriverPickupTime(modalPickupTime);
     }
-  }, [modalPickupDate, modalDropDate]);
+  }, [modalPickupTime, isDriverPickupTimeManual]);
+
+  // Synchronize driver drop time with vehicle drop time unless customer manually customized driver drop time
+  useEffect(() => {
+    if (!isDriverDropTimeManual && modalDropTime) {
+      setDriverDropTime(modalDropTime);
+    }
+  }, [modalDropTime, isDriverDropTimeManual]);
 
   const hotelUpgradeCost = {
     '3': 0,
@@ -350,8 +423,17 @@ export default function BookingModal({
       }
 
       if (driverServiceType === 'PICKUP') {
-        if (!driverPickupDate) {
+        const effectivePickup = driverPickupDate || modalPickupDate;
+        if (!effectivePickup) {
           alert("Please select a valid Pickup Date for the Driver Pickup service.");
+          return;
+        }
+        if (modalPickupDate && effectivePickup < modalPickupDate) {
+          alert(`Driver pickup date cannot be before vehicle pickup date (${modalPickupDate}).`);
+          return;
+        }
+        if (modalDropDate && effectivePickup > modalDropDate) {
+          alert(`Driver pickup date cannot be after vehicle drop date (${modalDropDate}).`);
           return;
         }
         if (driverPickupLoc === 'Custom Address' && !driverPickupCustomLoc.trim()) {
@@ -361,8 +443,17 @@ export default function BookingModal({
       }
 
       if (driverServiceType === 'DROP') {
-        if (!driverDropDate) {
+        const effectiveDrop = driverDropDate || modalDropDate;
+        if (!effectiveDrop) {
           alert("Please select a valid Drop Date for the Driver Drop service.");
+          return;
+        }
+        if (modalPickupDate && effectiveDrop < modalPickupDate) {
+          alert(`Driver drop date cannot be before vehicle pickup date (${modalPickupDate}).`);
+          return;
+        }
+        if (modalDropDate && effectiveDrop > modalDropDate) {
+          alert(`Driver drop date cannot be after vehicle drop date (${modalDropDate}).`);
           return;
         }
         if (driverDropLoc === 'Custom Address' && !driverDropCustomLoc.trim()) {
@@ -372,8 +463,22 @@ export default function BookingModal({
       }
 
       if (driverServiceType === 'FULL') {
-        if (!driverFullDayStart || !driverFullDayEnd) {
+        const effectiveStart = driverFullDayStart || modalPickupDate;
+        const effectiveEnd = driverFullDayEnd || modalDropDate;
+        if (!effectiveStart || !effectiveEnd) {
           alert("Please select valid Start and End dates for the Full-Day Driver service.");
+          return;
+        }
+        if (modalPickupDate && effectiveStart < modalPickupDate) {
+          alert(`Driver start date cannot be before vehicle pickup date (${modalPickupDate}).`);
+          return;
+        }
+        if (modalDropDate && effectiveEnd > modalDropDate) {
+          alert(`Driver end date cannot be after vehicle drop date (${modalDropDate}).`);
+          return;
+        }
+        if (effectiveEnd < effectiveStart) {
+          alert("Driver end date cannot be before driver start date.");
           return;
         }
         if (driverFullDayStartLoc === 'Custom Address' && !driverFullDayCustomStartLoc.trim()) {
@@ -392,24 +497,32 @@ export default function BookingModal({
     const finalFullDayStartLocResolved = driverFullDayStartLoc === 'Custom Address' ? driverFullDayCustomStartLoc : driverFullDayStartLoc;
     const finalFullDayEndLocResolved = driverFullDayEndLoc === 'Custom Address' ? driverFullDayCustomEndLoc : driverFullDayEndLoc;
 
+    const resolvedDriverPickupDate = driverPickupDate || modalPickupDate;
+    const resolvedDriverDropDate = driverDropDate || modalDropDate;
+    const resolvedDriverFullDayStart = driverFullDayStart || modalPickupDate;
+    const resolvedDriverFullDayEnd = driverFullDayEnd || modalDropDate;
+
+    const resolvedDriverPickupTime = driverPickupTime || modalPickupTime || '10:00 AM';
+    const resolvedDriverDropTime = driverDropTime || modalDropTime || '10:00 AM';
+
     const driverDetailsPayload = {
       enabled: Boolean(driverRequired && (driverPickupEnabled || driverDropEnabled || driverFullDayEnabled)),
       pickup: {
         enabled: driverPickupEnabled,
-        date: driverPickupDate || modalPickupDate,
-        time: driverPickupTime || modalPickupTime,
+        date: resolvedDriverPickupDate,
+        time: resolvedDriverPickupTime,
         location: finalPickupLocResolved
       },
       drop: {
         enabled: driverDropEnabled,
-        date: driverDropDate || modalDropDate,
-        time: driverDropTime || modalDropTime,
+        date: resolvedDriverDropDate,
+        time: resolvedDriverDropTime,
         location: finalDropLocResolved
       },
       fullDay: {
         enabled: driverFullDayEnabled,
-        startDate: driverFullDayStart || modalPickupDate,
-        endDate: driverFullDayEnd || modalDropDate,
+        startDate: resolvedDriverFullDayStart,
+        endDate: resolvedDriverFullDayEnd,
         daysCount: driverFullDayDaysCount,
         startLocation: finalFullDayStartLocResolved,
         endLocation: finalFullDayEndLocResolved
@@ -437,16 +550,16 @@ export default function BookingModal({
       driver_earning: (!isBike && driverRequired) ? driverTotalCharge : 0,
       driver_payment_status: 'Pending',
       driver_pickup_enabled: driverPickupEnabled ? 1 : 0,
-      driver_pickup_date: driverPickupDate || modalPickupDate,
-      driver_pickup_time: driverPickupTime || modalPickupTime,
+      driver_pickup_date: resolvedDriverPickupDate,
+      driver_pickup_time: resolvedDriverPickupTime,
       driver_pickup_loc: finalPickupLocResolved,
       driver_drop_enabled: driverDropEnabled ? 1 : 0,
-      driver_drop_date: driverDropDate || modalDropDate,
-      driver_drop_time: driverDropTime || modalDropTime,
+      driver_drop_date: resolvedDriverDropDate,
+      driver_drop_time: resolvedDriverDropTime,
       driver_drop_loc: finalDropLocResolved,
       driver_fullday_enabled: driverFullDayEnabled ? 1 : 0,
-      driver_fullday_start: driverFullDayStart || modalPickupDate,
-      driver_fullday_end: driverFullDayEnd || modalDropDate,
+      driver_fullday_start: resolvedDriverFullDayStart,
+      driver_fullday_end: resolvedDriverFullDayEnd,
       driver_fullday_days: driverFullDayDaysCount,
       driver_details: driverDetailsPayload,
       date_of_birth: userDob,
@@ -485,83 +598,33 @@ export default function BookingModal({
         
         <div className="checkout-body text-start">
           {showSuccess ? (
-            <div className="text-center py-4 animate-fade-in">
-              <div className="text-success mb-3">
-                <CheckCircle size={64} className="mx-auto" />
-              </div>
-              <h3 className="fw-black mb-1 font-heading text-dark">Booking Confirmed!</h3>
-              <div className="badge bg-dark text-white text-xs px-3 py-1.5 rounded-pill fw-bold mb-3">
-                Booking ID: {lastConfirmedBooking?.id || `WG${Math.floor(1000 + Math.random() * 9000)}`}
-              </div>
-              <p className="text-muted text-xs mb-3">
-                Thank you, <strong>{userName}</strong>. Your reservation for <strong>{selectedBookingItem.name}</strong> has been successfully booked and confirmed.
-              </p>
-              {addonPackage && (
-                <p className="text-success small fw-bold mb-1">
-                  ✓ Bundled Tour Package: {addonPackage.name}
-                </p>
-              )}
-              {addonVehicle && (
-                <p className="text-success small fw-bold mb-2">
-                  ✓ Bundled Self-Drive Vehicle: {addonVehicle.name}
-                </p>
-              )}
-
-              {/* 10% Cashback Notification Card */}
-              <div className="card border-0 shadow-sm rounded-4 p-3.5 my-3 text-start" style={{ background: 'linear-gradient(135deg, #0B192C 0%, #1E3E62 100%)', color: '#ffffff' }}>
-                <div className="d-flex align-items-center gap-2 mb-1.5">
-                  <div className="rounded-circle p-1.5 bg-warning text-dark d-flex align-items-center justify-content-center" style={{ width: '28px', height: '28px' }}>
-                    <Gift size={16} />
-                  </div>
-                  <h6 className="fw-black text-white mb-0 font-heading" style={{ fontSize: '15px' }}>
-                    🎁 Cashback You Can Earn: ₹{projectedCashback.toLocaleString('en-IN')}
-                  </h6>
-                </div>
-                <p className="text-white-50 text-xs mb-2">
-                  💰 <strong>10% Cashback (₹{projectedCashback.toLocaleString('en-IN')})</strong> will be added to your <strong>WOW GOA Wallet</strong> after your booking is marked <strong>Completed</strong>.
-                </p>
-                <div className="text-warning text-xxs fw-semibold d-flex align-items-center gap-1">
-                  <Clock size={12} />
-                  <span>⏳ Valid for 30 days upon completion. Usable on future Car, Hotel & Trip bookings.</span>
-                </div>
-              </div>
-
-              {/* Customer Portal Notification Card */}
-              <div className="card border-0 shadow-sm rounded-4 p-4 my-3 text-start bg-light" style={{ border: '1px solid #e2e8f0' }}>
-                <div className="d-flex align-items-center gap-2 mb-1.5">
-                  <Compass size={20} className="text-warning" />
-                  <h6 className="fw-bold text-dark mb-0 font-heading" style={{ fontSize: '15px' }}>
-                    Track in WOW GOA Customer Portal
-                  </h6>
-                </div>
-                <p className="text-muted text-xs mb-3">
-                  Track your booking, trip details, wallet cashback and loyalty tier from your WOW GOA Customer Portal.
-                </p>
-                <button 
-                  type="button" 
-                  className="btn btn-warning text-dark fw-bold rounded-pill px-4 py-2.5 text-xs d-flex align-items-center justify-content-center gap-2 shadow-sm w-100"
-                  onClick={() => {
-                    if (userPhone) {
-                      try {
-                        sessionStorage.setItem('customer_login_phone', userPhone);
-                        localStorage.removeItem('customerUser');
-                      } catch (e) {}
-                    }
-                    setSelectedBookingItem(null);
-                    window.location.href = '/customer';
-                  }}
-                >
-                  <span>View My Booking & Wallet →</span>
-                </button>
-              </div>
-
-              <button 
-                type="button" 
-                className="btn btn-link text-muted text-xs text-decoration-none mt-1"
-                onClick={() => setSelectedBookingItem(null)}
-              >
-                Close & Return to Home
-              </button>
+            <div className="py-2 animate-fade-in">
+              <BookingConfirmationCard
+                bookingId={lastConfirmedBooking?.id || lastConfirmedBooking?.booking_id}
+                customerName={userName}
+                customerPhone={userPhone}
+                serviceTitle={selectedBookingItem.name}
+                serviceSubtitle={addonPackage ? `✓ Bundled Tour: ${addonPackage.name}` : ''}
+                cashbackPreview={lastConfirmedBooking?.cashback_preview}
+                details={[
+                  { label: isBike ? 'Two Wheeler' : 'Vehicle Model', value: selectedBookingItem.name, icon: isBike ? <Bike size={14} /> : <Car size={14} /> },
+                  { label: 'Rental Schedule', value: `${modalPickupDate} (${modalPickupTime}) → ${modalDropDate} (${modalDropTime})`, icon: <Calendar size={14} /> },
+                  { label: 'Pickup Location', value: modalPickupLoc, icon: <MapPin size={14} /> },
+                  { label: 'Rental Duration', value: `${calculatedDays} ${calculatedDays === 1 ? 'Day' : 'Days'}`, icon: <Clock size={14} /> },
+                  ...(addonPackage ? [{ label: 'Bundled Package', value: addonPackage.name, isSuccess: true }] : []),
+                  ...(addonVehicle ? [{ label: 'Bundled Vehicle', value: addonVehicle.name, isSuccess: true }] : []),
+                  ...(driverRequired ? [{
+                    label: 'Chauffeur Service',
+                    value: driverServiceType === 'FULL' ? 'Full-Day Driver (₹800/day)' : (driverServiceType === 'DROP' ? 'Driver Drop Service (₹400)' : 'Driver Pickup Service (₹400)'),
+                    isHighlight: true
+                  }] : [])
+                ]}
+                totalAmount={total}
+                amountPaid={finalPayable}
+                paymentMode={selectedPaymentMethod === 'cash' ? 'Cash on Delivery' : 'Online / UPI'}
+                paymentStatus="Confirmed"
+                onClose={() => setSelectedBookingItem(null)}
+              />
             </div>
           ) : (
             <div className="row g-4">
@@ -850,8 +913,22 @@ export default function BookingModal({
                           onChange={(e) => {
                             const checked = e.target.checked;
                             setDriverRequired(checked);
-                            if (checked && !driverServiceType) {
-                              setDriverServiceType('PICKUP');
+                            if (checked) {
+                              if (!driverServiceType) {
+                                setDriverServiceType('PICKUP');
+                              }
+                              // Initially default driver dates to current vehicle pickup and drop
+                              setDriverPickupDate(modalPickupDate);
+                              setDriverDropDate(modalDropDate || modalPickupDate);
+                              setDriverFullDayStart(modalPickupDate);
+                              setDriverFullDayEnd(modalDropDate || modalPickupDate);
+                              // Ensure driver times default to current vehicle times unless manually customized
+                              if (!isDriverPickupTimeManual) {
+                                setDriverPickupTime(modalPickupTime || '10:00 AM');
+                              }
+                              if (!isDriverDropTimeManual) {
+                                setDriverDropTime(modalDropTime || '10:00 AM');
+                              }
                             }
                           }}
                           style={{ width: '18px', height: '18px', cursor: 'pointer' }}
@@ -878,7 +955,12 @@ export default function BookingModal({
                                   className="form-check-input mt-0"
                                   id="driver_service_pickup"
                                   checked={driverServiceType === 'PICKUP'}
-                                  onChange={() => setDriverServiceType('PICKUP')}
+                                  onChange={() => {
+                                    setDriverServiceType('PICKUP');
+                                    if (!isDriverPickupTimeManual) {
+                                      setDriverPickupTime(modalPickupTime || '10:00 AM');
+                                    }
+                                  }}
                                   style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                 />
                                 <label className="form-check-label fw-bold text-dark mb-0 small" htmlFor="driver_service_pickup" style={{ cursor: 'pointer' }}>
@@ -897,9 +979,17 @@ export default function BookingModal({
                                   <input
                                     type="date"
                                     className="form-control form-control-sm text-xs"
-                                    min={getTodayDateStr()}
+                                    min={modalPickupDate || getTodayDateStr()}
+                                    max={modalDropDate || undefined}
                                     value={driverPickupDate || modalPickupDate || getTodayDateStr()}
-                                    onChange={(e) => setDriverPickupDate(e.target.value)}
+                                    onChange={(e) => {
+                                      let val = e.target.value;
+                                      if (val) {
+                                        if (modalPickupDate && val < modalPickupDate) val = modalPickupDate;
+                                        if (modalDropDate && val > modalDropDate) val = modalDropDate;
+                                      }
+                                      setDriverPickupDate(val);
+                                    }}
                                     required={driverPickupEnabled}
                                   />
                                 </div>
@@ -908,7 +998,10 @@ export default function BookingModal({
                                   <select
                                     className="form-select form-select-sm text-xs"
                                     value={driverPickupTime}
-                                    onChange={(e) => setDriverPickupTime(e.target.value)}
+                                    onChange={(e) => {
+                                      setDriverPickupTime(e.target.value);
+                                      setIsDriverPickupTimeManual(true);
+                                    }}
                                   >
                                     {['06:00 AM', '07:00 AM', '08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '01:00 PM', '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM', '06:00 PM', '07:00 PM', '08:00 PM', '09:00 PM', '10:00 PM', '11:00 PM'].map(t => (
                                       <option key={t} value={t}>{t}</option>
@@ -956,7 +1049,12 @@ export default function BookingModal({
                                   className="form-check-input mt-0"
                                   id="driver_service_drop"
                                   checked={driverServiceType === 'DROP'}
-                                  onChange={() => setDriverServiceType('DROP')}
+                                  onChange={() => {
+                                    setDriverServiceType('DROP');
+                                    if (!isDriverDropTimeManual) {
+                                      setDriverDropTime(modalDropTime || '10:00 AM');
+                                    }
+                                  }}
                                   style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                 />
                                 <label className="form-check-label fw-bold text-dark mb-0 small" htmlFor="driver_service_drop" style={{ cursor: 'pointer' }}>
@@ -975,9 +1073,17 @@ export default function BookingModal({
                                   <input
                                     type="date"
                                     className="form-control form-control-sm text-xs"
-                                    min={getTodayDateStr()}
-                                    value={driverDropDate || modalDropDate || getTodayDateStr()}
-                                    onChange={(e) => setDriverDropDate(e.target.value)}
+                                    min={modalPickupDate || getTodayDateStr()}
+                                    max={modalDropDate || undefined}
+                                    value={driverDropDate || modalDropDate || modalPickupDate || getTodayDateStr()}
+                                    onChange={(e) => {
+                                      let val = e.target.value;
+                                      if (val) {
+                                        if (modalPickupDate && val < modalPickupDate) val = modalPickupDate;
+                                        if (modalDropDate && val > modalDropDate) val = modalDropDate;
+                                      }
+                                      setDriverDropDate(val);
+                                    }}
                                     required={driverDropEnabled}
                                   />
                                 </div>
@@ -986,7 +1092,10 @@ export default function BookingModal({
                                   <select
                                     className="form-select form-select-sm text-xs"
                                     value={driverDropTime}
-                                    onChange={(e) => setDriverDropTime(e.target.value)}
+                                    onChange={(e) => {
+                                      setDriverDropTime(e.target.value);
+                                      setIsDriverDropTimeManual(true);
+                                    }}
                                   >
                                     {['06:00 AM', '07:00 AM', '08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '01:00 PM', '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM', '06:00 PM', '07:00 PM', '08:00 PM', '09:00 PM', '10:00 PM', '11:00 PM'].map(t => (
                                       <option key={t} value={t}>{t}</option>
@@ -1059,12 +1168,17 @@ export default function BookingModal({
                                   <input
                                     type="date"
                                     className="form-control form-control-sm text-xs"
-                                    min={getTodayDateStr()}
+                                    min={modalPickupDate || getTodayDateStr()}
+                                    max={modalDropDate || undefined}
                                     value={driverFullDayStart || modalPickupDate || getTodayDateStr()}
                                     onChange={(e) => {
-                                      const newStart = e.target.value;
+                                      let newStart = e.target.value;
+                                      if (newStart) {
+                                        if (modalPickupDate && newStart < modalPickupDate) newStart = modalPickupDate;
+                                        if (modalDropDate && newStart > modalDropDate) newStart = modalDropDate;
+                                      }
                                       setDriverFullDayStart(newStart);
-                                      if (driverFullDayEnd && driverFullDayEnd < newStart) {
+                                      if (driverFullDayEnd && newStart && driverFullDayEnd < newStart) {
                                         setDriverFullDayEnd(newStart);
                                       }
                                     }}
@@ -1077,9 +1191,18 @@ export default function BookingModal({
                                   <input
                                     type="date"
                                     className="form-control form-control-sm text-xs"
-                                    min={driverFullDayStart || getTodayDateStr()}
-                                    value={driverFullDayEnd || modalDropDate || getTodayDateStr()}
-                                    onChange={(e) => setDriverFullDayEnd(e.target.value)}
+                                    min={driverFullDayStart || modalPickupDate || getTodayDateStr()}
+                                    max={modalDropDate || undefined}
+                                    value={driverFullDayEnd || modalDropDate || driverFullDayStart || modalPickupDate || getTodayDateStr()}
+                                    onChange={(e) => {
+                                      let newEnd = e.target.value;
+                                      const effectiveMin = driverFullDayStart || modalPickupDate;
+                                      if (newEnd) {
+                                        if (effectiveMin && newEnd < effectiveMin) newEnd = effectiveMin;
+                                        if (modalDropDate && newEnd > modalDropDate) newEnd = modalDropDate;
+                                      }
+                                      setDriverFullDayEnd(newEnd);
+                                    }}
                                     required={driverFullDayEnabled}
                                   />
                                 </div>
@@ -1280,7 +1403,7 @@ export default function BookingModal({
                           </div>
                           {driverPickupEnabled && (
                             <div className="d-flex justify-content-between text-muted text-xxs mb-0.5">
-                              <span>• Driver Pickup ({driverPickupDate || modalPickupDate} • {driverPickupTime}):</span>
+                              <span>• Driver Pickup ({driverPickupDate || modalPickupDate} • {driverPickupTime || modalPickupTime}):</span>
                               <span className="fw-bold text-dark">₹400</span>
                             </div>
                           )}
@@ -1292,7 +1415,7 @@ export default function BookingModal({
                           )}
                           {driverDropEnabled && (
                             <div className="d-flex justify-content-between text-muted text-xxs mb-0.5">
-                              <span>• Driver Drop ({driverDropDate || modalDropDate} • {driverDropTime}):</span>
+                              <span>• Driver Drop ({driverDropDate || modalDropDate} • {driverDropTime || modalDropTime}):</span>
                               <span className="fw-bold text-dark">₹400</span>
                             </div>
                           )}

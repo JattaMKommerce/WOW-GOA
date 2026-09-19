@@ -3,13 +3,14 @@ import {
   Compass, MapPin, Clock, Users, Calendar, CheckCircle2,
   Search, Sparkles, Filter, ChevronRight, AlertCircle, Eye,
   ArrowRight, ShieldCheck, Tag, X, Check, User, Mail, Phone, Cake,
-  Wallet, Crown, Gift
+  Wallet, Crown, Gift, Car
 } from 'lucide-react';
 import * as api from '../../services/api';
 import { getTodayDateStr, getNextDayDateStr } from '../../utils/dateUtils';
 import DobPicker from '../common/DobPicker';
 import TourDatePicker from '../common/TourDatePicker';
 import BookingVoucher from '../common/BookingVoucher';
+import BookingConfirmationCard from '../common/BookingConfirmationCard';
 
 const filterActiveActivities = (items) => (Array.isArray(items) ? items : [])
   .filter(item => item.is_active !== 0 && item.is_active !== '0' && item.is_active !== false);
@@ -460,8 +461,8 @@ export default function CustomerActivitiesTab({
 
       const res = await api.createBooking(payload);
       const confirmed = res && (res.id || res.booking_id)
-        ? { ...payload, id: res.id || res.booking_id }
-        : { ...payload, id: `WG-ACT-${Math.floor(1000 + Math.random() * 9000)}` };
+        ? { ...payload, id: res.id || res.booking_id, cashback_preview: res.cashback_preview || null }
+        : { ...payload, id: `WG-ACT-${Math.floor(1000 + Math.random() * 9000)}`, cashback_preview: null };
 
       setBookingSuccess(confirmed);
       setLocalCreatedBookings(prev => [confirmed, ...prev]);
@@ -778,8 +779,9 @@ export default function CustomerActivitiesTab({
                         onClick={() => {
                           if (onOpenBookingDetails && typeof onOpenBookingDetails === 'function') {
                             onOpenBookingDetails(b);
+                          } else {
+                            setSelectedVoucherBooking(b);
                           }
-                          setSelectedVoucherBooking(b);
                         }}
                       >
                         <Eye size={12} /> View Voucher
@@ -900,118 +902,77 @@ export default function CustomerActivitiesTab({
                 {/* Modal Body */}
                 <div className="modal-body p-3 p-md-4" style={{ overflow: 'visible' }}>
                   {bookingSuccess ? (
-                    <div className="text-center py-4 px-3 animate-fade-in" style={{ maxWidth: '520px', margin: '0 auto' }}>
-                      <div className="bg-success bg-opacity-10 text-success rounded-circle p-3 d-inline-flex mb-3">
-                        <CheckCircle2 size={52} />
-                      </div>
-                      <h4 className="fw-black text-dark mb-1 font-heading">Booking Confirmed!</h4>
-                      <div className="badge bg-dark text-white text-xs px-3 py-1.5 rounded-pill fw-bold mb-3">
-                        Booking ID: #{bookingSuccess.id}
-                      </div>
-                      <p className="text-muted text-xs mb-4">
-                        Thank you, <strong>{bookingSuccess.name}</strong>. Your experience reservation for <strong>{bookingSuccess.item_name}</strong> has been confirmed.
-                      </p>
-
-                      <div className="card bg-light border-0 rounded-4 p-3.5 text-start mb-4 shadow-2xs" style={{ border: '1px solid #e2e8f0' }}>
-                        <div className="d-flex justify-content-between mb-2 pb-2 border-bottom">
-                          <span className="text-muted text-xs">Experience:</span>
-                          <span className="fw-bold text-dark text-xs text-end">{bookingSuccess.item_name}</span>
-                        </div>
-                        <div className="d-flex justify-content-between mb-2 pb-2 border-bottom">
-                          <span className="text-muted text-xs">Tour Date:</span>
-                          <span className="fw-bold text-dark text-xs">{bookingSuccess.pickup_date}</span>
-                        </div>
-                        <div className="d-flex justify-content-between mb-2 pb-2 border-bottom">
-                          <span className="text-muted text-xs">Guests:</span>
-                          <span className="fw-bold text-dark text-xs">{guests} {guests === 1 ? 'Guest' : 'Guests'}</span>
-                        </div>
-                        {bookingSuccess.date_of_birth && (
-                          <div className="d-flex justify-content-between mb-2 pb-2 border-bottom">
-                            <span className="text-muted text-xs">🎂 Birthday:</span>
-                            <span className="fw-bold text-success text-xs">{bookingSuccess.date_of_birth}</span>
+                    <div className="py-2 px-1 animate-fade-in" style={{ maxWidth: '540px', margin: '0 auto' }}>
+                      <BookingConfirmationCard 
+                        bookingId={bookingSuccess.id}
+                        customerName={bookingSuccess.name || 'Valued Guest'}
+                        customerPhone={contactPhone}
+                        serviceTitle={bookingSuccess.item_name}
+                        serviceSubtitle={bookingSuccess.pickup_date ? `Tour Date: ${bookingSuccess.pickup_date}` : ''}
+                        cashbackPreview={bookingSuccess.cashback_preview}
+                        details={[
+                          { label: 'Experience', value: bookingSuccess.item_name, icon: <Compass size={13} /> },
+                          { label: 'Tour Date', value: bookingSuccess.pickup_date, icon: <Calendar size={13} /> },
+                          { label: 'Guests', value: `${guests} ${guests === 1 ? 'Guest' : 'Guests'}`, icon: <Users size={13} /> },
+                          bookingSuccess.date_of_birth ? { label: 'Birthday', value: bookingSuccess.date_of_birth } : null,
+                          bookingSuccess.driver_required ? {
+                            label: 'Driver Service',
+                            value: bookingSuccess.driver_service_type === 'FULL' ? 'Full-Day Driver (₹800)' :
+                                   bookingSuccess.driver_service_type === 'DROP' ? 'Drop Service (₹400)' : 'Pickup Service (₹400)',
+                            icon: <Car size={13} />
+                          } : null,
+                        ].filter(Boolean)}
+                        amountPaid={parseFloat(bookingSuccess.amount_paid || bookingSuccess.total_amount || 0)}
+                        totalAmount={parseFloat(bookingSuccess.total_amount || 0)}
+                        remainingBalance={0}
+                        paymentStatus="Confirmed"
+                        isModalView={true}
+                        onTrackPortal={() => {
+                          if (contactPhone) {
+                            try {
+                              const clean = String(contactPhone).replace(/\D/g, '');
+                              sessionStorage.setItem('customer_login_phone', clean);
+                              localStorage.setItem('customer_login_phone', clean);
+                            } catch (e) {}
+                          }
+                          setBookingModalItem(null);
+                          setBookingSuccess(null);
+                          if (onNavigateTab) {
+                            onNavigateTab('customer');
+                          } else {
+                            window.location.href = '/customer';
+                          }
+                        }}
+                        actions={
+                          <div className="d-flex gap-2 justify-content-center w-100">
+                            <button
+                              type="button"
+                              className="btn btn-outline-secondary rounded-pill text-xs py-2 px-4 fw-bold"
+                              onClick={() => {
+                                setBookingModalItem(null);
+                                setBookingSuccess(null);
+                              }}
+                            >
+                              Close
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-outline-dark rounded-pill text-xs py-2 px-4 fw-bold shadow-sm d-flex align-items-center gap-1.5"
+                              onClick={() => {
+                                const b = bookingSuccess;
+                                if (onOpenBookingDetails && typeof onOpenBookingDetails === 'function') {
+                                  onOpenBookingDetails(b);
+                                } else {
+                                  setSelectedVoucherBooking(b);
+                                }
+                              }}
+                            >
+                              <Eye size={14} />
+                              <span>View Ticket Voucher</span>
+                            </button>
                           </div>
-                        )}
-                        {bookingSuccess.driver_required ? (
-                          <div className="d-flex justify-content-between mb-2 pb-2 border-bottom">
-                            <span className="text-muted text-xs">🚗 Driver Service:</span>
-                            <span className="fw-bold text-dark text-xs">
-                              {bookingSuccess.driver_service_type === 'FULL' ? 'Full-Day Driver (₹800)' :
-                               bookingSuccess.driver_service_type === 'DROP' ? 'Drop Service (₹400)' : 'Pickup Service (₹400)'}
-                            </span>
-                          </div>
-                        ) : null}
-                        <div className="d-flex justify-content-between mb-2 pb-2 border-bottom">
-                          <span className="text-muted text-xs">Total Amount Paid:</span>
-                          <span className="fw-black text-dark text-sm">₹{parseFloat(bookingSuccess.total_amount).toLocaleString('en-IN')}</span>
-                        </div>
-                        <div className="d-flex justify-content-between align-items-center">
-                          <span className="text-muted text-xs">Status:</span>
-                          <span className="badge bg-success text-white px-2.5 py-1 rounded-pill text-xxs">Confirmed</span>
-                        </div>
-                      </div>
-
-                      {/* Customer Portal Notification Card for Real-time Tracking */}
-                      <div className="card border-0 shadow-sm rounded-4 p-3.5 my-3 text-start bg-light" style={{ border: '1px solid #e2e8f0' }}>
-                        <div className="d-flex align-items-center gap-2 mb-1.5">
-                          <Compass size={20} className="text-warning" />
-                          <h6 className="fw-bold text-dark mb-0 font-heading" style={{ fontSize: '15px' }}>
-                            Track in WOW GOA Customer Portal
-                          </h6>
-                        </div>
-                        <p className="text-muted text-xs mb-3">
-                          Track your booking, live driver status, tour itinerary, and wallet cashback anytime from your WOW GOA Customer Portal.
-                        </p>
-                        <button 
-                          type="button" 
-                          id="track-activity-booking-btn"
-                          className="btn btn-warning text-dark fw-bold rounded-pill px-4 py-2.5 text-xs d-flex align-items-center justify-content-center gap-2 shadow-sm w-100 font-heading"
-                          onClick={() => {
-                            if (contactPhone) {
-                              try {
-                                const clean = String(contactPhone).replace(/\D/g, '');
-                                sessionStorage.setItem('customer_login_phone', clean);
-                                localStorage.setItem('customer_login_phone', clean);
-                              } catch (e) {}
-                            }
-                            setBookingModalItem(null);
-                            setBookingSuccess(null);
-                            if (onNavigateTab) {
-                              onNavigateTab('customer');
-                            } else {
-                              window.location.href = '/customer';
-                            }
-                          }}
-                        >
-                          <span>Track My Booking &amp; Wallet →</span>
-                        </button>
-                      </div>
-
-                      <div className="d-flex gap-2 justify-content-center">
-                        <button
-                          type="button"
-                          className="btn btn-outline-secondary rounded-pill text-xs py-2 px-4 fw-bold"
-                          onClick={() => {
-                            setBookingModalItem(null);
-                            setBookingSuccess(null);
-                          }}
-                        >
-                          Close
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-outline-dark rounded-pill text-xs py-2 px-4 fw-bold shadow-sm d-flex align-items-center gap-1.5"
-                          onClick={() => {
-                            const b = bookingSuccess;
-                            if (onOpenBookingDetails && typeof onOpenBookingDetails === 'function') {
-                              onOpenBookingDetails(b);
-                            }
-                            setSelectedVoucherBooking(b);
-                          }}
-                        >
-                          <Eye size={14} />
-                          <span>View Ticket Voucher</span>
-                        </button>
-                      </div>
+                        }
+                      />
                     </div>
                   ) : (
                     <form id="activity-booking-form" onSubmit={handleConfirmBooking} style={{ overflow: 'visible' }}>

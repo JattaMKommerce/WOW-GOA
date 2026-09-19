@@ -741,7 +741,7 @@ export default function CustomerPortalPage({
     <div className="min-vh-100 bg-light d-flex flex-column" style={{ fontFamily: 'Inter, system-ui, -apple-system, sans-serif' }}>
       
       {/* ─── 1. TOP FULL-WIDTH NAVBAR ─── */}
-      <header className="sticky-top bg-white border-bottom shadow-xs" style={{ zIndex: 1030 }}>
+      <header className="sticky-top bg-white border-bottom shadow-xs customer-portal-header" style={{ zIndex: 1030, ...(selectedBookingDetails ? { display: 'none' } : {}) }}>
         <div className="container-fluid px-3 px-md-4 px-xl-5" style={{ maxWidth: '1440px' }}>
           <div className="d-flex align-items-center justify-content-between py-2.5" style={{ minHeight: '68px' }}>
             

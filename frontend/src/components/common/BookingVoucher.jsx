@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Printer, X, CheckCircle, Clock, ShieldCheck, MapPin, Phone, Mail, Calendar, User, FileText, Compass, AlertCircle } from 'lucide-react';
 
 /**
@@ -19,6 +20,27 @@ export default function BookingVoucher({
   onClose,
   isModal = true
 }) {
+  // Control body lock and auto-hide top nav when modal is open
+  useEffect(() => {
+    if (!isModal) return;
+    document.body.classList.add('voucher-modal-active');
+    const origOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && onClose) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.classList.remove('voucher-modal-active');
+      document.body.style.overflow = origOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isModal, onClose]);
+
   if (!booking) return null;
 
   // ─── 1. Core Identification & Date Formatting ───
@@ -755,19 +777,19 @@ export default function BookingVoucher({
 
   // If rendered as a standalone modal (default)
   if (isModal) {
-    return (
+    const modalContent = (
       <div 
-        className="modal-backdrop-custom"
+        className="modal-backdrop-custom voucher-modal-backdrop"
         style={{
           position: 'fixed',
           top: 0,
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(11, 25, 44, 0.78)',
+          background: 'rgba(11, 25, 44, 0.82)',
           backdropFilter: 'blur(8px)',
           WebkitBackdropFilter: 'blur(8px)',
-          zIndex: 1080,
+          zIndex: 99999,
           overflowY: 'auto',
           overflowX: 'hidden',
           padding: '16px',
@@ -787,7 +809,7 @@ export default function BookingVoucher({
             flexDirection: 'column',
             background: '#ffffff',
             boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.45)',
-            margin: 'auto'
+            margin: '24px auto 40px auto'
           }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -897,6 +919,11 @@ export default function BookingVoucher({
         </div>
       </div>
     );
+
+    if (typeof document !== 'undefined' && document.body) {
+      return createPortal(modalContent, document.body);
+    }
+    return modalContent;
   }
 
   return content;

@@ -790,8 +790,9 @@ class BookingService {
         $pickupDropInc = $payload['pickup_drop_included'] ?? ($pkg['pickup_drop_included'] ?? '');
         $driverReq = (!empty($payload['driver_required']) || !empty($pickupDropInc));
 
-        // 1. Hotel Child Allocation
-        if (!empty($hotelName)) {
+        // 1. Hotel Child Allocation (Only for packages with overnight stay >= 1 night)
+        $stayNights = (!empty($pickupDate) && !empty($dropDate)) ? max(0, (int)round((strtotime($dropDate) - strtotime($pickupDate)) / 86400)) : 0;
+        if (!empty($hotelName) && $stayNights > 0 && $pickupDate !== $dropDate) {
             // Find hotel in inventory
             $stmtH = $pdo->prepare("SELECT id, name, is_available, blocked_dates FROM hotels WHERE name = ? OR id = ? OR name LIKE ? LIMIT 1");
             $stmtH->execute([$hotelName, $hotelName, "%$hotelName%"]);
@@ -826,7 +827,7 @@ class BookingService {
                 $dropDate,
                 $pickupDate,
                 $dropDate,
-                $daysCount,
+                $stayNights,
                 date('Y-m-d H:i:s'),
                 $tenantId,
                 $hChildVendorId

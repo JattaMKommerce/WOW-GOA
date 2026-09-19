@@ -289,30 +289,67 @@ export default function PackageCustomizationPage({
     });
   };
 
-  const numHotels = Math.max(1, parsedItinerary.filter(d => d.hotel).length || 1);
-  const numTransfers = Math.max(1, parsedItinerary.length > 1 ? 2 : 1);
-  const numActivities = Math.max(2, parsedItinerary.reduce((acc, d) => acc + (d.inclusions?.length || 2), 0));
-  const numMeals = Math.max(1, parsedItinerary.filter(d => d.meals).length || parsedItinerary.length || 1);
-
-  // Nights and days calculation strictly respecting package duration or itinerary
-  const nights = useMemo(() => {
-    if (pkg?.duration_nights) return Number(pkg.duration_nights);
-    if (parsedItinerary.length > 0) return Math.max(1, parsedItinerary.length - 1);
-    if (pkg?.duration) {
-      const nMatch = String(pkg.duration).match(/(\d+)\s*Nights?/i);
-      if (nMatch) return parseInt(nMatch[1], 10);
-      const dMatch = String(pkg.duration).match(/(\d+)\s*Days?/i);
-      if (dMatch) return Math.max(1, parseInt(dMatch[1], 10) - 1);
-      const shortMatch = String(pkg.duration).match(/(\d+)\s*N/i);
-      if (shortMatch) return parseInt(shortMatch[1], 10);
+  // Package maximum allowed duration
+  const packageMaxNights = useMemo(() => {
+    let maxN = 0;
+    const rawItinerary = pkg?.day_wise_itinerary || pkg?.itinerary || pkg?.day_plan || pkg?.dayPlan || pkg?.dayWiseItinerary;
+    if (rawItinerary) {
+      try {
+        const parsed = typeof rawItinerary === 'string' ? JSON.parse(rawItinerary) : rawItinerary;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          maxN = Math.max(1, parsed.length - 1);
+        }
+      } catch (e) {}
     }
-    return 3;
-  }, [pkg, parsedItinerary]);
+    if (maxN === 0 && pkg?.package_max_nights) {
+      maxN = parseInt(pkg.package_max_nights, 10);
+    }
+    if (maxN === 0 && pkg?.duration_nights) {
+      maxN = parseInt(pkg.duration_nights, 10);
+    }
+    if (maxN === 0 && pkg?.duration) {
+      const nMatch = String(pkg.duration).match(/(\d+)\s*Nights?/i);
+      if (nMatch) maxN = parseInt(nMatch[1], 10);
+      else {
+        const dMatch = String(pkg.duration).match(/(\d+)\s*Days?/i);
+        if (dMatch) maxN = Math.max(1, parseInt(dMatch[1], 10) - 1);
+        else {
+          const shortMatch = String(pkg.duration).match(/(\d+)\s*N/i);
+          if (shortMatch) maxN = parseInt(shortMatch[1], 10);
+        }
+      }
+    }
+    return maxN || 3;
+  }, [pkg]);
+
+  // Authoritative Customer Selected Dates
+  const activeDepDate = pkg?.departureDate || pkg?.pickup_date || pkg?.pickupDate || pickupDate || getTodayDateStr();
+  const rawRetDate = pkg?.returnDate || pkg?.drop_date || pkg?.dropDate || dropDate;
+  const activeRetDate = useMemo(() => {
+    if (rawRetDate) return rawRetDate;
+    return addDays(activeDepDate, packageMaxNights);
+  }, [rawRetDate, activeDepDate, packageMaxNights]);
+
+  // Authoritative nights & days derived strictly from customer-selected dates
+  const nights = useMemo(() => {
+    if (!activeDepDate || !activeRetDate) return 0;
+    const diff = Math.round((new Date(activeRetDate) - new Date(activeDepDate)) / 86400000);
+    const calculated = Math.max(0, diff);
+    return Math.min(calculated, packageMaxNights);
+  }, [activeDepDate, activeRetDate, packageMaxNights]);
 
   const days = nights + 1;
-  const durationDisplay = pkg?.duration || `${nights}N / ${days}D`;
-  const activeDepDate = pkg?.departureDate || pkg?.pickup_date || pkg?.pickupDate || pickupDate || getTodayDateStr();
-  const activeRetDate = pkg?.returnDate || pkg?.drop_date || pkg?.dropDate || dropDate || addDays(activeDepDate, nights);
+  const durationDisplay = `${nights} Nights / ${days} Days`;
+
+  // Active Itinerary slice for customer's selected duration (0N/1D -> Day 1, 1N/2D -> Day 1-2, etc.)
+  const activeItinerary = useMemo(() => {
+    return parsedItinerary.slice(0, days);
+  }, [parsedItinerary, days]);
+
+  const numHotels = Math.max(1, activeItinerary.filter(d => d.hotel).length || 1);
+  const numTransfers = Math.max(1, activeItinerary.length > 1 ? 2 : 1);
+  const numActivities = Math.max(2, activeItinerary.reduce((acc, d) => acc + (d.inclusions?.length || 2), 0));
+  const numMeals = Math.max(1, activeItinerary.filter(d => d.meals).length || activeItinerary.length || 1);
 
   // Timeline Scroll Logic
   const handleScrollToDay = (dayNum) => {
@@ -358,27 +395,36 @@ export default function PackageCustomizationPage({
       price += Number(pkg.pickup_drop_price) || 0;
     }
 
-    // Add selected add-ons price
-    Object.values(selectedAddOns).forEach(addonIds => {
-      addonIds.forEach(id => {
-        const addon = availableAddOns.find(a => a.id === id);
-        if (addon) price += Number(addon.price);
-      });
+    // Add selected add-ons price (only for active days)
+    Object.entries(selectedAddOns).forEach(([dayIdxStr, addonIds]) => {
+      const dayIdx = parseInt(dayIdxStr, 10);
+      if (dayIdx < days) {
+        addonIds.forEach(id => {
+          const addon = availableAddOns.find(a => a.id === id);
+          if (addon) price += Number(addon.price);
+        });
+      }
     });
 
-    // Add Hotel Swapping price differences (assuming default hotel is 0 baseline for now)
-    Object.values(selectedHotels).forEach(hotel => {
-      price += Number(hotel.price);
+    // Add Hotel Swapping price differences (only for active nights)
+    Object.entries(selectedHotels).forEach(([dayIdxStr, hotel]) => {
+      const dayIdx = parseInt(dayIdxStr, 10);
+      if (dayIdx < nights) {
+        price += Number(hotel.price);
+      }
     });
 
-    // Add Transfer Swapping price differences
-    Object.values(selectedTransfers).forEach(car => {
-      price += Number(car.price);
+    // Add Transfer Swapping price differences (only for active days)
+    Object.entries(selectedTransfers).forEach(([dayIdxStr, car]) => {
+      const dayIdx = parseInt(dayIdxStr, 10);
+      if (dayIdx < days) {
+        price += Number(car.price);
+      }
     });
 
-    // Sightseeing Exclusions Discount
+    // Sightseeing Exclusions Discount (only on active itinerary)
     let sightseeingDiscount = 0;
-    (parsedItinerary || []).forEach((day, idx) => {
+    (activeItinerary || []).forEach((day, idx) => {
       const prefs = sightseeingPrefs[idx];
       if (prefs?.included === false) {
         sightseeingDiscount += 1500; // Rs 1500 discount for fully dropping a day's sightseeing
@@ -398,7 +444,7 @@ export default function PackageCustomizationPage({
     }
 
     setTotalPrice(Math.max(0, price));
-  }, [cabType, selectedSelfDriveVehicle, baselineVehicle, airportTransit, pkg, resolvedPricing, isSelfDrivePackage, selectedAddOns, appliedCoupon, availableAddOns, withFlight, sightseeingPrefs, selectedHotels, selectedTransfers, parsedItinerary]);
+  }, [cabType, selectedSelfDriveVehicle, baselineVehicle, airportTransit, pkg, resolvedPricing, isSelfDrivePackage, selectedAddOns, appliedCoupon, availableAddOns, withFlight, sightseeingPrefs, selectedHotels, selectedTransfers, activeItinerary, days, nights]);
 
   const customizations = {
     withFlight: withFlight,
@@ -512,7 +558,7 @@ export default function PackageCustomizationPage({
       ? Math.max(0, advanceAmount - appliedWalletAmount) 
       : finalTotalPayable;
 
-    const durationStr = pkg?.duration || `${nights} Nights / ${days} Days`;
+    const durationStr = `${nights} Nights / ${days} Days`;
 
     const cleanPhone = String(contactPhone || '9876543210').replace(/\D/g, '');
     const isSelfDrive = cabType === 'self-drive' || (pkg.name && pkg.name.toLowerCase().includes('self drive')) || (pkg.package_type === 'Self Drive Package');
@@ -537,6 +583,9 @@ export default function PackageCustomizationPage({
       check_in_date: activeDepDate,
       check_out_date: activeRetDate,
       duration: durationStr,
+      duration_nights: nights,
+      duration_days: days,
+      package_max_nights: packageMaxNights,
       item_id: pkg.id,
       item_name: pkg.name,
       package_name: pkg.name,
@@ -545,7 +594,7 @@ export default function PackageCustomizationPage({
       vehicle_name: customizations?.cab?.name || pkg.car_included || (isSelfDrive ? 'Self Drive Vehicle' : ''),
       vehicle_image: customizations?.cab?.image || pkg.image || pkg.image_url || '',
       image: pkg.image || pkg.image_url || '',
-      hotel_name: customizations?.hotel?.name || pkg.hotel_included || '',
+      hotel_name: nights > 0 ? (customizations?.hotel?.name || pkg.hotel_included || '') : '',
       booking_days: nights,
       total_paid: isAdvance ? (advanceAmount + appliedWalletAmount) : actualTotal,
       total_amount: rawTotal,
@@ -567,7 +616,11 @@ export default function PackageCustomizationPage({
 
     try {
       const res = await api.createBooking(bookingPayload);
-      const createdRecord = res.booking || { ...bookingPayload, id: res.booking_id || res.id || `TG-${Math.floor(100000 + Math.random() * 900000)}` };
+      const createdRecord = {
+        ...(res.booking || bookingPayload),
+        id: res.booking_id || res.id || (res.booking && res.booking.id) || `TG-${Math.floor(100000 + Math.random() * 900000)}`,
+        cashback_preview: res.cashback_preview || (res.booking && res.booking.cashback_preview) || null
+      };
       setConfirmedBooking(createdRecord);
 
       try {
@@ -651,9 +704,9 @@ export default function PackageCustomizationPage({
               <span className="badge bg-light text-dark border px-3 py-1.5 rounded-pill d-flex align-items-center gap-1">
                 <MapPin size={13} className="text-danger" /> {pkg.destination || 'Goa, India'}
               </span>
-              {parsedItinerary.slice(0, 3).map((d, i) => (
+              {activeItinerary.slice(0, 3).map((d, i) => (
                 <span key={i} className="text-muted small">
-                  Day {d.day}: {d.location || 'Goa'} {i < Math.min(2, parsedItinerary.length - 1) && '•'}
+                  Day {d.day}: {d.location || 'Goa'} {i < Math.min(2, activeItinerary.length - 1) && '•'}
                 </span>
               ))}
             </div>
@@ -668,7 +721,7 @@ export default function PackageCustomizationPage({
             <div className="d-flex gap-3 gap-md-4 flex-wrap align-items-center">
               <div className="text-center">
                 <span className="d-block fw-bold text-primary px-3 py-1 bg-white border rounded-pill shadow-xs" style={{ fontSize: '0.85rem' }}>
-                  {parsedItinerary.length > 0 ? parsedItinerary.length : days} DAY PLAN
+                  {activeItinerary.length > 0 ? activeItinerary.length : days} DAY PLAN
                 </span>
               </div>
               <div className="text-center text-muted small fw-bold d-flex flex-column justify-content-center">
@@ -778,7 +831,7 @@ export default function PackageCustomizationPage({
             )}
           </div>
 
-          {parsedItinerary.length === 0 ? (
+          {activeItinerary.length === 0 ? (
             <div className="bg-white border border-top-0 p-5 text-center shadow-xs">
               <div className="d-inline-flex p-3 rounded-circle bg-primary bg-opacity-10 text-primary mb-3">
                 <Sparkles size={32} />
@@ -814,7 +867,7 @@ export default function PackageCustomizationPage({
                     <span className="fw-bold d-block">Day Plan</span>
                   </div>
                   <div className="d-flex flex-column position-relative" style={{ paddingLeft: '20px' }}>
-                    {parsedItinerary.map((day, idx) => (
+                    {activeItinerary.map((day, idx) => (
                       <div 
                         key={idx} 
                         className="mb-3 cursor-pointer d-flex align-items-center gap-2"
@@ -830,7 +883,7 @@ export default function PackageCustomizationPage({
 
               {/* Itinerary Blocks Area */}
               <div className="flex-grow-1 p-4">
-                {parsedItinerary.map((day, idx) => {
+                {activeItinerary.map((day, idx) => {
                   const dayActivityCount = (() => {
                   let cnt = 0;
                   if (day.morning) cnt++;
@@ -1460,7 +1513,7 @@ export default function PackageCustomizationPage({
               <div className="modal-header bg-white border-bottom pb-0 pt-4 px-4 position-relative" style={{ zIndex: 10 }}>
                 <div className="w-100">
                   <h4 className="fw-bold mb-1">Add Activity, Meal or Transfer</h4>
-                  <p className="text-muted small mb-4">Day {showAddOnModalForDay + 1} • {parsedItinerary[showAddOnModalForDay]?.location || 'Goa'}</p>
+                  <p className="text-muted small mb-4">Day {showAddOnModalForDay + 1} • {activeItinerary[showAddOnModalForDay]?.location || 'Goa'}</p>
                   
                   {/* Tabs */}
                   <div className="d-flex gap-4 border-bottom w-100 overflow-auto no-scrollbar">
@@ -1483,7 +1536,7 @@ export default function PackageCustomizationPage({
               <div className="modal-body p-4">
                 <div className="d-flex flex-column gap-3">
                   
-                  {addOnModalTab === 'Sightseeing' && parsedItinerary[showAddOnModalForDay] ? (
+                  {addOnModalTab === 'Sightseeing' && activeItinerary[showAddOnModalForDay] ? (
                     <div className="bg-white rounded-4 p-4 shadow-sm border border-light">
                       <div className="d-flex justify-content-between align-items-center mb-4 pb-3 border-bottom">
                          <div>
@@ -1504,7 +1557,7 @@ export default function PackageCustomizationPage({
                         <div>
                           <h6 className="fw-bold text-dark mb-3">Customise Locations:</h6>
                           <div className="d-flex flex-column gap-3">
-                            {(parsedItinerary[showAddOnModalForDay].sightseeing_locations || (parsedItinerary[showAddOnModalForDay].location ? [{name: parsedItinerary[showAddOnModalForDay].location, tips: parsedItinerary[showAddOnModalForDay].tips}] : [])).map((loc, lIdx) => {
+                            {(activeItinerary[showAddOnModalForDay].sightseeing_locations || (activeItinerary[showAddOnModalForDay].location ? [{name: activeItinerary[showAddOnModalForDay].location, tips: activeItinerary[showAddOnModalForDay].tips}] : [])).map((loc, lIdx) => {
                               const isChecked = sightseeingPrefs[showAddOnModalForDay]?.locations?.includes(loc.name);
                               return (
                                 <div key={lIdx} className={`p-3 rounded border ${isChecked ? 'bg-primary bg-opacity-10 border-primary' : 'bg-light border-light'}`}>

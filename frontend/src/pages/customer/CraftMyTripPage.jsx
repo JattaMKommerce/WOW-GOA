@@ -6,6 +6,7 @@ import {
   ChevronLeft, ChevronRight, Wallet, Crown, Gift
 } from 'lucide-react';
 import * as api from '../../services/api';
+import BookingConfirmationCard from '../../components/common/BookingConfirmationCard';
 import HotelImageGallery from '../../components/HotelImageGallery';
 import CraftServiceDetailsModal from '../../components/customer/CraftServiceDetailsModal';
 import CarDetailsPage from './CarDetailsPage';
@@ -1421,6 +1422,8 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
   const [dob, setDob] = useState('');
   const [paymentMode, setPaymentMode] = useState('full');
   const [showSuccess, setShowSuccess] = useState(false);
+  const [confirmedBookingId, setConfirmedBookingId] = useState(null);
+  const [confirmedCashbackPreview, setConfirmedCashbackPreview] = useState(null);
   const [booking, setBooking] = useState(false);
   const [error, setError] = useState('');
   const [walletBalance, setWalletBalance] = useState(0);
@@ -1609,7 +1612,8 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
     try {
       const res = await api.createBooking(cmtPayload);
       const bookingId = res?.booking_id || res?.id || `CMT-${Date.now()}`;
-      const fullRecord = { ...cmtPayload, id: bookingId };
+      const cashbackPreview = res?.cashback_preview || null;
+      const fullRecord = { ...cmtPayload, id: bookingId, cashback_preview: cashbackPreview };
       try {
         sessionStorage.setItem('customer_login_phone', cleanPhone);
         sessionStorage.setItem('last_created_booking', JSON.stringify(fullRecord));
@@ -1618,6 +1622,8 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
         const existing = JSON.parse(localStorage.getItem('local_bookings') || '[]');
         localStorage.setItem('local_bookings', JSON.stringify([fullRecord, ...existing.filter(b => String(b.id) !== String(bookingId))]));
       } catch (e) {}
+      setConfirmedBookingId(bookingId);
+      setConfirmedCashbackPreview(cashbackPreview);
       setShowSuccess(true);
       if (onConfirm) onConfirm();
     } catch (e) {
@@ -1628,77 +1634,64 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
   };
 
   if (showSuccess) {
+    const confirmationDetails = [
+      selectedVehicle ? { label: 'Vehicle Ride', value: selectedVehicle.name, icon: <Car size={13} /> } : null,
+      selectedHotel ? { 
+        label: 'Hotel Stay', 
+        value: `${selectedHotel.name}${selectedHotel.preselected_room?.name ? ` (${selectedHotel.preselected_room.name})` : ''}`, 
+        icon: <Hotel size={13} /> 
+      } : null,
+      (selectedActivities && selectedActivities.length > 0) ? { 
+        label: 'Sightseeing & Activities', 
+        value: selectedActivities.map(a => a.title || a.name).join(', '), 
+        icon: <Compass size={13} /> 
+      } : null,
+      (withFlight && selectedFlight) ? { 
+        label: 'Flight Included', 
+        value: `${selectedFlight.airline?.name || selectedFlight.airline}${selectedFlight.flight_number ? ` (${selectedFlight.flight_number})` : ''}`, 
+        icon: <Plane size={13} /> 
+      } : null,
+      {
+        label: 'Trip Duration',
+        value: `${validPickup} to ${validDrop} (${nights} Nights / ${nights + 1} Days)`,
+        icon: <Calendar size={13} />
+      },
+      memberCount ? {
+        label: 'Travelers',
+        value: `${memberCount} Guest${memberCount > 1 ? 's' : ''}`,
+        icon: <Users size={13} />
+      } : null
+    ].filter(Boolean);
+
     return (
-      <div className="cmt-success-screen animate-fade-in-up">
-        <div className="cmt-success-circle">
-          <CheckCircle size={64} color="#10b981" />
-        </div>
-        <h2>Booking Confirmed! 🎉</h2>
-        <p>Your custom Goa trip has been booked successfully.</p>
-        <div className="cmt-success-summary">
-          {selectedVehicle && (
-            <div>
-              <strong>Vehicle:</strong> {selectedVehicle.name}
-            </div>
-          )}
-          {selectedHotel && (
-            <div>
-              <strong>Hotel:</strong> {selectedHotel.name}
-              {selectedHotel.preselected_room?.name && ` (${selectedHotel.preselected_room.name})`}
-            </div>
-          )}
-          {selectedActivities && selectedActivities.length > 0 && (
-            <div><strong>Sightseeing & Activities:</strong> {selectedActivities.map(a => a.title || a.name).join(', ')}</div>
-          )}
-          {withFlight && selectedFlight && (
-            <div>
-              <strong>Flight:</strong> {selectedFlight.airline?.name || selectedFlight.airline}
-              {selectedFlight.flight_number ? ` (${selectedFlight.flight_number})` : ''}
-            </div>
-          )}
-          <div><strong>Total Amount:</strong> ₹{grandTotal.toLocaleString('en-IN')}</div>
-          <div><strong>Amount Paid:</strong> ₹{amountDue.toLocaleString('en-IN')} ({paymentMode === 'full' ? 'Full' : '30% Advance'})</div>
-        </div>
-        <p className="cmt-success-note">Our team will contact you at <strong>{phone}</strong> shortly to confirm details.</p>
-
-        {/* Customer Portal Tracking Card */}
-        <div className="card border-0 shadow-sm rounded-4 p-4 my-4 text-start bg-light mx-auto" style={{ maxWidth: '440px', border: '1px solid #e2e8f0' }}>
-          <div className="d-flex align-items-center gap-2 mb-1.5">
-            <Compass size={20} className="text-warning" />
-            <h6 className="fw-bold text-dark mb-0 font-heading" style={{ fontSize: '15px' }}>
-              Track in WOW GOA Customer Portal
-            </h6>
-          </div>
-          <p className="text-muted text-xs mb-3">
-            Track your custom holiday itinerary, vehicle allocation, hotel stay, activities and payment receipts.
-          </p>
-          <button 
-            type="button" 
-            className="btn btn-warning text-dark fw-bold rounded-pill px-4 py-2.5 text-xs d-flex align-items-center justify-content-center gap-2 shadow-sm w-100 font-heading"
-            onClick={() => {
-              if (phone) {
-                try {
-                  sessionStorage.setItem('customer_login_phone', phone);
-                  localStorage.removeItem('customerUser');
-                } catch (e) {}
-              }
-              window.location.href = '/customer';
-            }}
-          >
-            <span>View My Booking →</span>
-          </button>
-        </div>
-
-        <button 
-          type="button" 
-          className="btn btn-link text-muted text-xs text-decoration-none mt-1"
-          onClick={() => {
-            if (onConfirm) onConfirm();
-            window.location.href = '/';
-          }}
-        >
-          Return to Home
-        </button>
+      <div className="cmt-success-screen animate-fade-in-up" style={{ maxWidth: '580px', margin: '0 auto', padding: '1rem' }}>
+        <BookingConfirmationCard 
+          bookingId={confirmedBookingId || 'TG-CMT'}
+          customerName={name || 'Valued Guest'}
+          customerPhone={phone}
+          serviceTitle="Custom Crafted Goa Trip"
+          serviceSubtitle={`${nights} Nights / ${nights + 1} Days Custom Itinerary`}
+          cashbackPreview={confirmedCashbackPreview}
+          details={confirmationDetails}
+          amountPaid={amountDue}
+          totalAmount={grandTotal}
+          remainingBalance={paymentMode === 'full' ? 0 : Math.max(0, grandTotal - amountDue)}
+          paymentStatus={paymentMode === 'full' ? 'Fully Paid' : '30% Advance Paid'}
+          paymentMode={paymentMode === 'full' ? 'Full Payment' : '30% Advance Payment'}
+          isModalView={true}
+          actions={
+            <button 
+              type="button" 
+              className="btn btn-outline-secondary rounded-pill px-4 py-2 text-xs fw-bold"
+              onClick={() => {
+                if (onConfirm) onConfirm();
+                window.location.href = '/';
+              }}
+            >
+              Return to Home
+            </button>
+          }
+        />
       </div>
     );
   }

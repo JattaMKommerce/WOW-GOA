@@ -5,6 +5,7 @@ import { validateBookingDates, getTodayDateStr, addDays, formatDisplayDate } fro
 import ImageCarousel from './common/ImageCarousel';
 import UnifiedGalleryViewer from './UnifiedGalleryViewer';
 import DobPicker from './common/DobPicker';
+import BookingConfirmationCard from './common/BookingConfirmationCard';
 
 const TIME_SLOTS = [
   '06:00 AM', '07:00 AM', '08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM',
@@ -147,6 +148,7 @@ export default function HotelBookingModal({
   const [walletBalance, setWalletBalance] = useState(0);
   const [useWalletCashback, setUseWalletCashback] = useState(false);
   const [loyaltyInfo, setLoyaltyInfo] = useState(null);
+  const [confirmedCashbackPreview, setConfirmedCashbackPreview] = useState(null);
 
   // Repeat customer lookup for Date of Birth & Wallet Balance & Loyalty Tier
   useEffect(() => {
@@ -509,6 +511,7 @@ export default function HotelBookingModal({
       try {
         const res = await api.createBooking(bookingPayload);
         if (res?.booking_id || res?.id) assignedId = res.booking_id || res.id;
+        if (res?.cashback_preview) setConfirmedCashbackPreview(res.cashback_preview);
       } catch (err) {
         console.warn("Backend booking submission note:", err);
       }
@@ -1155,98 +1158,27 @@ export default function HotelBookingModal({
   };
 
   const renderStep4 = () => (
-    <div className="text-center py-4 animate-fade-in">
-        <div className="text-success mb-3">
-            <CheckCircle size={64} className="mx-auto" />
-        </div>
-        <h3 className="fw-bold mb-2">{isPayAtHotel ? 'Booking Confirmed!' : 'Payment Submitted Successfully'}</h3>
-        <p className="text-muted mb-4 px-3">
-            {isPayAtHotel 
-              ? <>Your reservation at <strong>{selectedBookingItem.name}</strong> is confirmed. You can pay <strong>₹{totalAmount.toLocaleString('en-IN')}</strong> directly at the hotel front desk during check-in.</>
-              : <>Your payment details have been sent to <strong>{selectedBookingItem.name}</strong> for verification. You will receive an email and WhatsApp message after verification.</>}
-        </p>
-        
-        <div className="bg-light rounded p-3 text-start mx-auto border mb-4" style={{ maxWidth: '400px' }}>
-            <div className="d-flex justify-content-between mb-2">
-                <span className="text-muted small">Booking Reference ID</span>
-                <span className="fw-bold text-primary">{bookingId}</span>
-            </div>
-            <div className="d-flex justify-content-between mb-2">
-                <span className="text-muted small">Hotel Property</span>
-                <span className="fw-bold">{selectedBookingItem.name}</span>
-            </div>
-            <div className="d-flex justify-content-between mb-2">
-                <span className="text-muted small">Stay Schedule</span>
-                <span className="fw-bold text-end small">
-                  {modalCheckInDate} ({checkInTime}) to {modalCheckOutDate} ({checkOutTime}) • {nights} {nights === 1 ? 'Night' : 'Nights'} ({nights}N)
-                </span>
-            </div>
-            <div className="d-flex justify-content-between mb-2">
-                <span className="text-muted small">Payment Mode</span>
-                <span className="badge bg-success text-white">{isPayAtHotel ? 'Pay at Hotel' : 'Online / UPI'}</span>
-            </div>
-            <div className="d-flex justify-content-between">
-                <span className="text-muted small">Total Payable</span>
-                <span className="fw-bold text-dark">₹{finalTotalPayable.toLocaleString('en-IN')}</span>
-            </div>
-            {appliedWalletAmount > 0 && (
-              <div className="d-flex justify-content-between text-success fw-bold small mt-1">
-                <span>Wallet Cashback Used</span>
-                <span>-₹{appliedWalletAmount.toLocaleString('en-IN')}</span>
-              </div>
-            )}
-        </div>
-
-        {/* 10% Cashback Notification Card */}
-        <div className="card border-0 shadow-sm rounded-4 p-3.5 my-3 text-start mx-auto" style={{ maxWidth: '420px', background: 'linear-gradient(135deg, #0B192C 0%, #1E3E62 100%)', color: '#ffffff' }}>
-          <div className="d-flex align-items-center gap-2 mb-1.5">
-            <div className="rounded-circle p-1.5 bg-warning text-dark d-flex align-items-center justify-content-center" style={{ width: '28px', height: '28px' }}>
-              <Gift size={16} />
-            </div>
-            <h6 className="fw-black text-white mb-0 font-heading" style={{ fontSize: '15px' }}>
-              🎁 Cashback You Can Earn: ₹{projectedCashback.toLocaleString('en-IN')}
-            </h6>
-          </div>
-          <p className="text-white-50 text-xs mb-2">
-            💰 <strong>10% Cashback (₹{projectedCashback.toLocaleString('en-IN')})</strong> will be added to your <strong>WOW GOA Wallet</strong> after your hotel stay is marked <strong>Completed</strong>.
-          </p>
-          <div className="text-warning text-xxs fw-semibold d-flex align-items-center gap-1">
-            <Clock size={12} />
-            <span>⏳ Valid for 30 days upon completion. Usable on future Car, Hotel & Trip bookings.</span>
-          </div>
-        </div>
-
-        <div className="card border-0 shadow-sm rounded-4 p-4 my-3 text-start bg-light mx-auto" style={{ maxWidth: '420px', border: '1px solid #e2e8f0' }}>
-            <div className="d-flex align-items-center gap-2 mb-1.5">
-                <Compass size={20} className="text-warning" />
-                <h6 className="fw-bold text-dark mb-0 font-heading" style={{ fontSize: '15px' }}>
-                    Track in WOW GOA Customer Portal
-                </h6>
-            </div>
-            <p className="text-muted text-xs mb-3">
-                Track your hotel stay reservation, check-in schedule, wallet cashback and loyalty tier from your WOW GOA Customer Portal.
-            </p>
-            <button 
-                type="button" 
-                className="btn btn-warning text-dark fw-bold rounded-pill px-4 py-2.5 text-xs d-flex align-items-center justify-content-center gap-2 shadow-sm w-100 font-heading"
-                onClick={() => {
-                    if (guestPhone) {
-                        try {
-                            sessionStorage.setItem('customer_login_phone', guestPhone);
-                            localStorage.removeItem('customerUser');
-                        } catch (e) {}
-                    }
-                    setSelectedBookingItem(null);
-                    window.location.href = '/customer';
-                }}
-            >
-                <span>View My Booking & Wallet →</span>
-            </button>
-        </div>
-
-        <button className="btn btn-link text-muted text-xs text-decoration-none mt-1" onClick={() => setSelectedBookingItem(null)}>
-          Done / Close & Return to Hotels
-        </button>
+    <div className="py-2 animate-fade-in" style={{ maxWidth: '520px', margin: '0 auto' }}>
+      <BookingConfirmationCard
+        bookingId={bookingId}
+        customerName={guestName || 'Valued Guest'}
+        customerPhone={guestPhone}
+        serviceTitle={selectedBookingItem.name}
+        serviceSubtitle={`🏨 ${nights} ${nights === 1 ? 'Night' : 'Nights'} Resort Stay`}
+        cashbackPreview={confirmedCashbackPreview}
+        details={[
+          { label: 'Hotel Property', value: selectedBookingItem.name, icon: <BedDouble size={14} /> },
+          { label: 'Stay Schedule', value: `${modalCheckInDate} (${checkInTime}) → ${modalCheckOutDate} (${checkOutTime})`, icon: <Calendar size={14} /> },
+          { label: 'Room Category', value: selectedRoom?.name || 'Standard Resort Room', icon: <BedDouble size={14} /> },
+          { label: 'Guests & Rooms', value: `${totalGuestsCount} Guests (${roomsCount} Room${roomsCount > 1 ? 's' : ''})`, icon: <Users size={14} /> },
+          ...(appliedWalletAmount > 0 ? [{ label: 'Wallet Cashback Used', value: `-₹${appliedWalletAmount.toLocaleString('en-IN')}`, isSuccess: true }] : [])
+        ]}
+        totalAmount={totalAmount}
+        amountPaid={finalTotalPayable}
+        paymentMode={isPayAtHotel ? 'Pay at Hotel Front Desk' : 'Online / UPI'}
+        paymentStatus={isPayAtHotel ? 'Confirmed (Pay at Hotel)' : 'Confirmed & Paid'}
+        onClose={() => setSelectedBookingItem(null)}
+      />
     </div>
   );
 
