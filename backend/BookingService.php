@@ -136,6 +136,10 @@ class BookingService {
         $rawLicense = trim($payload['license'] ?? ($payload['driving_license'] ?? ($payload['guest_license'] ?? ($payload['id_number'] ?? ''))));
 
         if ($serviceType === 'vehicle') {
+            if (!$isVehicleWithDriver && strtotime($retDate) <= strtotime($depDate)) {
+                throw new BookingServiceException("Drop-off date cannot be the same as or before pickup date for Self Drive rentals.", 400);
+            }
+
             // Check if customer is repeat customer with stored DOB in database if not explicitly provided in payload
             if (empty($rawDob) && !empty($last10)) {
                 try {
@@ -188,6 +192,51 @@ class BookingService {
             // - DOB mandatory (checked above)
             // - Driving License optional
             // - No 18+ restriction
+            // - Driver service dates must be within vehicle rental period
+            if ($isVehicleWithDriver) {
+                $customsData = is_array($payload['customizations'] ?? null) 
+                    ? $payload['customizations'] 
+                    : (is_string($payload['customizations'] ?? null) ? json_decode($payload['customizations'], true) : []);
+                if (!is_array($customsData)) $customsData = [];
+
+                $driverStartDate = $payload['driver_pickup_date'] 
+                    ?? ($payload['driver_start_date'] 
+                    ?? ($payload['driver_fullday_start'] 
+                    ?? ($customsData['driver_pickup_date'] ?? null)));
+
+                $driverEndDate = $payload['driver_drop_date'] 
+                    ?? ($payload['driver_end_date'] 
+                    ?? ($payload['driver_fullday_end'] 
+                    ?? ($customsData['driver_drop_date'] ?? null)));
+
+                if (!empty($driverStartDate) && !empty($depDate)) {
+                    $driverStartTs = strtotime($driverStartDate);
+                    $depTs = strtotime($depDate);
+                    $retTs = !empty($retDate) ? strtotime($retDate) : $depTs;
+                    $periodFormatted = date('M j', $depTs) . '–' . date('M j', $retTs);
+
+                    if ($driverStartTs && $depTs && $driverStartTs < $depTs) {
+                        throw new BookingServiceException("Driver service date must be within the vehicle rental period ({$periodFormatted}).", 400);
+                    }
+                    if ($driverStartTs && $retTs && $driverStartTs > $retTs) {
+                        throw new BookingServiceException("Driver service date must be within the vehicle rental period ({$periodFormatted}).", 400);
+                    }
+                }
+
+                if (!empty($driverEndDate) && !empty($depDate)) {
+                    $driverEndTs = strtotime($driverEndDate);
+                    $depTs = strtotime($depDate);
+                    $retTs = !empty($retDate) ? strtotime($retDate) : $depTs;
+                    $periodFormatted = date('M j', $depTs) . '–' . date('M j', $retTs);
+
+                    if ($driverEndTs && $depTs && $driverEndTs < $depTs) {
+                        throw new BookingServiceException("Driver service date must be within the vehicle rental period ({$periodFormatted}).", 400);
+                    }
+                    if ($driverEndTs && $retTs && $driverEndTs > $retTs) {
+                        throw new BookingServiceException("Driver service date must be within the vehicle rental period ({$periodFormatted}).", 400);
+                    }
+                }
+            }
         }
 
         // 4. Begin Database Transaction
@@ -388,7 +437,44 @@ class BookingService {
                     $amountPaid = floatval($payload['amount_paid'] ?? ($payload['total_paid'] ?? $totalAmount));
                     $remainingAmount = max(0, $totalAmount - $amountPaid);
                 } else {
-                    $totalAmount = floatval($payload['total_amount'] ?? ($payload['total_paid'] ?? 0));
+                    // Authoritative vehicle calculation & manipulation check
+                    if ($serviceType === 'vehicle' && !empty($itemId)) {
+                        $stmtVeh = $pdo->prepare("SELECT price FROM cars WHERE id = ?");
+                        $stmtVeh->execute([$itemId]);
+                        $vehRow = $stmtVeh->fetch(PDO::FETCH_ASSOC);
+                        if (!$vehRow) {
+                            $stmtVeh = $pdo->prepare("SELECT price FROM bikes WHERE id = ?");
+                            $stmtVeh->execute([$itemId]);
+                            $vehRow = $stmtVeh->fetch(PDO::FETCH_ASSOC);
+                        }
+                        if ($vehRow && isset($vehRow['price'])) {
+                            $ratePerDay = floatval($vehRow['price']);
+                            $authVehicleSubtotal = $ratePerDay * $daysCount;
+                            $authoritativeTotal = $authVehicleSubtotal + $driverCharge;
+
+                            $clientSubmitted = floatval($payload['total_amount'] ?? ($payload['total_paid'] ?? 0));
+
+                            // Also support BookingModal payloads with tax/fee if submitted from standard modal
+                            $hasModalAdditions = isset($payload['tax']) || isset($payload['fee']);
+                            $modalExpected = $authVehicleSubtotal + floatval($payload['tax'] ?? 0) + floatval($payload['fee'] ?? 0) + $driverCharge - floatval($payload['tier_discount_applied'] ?? 0) - floatval($payload['wallet_amount_used'] ?? 0);
+
+                            $isMatchSimple = ($clientSubmitted > 0 && abs($clientSubmitted - $authoritativeTotal) <= 10);
+                            $isMatchModal = ($hasModalAdditions && $clientSubmitted > 0 && abs($clientSubmitted - $modalExpected) <= 10);
+
+                            if ($clientSubmitted > 0 && !$isMatchSimple && !$isMatchModal) {
+                                throw new BookingServiceException(
+                                    "Price validation failed: Authoritative total is ₹" . number_format($authoritativeTotal) . " but received ₹" . number_format($clientSubmitted) . ". Manipulated booking totals are strictly prevented.",
+                                    400
+                                );
+                            }
+
+                            $totalAmount = $isMatchModal ? $clientSubmitted : $authoritativeTotal;
+                        } else {
+                            $totalAmount = floatval($payload['total_amount'] ?? ($payload['total_paid'] ?? 0));
+                        }
+                    } else {
+                        $totalAmount = floatval($payload['total_amount'] ?? ($payload['total_paid'] ?? 0));
+                    }
                     $amountPaid = floatval($payload['amount_paid'] ?? ($payload['total_paid'] ?? $totalAmount));
                     $remainingAmount = max(0, $totalAmount - $amountPaid);
 

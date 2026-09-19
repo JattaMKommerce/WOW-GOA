@@ -7639,11 +7639,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Auto-capture / Update lead in enterprise leads table (Deduplicated Single-Lead Architecture)
             recordOrUpdateCustomerBookingLead($pdo, $payload, $booking_id, $tenant_id);
 
-            // Preserve existing response contract exactly
+            // Preserve existing response contract exactly; add booking record for Sophia real confirmation
             echo json_encode([
                 "success" => true,
                 "message" => "Booking complete.",
                 "booking_id" => $booking_id,
+                "booking" => $result['booking'],
                 "date_of_birth" => $custDob,
                 "wallet_amount_used" => $walletAmountUsed,
                 "cashback_preview" => [
@@ -8445,8 +8446,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            // Fallback scan: backwards through earlier messages if activeItem is still not resolved
-            if (!$activeItem) {
+            // Fallback scan: backwards through earlier messages ONLY if:
+            //   1. No item resolved from latest message ($directMatch was null), AND
+            //   2. No active_item_id was present in incoming context.
+            // CRITICAL: If incomingContext already carried a valid active_item_id (loaded above via
+            // cId/cType lookup), we NEVER scan history — that would let an old GT Bike message
+            // override the current hotel context when customer says "Book it".
+            $contextHadItem = !empty($incomingContext['active_item_id']);
+            if (!$activeItem && !$contextHadItem) {
                 for ($i = count($messages) - 2; $i >= 0; $i--) {
                     if (($messages[$i]['role'] ?? '') !== 'user') {
                         continue;
@@ -8610,28 +8617,190 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 return null;
             };
 
-            // Structure authoritative booking preview
+            // ── Sophia Conversation Field Extraction ─────────────────────────────────
+            // Scan all user messages for DOB, license, driver intent, times, location.
+            // Always scan ALL user messages (not just latest) so collected info persists.
+            $sophiaDob = $incomingContext['booking_preview']['dob'] ?? null;
+            $sophiaLicense = $incomingContext['booking_preview']['license'] ?? null;
+            $sophiaDriverIntent = $incomingContext['booking_preview']['driver_service_type'] ?? null;
+            $sophiaDriverPickupDate = $incomingContext['booking_preview']['driver_pickup_date'] ?? null;
+            $sophiaDriverDropDate = $incomingContext['booking_preview']['driver_drop_date'] ?? null;
+            $sophiaDriverPickupTime = $incomingContext['booking_preview']['driver_pickup_time'] ?? null;
+            $sophiaDriverDropTime = $incomingContext['booking_preview']['driver_drop_time'] ?? null;
+            $sophiaPickupTime = $incomingContext['booking_preview']['pickup_time'] ?? '10:00 AM';
+            $sophiaDropTime = $incomingContext['booking_preview']['drop_time'] ?? '10:00 AM';
+            $sophiaPickupLocation = $incomingContext['booking_preview']['pickup_location'] ?? 'Goa Delivery';
+            $sophiaDropLocation = $incomingContext['booking_preview']['drop_location'] ?? 'Goa Delivery';
+
+            foreach ($messages as $msg) {
+                if (($msg['role'] ?? '') !== 'user') continue;
+                $txt = $msg['content'] ?? '';
+
+                // DOB: "dob 15/07/1990", "born on 15 July 1990", "my dob is 1990-07-15", "1990-07-15"
+                if (!$sophiaDob) {
+                    if (preg_match('/(?:dob|date\s+of\s+birth|born(?:\s+on)?|birth\s*date)(?:\s+is)?[:\s]+(\d{4}-\d{2}-\d{2})/i', $txt, $dm)) {
+                        $sophiaDob = $dm[1];
+                    } elseif (preg_match('/(?:dob|date\s+of\s+birth|born(?:\s+on)?|birth\s*date)(?:\s+is)?[:\s]+(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/i', $txt, $dm)) {
+                        $sophiaDob = sprintf('%04d-%02d-%02d', $dm[3], $dm[2], $dm[1]);
+                    } elseif (preg_match('/(?:dob|date\s+of\s+birth|born(?:\s+on)?|birth\s*date)(?:\s+is)?[:\s]+(\d{1,2})\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{4})/i', $txt, $dm)) {
+                        $mTime = strtotime($dm[2] . ' 1, ' . $dm[3]);
+                        if ($mTime) $sophiaDob = sprintf('%04d-%02d-%02d', $dm[3], date('m', $mTime), $dm[1]);
+                    } elseif (preg_match('/\b(19\d{2}|200\d)-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b/', $txt, $dm)) {
+                        // Standalone YYYY-MM-DD where year is 1900-2009 (unambiguously a DOB, not a 2026 travel date)
+                        $sophiaDob = $dm[0];
+                    }
+                }
+
+                // Driving License: "DL: MH12 20190001234", "license number DL123", "my dl is KA05..."
+                if (!$sophiaLicense) {
+                    if (preg_match('/(?:dl|driving\s+licen[sc]e|licen[sc]e(?:\s+(?:number|no\.?))?)(?:\s+is)?[:\s]+([A-Z0-9 \-]{5,20})/i', $txt, $lm)) {
+                        $sophiaLicense = trim($lm[1]);
+                    }
+                }
+
+                // Driver intent: "with driver", "need driver", "car + driver", "chauffeur"
+                if (!$sophiaDriverIntent) {
+                    if (preg_match('/\b(with\s+driver|need\s+a?\s*driver|car\s*\+\s*driver|chauffeur|driver\s+required|want\s+(?:a\s+)?driver)\b/i', $txt)) {
+                        $sophiaDriverIntent = 'FULL';
+                    } elseif (preg_match('/\b(pickup\s+only|airport\s+pickup|only\s+pickup)\b/i', $txt)) {
+                        $sophiaDriverIntent = 'PICKUP';
+                    } elseif (preg_match('/\b(drop\s+only|airport\s+drop|only\s+drop)\b/i', $txt)) {
+                        $sophiaDriverIntent = 'DROP';
+                    }
+                }
+
+                // Pickup/drop times: "pickup at 9 AM", "drop at 7 PM"
+                if (preg_match('/pickup\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:AM|PM))/i', $txt, $tm)) {
+                    $sophiaPickupTime = trim($tm[1]);
+                }
+                if (preg_match('/drop\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:AM|PM))/i', $txt, $tm)) {
+                    $sophiaDropTime = trim($tm[1]);
+                }
+
+                // Driver times (never overwrite manually set ones from prior context):
+                if (!$sophiaDriverPickupTime && preg_match('/driver\s+pickup\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:AM|PM))/i', $txt, $tm)) {
+                    $sophiaDriverPickupTime = trim($tm[1]);
+                }
+                if (!$sophiaDriverDropTime && preg_match('/driver\s+drop\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:AM|PM))/i', $txt, $tm)) {
+                    $sophiaDriverDropTime = trim($tm[1]);
+                }
+
+                // Driver service dates: "driver on Sep 24", "driver from Sep 24 to Sep 25", "driver on 2026-09-24"
+                if (!$sophiaDriverPickupDate) {
+                    if (preg_match('/driver\s+(?:service\s+)?(?:on|from)\s+(\d{4}-\d{2}-\d{2})/i', $txt, $dm)) {
+                        $sophiaDriverPickupDate = $dm[1];
+                    } elseif (preg_match('/driver\s+(?:service\s+)?(?:on|from)\s+([A-Za-z]+\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,\s*\d{4})?)/i', $txt, $dm)) {
+                        $parsedD = strtotime($dm[1] . (strpos($dm[1], '202') === false ? ' ' . date('Y') : ''));
+                        if ($parsedD) $sophiaDriverPickupDate = date('Y-m-d', $parsedD);
+                    }
+                }
+                if (!$sophiaDriverDropDate) {
+                    if (preg_match('/driver\s+(?:service\s+)?to\s+(\d{4}-\d{2}-\d{2})/i', $txt, $dm)) {
+                        $sophiaDriverDropDate = $dm[1];
+                    } elseif (preg_match('/driver\s+(?:service\s+)?to\s+([A-Za-z]+\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,\s*\d{4})?)/i', $txt, $dm)) {
+                        $parsedD = strtotime($dm[1] . (strpos($dm[1], '202') === false ? ' ' . date('Y') : ''));
+                        if ($parsedD) $sophiaDriverDropDate = date('Y-m-d', $parsedD);
+                    }
+                }
+
+                // Pickup location
+                if (preg_match('/pickup\s+(?:from|at|location)[:\s]+([A-Za-z ,]+?)(?:\.|,|$)/i', $txt, $lm)) {
+                    $loc = trim($lm[1]);
+                    if (strlen($loc) > 3) $sophiaPickupLocation = $loc;
+                }
+                // Drop location
+                if (preg_match('/drop\s+(?:at|to|location)[:\s]+([A-Za-z ,]+?)(?:\.|,|$)/i', $txt, $lm)) {
+                    $loc = trim($lm[1]);
+                    if (strlen($loc) > 3) $sophiaDropLocation = $loc;
+                }
+            }
+
+            // Full-day driver schedule default (existing business rule)
+            if ($sophiaDriverIntent === 'FULL') {
+                if (!$sophiaDriverPickupTime) $sophiaDriverPickupTime = '09:00 AM';
+                if (!$sophiaDriverDropTime) $sophiaDriverDropTime = '07:00 PM';
+            }
+
+            // ── Booking Preview Construction ──────────────────────────────────────────
             $bookingPreview = null;
             if ($activeItem && !empty($activeDates)) {
                 $parsedDates = $parseTravelDates($activeDates, $activeType);
                 if ($parsedDates && !empty($parsedDates['pickup_date']) && !empty($parsedDates['drop_date'])) {
                     $days = $parsedDates['days'];
                     $rate = floatval($activeItem['price'] ?? 0);
-                    $total = $days * $rate;
+
+                    // Authoritative vehicle price from DB (mirrors B2B pattern)
+                    if (in_array($activeType, ['car', 'bike', 'vehicle'])) {
+                        $stmtRate = $pdo->prepare("SELECT price FROM cars WHERE id = ?");
+                        $stmtRate->execute([$activeItem['id']]);
+                        $rr = $stmtRate->fetch(PDO::FETCH_ASSOC);
+                        if (!$rr) {
+                            $stmtRate = $pdo->prepare("SELECT price FROM bikes WHERE id = ?");
+                            $stmtRate->execute([$activeItem['id']]);
+                            $rr = $stmtRate->fetch(PDO::FETCH_ASSOC);
+                        }
+                        if ($rr && isset($rr['price'])) $rate = floatval($rr['price']);
+                    }
+
+                    // Driver charge estimate (PICKUP/DROP=400, FULL=800/day)
+                    $estimatedDriverCharge = 0;
+                    if ($sophiaDriverIntent === 'PICKUP' || $sophiaDriverIntent === 'DROP') {
+                        $estimatedDriverCharge = 400;
+                    } elseif ($sophiaDriverIntent === 'FULL') {
+                        $dDays = 1;
+                        if ($sophiaDriverPickupDate && $sophiaDriverDropDate) {
+                            $dDays = max(1, (int)round((strtotime($sophiaDriverDropDate) - strtotime($sophiaDriverPickupDate)) / 86400));
+                        } else {
+                            $dDays = $days;
+                        }
+                        $estimatedDriverCharge = 800 * $dDays;
+                    }
+
+                    $total = ($days * $rate) + $estimatedDriverCharge;
                     $activeStage = 'ready_to_confirm';
+
+                    $isVehicleType = in_array($activeType, ['car', 'bike', 'vehicle']);
+                    $isSelfDrive = $isVehicleType && !$sophiaDriverIntent;
+                    $requiresLicense = $isSelfDrive;
+                    $requiresDob = $isVehicleType;
+
+                    // Determine missing required fields so frontend can prompt
+                    $missingFields = [];
+                    if ($requiresDob && !$sophiaDob) $missingFields[] = 'dob';
+                    if ($requiresLicense && !$sophiaLicense) $missingFields[] = 'license';
 
                     $resolvedItemTitle = $activeItem['title'] ?? ($activeItem['name'] ?? 'Experience');
                     $bookingPreview = [
-                        'item_id' => $activeItem['id'],
-                        'item_name' => $resolvedItemTitle,
-                        'item_type' => $activeType,
-                        'price_per_day' => $rate,
-                        'pickup_date' => $parsedDates['pickup_date'],
-                        'drop_date' => $parsedDates['drop_date'],
-                        'days' => $days,
-                        'duration' => "{$days} Days",
-                        'estimated_total' => $total,
-                        'travel_dates' => $activeDates
+                        'item_id'              => $activeItem['id'],
+                        'item_name'            => $resolvedItemTitle,
+                        'item_type'            => $activeType,
+                        'price_per_day'        => $rate,
+                        'pickup_date'          => $parsedDates['pickup_date'],
+                        'drop_date'            => $parsedDates['drop_date'],
+                        'days'                 => $days,
+                        'duration'             => "{$days} Days",
+                        'estimated_total'      => $total,
+                        'travel_dates'         => $activeDates,
+                        // Times & Locations
+                        'pickup_time'          => $sophiaPickupTime,
+                        'drop_time'            => $sophiaDropTime,
+                        'pickup_location'      => $sophiaPickupLocation,
+                        'drop_location'        => $sophiaDropLocation,
+                        // Customer info (collected conversationally)
+                        'dob'                  => $sophiaDob,
+                        'license'              => $sophiaLicense,
+                        // Driver fields
+                        'driver_service_type'  => $sophiaDriverIntent,
+                        'driver_pickup_date'   => $sophiaDriverPickupDate ?? ($sophiaDriverIntent ? $parsedDates['pickup_date'] : null),
+                        'driver_drop_date'     => $sophiaDriverDropDate ?? ($sophiaDriverIntent ? $parsedDates['drop_date'] : null),
+                        'driver_pickup_time'   => $sophiaDriverPickupTime,
+                        'driver_drop_time'     => $sophiaDriverDropTime,
+                        'driver_charge'        => $estimatedDriverCharge,
+                        // Flags
+                        'is_self_drive'        => $isSelfDrive,
+                        'requires_dob'         => $requiresDob,
+                        'requires_license'     => $requiresLicense,
+                        'missing_fields'       => $missingFields,
                     ];
                 } else {
                     $activeDates = '';

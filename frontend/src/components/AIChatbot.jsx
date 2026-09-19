@@ -6,6 +6,7 @@ import chatbotAnimation from '../assets/chatbot-animation.webp';
 import sophiaAvatar4k from '../assets/sophia-avatar-4k.png';
 import { chatWithAI, API_BASE, createAiLead, updateAiLeadChat, createBooking, getAIChatbotSettings } from '../services/api';
 import BookingVoucher from './common/BookingVoucher';
+import { validateVehicleBookingEligibility } from '../utils/dateUtils';
 
 const aiMessages = [
   "Rent a Car or Bike",
@@ -161,6 +162,18 @@ export default function AIChatbot() {
   const [bookingError, setBookingError] = useState(null);
   const [voucherModalBooking, setVoucherModalBooking] = useState(null);
   const [isEditingContact, setIsEditingContact] = useState(false);
+  const [userDob, setUserDob] = useState('');
+  const [userLicense, setUserLicense] = useState('');
+
+  // Synchronize DOB and License if parsed by backend in booking_preview
+  useEffect(() => {
+    if (activeContext?.booking_preview?.dob && !userDob) {
+      setUserDob(activeContext.booking_preview.dob);
+    }
+    if (activeContext?.booking_preview?.license && !userLicense) {
+      setUserLicense(activeContext.booking_preview.license);
+    }
+  }, [activeContext?.booking_preview?.dob, activeContext?.booking_preview?.license]);
 
   // Voice state
   const [isListening, setIsListening] = useState(false);
@@ -631,6 +644,26 @@ export default function AIChatbot() {
     const isAct = (itemType === 'activity' || itemType === 'sightseeing');
     const resolvedType = isAct ? itemType : (itemType === 'bike' ? 'bike' : (itemType === 'car' ? 'car' : (itemType === 'hotel' ? 'hotel' : 'vehicle')));
     const resolvedServiceType = isAct ? itemType : (itemType === 'bike' || itemType === 'car' ? 'vehicle' : itemType);
+    const isVehicleItem = resolvedServiceType === 'vehicle' || resolvedType === 'car' || resolvedType === 'bike';
+    const isSelfDrive = isVehicleItem && !preview.driver_service_type;
+
+    const finalDob = (userDob || preview.dob || '').trim();
+    const finalLicense = (userLicense || preview.license || '').trim();
+
+    // Client-side validation using authoritative business rules
+    if (isVehicleItem) {
+      const eligibility = validateVehicleBookingEligibility(
+        finalDob,
+        preview.pickup_date,
+        isSelfDrive,
+        finalLicense
+      );
+      if (!eligibility.valid) {
+        setBookingError(eligibility.error);
+        setIsBookingSubmitting(false);
+        return;
+      }
+    }
 
     const payload = {
       name: finalName,
@@ -658,10 +691,36 @@ export default function AIChatbot() {
       total_amount: preview.estimated_total,
       amount_paid: preview.estimated_total,
       total_paid: preview.estimated_total,
-      pickup_loc: 'Goa Delivery',
-      pickup_location: 'Goa Delivery',
-      drop_loc: 'Goa Delivery',
-      drop_location: 'Goa Delivery',
+      pickup_time: preview.pickup_time || '10:00 AM',
+      drop_time: preview.drop_time || '10:00 AM',
+      pickup_loc: preview.pickup_location || 'Goa Delivery',
+      pickup_location: preview.pickup_location || 'Goa Delivery',
+      drop_loc: preview.drop_location || 'Goa Delivery',
+      drop_location: preview.drop_location || 'Goa Delivery',
+      date_of_birth: finalDob || null,
+      license: finalLicense || null,
+      driving_license: finalLicense || null,
+      driver_required: preview.driver_service_type ? 1 : 0,
+      driver_service_type: preview.driver_service_type || null,
+      driver_charge: preview.driver_charge || 0,
+      driver_days: preview.driver_service_type === 'FULL' ? (preview.days || 1) : (preview.driver_service_type ? 1 : 0),
+      driver_earning: preview.driver_charge || 0,
+      driver_payment_status: 'Pending',
+      driver_pickup_date: preview.driver_pickup_date || (preview.driver_service_type ? preview.pickup_date : null),
+      driver_drop_date: preview.driver_drop_date || (preview.driver_service_type ? preview.drop_date : null),
+      driver_pickup_time: preview.driver_pickup_time || preview.pickup_time || '10:00 AM',
+      driver_drop_time: preview.driver_drop_time || preview.drop_time || '07:00 PM',
+      customizations: {
+        ...(typeof preview.customizations === 'object' ? preview.customizations : {}),
+        source: 'sophia_ai',
+        license: finalLicense || null,
+        driving_license: finalLicense || null,
+        driver_service_type: preview.driver_service_type || null,
+        driver_pickup_date: preview.driver_pickup_date || (preview.driver_service_type ? preview.pickup_date : null),
+        driver_drop_date: preview.driver_drop_date || (preview.driver_service_type ? preview.drop_date : null),
+        driver_pickup_time: preview.driver_pickup_time || preview.pickup_time || '10:00 AM',
+        driver_drop_time: preview.driver_drop_time || preview.drop_time || '07:00 PM',
+      },
       status: 'Confirmed',
       payment_status: 'Paid Online',
       payment_method: 'Online Payment',
@@ -1143,29 +1202,79 @@ export default function AIChatbot() {
                       <span className="text-dark fw-medium">{leadPhone || 'Not provided'}</span>
                     </div>
 
-                    {(!leadName || !leadPhone || isEditingContact) && (
+                    {activeContext.booking_preview.requires_dob && (
+                      <div className="d-flex align-items-center justify-content-between pb-2 mb-2 border-bottom">
+                        <span className="text-muted">Date of Birth:</span>
+                        <span className={`fw-medium ${userDob ? 'text-dark' : 'text-danger'}`}>
+                          {userDob || 'Required'}
+                        </span>
+                      </div>
+                    )}
+                    {activeContext.booking_preview.requires_license && (
+                      <div className="d-flex align-items-center justify-content-between pb-2 mb-2 border-bottom">
+                        <span className="text-muted">Driving License:</span>
+                        <span className={`fw-medium ${userLicense ? 'text-dark' : 'text-danger'}`}>
+                          {userLicense || 'Required for Self Drive'}
+                        </span>
+                      </div>
+                    )}
+
+                    {(!leadName || !leadPhone || isEditingContact || (activeContext.booking_preview.requires_dob && !userDob) || (activeContext.booking_preview.requires_license && !userLicense)) && (
                       <div className="p-2 mb-2 rounded-3 bg-light border">
                         <div className="d-flex align-items-center justify-content-between mb-1">
-                          <label className="text-xxs fw-bold text-muted mb-0">Customer Details Required</label>
+                          <label className="text-xxs fw-bold text-muted mb-0">Customer & Verification Details</label>
                         </div>
-                        <input 
-                          type="text" 
-                          className="form-control form-control-sm mb-2" 
-                          placeholder="Full Name" 
-                          value={leadName} 
-                          onChange={e => setLeadName(e.target.value)} 
-                        />
-                        <input 
-                          type="tel" 
-                          className="form-control form-control-sm" 
-                          placeholder="10-digit Mobile Number" 
-                          maxLength={10}
-                          value={leadPhone} 
-                          onChange={e => {
-                            setLeadPhone(e.target.value.replace(/\D/g, '').slice(0, 10));
-                            if (bookingError) setBookingError(null);
-                          }} 
-                        />
+                        {(!leadName || isEditingContact) && (
+                          <input 
+                            type="text" 
+                            className="form-control form-control-sm mb-2" 
+                            placeholder="Full Name" 
+                            value={leadName} 
+                            onChange={e => setLeadName(e.target.value)} 
+                          />
+                        )}
+                        {(!leadPhone || isEditingContact) && (
+                          <input 
+                            type="tel" 
+                            className="form-control form-control-sm mb-2" 
+                            placeholder="10-digit Mobile Number" 
+                            maxLength={10}
+                            value={leadPhone} 
+                            onChange={e => {
+                              setLeadPhone(e.target.value.replace(/\D/g, '').slice(0, 10));
+                              if (bookingError) setBookingError(null);
+                            }} 
+                          />
+                        )}
+                        {activeContext.booking_preview.requires_dob && (
+                          <div className="mb-2">
+                            <label className="text-muted d-block" style={{ fontSize: '10px' }}>Date of Birth (Mandatory{activeContext.booking_preview.is_self_drive ? ', 18+ for Self Drive' : ''}):</label>
+                            <input 
+                              type="date" 
+                              className="form-control form-control-sm" 
+                              value={userDob} 
+                              onChange={e => {
+                                setUserDob(e.target.value);
+                                if (bookingError) setBookingError(null);
+                              }} 
+                            />
+                          </div>
+                        )}
+                        {activeContext.booking_preview.requires_license && (
+                          <div className="mb-1">
+                            <label className="text-muted d-block" style={{ fontSize: '10px' }}>Driving License (Mandatory for Self Drive):</label>
+                            <input 
+                              type="text" 
+                              className="form-control form-control-sm" 
+                              placeholder="e.g. DL-1420110012345" 
+                              value={userLicense} 
+                              onChange={e => {
+                                setUserLicense(e.target.value);
+                                if (bookingError) setBookingError(null);
+                              }} 
+                            />
+                          </div>
+                        )}
                       </div>
                     )}
 
