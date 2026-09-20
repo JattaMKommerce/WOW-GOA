@@ -241,6 +241,17 @@ export function calculateAge(dobString, referenceDateString = null) {
  *
  * @returns {{ valid: boolean, age: number|null, error: string|null }}
  */
+export function isValidDrivingLicense(license) {
+  if (!license || typeof license !== 'string') return false;
+  const clean = license.trim().toUpperCase().replace(/[\s\-_/]/g, '');
+  // Application-level validation: minimum 8 to 20 alphanumeric characters
+  if (clean.length < 8 || clean.length > 20) return false;
+  // Disallow repetitive single-character strings (e.g. "AAAAAAAA", "11111111")
+  if (/^(\w)\1+$/.test(clean)) return false;
+  // Must contain alphanumeric characters with at least 4 digits
+  return /^[A-Z0-9]{8,20}$/.test(clean) && /\d{4,}/.test(clean);
+}
+
 export function validateVehicleBookingEligibility(
   dob,
   pickupDate,
@@ -272,11 +283,11 @@ export function validateVehicleBookingEligibility(
         error: 'Primary driver must be 18 years or older on pickup date for Self Drive rentals.'
       };
     }
-    if (!license || !String(license).trim()) {
+    if (!license || !isValidDrivingLicense(license)) {
       return {
         valid: false,
         age,
-        error: 'Driving License is required for Self Drive rentals.'
+        error: 'Please enter a valid Driving License number (minimum 8 alphanumeric characters, e.g. DL-1420110012345).'
       };
     }
   }
