@@ -8413,23 +8413,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $activeBookingIntent = !empty($incomingContext['booking_intent']);
             $activeStage = $incomingContext['stage'] ?? 'idle';
 
+            // Detect generic category switches (e.g., user asks for hotels while having an active bike)
+            $genericCategorySwitch = null;
+            if (preg_match('/\b(hotels?|resorts?|beach\s*resorts?|luxury\s*stay|room|rooms)\b/i', $msgClean) && !in_array($incomingContext['active_item_type'] ?? '', ['hotel'])) {
+                $genericCategorySwitch = 'hotel';
+            } elseif (preg_match('/\b(bikes?|scooters?|moped|two\s*wheeler)\b/i', $msgClean) && !in_array($incomingContext['active_item_type'] ?? '', ['bike'])) {
+                $genericCategorySwitch = 'bike';
+            } elseif (preg_match('/\b(cars?|suvs?|sedan|self\s*drive)\b/i', $msgClean) && !in_array($incomingContext['active_item_type'] ?? '', ['car'])) {
+                $genericCategorySwitch = 'car';
+            } elseif (preg_match('/\b(activity|activities|watersports?|sightseeing|scuba|cruise|dinner\s*cruise|dudhsagar)\b/i', $msgClean) && !in_array($incomingContext['active_item_type'] ?? '', ['activity', 'sightseeing'])) {
+                $genericCategorySwitch = 'activity';
+            } elseif (preg_match('/\b(flights?|airlines?|plane\s*tickets?|air\s*fare)\b/i', $msgClean)) {
+                $genericCategorySwitch = 'flight';
+            } elseif (preg_match('/\b(craft\s*my\s*trip|custom\s*trip|custom\s*itinerary)\b/i', $msgClean)) {
+                $genericCategorySwitch = 'craft_my_trip';
+            }
+
             $itemChanged = false;
+            $typeChanged = false;
             if ($directMatch) {
                 $prevItemId = $incomingContext['active_item_id'] ?? null;
+                $prevItemType = $incomingContext['active_item_type'] ?? null;
                 $newItemId = $directMatch['item']['id'] ?? null;
+                $newItemType = $directMatch['type'] ?? null;
                 $itemChanged = (!empty($prevItemId) && strval($prevItemId) !== strval($newItemId));
+                $typeChanged = (!empty($prevItemType) && strval($prevItemType) !== strval($newItemType));
 
                 $activeItem = $directMatch['item'];
                 $activeType = $directMatch['type'];
                 $activeStage = 'item_selected';
 
-                if ($itemChanged) {
-                    // Item genuinely changed: clear stale dates and old preview
+                if ($itemChanged || $typeChanged) {
+                    // Service or item changed: isolate context, invalidate stale preview and travel dates
                     $activeDates = '';
                     $activeBookingIntent = false;
                     $incomingContext['booking_preview'] = null;
                     $incomingContext['travel_dates'] = '';
+                    $incomingContext['active_item_id'] = $newItemId;
+                    $incomingContext['active_item_type'] = $newItemType;
                 }
+            } elseif ($genericCategorySwitch) {
+                // Customer asked about a different service category: clear old executable context
+                $activeItem = null;
+                $activeType = null;
+                $activeDates = '';
+                $activeBookingIntent = false;
+                $activeStage = 'idle';
+                $incomingContext['booking_preview'] = null;
+                $incomingContext['active_item_id'] = null;
+                $incomingContext['active_item_type'] = null;
+                $incomingContext['travel_dates'] = '';
+                $incomingContext['booking_intent'] = false;
             } elseif (!empty($incomingContext['active_item_id'])) {
                 $cId = $incomingContext['active_item_id'];
                 $cType = $incomingContext['active_item_type'] ?? '';
@@ -8726,82 +8760,223 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($activeItem && !empty($activeDates)) {
                 $parsedDates = $parseTravelDates($activeDates, $activeType);
                 if ($parsedDates && !empty($parsedDates['pickup_date']) && !empty($parsedDates['drop_date'])) {
-                    $days = $parsedDates['days'];
-                    $rate = floatval($activeItem['price'] ?? 0);
-
-                    // Authoritative vehicle price from DB (mirrors B2B pattern)
-                    if (in_array($activeType, ['car', 'bike', 'vehicle'])) {
-                        $stmtRate = $pdo->prepare("SELECT price FROM cars WHERE id = ?");
-                        $stmtRate->execute([$activeItem['id']]);
-                        $rr = $stmtRate->fetch(PDO::FETCH_ASSOC);
-                        if (!$rr) {
-                            $stmtRate = $pdo->prepare("SELECT price FROM bikes WHERE id = ?");
-                            $stmtRate->execute([$activeItem['id']]);
-                            $rr = $stmtRate->fetch(PDO::FETCH_ASSOC);
-                        }
-                        if ($rr && isset($rr['price'])) $rate = floatval($rr['price']);
-                    }
-
-                    // Driver charge estimate (PICKUP/DROP=400, FULL=800/day)
-                    $estimatedDriverCharge = 0;
-                    if ($sophiaDriverIntent === 'PICKUP' || $sophiaDriverIntent === 'DROP') {
-                        $estimatedDriverCharge = 400;
-                    } elseif ($sophiaDriverIntent === 'FULL') {
-                        $dDays = 1;
-                        if ($sophiaDriverPickupDate && $sophiaDriverDropDate) {
-                            $dDays = max(1, (int)round((strtotime($sophiaDriverDropDate) - strtotime($sophiaDriverPickupDate)) / 86400));
-                        } else {
-                            $dDays = $days;
-                        }
-                        $estimatedDriverCharge = 800 * $dDays;
-                    }
-
-                    $total = ($days * $rate) + $estimatedDriverCharge;
                     $activeStage = 'ready_to_confirm';
 
-                    $isVehicleType = in_array($activeType, ['car', 'bike', 'vehicle']);
-                    $isSelfDrive = $isVehicleType && !$sophiaDriverIntent;
-                    $requiresLicense = $isSelfDrive;
-                    $requiresDob = $isVehicleType;
+                    if ($activeType === 'hotel') {
+                        // ── Authoritative Hotel Concierge Flow ──
+                        require_once __DIR__ . '/BookingService.php';
 
-                    // Determine missing required fields so frontend can prompt
-                    $missingFields = [];
-                    if ($requiresDob && !$sophiaDob) $missingFields[] = 'dob';
-                    if ($requiresLicense && !$sophiaLicense) $missingFields[] = 'license';
+                        $hDep = $parsedDates['pickup_date'];
+                        $hRet = $parsedDates['drop_date'];
+                        if ($hDep === $hRet || strtotime($hRet) <= strtotime($hDep)) {
+                            $hRet = date('Y-m-d', strtotime('+1 day', strtotime($hDep)));
+                        }
 
-                    $resolvedItemTitle = $activeItem['title'] ?? ($activeItem['name'] ?? 'Experience');
-                    $bookingPreview = [
-                        'item_id'              => $activeItem['id'],
-                        'item_name'            => $resolvedItemTitle,
-                        'item_type'            => $activeType,
-                        'price_per_day'        => $rate,
-                        'pickup_date'          => $parsedDates['pickup_date'],
-                        'drop_date'            => $parsedDates['drop_date'],
-                        'days'                 => $days,
-                        'duration'             => "{$days} Days",
-                        'estimated_total'      => $total,
-                        'travel_dates'         => $activeDates,
-                        // Times & Locations
-                        'pickup_time'          => $sophiaPickupTime,
-                        'drop_time'            => $sophiaDropTime,
-                        'pickup_location'      => $sophiaPickupLocation,
-                        'drop_location'        => $sophiaDropLocation,
-                        // Customer info (collected conversationally)
-                        'dob'                  => $sophiaDob,
-                        'license'              => $sophiaLicense,
-                        // Driver fields
-                        'driver_service_type'  => $sophiaDriverIntent,
-                        'driver_pickup_date'   => $sophiaDriverPickupDate ?? ($sophiaDriverIntent ? $parsedDates['pickup_date'] : null),
-                        'driver_drop_date'     => $sophiaDriverDropDate ?? ($sophiaDriverIntent ? $parsedDates['drop_date'] : null),
-                        'driver_pickup_time'   => $sophiaDriverPickupTime,
-                        'driver_drop_time'     => $sophiaDriverDropTime,
-                        'driver_charge'        => $estimatedDriverCharge,
-                        // Flags
-                        'is_self_drive'        => $isSelfDrive,
-                        'requires_dob'         => $requiresDob,
-                        'requires_license'     => $requiresLicense,
-                        'missing_fields'       => $missingFields,
-                    ];
+                        // Parse meal plan
+                        $hotelMealPlan = 'EP';
+                        if (preg_match('/\b(with\s+breakfast|including\s+breakfast|cp|bed\s+and\s+breakfast)\b/i', $msgClean)) {
+                            $hotelMealPlan = 'CP';
+                        } elseif (preg_match('/\b(map|half\s+board|breakfast\s+(?:and|&)\s+dinner)\b/i', $msgClean)) {
+                            $hotelMealPlan = 'MAP';
+                        } elseif (preg_match('/\b(ap|all\s+meals|full\s+board)\b/i', $msgClean)) {
+                            $hotelMealPlan = 'AP';
+                        } elseif (preg_match('/\b(ep|room\s+only)\b/i', $msgClean)) {
+                            $hotelMealPlan = 'EP';
+                        }
+
+                        // Parse rooms & guests
+                        $numRooms = 1;
+                        if (preg_match('/\b(\d+)\s*(?:rooms?)\b/i', $msgClean, $rm)) {
+                            $numRooms = max(1, intval($rm[1]));
+                        }
+                        $numAdults = 2 * $numRooms;
+                        if (preg_match('/\b(\d+)\s*(?:adults?)\b/i', $msgClean, $am)) {
+                            $numAdults = max(1, intval($am[1]));
+                        }
+                        $numChildren = 0;
+                        if (preg_match('/\b(\d+)\s*(?:children|child|kids?)\b/i', $msgClean, $cm)) {
+                            $numChildren = max(0, intval($cm[1]));
+                        }
+
+                        try {
+                            $hotelCalc = BookingService::calculateAuthoritativeHotelPrice($pdo, [
+                                'meal_plan' => $hotelMealPlan,
+                                'num_rooms' => $numRooms,
+                                'adults' => $numAdults,
+                                'children' => $numChildren
+                            ], $activeItem['id'], $hDep, $hRet);
+
+                            $total = $hotelCalc['authoritative_total'];
+                            $nights = $hotelCalc['nights'];
+                            $rate = $hotelCalc['base_rate'];
+
+                            $bookingPreview = [
+                                'item_id'              => $activeItem['id'],
+                                'item_name'            => $activeItem['name'],
+                                'item_type'            => 'hotel',
+                                'room_type_id'         => $hotelCalc['room_type']['id'] ?? null,
+                                'room_type_name'       => $hotelCalc['room_type']['name'] ?? 'Deluxe Room',
+                                'rate_plan_id'         => $hotelCalc['rate_plan_id'] ?? null,
+                                'meal_plan'            => $hotelCalc['meal_plan'] ?? $hotelMealPlan,
+                                'num_rooms'            => $numRooms,
+                                'adults'               => $numAdults,
+                                'children'             => $numChildren,
+                                'pickup_date'          => $hDep,
+                                'drop_date'            => $hRet,
+                                'days'                 => $nights,
+                                'duration'             => "{$nights} " . ($nights === 1 ? "Night" : "Nights"),
+                                'price_per_day'        => $rate,
+                                'estimated_total'      => $total,
+                                'travel_dates'         => "{$hDep} to {$hRet}",
+                                'pickup_time'          => '02:00 PM',
+                                'drop_time'            => '11:00 AM',
+                                'pickup_location'      => $activeItem['area'] ?? ($activeItem['location'] ?? 'Goa'),
+                                'drop_location'        => $activeItem['area'] ?? ($activeItem['location'] ?? 'Goa'),
+                                'is_self_drive'        => false,
+                                'requires_dob'         => false,
+                                'requires_license'     => false,
+                                'missing_fields'       => []
+                            ];
+                        } catch (Exception $e) {
+                            $nights = max(1, (int)round((strtotime($hRet) - strtotime($hDep)) / 86400));
+                            $rate = floatval($activeItem['price'] ?? 4500);
+                            $total = $rate * $nights * $numRooms;
+
+                            $bookingPreview = [
+                                'item_id'              => $activeItem['id'],
+                                'item_name'            => $activeItem['name'],
+                                'item_type'            => 'hotel',
+                                'meal_plan'            => $hotelMealPlan,
+                                'num_rooms'            => $numRooms,
+                                'adults'               => $numAdults,
+                                'children'             => $numChildren,
+                                'pickup_date'          => $hDep,
+                                'drop_date'            => $hRet,
+                                'days'                 => $nights,
+                                'duration'             => "{$nights} " . ($nights === 1 ? "Night" : "Nights"),
+                                'price_per_day'        => $rate,
+                                'estimated_total'      => $total,
+                                'travel_dates'         => "{$hDep} to {$hRet}",
+                                'pickup_time'          => '02:00 PM',
+                                'drop_time'            => '11:00 AM',
+                                'pickup_location'      => $activeItem['area'] ?? ($activeItem['location'] ?? 'Goa'),
+                                'drop_location'        => $activeItem['area'] ?? ($activeItem['location'] ?? 'Goa'),
+                                'is_self_drive'        => false,
+                                'requires_dob'         => false,
+                                'requires_license'     => false,
+                                'missing_fields'       => []
+                            ];
+                        }
+                    } elseif ($activeType === 'activity' || $activeType === 'sightseeing') {
+                        // ── Sightseeing & Activities Flow ──
+                        $guests = 1;
+                        if (preg_match('/\b(\d+)\s*(?:people|persons?|guests?|adults?|pax|tickets?)\b/i', $latestUserMsg . ' ' . $activeDates, $gm)) {
+                            $guests = max(1, intval($gm[1]));
+                        }
+                        $rate = floatval($activeItem['price'] ?? 0);
+                        $total = $rate * $guests;
+                        $activityDate = $parsedDates['pickup_date'];
+                        $resolvedItemTitle = $activeItem['title'] ?? ($activeItem['name'] ?? 'Experience');
+
+                        $bookingPreview = [
+                            'item_id'              => $activeItem['id'],
+                            'item_name'            => $resolvedItemTitle,
+                            'item_type'            => $activeType,
+                            'guests'               => $guests,
+                            'pickup_date'          => $activityDate,
+                            'drop_date'            => $activityDate,
+                            'days'                 => 1,
+                            'duration'             => $activeItem['duration'] ?? '1 Day',
+                            'price_per_day'        => $rate,
+                            'estimated_total'      => $total,
+                            'travel_dates'         => $activityDate,
+                            'pickup_time'          => $sophiaPickupTime ?: '09:00 AM',
+                            'drop_time'            => $sophiaDropTime ?: '05:00 PM',
+                            'pickup_location'      => $activeItem['location'] ?? 'Goa',
+                            'drop_location'        => $activeItem['location'] ?? 'Goa',
+                            'is_self_drive'        => false,
+                            'requires_dob'         => false,
+                            'requires_license'     => false,
+                            'missing_fields'       => []
+                        ];
+                    } else {
+                        // ── Vehicle (Car / Bike) Flow ──
+                        $days = $parsedDates['days'];
+                        $rate = floatval($activeItem['price'] ?? 0);
+
+                        // Authoritative vehicle price from DB (mirrors B2B pattern)
+                        if (in_array($activeType, ['car', 'bike', 'vehicle'])) {
+                            $stmtRate = $pdo->prepare("SELECT price FROM cars WHERE id = ?");
+                            $stmtRate->execute([$activeItem['id']]);
+                            $rr = $stmtRate->fetch(PDO::FETCH_ASSOC);
+                            if (!$rr) {
+                                $stmtRate = $pdo->prepare("SELECT price FROM bikes WHERE id = ?");
+                                $stmtRate->execute([$activeItem['id']]);
+                                $rr = $stmtRate->fetch(PDO::FETCH_ASSOC);
+                            }
+                            if ($rr && isset($rr['price'])) $rate = floatval($rr['price']);
+                        }
+
+                        // Driver charge estimate (PICKUP/DROP=400, FULL=800/day)
+                        $estimatedDriverCharge = 0;
+                        if ($sophiaDriverIntent === 'PICKUP' || $sophiaDriverIntent === 'DROP') {
+                            $estimatedDriverCharge = 400;
+                        } elseif ($sophiaDriverIntent === 'FULL') {
+                            $dDays = 1;
+                            if ($sophiaDriverPickupDate && $sophiaDriverDropDate) {
+                                $dDays = max(1, (int)round((strtotime($sophiaDriverDropDate) - strtotime($sophiaDriverPickupDate)) / 86400));
+                            } else {
+                                $dDays = $days;
+                            }
+                            $estimatedDriverCharge = 800 * $dDays;
+                        }
+
+                        $total = ($days * $rate) + $estimatedDriverCharge;
+
+                        $isVehicleType = in_array($activeType, ['car', 'bike', 'vehicle']);
+                        $isSelfDrive = $isVehicleType && !$sophiaDriverIntent;
+                        $requiresLicense = $isSelfDrive;
+                        $requiresDob = $isVehicleType;
+
+                        // Determine missing required fields so frontend can prompt
+                        $missingFields = [];
+                        if ($requiresDob && !$sophiaDob) $missingFields[] = 'dob';
+                        if ($requiresLicense && !$sophiaLicense) $missingFields[] = 'license';
+
+                        $resolvedItemTitle = $activeItem['title'] ?? ($activeItem['name'] ?? 'Vehicle Rental');
+                        $bookingPreview = [
+                            'item_id'              => $activeItem['id'],
+                            'item_name'            => $resolvedItemTitle,
+                            'item_type'            => $activeType,
+                            'price_per_day'        => $rate,
+                            'pickup_date'          => $parsedDates['pickup_date'],
+                            'drop_date'            => $parsedDates['drop_date'],
+                            'days'                 => $days,
+                            'duration'             => "{$days} Days",
+                            'estimated_total'      => $total,
+                            'travel_dates'         => $activeDates,
+                            // Times & Locations
+                            'pickup_time'          => $sophiaPickupTime,
+                            'drop_time'            => $sophiaDropTime,
+                            'pickup_location'      => $sophiaPickupLocation,
+                            'drop_location'        => $sophiaDropLocation,
+                            // Customer info (collected conversationally)
+                            'dob'                  => $sophiaDob,
+                            'license'              => $sophiaLicense,
+                            // Driver fields
+                            'driver_service_type'  => $sophiaDriverIntent,
+                            'driver_pickup_date'   => $sophiaDriverPickupDate ?? ($sophiaDriverIntent ? $parsedDates['pickup_date'] : null),
+                            'driver_drop_date'     => $sophiaDriverDropDate ?? ($sophiaDriverIntent ? $parsedDates['drop_date'] : null),
+                            'driver_pickup_time'   => $sophiaDriverPickupTime,
+                            'driver_drop_time'     => $sophiaDriverDropTime,
+                            'driver_charge'        => $estimatedDriverCharge,
+                            // Flags
+                            'is_self_drive'        => $isSelfDrive,
+                            'requires_dob'         => $requiresDob,
+                            'requires_license'     => $requiresLicense,
+                            'missing_fields'       => $missingFields,
+                        ];
+                    }
                 } else {
                     $activeDates = '';
                 }
@@ -8818,7 +8993,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $inventoryContext .= "Hotels: " . implode(', ', array_map(function($h) { return "{$h['name']} ({$h['stars']}★, ₹{$h['price']}/night in {$h['location']})"; }, $dbHotels)) . "\n";
                 $inventoryContext .= "Sightseeing & Activities: " . implode(', ', array_map(function($a) { return ($a['title'] ?? $a['name']) . " (₹{$a['price']}/person)"; }, $dbAddons)) . "\n";
 
-                $system_prompt = "You are Sophia, the expert AI travel assistant for TripGalileo (Goa travel platform). Follow this critical rule: Answer strictly the customer's current intent — do not proactively dump unrelated information. If asked a math question (e.g. 2 + 2), answer directly. For simple greetings (Hi, Hello, Hey, Good morning), reply with a short natural greeting ('Hi! 👋 How can I help you today?'). For casual conversation (Thanks, Ok, Bye), respond naturally and briefly. If asked about a specific vehicle, hotel, or activity (e.g. Scuba, Defender, Swift, GT bike), answer specifically about that item. Do NOT list all services unless the customer explicitly asks 'What services do you provide?'. Maintain conversation context when the user asks to book or provides dates. Be warm, concise, and helpful. Use emojis. Stick to plain text.\n\n" . $inventoryContext;
+                $system_prompt = "You are Sophia, the expert AI travel assistant for WOW GOA / TripGalileo (Goa travel platform). Follow these CRITICAL INTEGRITY & SECURITY RULES:\n"
+                    . "1. NEVER say or imply that a booking or reservation is confirmed, and NEVER generate, invent, or output a booking ID, reference number, or confirmation code. All bookings must be completed by the customer reviewing their Booking Summary card and clicking 'Confirm & Book'.\n"
+                    . "2. Answer strictly the customer's current intent — do not proactively dump unrelated information.\n"
+                    . "3. For simple greetings (Hi, Hello, Hey), reply with a short natural greeting ('Hi! 👋 How can I help you explore Goa today?').\n"
+                    . "4. If asked about Flights: Explain that flight search and live airline fare revalidation are available on our official Flights page, and guide them to navigate to Flights. Do NOT claim you can converse-book or issue airline tickets.\n"
+                    . "5. If asked about Craft My Trip: Explain that custom day-by-day itineraries can be built on our official Craft My Trip builder (/craft), and guide them to navigate there. Do NOT fabricate conversational custom trip issuance.\n"
+                    . "6. If asked about My Bookings, Vouchers, or Driver Status: Direct the customer to the My Bookings section where they can enter their registered mobile number to view reservations, download vouchers, and track their driver in real-time.\n"
+                    . "7. If asked about a specific vehicle, hotel, or activity, answer specifically about that item. Be warm, concise, and helpful. Use emojis. Stick to plain text.\n\n" . $inventoryContext;
 
                 $groqMessages = $messages;
                 array_unshift($groqMessages, ["role" => "system", "content" => $system_prompt]);
@@ -8877,7 +9059,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $activeStage = 'ready_to_confirm';
                     $activeBookingIntent = true;
 
-                    $reply = "Got it! Dates noted: {$activeDates} for your {$itemName}. {$itemEmoji}✨\n\nI have generated your **Booking Summary** below. Please review the details and click **Confirm & Book** to secure your booking.";
+                    if ($activeType === 'hotel') {
+                        $nights = $bookingPreview['days'] ?? 1;
+                        $reply = "Got it! I've prepared your reservation for **{$itemName}** ({$bookingPreview['travel_dates']}, {$nights} " . ($nights === 1 ? 'Night' : 'Nights') . "). 🏨✨\n\nI have generated your **Booking Summary** below with authoritative rates. Please review the details and click **Confirm & Book** to secure your booking.";
+                    } elseif ($activeType === 'activity' || $activeType === 'sightseeing') {
+                        $guests = $bookingPreview['guests'] ?? 1;
+                        $reply = "Got it! I've prepared your reservation for **{$itemName}** on {$bookingPreview['travel_dates']} for {$guests} " . ($guests === 1 ? 'Guest' : 'Guests') . ". 🤿✨\n\nI have generated your **Booking Summary** below. Please review the details and click **Confirm & Book** to secure your booking.";
+                    } else {
+                        $reply = "Got it! Dates noted: {$activeDates} for your {$itemName}. {$itemEmoji}✨\n\nI have generated your **Booking Summary** below. Please review the details and click **Confirm & Book** to secure your booking.";
+                    }
                 }
                 // Flow Step 2: Active item exists, user expresses booking intent without dates (or dates not yet valid)
                 elseif ($activeItem && $isBookingIntent && empty($bookingPreview)) {
@@ -9034,6 +9224,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } elseif (strpos($msgClean, 'price') !== false || strpos($msgClean, 'cost') !== false || strpos($msgClean, 'pay') !== false || strpos($msgClean, 'advance') !== false || strpos($msgClean, 'token') !== false) {
                     $reply = "💳 Flexible Booking at TripGalileo:\n\n• Pay just 25% Advance Token to lock your package, vehicle, or hotel reservation.\n• Pay remaining 75% on arrival during check-in or vehicle handover.\n• 100% transparent pricing with zero surprise charges.\n\nShare your travel dates and I will get you the best available quote!";
 
+                // Flow Step 16: Flights (guided navigation to existing official page)
+                } elseif (preg_match('/\b(flights?|airlines?|plane\s*tickets?|air\s*fare)\b/i', $msgClean)) {
+                    $reply = "✈️ **Flights to Goa (GOI / GOX):**\n\nWe offer real-time airline fare search and live GDS revalidation. To search flights, compare schedules, and secure seats at live airline rates, please head over to our **[Flights](/flights)** page!\n\nLet me know if you would like me to arrange an airport pickup or self-drive vehicle waiting for you when you land!";
+
+                // Flow Step 17: Craft My Trip (guided navigation to existing official builder)
+                } elseif (preg_match('/\b(craft\s*my\s*trip|custom\s*trip|plan\s*my\s*trip|custom\s*itinerary)\b/i', $msgClean)) {
+                    $reply = "🌴 **Craft My Trip — Custom Goa Vacation Builder:**\n\nYou can craft a customized day-by-day vacation combining private beach resorts, self-drive convertibles or SUVs, yacht cruises, and bespoke tours using our official **[Craft My Trip](/craft)** builder!\n\nWould you like recommendations on top places or stays to include?";
+
+                // Flow Step 18: My Bookings & Driver Trips Status
+                } elseif (preg_match('/\b(my\s*bookings?|check\s*(?:my\s*)?booking|booking\s*status|driver\s*status|where\s*is\s*my\s*driver|download\s*voucher|voucher)\b/i', $msgClean)) {
+                    $reply = "📋 **My Bookings & Driver Status:**\n\nYou can view all your active bookings, live driver assignment details, and download your official Booking Vouchers anytime in the **My Bookings** section. Just enter your registered 10-digit mobile number!";
+
                 // Default Fallback: Short, conversational, helpful — NO service dump
                 } else {
                     $reply = "I'm here to help with your Goa trip! What can I assist you with today?";
@@ -9043,14 +9245,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Always preserve context across all turns
             $resolvedItemTitle = $activeItem ? ($activeItem['title'] ?? ($activeItem['name'] ?? null)) : null;
 
-            // Safe preview carry-over: ONLY carry over if it is the EXACT SAME item and stage is ready_to_confirm
+            // Safe preview carry-over: ONLY carry over if it is the EXACT SAME item, same type, and stage is ready_to_confirm
             $finalPreview = null;
             if ($bookingPreview) {
                 $finalPreview = $bookingPreview;
             } elseif (
+                !$genericCategorySwitch &&
+                !$itemChanged &&
+                !$typeChanged &&
                 !empty($incomingContext['booking_preview']) &&
                 $activeItem &&
                 strval($incomingContext['active_item_id'] ?? '') === strval($activeItem['id'] ?? '') &&
+                strval($incomingContext['active_item_type'] ?? '') === strval($activeType ?? '') &&
                 !empty($activeDates) &&
                 $activeStage === 'ready_to_confirm'
             ) {

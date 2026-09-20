@@ -187,6 +187,11 @@ class BookingService {
                 if (empty($rawLicense)) {
                     throw new BookingServiceException("Driving License is required for Self Drive rentals.", 400);
                 }
+
+                $cleanLicense = strtoupper(preg_replace('/[\s\-_\\/]/', '', $rawLicense));
+                if (strlen($cleanLicense) < 8 || strlen($cleanLicense) > 20 || preg_match('/^(\w)\1+$/', $cleanLicense) || !preg_match('/^[A-Z0-9]{8,20}$/', $cleanLicense) || !preg_match('/\d{4,}/', $cleanLicense)) {
+                    throw new BookingServiceException("Please provide a valid Driving License number (minimum 8 alphanumeric characters, e.g. DL-1420110012345).", 400);
+                }
             }
             // Vehicle + Driver ($isVehicleWithDriver):
             // - DOB mandatory (checked above)
