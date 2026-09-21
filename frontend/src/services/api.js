@@ -1547,7 +1547,8 @@ export async function chatWithAI(messages, context = null) {
   if (!res.ok || !data.success) throw new Error(data.error || 'AI Chat failed');
   return {
     reply: data.reply,
-    context: data.context || null
+    context: data.context || null,
+    craft_proposal: data.craft_proposal || null
   };
 }
 

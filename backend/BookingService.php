@@ -455,25 +455,30 @@ class BookingService {
                         if ($vehRow && isset($vehRow['price'])) {
                             $ratePerDay = floatval($vehRow['price']);
                             $authVehicleSubtotal = $ratePerDay * $daysCount;
-                            $authoritativeTotal = $authVehicleSubtotal + $driverCharge;
+                            $tierDiscount = floatval($payload['tier_discount_applied'] ?? 0);
+                            $walletUsed = floatval($payload['wallet_amount_used'] ?? 0);
+
+                            // Authoritative calculations for standard vehicle booking modal (18% GST + ₹250 admin fee)
+                            $authGst = round($authVehicleSubtotal * 0.18);
+                            $authFee = 250;
+                            $authModalTotal = $authVehicleSubtotal + $authGst + $authFee + $driverCharge - $tierDiscount - $walletUsed;
+
+                            // Authoritative total for simple-price vehicle bookings (no GST/fee additions)
+                            $authSimpleTotal = $authVehicleSubtotal + $driverCharge - $tierDiscount - $walletUsed;
 
                             $clientSubmitted = floatval($payload['total_amount'] ?? ($payload['total_paid'] ?? 0));
 
-                            // Also support BookingModal payloads with tax/fee if submitted from standard modal
-                            $hasModalAdditions = isset($payload['tax']) || isset($payload['fee']);
-                            $modalExpected = $authVehicleSubtotal + floatval($payload['tax'] ?? 0) + floatval($payload['fee'] ?? 0) + $driverCharge - floatval($payload['tier_discount_applied'] ?? 0) - floatval($payload['wallet_amount_used'] ?? 0);
+                            $isMatchModal = ($clientSubmitted > 0 && abs($clientSubmitted - $authModalTotal) <= 10);
+                            $isMatchSimple = ($clientSubmitted > 0 && abs($clientSubmitted - $authSimpleTotal) <= 10);
 
-                            $isMatchSimple = ($clientSubmitted > 0 && abs($clientSubmitted - $authoritativeTotal) <= 10);
-                            $isMatchModal = ($hasModalAdditions && $clientSubmitted > 0 && abs($clientSubmitted - $modalExpected) <= 10);
-
-                            if ($clientSubmitted > 0 && !$isMatchSimple && !$isMatchModal) {
+                            if ($clientSubmitted > 0 && !$isMatchModal && !$isMatchSimple) {
                                 throw new BookingServiceException(
-                                    "Price validation failed: Authoritative total is ₹" . number_format($authoritativeTotal) . " but received ₹" . number_format($clientSubmitted) . ". Manipulated booking totals are strictly prevented.",
+                                    "Price validation failed: Authoritative total is ₹" . number_format($authModalTotal) . " but received ₹" . number_format($clientSubmitted) . ". Manipulated booking totals are strictly prevented.",
                                     400
                                 );
                             }
 
-                            $totalAmount = $isMatchModal ? $clientSubmitted : $authoritativeTotal;
+                            $totalAmount = $isMatchModal ? $authModalTotal : $authSimpleTotal;
                         } else {
                             $totalAmount = floatval($payload['total_amount'] ?? ($payload['total_paid'] ?? 0));
                         }

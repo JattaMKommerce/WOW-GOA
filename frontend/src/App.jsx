@@ -252,6 +252,7 @@ export default function App() {
     }
   }, []);
 
+
   const [usersList, setUsersList] = useState(defaultUsers);
 
   // Database-driven data states
@@ -505,6 +506,26 @@ export default function App() {
       }
     }
   }, [packages]);
+
+  // Auto-hydrate hotel details if direct URL or query parameter has ?hotel=id or ?id=id
+  useEffect(() => {
+    if (hotels && hotels.length > 0 && typeof window !== 'undefined') {
+      const p = window.location.pathname.toLowerCase();
+      const urlParams = new URLSearchParams(window.location.search);
+      const hotelId = urlParams.get('hotel') || urlParams.get('id');
+      if (hotelId && p.startsWith('/hotels')) {
+        const matchedHotel = hotels.find(h => String(h.id) === String(hotelId));
+        if (matchedHotel && (!selectedDetailItem || String(selectedDetailItem.id) !== String(hotelId))) {
+          setSelectedDetailItem(matchedHotel);
+          setActiveTab('hotel-details');
+          try {
+            sessionStorage.setItem('tg_activeTab', 'hotel-details');
+            sessionStorage.setItem('tg_selectedDetailItem', JSON.stringify(matchedHotel));
+          } catch (e) {}
+        }
+      }
+    }
+  }, [hotels]);
 
   // Auto-hydrate flight details if direct URL or query parameter has ?flight=id or ?id=id
   useEffect(() => {
@@ -894,6 +915,9 @@ export default function App() {
           sessionStorage.setItem('tg_activeTab', 'hotel-details');
           sessionStorage.setItem('tg_selectedDetailItem', JSON.stringify(item));
         } catch (e) {}
+        const targetUrl = item?.id ? `/hotels?hotel=${encodeURIComponent(item.id)}` : '/hotels';
+        window.history.pushState({}, '', targetUrl);
+        setCurrentPath('/hotels');
       } else if (resolvedType === 'car') {
         setActiveTab('car-details');
         try {
@@ -942,6 +966,87 @@ export default function App() {
       document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
     }, 50);
   };
+
+  // Listen to sophia_switch_tab event — fired by AIChatbot when customer clicks a booking link (e.g. /bikes, /cars)
+  useEffect(() => {
+    const handleSophiaSwitchTab = (e) => {
+      const tab = e?.detail?.tab;
+      const itemId = e?.detail?.itemId;
+      const itemType = e?.detail?.itemType;
+      const itemName = e?.detail?.itemName;
+      if (!tab) return;
+
+      // Map short names to actual activeTab keys used in App.jsx
+      const tabMap = { bikes: 'bikes', cars: 'cars', hotels: 'hotels', activities: 'activities', packages: 'packages' };
+      const resolved = tabMap[tab] || tab;
+
+      // 1. Try to find the exact item customer requested
+      let matchedItem = null;
+      if (resolved === 'bikes' && Array.isArray(bikes) && bikes.length > 0) {
+        matchedItem = bikes.find(b => 
+          (itemId && String(b.id) === String(itemId)) ||
+          (itemName && b.name && (
+            b.name.toLowerCase() === itemName.toLowerCase() ||
+            b.name.toLowerCase().includes(itemName.toLowerCase()) ||
+            itemName.toLowerCase().includes(b.name.toLowerCase())
+          ))
+        );
+      } else if (resolved === 'cars' && Array.isArray(cars) && cars.length > 0) {
+        matchedItem = cars.find(c => 
+          (itemId && String(c.id) === String(itemId)) ||
+          (itemName && c.name && (
+            c.name.toLowerCase() === itemName.toLowerCase() ||
+            c.name.toLowerCase().includes(itemName.toLowerCase()) ||
+            itemName.toLowerCase().includes(c.name.toLowerCase())
+          ))
+        );
+      } else if (resolved === 'hotels' && Array.isArray(hotels) && hotels.length > 0) {
+        matchedItem = hotels.find(h => 
+          (itemId && String(h.id) === String(itemId)) ||
+          (itemName && h.name && (
+            h.name.toLowerCase() === itemName.toLowerCase() ||
+            h.name.toLowerCase().includes(itemName.toLowerCase()) ||
+            itemName.toLowerCase().includes(h.name.toLowerCase())
+          ))
+        );
+      } else if (resolved === 'activities' && Array.isArray(activities) && activities.length > 0) {
+        matchedItem = activities.find(a => 
+          (itemId && String(a.id) === String(itemId)) ||
+          (itemName && (a.title || a.name) && (
+            (a.title || a.name).toLowerCase() === itemName.toLowerCase() ||
+            (a.title || a.name).toLowerCase().includes(itemName.toLowerCase()) ||
+            itemName.toLowerCase().includes((a.title || a.name).toLowerCase())
+          ))
+        );
+      }
+
+      if (matchedItem) {
+        // Customer asked to book this specific item -> go directly to its details page so customer can see images and book!
+        setSelectedBookingItem(null);
+        if (resolved === 'bikes') {
+          handleOpenDetails(matchedItem, 'bike');
+        } else if (resolved === 'cars') {
+          handleOpenDetails(matchedItem, 'car');
+        } else if (resolved === 'hotels') {
+          handleOpenDetails(matchedItem, 'hotel');
+        } else if (resolved === 'activities') {
+          handleOpenDetails(matchedItem, 'activity');
+        }
+      } else {
+        // Fallback: switch to category tab and filter by itemName if available
+        setActiveTab(resolved);
+        if (itemName) {
+          setSearchQuery(itemName);
+        }
+        try { sessionStorage.setItem('tg_activeTab', resolved); } catch (_) {}
+      }
+
+      // Scroll to top
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+    window.addEventListener('sophia_switch_tab', handleSophiaSwitchTab);
+    return () => window.removeEventListener('sophia_switch_tab', handleSophiaSwitchTab);
+  }, [bikes, cars, hotels, activities]);
 
   const resolveTargetRoute = (user) => {
     let targetPath = '/admin';
@@ -1335,6 +1440,9 @@ export default function App() {
         duration: isActivity ? (selectedBookingItem.duration || 'Flexible') : ((isTripPkg || isSelfDrivePkg) ? (selectedBookingItem.duration || `${days} Days / ${Math.max(1, days - 1)} Nights`) : `${days} Days`),
         total_members: extraDetails.total_members || extraDetails.guests || selectedBookingItem.guests || selectedBookingItem.totalMembers || 1,
         total_amount: totalCost,
+        subtotal: typeof extraDetails.subtotal === 'number' ? extraDetails.subtotal : ((selectedBookingItem.price || 0) * days),
+        tax: typeof extraDetails.tax === 'number' ? extraDetails.tax : 0,
+        fee: typeof extraDetails.fee === 'number' ? extraDetails.fee : 0,
         amount_paid: typeof extraDetails.amount_paid === 'number' ? extraDetails.amount_paid : totalCost,
         total_paid: totalCost,
         date_of_birth: extraDetails.date_of_birth || '',
@@ -1841,6 +1949,8 @@ export default function App() {
         />
         <Footer setActiveTab={handleTabChange} />
         <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLogin={handleLogin} />
+        {/* Floating Sophia AI Assistant available on Craft My Trip */}
+        <AIChatbot />
       </div>
     );
   }

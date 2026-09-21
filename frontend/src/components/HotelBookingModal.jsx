@@ -121,6 +121,10 @@ export default function HotelBookingModal({
   const [arrivalTime, setArrivalTime] = useState('14:00');
   const [specialRequests, setSpecialRequests] = useState('');
 
+  // Guest & Room Counts for Summary Cards
+  const totalGuestsCount = (parseInt(adults, 10) || 0) + (parseInt(children, 10) || 0);
+  const roomsCount = parseInt(numRooms, 10) || 1;
+
   // Keep guest configuration & room/plan synced with selectedBookingItem if it changes
   useEffect(() => {
     if (selectedBookingItem) {

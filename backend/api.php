@@ -7085,6 +7085,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } catch (Exception $leade) {}
             }
 
+            // 3. Dual-sync lead to IAMKRATU (Leads Force)
+            try {
+                $kratuKey = '00b78eecd5bb542952945c6e8c8560db';
+                $kratuUrl = 'https://iamkratu.ai/customer-chat/?key=' . $kratuKey;
+                $kratuPayload = [
+                    'action' => 'save_lead',
+                    'name' => $cleanName,
+                    'phone' => $cleanPhone,
+                    'email' => $cleanEmail,
+                    'session_id' => 'sophia_' . $aiLeadId
+                ];
+
+                $ch = curl_init($kratuUrl);
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_POST, true);
+                curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($kratuPayload));
+                curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+                curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 4);
+                curl_exec($ch);
+            } catch (Exception $kratuErr) {
+                error_log("Kratu lead sync error: " . $kratuErr->getMessage());
+            }
+
             echo json_encode(["success" => true, "id" => $aiLeadId, "lead_id" => $leadId, "is_existing" => !empty($existingLead), "message" => "AI Lead captured successfully."]);
             exit;
         } elseif ($action === 'update_ai_lead_chat') {
@@ -8275,6 +8301,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $payload['id']
             ]);
             echo json_encode(["success" => true, "message" => "Chat updated."]);
+            exit();
+        } elseif ($action === 'chat_with_kratu') {
+            // Sophia Clean Reset: Kratu cloud forwarding and automatic lead generation completely deactivated
+            echo json_encode([
+                'success' => true,
+                'reply' => "Sophia is currently being upgraded. Brand new capabilities are on their way!",
+                'session_id' => $payload['session_id'] ?? ''
+            ]);
+            exit();
         } elseif ($action === 'chat_with_ai') {
             if (!isset($payload['messages']) || !is_array($payload['messages'])) {
                 throw new Exception("Missing messages.");
@@ -8297,9 +8332,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $dbPackages = [];
             $dbAddons = [];
             try {
-                $dbCars = $pdo->query("SELECT * FROM cars")->fetchAll(PDO::FETCH_ASSOC);
-                $dbBikes = $pdo->query("SELECT * FROM bikes")->fetchAll(PDO::FETCH_ASSOC);
-                $dbHotels = $pdo->query("SELECT * FROM hotels")->fetchAll(PDO::FETCH_ASSOC);
+                $dbCars = $pdo->query("SELECT * FROM cars WHERE is_available = 1 OR is_available IS NULL")->fetchAll(PDO::FETCH_ASSOC);
+                $dbBikes = $pdo->query("SELECT * FROM bikes WHERE is_available = 1 OR is_available IS NULL")->fetchAll(PDO::FETCH_ASSOC);
+                $dbHotels = $pdo->query("SELECT * FROM hotels WHERE (is_available = 1 OR is_available IS NULL) AND (hotel_status = 'Live' OR hotel_status IS NULL)")->fetchAll(PDO::FETCH_ASSOC);
                 $dbPackages = $pdo->query("SELECT * FROM packages")->fetchAll(PDO::FETCH_ASSOC);
                 $dbAddons = $pdo->query("SELECT * FROM add_ons WHERE is_active = 1 OR is_active IS NULL")->fetchAll(PDO::FETCH_ASSOC);
             } catch(Exception $e) {}
@@ -8515,11 +8550,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $detectedDates = trim($dMatches[0]);
             } elseif (preg_match('/\b(\d{4}-\d{2}-\d{2})\b/', $latestUserMsg, $dMatches)) {
                 $detectedDates = trim($dMatches[1]);
+            } elseif (preg_match('/\b((?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*\d{4})?\s*(?:to|\s*-\s*|till|until)\s*(?:(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+)?\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*\d{4})?)\b/i', $latestUserMsg, $dMatches)) {
+                $detectedDates = trim($dMatches[1]);
             } elseif (preg_match('/\b(\d{1,2}(?:st|nd|rd|th)?(?:\s+[a-zA-Z]+)?(?:\s*\d{4})?\s*(?:to|\s+-\s+|till|until)\s*\d{1,2}(?:st|nd|rd|th)?(?:\s+[a-zA-Z]+)?(?:\s*\d{4})?)\b/i', $latestUserMsg, $dMatches)) {
                 $detectedDates = trim($dMatches[1]);
-            } elseif (preg_match('/\b(\d{1,2}(?:st|nd|rd|th)?\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:\s+\d{4})?)\b/i', $latestUserMsg, $dMatches)) {
-                $detectedDates = trim($dMatches[1]);
             } elseif (preg_match('/\b((?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*\d{4})?)\b/i', $latestUserMsg, $dMatches)) {
+                $detectedDates = trim($dMatches[1]);
+            } elseif (preg_match('/\b(\d{1,2}(?:st|nd|rd|th)?\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:\s+\d{4})?)\b/i', $latestUserMsg, $dMatches)) {
                 $detectedDates = trim($dMatches[1]);
             } elseif (preg_match('/\b(tomorrow|today|day after tomorrow|this weekend|next week|from tomorrow)\b/i', $latestUserMsg, $dMatches)) {
                 $detectedDates = trim($dMatches[1]);
@@ -8542,7 +8579,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     } elseif (preg_match('/\b(\d{4}-\d{2}-\d{2})\b/', $prevMsg, $pm)) {
                         $detectedDates = trim($pm[1]);
                         break;
+                    } elseif (preg_match('/\b((?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*\d{4})?\s*(?:to|\s*-\s*|till|until)\s*(?:(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+)?\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*\d{4})?)\b/i', $prevMsg, $pm)) {
+                        $detectedDates = trim($pm[1]);
+                        break;
                     } elseif (preg_match('/\b(\d{1,2}(?:st|nd|rd|th)?(?:\s+[a-zA-Z]+)?(?:\s*\d{4})?\s*(?:to|\s+-\s+|till|until)\s*\d{1,2}(?:st|nd|rd|th)?(?:\s+[a-zA-Z]+)?(?:\s*\d{4})?)\b/i', $prevMsg, $pm)) {
+                        $detectedDates = trim($pm[1]);
+                        break;
+                    } elseif (preg_match('/\b((?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*\d{4})?)\b/i', $prevMsg, $pm)) {
                         $detectedDates = trim($pm[1]);
                         break;
                     } elseif (preg_match('/\b(\d{1,2}(?:st|nd|rd|th)?\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:\s+\d{4})?)\b/i', $prevMsg, $pm)) {
@@ -8565,86 +8608,118 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $isConfirmationWord = preg_match('/\b(yes|yeah|sure|confirm|confirmed|proceed|ok|okay|yep|lock it|done|go ahead|please do)\b/i', $msgClean);
 
             // Robust Travel Dates Normalizer
-            $parseTravelDates = function($text, $itemType = 'vehicle') {
+            $parseTravelDates = function($text, $itemType = 'vehicle', $knownDuration = null) {
                 $now = time();
                 $curYear = intval(date('Y', $now));
                 $curMonth = intval(date('m', $now));
                 $isActivity = ($itemType === 'activity' || $itemType === 'sightseeing');
 
-                // 1. ISO date range: '2026-09-25 to 2026-09-27'
+                $validMonths = [
+                    'jan' => 1, 'january' => 1, 'feb' => 2, 'february' => 2, 'mar' => 3, 'march' => 3,
+                    'apr' => 4, 'april' => 4, 'may' => 5, 'jun' => 6, 'june' => 6, 'jul' => 7, 'july' => 7,
+                    'aug' => 8, 'august' => 8, 'sep' => 9, 'september' => 9, 'oct' => 10, 'october' => 10,
+                    'nov' => 11, 'november' => 11, 'dec' => 12, 'december' => 12
+                ];
+
+                $duration = $knownDuration;
+                if (preg_match('/\b(\d+)\s*days?\b/i', $text, $dm) || preg_match('/\b(\d+)\s*-\s*day\b/i', $text, $dm)) {
+                    $duration = max(1, intval($dm[1]));
+                }
+
+                $pickup = null;
+                $drop = null;
+
+                // 1. ISO date range: '2026-10-25 to 2026-10-28' or '2026-10-25 - 2026-10-28'
                 if (preg_match('/(\d{4}-\d{2}-\d{2})\s*(?:to|-|till|until)\s*(\d{4}-\d{2}-\d{2})/i', $text, $m)) {
                     $pickup = $m[1];
                     $drop = $m[2];
-                    $days = max(1, (int)round((strtotime($drop) - strtotime($pickup)) / 86400));
-                    return ['pickup_date' => $pickup, 'drop_date' => $drop, 'days' => $days];
                 }
-
-                // 2. Single ISO date: '2026-09-25'
-                if (preg_match('/(\d{4}-\d{2}-\d{2})/', $text, $m)) {
-                    $pickup = $m[1];
-                    $drop = $isActivity ? $pickup : date('Y-m-d', strtotime('+1 day', strtotime($pickup)));
-                    $days = 1;
-                    return ['pickup_date' => $pickup, 'drop_date' => $drop, 'days' => $days];
+                // 2. Month-first date range: 'October 25 to October 28, 2026' or 'October 25 to 28, 2026' or 'from October 25 to October 28'
+                elseif (preg_match('/(?:from\s+)?([a-zA-Z]+)\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s*,?\s*(\d{4}))?\s*(?:to|\s*-\s*|till|until)\s*(?:([a-zA-Z]+)\s+)?(\d{1,2})(?:st|nd|rd|th)?(?:\s*,?\s*(\d{4}))?/i', $text, $m)) {
+                    $m1Name = strtolower(trim($m[1]));
+                    $m2Name = !empty($m[4]) ? strtolower(trim($m[4])) : $m1Name;
+                    if (isset($validMonths[$m1Name]) && isset($validMonths[$m2Name])) {
+                        $d1 = intval($m[2]);
+                        $d2 = intval($m[5]);
+                        $yr = !empty($m[6]) ? intval($m[6]) : (!empty($m[3]) ? intval($m[3]) : $curYear);
+                        $pickup = sprintf('%04d-%02d-%02d', $yr, $validMonths[$m1Name], $d1);
+                        $drop = sprintf('%04d-%02d-%02d', $yr, $validMonths[$m2Name], $d2);
+                    }
                 }
-
-                // 3. Date range: '15th to 17th Sep 2026' or '15 Sep to 18 Sep 2026'
-                if (preg_match('/(\d{1,2})(?:st|nd|rd|th)?(?:\s+([a-zA-Z]+))?(?:\s+(\d{4}))?\s*(?:to|\s+-\s+|till|until)\s*(\d{1,2})(?:st|nd|rd|th)?(?:\s+([a-zA-Z]+))?(?:\s+(\d{4}))?/i', $text, $m)) {
+                // 3. Day-first date range: '25th to 28th October 2026' or '25 October to 28 October 2026' or '15th to 17th Sep 2026'
+                elseif (preg_match('/(?:from\s+)?(\d{1,2})(?:st|nd|rd|th)?(?:\s+([a-zA-Z]+))?(?:\s+(\d{4}))?\s*(?:to|\s*-\s*|till|until)\s*(\d{1,2})(?:st|nd|rd|th)?(?:\s+([a-zA-Z]+))?(?:\s+(\d{4}))?/i', $text, $m)) {
                     $d1 = intval($m[1]);
                     $d2 = intval($m[4]);
-                    $month1 = !empty($m[2]) ? trim($m[2]) : (!empty($m[5]) ? trim($m[5]) : date('M', $now));
-                    $month2 = !empty($m[5]) ? trim($m[5]) : $month1;
-                    $year = !empty($m[6]) ? intval($m[6]) : (!empty($m[3]) ? intval($m[3]) : $curYear);
+                    $m1 = !empty($m[2]) ? strtolower(trim($m[2])) : (!empty($m[5]) ? strtolower(trim($m[5])) : '');
+                    $m2 = !empty($m[5]) ? strtolower(trim($m[5])) : $m1;
+                    if (isset($validMonths[$m1]) && isset($validMonths[$m2])) {
+                        $yr = !empty($m[6]) ? intval($m[6]) : (!empty($m[3]) ? intval($m[3]) : $curYear);
+                        $pickup = sprintf('%04d-%02d-%02d', $yr, $validMonths[$m1], $d1);
+                        $drop = sprintf('%04d-%02d-%02d', $yr, $validMonths[$m2], $d2);
+                    }
+                }
+                // 4. Single ISO date: '2026-10-25'
+                elseif (preg_match('/\b(\d{4}-\d{2}-\d{2})\b/', $text, $m)) {
+                    $pickup = $m[1];
+                }
+                // 5. Single Month-first date: 'October 25, 2026' or 'October 25' or 'Oct 25'
+                elseif (preg_match('/\b([a-zA-Z]+)\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s*,?\s*(\d{4}))?\b/i', $text, $m)) {
+                    $mName = strtolower(trim($m[1]));
+                    if (isset($validMonths[$mName])) {
+                        $d = intval($m[2]);
+                        $yr = !empty($m[3]) ? intval($m[3]) : $curYear;
+                        $pickup = sprintf('%04d-%02d-%02d', $yr, $validMonths[$mName], $d);
+                    }
+                }
+                // 6. Single Day-first date: '25th October 2026' or '25 Oct'
+                elseif (preg_match('/\b(\d{1,2})(?:st|nd|rd|th)?\s+([a-zA-Z]+)(?:\s+(\d{4}))?\b/i', $text, $m)) {
+                    $mName = strtolower(trim($m[2]));
+                    if (isset($validMonths[$mName])) {
+                        $d = intval($m[1]);
+                        $yr = !empty($m[3]) ? intval($m[3]) : $curYear;
+                        $pickup = sprintf('%04d-%02d-%02d', $yr, $validMonths[$mName], $d);
+                    }
+                }
+                // 7. Explicit relative day words: 'tomorrow', 'day after tomorrow', 'today'
+                elseif (stripos($text, 'day after tomorrow') !== false) {
+                    $pickup = date('Y-m-d', strtotime('+2 days', $now));
+                } elseif (stripos($text, 'tomorrow') !== false) {
+                    $pickup = date('Y-m-d', strtotime('+1 day', $now));
+                } elseif (stripos($text, 'today') !== false) {
+                    $pickup = date('Y-m-d', $now);
+                }
 
-                    $mTime1 = strtotime("$month1 1, $year");
-                    $mNum1 = $mTime1 ? date('m', $mTime1) : sprintf('%02d', $curMonth);
-                    $mTime2 = strtotime("$month2 1, $year");
-                    $mNum2 = $mTime2 ? date('m', $mTime2) : $mNum1;
+                // If pickup is found but drop is missing, safely derive drop from duration!
+                if ($pickup && !$drop && $duration) {
+                    $drop = date('Y-m-d', strtotime('+' . ($duration - 1) . ' days', strtotime($pickup)));
+                }
 
-                    $pickup = sprintf('%04d-%02d-%02d', $year, $mNum1, $d1);
-                    $drop = sprintf('%04d-%02d-%02d', $year, $mNum2, $d2);
+                // Non-craft single day default drop
+                if ($pickup && !$drop && $itemType !== 'craft') {
+                    $drop = $isActivity ? $pickup : date('Y-m-d', strtotime('+1 day', strtotime($pickup)));
+                }
+
+                if ($pickup && $drop) {
                     if (strtotime($drop) <= strtotime($pickup)) {
                         $drop = date('Y-m-d', strtotime('+1 day', strtotime($pickup)));
                     }
                     $days = max(1, (int)round((strtotime($drop) - strtotime($pickup)) / 86400));
-                    return ['pickup_date' => $pickup, 'drop_date' => $drop, 'days' => $days];
-                }
-
-                // 4. Single named date: '25th September 2026', '25 Sep', '25th Sep 2026'
-                if (preg_match('/(\d{1,2})(?:st|nd|rd|th)?\s+([a-zA-Z]+)(?:\s+(\d{4}))?/i', $text, $m)) {
-                    $d = intval($m[1]);
-                    $monthStr = trim($m[2]);
-                    $year = !empty($m[3]) ? intval($m[3]) : $curYear;
-                    $mTime = strtotime("$monthStr 1, $year");
-                    if ($mTime) {
-                        $mNum = date('m', $mTime);
-                        $pickup = sprintf('%04d-%02d-%02d', $year, $mNum, $d);
-                        $drop = $isActivity ? $pickup : date('Y-m-d', strtotime('+1 day', strtotime($pickup)));
-                        $days = 1;
-                        return ['pickup_date' => $pickup, 'drop_date' => $drop, 'days' => $days];
+                    if ($duration && $duration > $days) {
+                        $days = $duration;
                     }
-                }
-
-                // 5. 'tomorrow', 'day after tomorrow', or 'today'
-                if (stripos($text, 'day after tomorrow') !== false) {
-                    $pickup = date('Y-m-d', strtotime('+2 days', $now));
-                    $drop = $isActivity ? $pickup : date('Y-m-d', strtotime('+3 days', $now));
-                    return ['pickup_date' => $pickup, 'drop_date' => $drop, 'days' => 1];
-                } elseif (stripos($text, 'tomorrow') !== false) {
-                    $pickup = date('Y-m-d', strtotime('+1 day', $now));
-                    $drop = $isActivity ? $pickup : date('Y-m-d', strtotime('+2 days', $now));
-                    return ['pickup_date' => $pickup, 'drop_date' => $drop, 'days' => 1];
-                } elseif (stripos($text, 'today') !== false) {
-                    $pickup = date('Y-m-d', $now);
-                    $drop = $isActivity ? $pickup : date('Y-m-d', strtotime('+1 day', $now));
-                    return ['pickup_date' => $pickup, 'drop_date' => $drop, 'days' => 1];
-                }
-
-                // 6. 'for 3 days' or '3 days'
-                if (preg_match('/(?:for\s+)?(\d+)\s*days?/i', $text, $m)) {
-                    $days = max(1, intval($m[1]));
-                    $pickup = date('Y-m-d', strtotime('+1 day', $now));
-                    $drop = date('Y-m-d', strtotime("+$days days", strtotime($pickup)));
-                    return ['pickup_date' => $pickup, 'drop_date' => $drop, 'days' => $days];
+                    return [
+                        'pickup_date' => $pickup,
+                        'drop_date' => $drop,
+                        'days' => $days,
+                        'duration' => $duration
+                    ];
+                } elseif ($pickup) {
+                    return [
+                        'pickup_date' => $pickup,
+                        'drop_date' => null,
+                        'days' => $duration ?: 1,
+                        'duration' => $duration
+                    ];
                 }
 
                 // Fallback: NEVER invent dates!
@@ -8982,11 +9057,837 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
+            // ── CRAFT MY TRIP CONVERSATION & REAL INVENTORY PROPOSAL ENGINE ──
+            $craftProposal = null;
+            $isCraftMode = ($incomingContext['mode'] ?? '') === 'craft_my_trip' ||
+                           ($incomingContext['craft_mode'] ?? false) ||
+                           preg_match('/\b(craft\s*(?:my\s*)?trip|create\s*(?:my\s*)?trip|custom\s*trip|plan\s*(?:my\s*|a\s*)?trip|plan\s+goa\s+trip|trip\s*for\s*\d+|itinerary\s*for\s*\d+)\b/i', $msgClean);
+
+            if ($isCraftMode) {
+                // 1. Extract member / traveller count across user messages & incomingContext (NO default!)
+                $craftMemberCount = !empty($incomingContext['craft_member_count']) ? intval($incomingContext['craft_member_count']) : (!empty($incomingContext['craft_proposal']['memberCount']) ? intval($incomingContext['craft_proposal']['memberCount']) : null);
+                foreach ($messages as $m) {
+                    if (($m['role'] ?? '') !== 'user') continue;
+                    $txt = $m['content'] ?? '';
+                    if (preg_match('/\b(\d+)\s*(?:people|persons?|travellers?|adults?|guests?|friends?|members?|pax)\b/i', $txt, $paxM)) {
+                        $craftMemberCount = max(1, intval($paxM[1]));
+                    } elseif (preg_match('/\bfamily\s*of\s*(\d+)\b/i', $txt, $paxM)) {
+                        $craftMemberCount = max(1, intval($paxM[1]));
+                    } elseif (preg_match('/\b(couple|two\s*of\s*us)\b/i', $txt)) {
+                        $craftMemberCount = 2;
+                    } elseif (preg_match('/\b(solo|just\s*me|alone)\b/i', $txt)) {
+                        $craftMemberCount = 1;
+                    }
+                }
+
+                // 2. Extract trip duration (days) across user messages & incomingContext
+                $craftDuration = !empty($incomingContext['craft_duration_days']) ? intval($incomingContext['craft_duration_days']) : (!empty($incomingContext['craft_proposal']['days']) ? intval($incomingContext['craft_proposal']['days']) : null);
+                foreach ($messages as $m) {
+                    if (($m['role'] ?? '') !== 'user') continue;
+                    $txt = $m['content'] ?? '';
+                    if (preg_match('/\b(\d+)\s*days?\b/i', $txt, $dm) || preg_match('/\b(\d+)\s*-\s*day\b/i', $txt, $dm)) {
+                        $craftDuration = max(1, intval($dm[1]));
+                    } elseif (preg_match('/\b(?:a|one)\s*week\b/i', $txt)) {
+                        $craftDuration = 7;
+                    } elseif (preg_match('/\bweekend\b/i', $txt)) {
+                        $craftDuration = 2;
+                    }
+                }
+
+                // 3. Extract pickup and drop dates across user messages & incomingContext (NO silent default!)
+                $craftPickup = !empty($incomingContext['craft_pickup_date']) ? $incomingContext['craft_pickup_date'] : (!empty($incomingContext['craft_proposal']['pickup_date']) ? $incomingContext['craft_proposal']['pickup_date'] : null);
+                $craftDrop = !empty($incomingContext['craft_drop_date']) ? $incomingContext['craft_drop_date'] : (!empty($incomingContext['craft_proposal']['drop_date']) ? $incomingContext['craft_proposal']['drop_date'] : null);
+
+                $dateDerivedFromDuration = false;
+                foreach ($messages as $m) {
+                    if (($m['role'] ?? '') !== 'user') continue;
+                    $txt = $m['content'] ?? '';
+                    $pDates = $parseTravelDates($txt, 'craft', $craftDuration);
+                    if ($pDates) {
+                        if (!empty($pDates['pickup_date'])) {
+                            $craftPickup = $pDates['pickup_date'];
+                        }
+                        if (!empty($pDates['drop_date'])) {
+                            $craftDrop = $pDates['drop_date'];
+                        }
+                        if (!empty($pDates['duration'])) {
+                            $craftDuration = $pDates['duration'];
+                        }
+                    }
+                }
+
+                // Safe derivation: if pickup is provided and duration is provided, but drop is missing
+                if ($craftPickup && !$craftDrop && $craftDuration) {
+                    $craftDrop = date('Y-m-d', strtotime('+' . ($craftDuration - 1) . ' days', strtotime($craftPickup)));
+                    $dateDerivedFromDuration = true;
+                }
+
+                $craftDays = null;
+                if ($craftPickup && $craftDrop) {
+                    if (strtotime($craftDrop) <= strtotime($craftPickup)) {
+                        $craftDrop = date('Y-m-d', strtotime('+1 day', strtotime($craftPickup)));
+                    }
+                    $craftDays = max(1, (int)round((strtotime($craftDrop) - strtotime($craftPickup)) / 86400));
+                    if ($craftDuration && $craftDuration > $craftDays) {
+                        $craftDays = $craftDuration;
+                    }
+                }
+
+                // Detect if user is asking to change or view available cars / vehicles
+                $isAskingCarChangeOrList = preg_match('/\b(change\s*(?:the\s*)?(?:car|vehicle|ride)|switch\s*(?:the\s*)?(?:car|vehicle|ride)|different\s*(?:car|vehicle|ride)|other\s*cars?|another\s*(?:car|vehicle)|show\s*(?:other\s*|all\s*|more\s*|luxury\s*|suvs?\s*|7\s*[-]?\s*seaters?\s*)?cars?|what\s*(?:are\s*the\s*)?cars?\b|which\s*(?:are\s*the\s*)?cars?\b|what\s*vehicles?\b|which\s*vehicles?\b|cars?\s*(?:do\s*you\s*have|options|available)|available\s*cars?|wh(?:ich|cih)\s*(?:cars?|vehicles?|are|one)?\s*do\s*you\s*have|luxury\s*(?:cars?|suvs?))\b/i', $msgClean);
+
+                // Detect if user is asking to change or view available hotels
+                $isAskingHotelChangeOrList = preg_match('/\b(change\s*(?:the\s*)?hotel|switch\s*(?:the\s*)?hotel|different\s*hotel|other\s*hotels?|another\s*hotel|show\s*(?:other\s*|all\s*|more\s*)?hotels?|what\s*(?:are\s*the\s*)?hotels?\b|which\s*(?:are\s*the\s*)?hotels?\b|hotels?\s*(?:do\s*you\s*have|options|available)|available\s*hotels?|change\s*stay|different\s*stay)\b/i', $msgClean);
+
+                // Detect if user is asking to change or view available activities / sightseeing
+                $isAskingActivityChangeOrList = preg_match('/\b(change\s*(?:the\s*)?(?:activity|activities|sightseeing|experience)|switch\s*(?:the\s*)?(?:activity|activities|sightseeing)|other\s*(?:activities|sightseeing|experiences)|different\s*(?:activity|activities|sightseeing)|show\s*(?:other\s*)?(?:activities|sightseeing|experiences)|what\s*(?:activities|sightseeing|experiences)\s*do\s*you\s*have|available\s*(?:activities|sightseeing|experiences))\b/i', $msgClean);
+
+                // Helper to format cars grouped by category
+                $formatCarsByCategory = function($carsList, $filterCategory = null) {
+                    $luxury = [];
+                    $suvs = [];
+                    $muv = [];
+                    $hatch = [];
+
+                    foreach ($carsList as $c) {
+                        if (floatval($c['price'] ?? 0) < 500 || strtolower($c['name']) === 'dcdssdd') continue;
+                        $cat = strtolower($c['category'] ?? '');
+                        $name = strtolower($c['name']);
+                        $seats = intval(preg_replace('/\D/', '', $c['seating'] ?? '5')) ?: 5;
+                        $seatsStr = $c['seating'] ?? "{$seats} Seater";
+                        $trans = $c['transmission'] ?? 'Manual';
+                        $pRate = number_format(floatval($c['price']));
+                        $line = "• **{$c['name']}** ({$seatsStr} • {$trans} • ₹{$pRate}/day)";
+
+                        if (stripos($cat, 'luxury') !== false || floatval($c['price']) >= 5000 || stripos($name, 'defend') !== false) {
+                            $luxury[] = $line;
+                        } elseif (stripos($cat, 'muv') !== false || stripos($cat, '7') !== false || $seats >= 7) {
+                            $muv[] = $line;
+                        } elseif (stripos($cat, 'suv') !== false || stripos($name, 'thar') !== false || stripos($name, 'creta') !== false) {
+                            $suvs[] = $line;
+                        } else {
+                            $hatch[] = $line;
+                        }
+                    }
+
+                    if ($filterCategory === 'luxury') {
+                        return "💎 **Luxury Cars & Premium SUVs:**\n" . implode("\n", $luxury);
+                    } elseif ($filterCategory === 'suv') {
+                        return "🚙 **SUVs & 4x4:**\n" . implode("\n", array_merge($suvs, $luxury));
+                    } elseif ($filterCategory === '7seater' || $filterCategory === 'muv') {
+                        return "🚐 **Family 7-Seater / MUV:**\n" . implode("\n", $muv);
+                    } elseif ($filterCategory === 'hatchback' || $filterCategory === 'budget') {
+                        return "🚗 **Standard & Economy Cars:**\n" . implode("\n", $hatch);
+                    }
+
+                    $sections = [];
+                    if (!empty($luxury)) $sections[] = "💎 **Luxury Cars & Premium SUVs:**\n" . implode("\n", $luxury);
+                    if (!empty($suvs)) $sections[] = "🚙 **SUVs & 4x4:**\n" . implode("\n", $suvs);
+                    if (!empty($muv)) $sections[] = "🚐 **Family 7-Seater / MUV:**\n" . implode("\n", $muv);
+                    if (!empty($hatch)) $sections[] = "🚗 **Standard & Economy Cars:**\n" . implode("\n", $hatch);
+                    return implode("\n\n", $sections);
+                };
+
+                // Helper to format hotels grouped by star rating
+                $formatHotelsByStars = function($hotelsList, $filterStars = null) {
+                    $fiveStar = [];
+                    $fourStar = [];
+                    $threeStar = [];
+
+                    foreach ($hotelsList as $h) {
+                        $stars = intval($h['stars'] ?? 4);
+                        $pRate = number_format(floatval($h['price'] ?? 0));
+                        $loc = $h['location'] ?? 'Goa';
+                        $line = "• **{$h['name']}** ({$loc} • ₹{$pRate}/night)";
+
+                        if ($stars >= 5) {
+                            $fiveStar[] = $line;
+                        } elseif ($stars === 4) {
+                            $fourStar[] = $line;
+                        } else {
+                            $threeStar[] = $line;
+                        }
+                    }
+
+                    if ($filterStars === 5) {
+                        return "⭐⭐⭐⭐⭐ **5-Star Luxury Resorts:**\n" . implode("\n", $fiveStar);
+                    } elseif ($filterStars === 4) {
+                        return "⭐⭐⭐⭐ **4-Star Beachfront & Premium:**\n" . implode("\n", $fourStar);
+                    } elseif ($filterStars === 3) {
+                        return "⭐⭐⭐ **3-Star Boutique & Budget:**\n" . implode("\n", $threeStar);
+                    }
+
+                    $sections = [];
+                    if (!empty($fiveStar)) $sections[] = "⭐⭐⭐⭐⭐ **5-Star Luxury Resorts:**\n" . implode("\n", $fiveStar);
+                    if (!empty($fourStar)) $sections[] = "⭐⭐⭐⭐ **4-Star Beachfront & Premium:**\n" . implode("\n", $fourStar);
+                    if (!empty($threeStar)) $sections[] = "⭐⭐⭐ **3-Star Boutique & Budget:**\n" . implode("\n", $threeStar);
+                    return implode("\n\n", $sections);
+                };
+
+                // Helper to format activities grouped by category
+                $formatActivitiesByType = function($addonsList, $filterType = null) {
+                    $watersports = [];
+                    $sightseeing = [];
+
+                    foreach ($addonsList as $a) {
+                        $type = strtolower($a['type'] ?? 'activity');
+                        $title = $a['title'] ?? ($a['name'] ?? 'Experience');
+                        $pRate = number_format(floatval($a['price'] ?? 0));
+                        $line = "• **{$title}** (₹{$pRate}/person)";
+
+                        if ($type === 'activity' || stripos($title, 'scuba') !== false || stripos($title, 'parasail') !== false || stripos($title, 'water') !== false) {
+                            $watersports[] = $line;
+                        } else {
+                            $sightseeing[] = $line;
+                        }
+                    }
+
+                    if ($filterType === 'water' || $filterType === 'activity') {
+                        return "🤿 **Water Sports & Adventures:**\n" . implode("\n", $watersports);
+                    } elseif ($filterType === 'sightseeing') {
+                        return "🏛️ **Sightseeing & Heritage Tours:**\n" . implode("\n", $sightseeing);
+                    }
+
+                    $sections = [];
+                    if (!empty($watersports)) $sections[] = "🤿 **Water Sports & Adventures:**\n" . implode("\n", $watersports);
+                    if (!empty($sightseeing)) $sections[] = "🏛️ **Sightseeing & Heritage Tours:**\n" . implode("\n", $sightseeing);
+                    return implode("\n\n", $sections);
+                };
+
+                // Pre-detect vehicle capacity conflict so notice is communicated
+                $requestedBike = preg_match('/\b(bike|bikes|scooter|scooters|activa|royal\s*enfield|two\s*wheeler)\b/i', $msgClean);
+                $capacityConflict = false;
+                $capacityConflictMsg = '';
+
+                if ($requestedBike && $craftMemberCount && $craftMemberCount > 2) {
+                    $capacityConflict = true;
+                    $capacityConflictMsg = "A bike or scooter can only accommodate up to **2 travellers**, but you have **{$craftMemberCount} travellers**. For safety and comfort, I recommend an appropriate car so everyone can travel together.";
+                } elseif (preg_match('/\b(thar|4x4|creta|swift)\b/i', $msgClean) && $craftMemberCount && $craftMemberCount > 5) {
+                    $capacityConflict = true;
+                    $capacityConflictMsg = "A 4-5 seater vehicle cannot accommodate a group of **{$craftMemberCount} travellers**. To ensure everyone travels comfortably, I recommend a 7-seater vehicle.";
+                }
+
+                // ── GATE 1: MANDATORY DATES CHECK ──
+                // Sophia must NEVER invent a date, silently use today's date, or use hardcoded/default dates.
+                if (!$craftPickup || !$craftDrop) {
+                    $craftProposal = null;
+                    if ($isAskingCarChangeOrList) {
+                        $reply = "Here are the vehicles we have available by category for your Goa trip:\n\n"
+                            . $formatCarsByCategory($dbCars) . "\n\n"
+                            . "What date would you like your trip to start so I can plan your custom trip?";
+                    } elseif ($isAskingHotelChangeOrList) {
+                        $reply = "Here are our available stays by star rating for your Goa trip:\n\n"
+                            . $formatHotelsByStars($dbHotels) . "\n\n"
+                            . "What date would you like your trip to start so I can plan your custom trip?";
+                    } elseif ($isAskingActivityChangeOrList) {
+                        $reply = "Here are our available experiences by category for your Goa trip:\n\n"
+                            . $formatActivitiesByType($dbAddons) . "\n\n"
+                            . "What date would you like your trip to start so I can plan your custom trip?";
+                    } elseif ($capacityConflict) {
+                        $reply = "⚠️ **Vehicle Seating Notice**\n\n{$capacityConflictMsg}\n\nWhat date would you like your trip to start so I can prepare your custom proposal?";
+                    } elseif (preg_match('/^(hi|hello|hey|start)[\!\.\?]*$/i', $msgClean)) {
+                        $reply = "Hi! I'm **Sophia** 🌴 Let's craft your dream Goa trip together!\n\nWhat date would you like your trip to start?";
+                    } else {
+                        $reply = "Absolutely! I'd be happy to plan that for you. What date would you like your trip to start?";
+                    }
+                }
+                // ── GATE 2: MANDATORY TRAVELLER COUNT CHECK ──
+                // If dates are confirmed but memberCount is missing, ask for travellers before final proposal.
+                elseif (!$craftMemberCount || $craftMemberCount < 1) {
+                    $craftProposal = null;
+                    $pickupPretty = date('F j', strtotime($craftPickup));
+                    $dropPretty = date('F j, Y', strtotime($craftDrop));
+
+                    if ($isAskingCarChangeOrList) {
+                        $reply = "Here are our available vehicles by category:\n\n"
+                            . $formatCarsByCategory($dbCars) . "\n\n"
+                            . "How many travellers will be joining the trip so I can recommend the right vehicle and hotel?";
+                    } elseif ($isAskingHotelChangeOrList) {
+                        $reply = "Here are our available stays by star rating:\n\n"
+                            . $formatHotelsByStars($dbHotels) . "\n\n"
+                            . "How many travellers will be joining the trip so I can recommend the right vehicle and hotel?";
+                    } elseif ($isAskingActivityChangeOrList) {
+                        $reply = "Here are our available experiences by category:\n\n"
+                            . $formatActivitiesByType($dbAddons) . "\n\n"
+                            . "How many travellers will be joining the trip so I can recommend the right vehicle and hotel?";
+                    } elseif ($dateDerivedFromDuration) {
+                        $reply = "Great. For {$craftDays} days, that would be {$pickupPretty} to {$dropPretty}. How many travellers will be joining the trip so I can prepare your proposal?";
+                    } else {
+                        $reply = "Got it! Dates noted: **{$pickupPretty} to {$dropPretty}** 🌴 How many travellers will be joining the trip so I can recommend the right vehicle and hotel?";
+                    }
+                }
+                // ── GATE 3: ALL REQUIREMENTS SATISFIED -> REAL INVENTORY MATCHING & PROPOSAL ──
+                else {
+                    $prevProposal = $incomingContext['craft_proposal'] ?? null;
+                    $prevVehicle = $prevProposal['vehicle'] ?? null;
+                    $prevHotel = $prevProposal['hotel'] ?? null;
+                    $prevActivities = $prevProposal['activities'] ?? [];
+
+                    // Check if a specific vehicle is explicitly named in user's message
+                    $specificallyRequestedVehicle = null;
+                    if (!empty($dbCars)) {
+                        foreach ($dbCars as $c) {
+                            $cNameLower = strtolower($c['name']);
+                            if (strpos($cNameLower, 'defend') !== false && preg_match('/\bdefend[ae]r\b/i', $msgClean)) {
+                                $specificallyRequestedVehicle = $c;
+                                break;
+                            }
+                            $cWords = preg_split('/[\s\-\/\(\)]+/', $cNameLower);
+                            foreach ($cWords as $cw) {
+                                $cw = trim($cw);
+                                if (strlen($cw) >= 4 && !in_array($cw, ['seater', 'diesel', 'petrol', 'manual', 'automatic', 'soft', 'hard', 'suv', 'car'])) {
+                                    if (preg_match('/\b' . preg_quote($cw, '/') . '\b/i', $msgClean)) {
+                                        $specificallyRequestedVehicle = $c;
+                                        break 2;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (!$specificallyRequestedVehicle && $requestedBike && !empty($dbBikes)) {
+                        if ($craftMemberCount <= 2) {
+                            foreach ($dbBikes as $b) {
+                                if (preg_match('/\b' . preg_quote(strtolower($b['name']), '/') . '\b/i', $msgClean)) {
+                                    $specificallyRequestedVehicle = $b;
+                                    break;
+                                }
+                            }
+                            if (!$specificallyRequestedVehicle) {
+                                $specificallyRequestedVehicle = $dbBikes[0];
+                            }
+                        } else {
+                            $capacityConflict = true;
+                            $capacityConflictMsg = "A bike or scooter can only accommodate up to **2 travellers**, but you have **{$craftMemberCount} travellers**. For safety and comfort, I have matched an appropriate car so everyone can travel together.";
+                            $specificallyRequestedVehicle = null;
+                        }
+                    }
+
+                    // Check category intents for cars
+                    $wantsLuxuryCar = preg_match('/\b(luxury\s*(?:car|suv|cars|suvs|vehicle)?|premium\s*(?:car|suv|cars)|high\s*[-]?\s*end)\b/i', $msgClean);
+                    $wantsSUV = preg_match('/\b(suvs?|4\s*[-xX]?\s*4|thar)\b/i', $msgClean);
+                    $wants7Seater = preg_match('/\b(7\s*[-]?\s*seaters?|seven\s*[-]?\s*seaters?|muv|family\s*car|ertiga)\b/i', $msgClean);
+                    $wantsHatchback = preg_match('/\b(hatchback|economy|budget\s*car|small\s*car|swift)\b/i', $msgClean);
+
+                    // Check star intents for hotels
+                    $wants5Star = preg_match('/\b(5\s*[-]?\s*stars?|5\s*\★|five\s*[-]?\s*stars?|luxury\s*(?:hotel|resort|stay))\b/i', $msgClean) || (stripos($msgClean, 'luxury') !== false && !preg_match('/\b(luxury\s*cars?|luxury\s*suvs?|luxury\s*ride)\b/i', $msgClean));
+                    $wants4Star = preg_match('/\b(4\s*[-]?\s*stars?|4\s*\★|four\s*[-]?\s*stars?|beachfront|premium\s*(?:hotel|resort))\b/i', $msgClean);
+                    $wants3Star = preg_match('/\b(3\s*[-]?\s*stars?|3\s*\★|three\s*[-]?\s*stars?|budget\s*(?:hotel|stay)|boutique\s*resort)\b/i', $msgClean);
+
+                    // Check intents for activities
+                    $wantsWaterSports = preg_match('/\b(water\s*sports?|scuba|diving|parasail(?:ing)?|adventure)\b/i', $msgClean);
+                    $wantsSightseeing = preg_match('/\b(sightseeing|heritage|culture|tours?|beach\s*tour)\b/i', $msgClean);
+
+                    // 1. If user asks "change the car" / "what cars do you have" WITHOUT naming a specific car:
+                    if ($isAskingCarChangeOrList && !$specificallyRequestedVehicle) {
+                        if ($wantsLuxuryCar) {
+                            $reply = "Sure! Here are our available Luxury Cars & Premium SUVs:\n\n"
+                                . $formatCarsByCategory($dbCars, 'luxury') . "\n\n"
+                                . "Which luxury car would you prefer? Reply with *DEFENDAR* or *Toyota Fortuner*, and I will update your trip plan!";
+                        } elseif ($wantsSUV) {
+                            $reply = "Sure! Here are our available SUVs & 4x4 vehicles:\n\n"
+                                . $formatCarsByCategory($dbCars, 'suv') . "\n\n"
+                                . "Which SUV would you prefer? Reply with *Thar*, *Creta*, or *Fortuner*, and I will update your trip plan!";
+                        } elseif ($wants7Seater) {
+                            $reply = "Sure! Here are our available 7-Seater vehicles:\n\n"
+                                . $formatCarsByCategory($dbCars, '7seater') . "\n\n"
+                                . "Which 7-seater vehicle would you prefer? Reply with *Ertiga* or *Fortuner*, and I will update your trip plan!";
+                        } else {
+                            $reply = "Sure! Which category of car would you prefer? Here are our available vehicles:\n\n"
+                                . $formatCarsByCategory($dbCars) . "\n\n"
+                                . "Reply with a category (e.g. *Luxury car*, *SUV*, *7-seater*) or the car name (e.g. *Ertiga*, *Thar*), and I will update your trip plan!";
+                        }
+                        // Hide the review card while user browses cars — show it again only after they pick a car
+                        $craftProposal = null;
+                    }
+                    // 2. If user asks "change hotel" / "what hotels do you have" WITHOUT naming a specific hotel:
+                    elseif ($isAskingHotelChangeOrList && !preg_match('/\b(candolim|taj|baga)\b/i', $msgClean)) {
+                        if ($wants5Star) {
+                            $reply = "Sure! Here are our available 5-Star Luxury Resorts:\n\n"
+                                . $formatHotelsByStars($dbHotels, 5) . "\n\n"
+                                . "Would you like to choose *Taj Exotica Resort & Spa*? Reply yes or say *Taj Exotica*, and I will update your trip plan!";
+                        } elseif ($wants4Star) {
+                            $reply = "Sure! Here are our available 4-Star Beachfront & Premium stays:\n\n"
+                                . $formatHotelsByStars($dbHotels, 4) . "\n\n"
+                                . "Which hotel would you prefer? Reply with *The Grand Candolim*, and I will update your trip plan!";
+                        } elseif ($wants3Star) {
+                            $reply = "Sure! Here are our available 3-Star Boutique & Budget stays:\n\n"
+                                . $formatHotelsByStars($dbHotels, 3) . "\n\n"
+                                . "Which hotel would you prefer? Reply with *Casa Baga*, and I will update your trip plan!";
+                        } else {
+                            $reply = "Sure! Which category of stay do you prefer? Here are our available hotels by star rating:\n\n"
+                                . $formatHotelsByStars($dbHotels) . "\n\n"
+                                . "Reply with your preferred star category (e.g. *5-star*, *4-star*, *budget*) or the hotel name, and I will update your trip plan!";
+                        }
+                        // Hide the review card while user browses hotels — show it again only after they pick one
+                        $craftProposal = null;
+                    }
+                    // 3. If user asks "change activities" / "what activities do you have" WITHOUT naming an activity:
+                    elseif ($isAskingActivityChangeOrList && !preg_match('/\b(scuba|parasail|heritage|culture|north|tour)\b/i', $msgClean)) {
+                        if ($wantsWaterSports) {
+                            $reply = "Sure! Here are our Water Sports & Adventures:\n\n"
+                                . $formatActivitiesByType($dbAddons, 'water') . "\n\n"
+                                . "Which activity would you like to add or switch to? (e.g. *Scuba Diving* or *Parasailing*)";
+                        } elseif ($wantsSightseeing) {
+                            $reply = "Sure! Here are our Sightseeing & Heritage Tours:\n\n"
+                                . $formatActivitiesByType($dbAddons, 'sightseeing') . "\n\n"
+                                . "Which tour would you like to add or switch to? (e.g. *Goa Heritage & Culture Tour* or *North Goa Beach Sightseeing*)";
+                        } else {
+                            $reply = "Sure! What kind of experiences would you like to add? Here are our available options by category:\n\n"
+                                . $formatActivitiesByType($dbAddons) . "\n\n"
+                                . "Reply with the activity you'd like (for example: *Parasailing*, *Scuba Diving*, or *Heritage Tour*), and I will update your trip plan!";
+                        }
+                        // Hide the review card while user browses activities — show it again only after they pick one
+                        $craftProposal = null;
+                    }
+                    // 4. Normal proposal generation or updating with selected vehicle/hotel/activity
+                    else {
+                        if ($requestedBike && $craftMemberCount > 2) {
+                            $capacityConflict = true;
+                            $capacityConflictMsg = "A bike or scooter can only accommodate up to **2 travellers**, but you have **{$craftMemberCount} travellers**. For safety and comfort, I have matched an appropriate car so everyone can travel together.";
+                        }
+
+                        $matchedVehicle = $specificallyRequestedVehicle;
+
+                        // Check if user requested a car category
+                        if (!$matchedVehicle) {
+                            if ($wantsLuxuryCar) {
+                                foreach ($dbCars as $c) {
+                                    $cat = strtolower($c['category'] ?? '');
+                                    $name = strtolower($c['name']);
+                                    if (stripos($cat, 'luxury') !== false || floatval($c['price']) >= 5000 || stripos($name, 'defend') !== false) {
+                                        $carSeats = intval(preg_replace('/\D/', '', $c['seating'] ?? '5')) ?: 5;
+                                        if ($carSeats >= $craftMemberCount) {
+                                            $matchedVehicle = $c;
+                                            break;
+                                        }
+                                    }
+                                }
+                            } elseif ($wants7Seater) {
+                                foreach ($dbCars as $c) {
+                                    $cat = strtolower($c['category'] ?? '');
+                                    $seats = intval(preg_replace('/\D/', '', $c['seating'] ?? '5')) ?: 5;
+                                    if ($seats >= 7 || stripos($cat, 'muv') !== false || stripos($cat, '7') !== false) {
+                                        $matchedVehicle = $c;
+                                        break;
+                                    }
+                                }
+                            } elseif ($wantsSUV) {
+                                foreach ($dbCars as $c) {
+                                    $cat = strtolower($c['category'] ?? '');
+                                    $name = strtolower($c['name']);
+                                    if (stripos($cat, 'suv') !== false || stripos($name, 'thar') !== false || stripos($name, 'creta') !== false) {
+                                        $carSeats = intval(preg_replace('/\D/', '', $c['seating'] ?? '5')) ?: 5;
+                                        if ($carSeats >= $craftMemberCount) {
+                                            $matchedVehicle = $c;
+                                            break;
+                                        }
+                                    }
+                                }
+                            } elseif ($wantsHatchback) {
+                                foreach ($dbCars as $c) {
+                                    $carSeats = intval(preg_replace('/\D/', '', $c['seating'] ?? '5')) ?: 5;
+                                    if ($carSeats >= $craftMemberCount && floatval($c['price']) <= 2500) {
+                                        $matchedVehicle = $c;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Capacity validation for specifically chosen car
+                        if ($matchedVehicle) {
+                            $carSeats = intval(preg_replace('/\D/', '', $matchedVehicle['seating'] ?? '5')) ?: 5;
+                            if ($carSeats < $craftMemberCount) {
+                                $capacityConflict = true;
+                                $capacityConflictMsg = "The **{$matchedVehicle['name']}** has a seating capacity of **{$carSeats} seats**, but your group has **{$craftMemberCount} travellers**. To ensure everyone travels comfortably, I have selected a 7-seater vehicle.";
+                                $matchedVehicle = null;
+                            }
+                        }
+
+                        // Fallback vehicle selection if none specifically chosen or capacity conflict
+                        if (!$matchedVehicle) {
+                            // If user previously had a valid vehicle and didn't request a car change, preserve it
+                            if (!$specificallyRequestedVehicle && !$wantsLuxuryCar && !$wantsSUV && !$wants7Seater && !$wantsHatchback && !empty($prevVehicle)) {
+                                $prevSeats = intval(preg_replace('/\D/', '', $prevVehicle['seating'] ?? '5')) ?: 5;
+                                if ($prevSeats >= $craftMemberCount) {
+                                    $matchedVehicle = $prevVehicle;
+                                }
+                            }
+                            if (!$matchedVehicle) {
+                                foreach ($dbCars as $c) {
+                                    $carSeats = intval(preg_replace('/\D/', '', $c['seating'] ?? '5')) ?: 5;
+                                    if ($carSeats >= $craftMemberCount) {
+                                        if (preg_match('/\b(suv|4x4|thar|creta|fortuner)\b/i', $msgClean) && stripos($c['category'] ?? '', 'suv') !== false) {
+                                            $matchedVehicle = $c;
+                                            break;
+                                        }
+                                        if (!$matchedVehicle) {
+                                            $matchedVehicle = $c;
+                                        }
+                                    }
+                                }
+                                if (!$matchedVehicle && !empty($dbCars)) {
+                                    $matchedVehicle = $dbCars[0];
+                                }
+                            }
+                        }
+
+                        // 4. Match a real hotel from $dbHotels (Rule 2)
+                        $matchedHotel = null;
+                        if (!empty($dbHotels)) {
+                            // First check if a hotel is explicitly named
+                            foreach ($dbHotels as $h) {
+                                if (preg_match('/\b' . preg_quote(strtolower($h['name']), '/') . '\b/i', $msgClean)) {
+                                    $matchedHotel = $h;
+                                    break;
+                                }
+                                $hWords = preg_split('/[\s\-\/\(\)]+/', strtolower($h['name']));
+                                foreach ($hWords as $hw) {
+                                    $hw = trim($hw);
+                                    if (strlen($hw) >= 4 && !in_array($hw, ['hotel', 'resort', 'stay', 'beach', 'luxury', 'grand'])) {
+                                        if (preg_match('/\b' . preg_quote($hw, '/') . '\b/i', $msgClean)) {
+                                            $matchedHotel = $h;
+                                            break 2;
+                                        }
+                                    }
+                                }
+                            }
+
+                            // If no specific hotel named, check star rating intent
+                            if (!$matchedHotel && ($wants5Star || $wants4Star || $wants3Star)) {
+                                foreach ($dbHotels as $h) {
+                                    $hStars = intval($h['stars'] ?? 3);
+                                    if ($wants5Star && $hStars >= 5) {
+                                        $matchedHotel = $h;
+                                        break;
+                                    } elseif ($wants4Star && $hStars === 4) {
+                                        $matchedHotel = $h;
+                                        break;
+                                    } elseif ($wants3Star && $hStars <= 3) {
+                                        $matchedHotel = $h;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            // If no hotel specified in message and previous hotel exists, keep previous hotel!
+                            if (!$matchedHotel && !empty($prevHotel)) {
+                                $matchedHotel = $prevHotel;
+                            }
+
+                            // Default fallback
+                            if (!$matchedHotel) {
+                                foreach ($dbHotels as $h) {
+                                    if (intval($h['stars'] ?? 0) >= 4) { $matchedHotel = $h; break; }
+                                }
+                                if (!$matchedHotel) $matchedHotel = $dbHotels[0];
+                            }
+                        }
+
+                        // 5. Match real activities from $dbAddons (Rule 2)
+                        $matchedActivities = [];
+                        $isAddIntent = preg_match('/\b(add|include|also|plus|along\s*with)\b/i', $msgClean);
+
+                        if (!empty($dbAddons)) {
+                            foreach ($dbAddons as $a) {
+                                $aTitle = strtolower($a['title'] ?? ($a['name'] ?? ''));
+                                if (
+                                    (preg_match('/\b(scuba|dive|diving)\b/i', $msgClean) && stripos($aTitle, 'scuba') !== false) ||
+                                    (preg_match('/\b(cruise|boat|dinner)\b/i', $msgClean) && stripos($aTitle, 'cruise') !== false) ||
+                                    (preg_match('/\b(waterfall|dudhsagar)\b/i', $msgClean) && stripos($aTitle, 'dudhsagar') !== false) ||
+                                    (preg_match('/\b(watersports?|parasail(?:ing)?)\b/i', $msgClean) && (stripos($aTitle, 'watersport') !== false || stripos($aTitle, 'parasail') !== false)) ||
+                                    (preg_match('/\b(north|south|sightseeing|heritage|culture)\b/i', $msgClean) && (stripos($aTitle, 'north') !== false || stripos($aTitle, 'heritage') !== false || stripos($aTitle, 'sightseeing') !== false))
+                                ) {
+                                    $matchedActivities[] = $a;
+                                }
+                            }
+
+                            if ($isAddIntent && !empty($prevActivities)) {
+                                $existingIds = array_map(function($act) { return strval($act['id'] ?? ''); }, $prevActivities);
+                                $combined = $prevActivities;
+                                foreach ($matchedActivities as $newA) {
+                                    if (!in_array(strval($newA['id'] ?? ''), $existingIds)) {
+                                        $combined[] = $newA;
+                                        $existingIds[] = strval($newA['id'] ?? '');
+                                    }
+                                }
+                                $matchedActivities = $combined;
+                            } elseif (empty($matchedActivities) && !empty($prevActivities)) {
+                                $matchedActivities = $prevActivities;
+                            }
+
+                            if (empty($matchedActivities)) {
+                                $matchedActivities[] = $dbAddons[0];
+                                if (count($dbAddons) > 1) {
+                                    $matchedActivities[] = $dbAddons[1];
+                                }
+                            }
+                        }
+
+                        // 6. Build proposal structure
+                        $vRate = floatval($matchedVehicle['price'] ?? 0);
+                        $hRate = floatval($matchedHotel['price'] ?? 3500);
+                        $vTotal = $vRate * $craftDays;
+                        $hTotal = $hRate * $craftDays;
+                        $actTotal = 0;
+                        foreach ($matchedActivities as $act) {
+                            $actTotal += floatval($act['price'] ?? 0) * $craftMemberCount;
+                        }
+                        $estimatedTotal = $vTotal + $hTotal + $actTotal;
+
+                        if ($matchedHotel) {
+                            $matchedHotel['_nightPrice'] = $hRate;
+                            $matchedHotel['_totalPrice'] = $hTotal;
+                            $matchedHotel['_nights'] = $craftDays;
+                        }
+
+                        $craftProposal = [
+                            'destination' => 'Goa',
+                            'pickup_date' => $craftPickup,
+                            'drop_date' => $craftDrop,
+                            'days' => $craftDays,
+                            'nights' => $craftDays,
+                            'memberCount' => $craftMemberCount,
+                            'vehicle' => $matchedVehicle,
+                            'hotel' => $matchedHotel,
+                            'activities' => $matchedActivities,
+                            'withFlight' => false,
+                            'selectedFlight' => null,
+                            'estimated_total' => $estimatedTotal,
+                            'status' => 'ready'
+                        ];
+
+                        $pickupPretty = date('F j', strtotime($craftPickup));
+                        $dropPretty = date('F j, Y', strtotime($craftDrop));
+
+                        $actNames = array_map(function($a) { return $a['title'] ?? ($a['name'] ?? 'Experience'); }, $matchedActivities);
+                        $actString = !empty($actNames) ? implode(', ', $actNames) : 'Curated Goa Experiences';
+
+                        $derivedPrefix = ($dateDerivedFromDuration || ($craftDuration && preg_match('/\b\d+\s*days?\b/i', $latestUserMsg))) ? "Great. For {$craftDays} days, that would be {$pickupPretty} to {$dropPretty}.\n\n" : "";
+
+                        $isUpdatedVehicle = !empty($prevVehicle) && !empty($matchedVehicle) && strval($prevVehicle['id'] ?? '') !== strval($matchedVehicle['id'] ?? '');
+                        $isUpdatedHotel = !empty($prevHotel) && !empty($matchedHotel) && strval($prevHotel['id'] ?? '') !== strval($matchedHotel['id'] ?? '');
+                        $isUpdatedActivities = !empty($prevActivities) && (count($matchedActivities) !== count($prevActivities) || !empty(array_diff(array_column($matchedActivities, 'id'), array_column($prevActivities, 'id'))));
+
+                        if ($capacityConflict) {
+                            $reply = "⚠️ **Vehicle Seating Notice**\n\n{$capacityConflictMsg}\n\nI have updated your proposal below with the **{$matchedVehicle['name']}** ({$matchedVehicle['seating']}) to ensure safety. Tap **Review My Trip in Builder →** when you're ready!";
+                        } elseif ($isUpdatedVehicle) {
+                            $reply = "🌴 **I've updated your trip plan with the {$matchedVehicle['name']}!**\n\n"
+                                . "• 👥 **Travellers:** {$craftMemberCount} " . ($craftMemberCount === 1 ? 'Adult' : 'Adults') . "\n"
+                                . "• 📅 **Dates:** {$pickupPretty} to {$dropPretty} ({$craftDays} Days)\n"
+                                . "• 🚗 **Ride:** {$matchedVehicle['name']} (₹" . number_format($vRate) . "/day)\n"
+                                . "• 🏨 **Stay:** {$matchedHotel['name']} (" . ($matchedHotel['stars'] ?? '4') . "★, ₹" . number_format($hRate) . "/night)\n"
+                                . "• 🎯 **Activities:** {$actString}\n\n"
+                                . "Review your updated proposal card below and tap **Review My Trip in Builder →** to finalize in the builder!";
+                        } elseif ($isUpdatedHotel) {
+                            $reply = "🌴 **I've updated your stay to {$matchedHotel['name']}!**\n\n"
+                                . "• 👥 **Travellers:** {$craftMemberCount} " . ($craftMemberCount === 1 ? 'Adult' : 'Adults') . "\n"
+                                . "• 📅 **Dates:** {$pickupPretty} to {$dropPretty} ({$craftDays} Days)\n"
+                                . "• 🚗 **Ride:** {$matchedVehicle['name']} (₹" . number_format($vRate) . "/day)\n"
+                                . "• 🏨 **Stay:** {$matchedHotel['name']} (" . ($matchedHotel['stars'] ?? '4') . "★, ₹" . number_format($hRate) . "/night)\n"
+                                . "• 🎯 **Activities:** {$actString}\n\n"
+                                . "Review your updated proposal card below and tap **Review My Trip in Builder →** to finalize in the builder!";
+                        } elseif ($isUpdatedActivities) {
+                            $reply = "🌴 **I've updated your activities!**\n\n"
+                                . "• 👥 **Travellers:** {$craftMemberCount} " . ($craftMemberCount === 1 ? 'Adult' : 'Adults') . "\n"
+                                . "• 📅 **Dates:** {$pickupPretty} to {$dropPretty} ({$craftDays} Days)\n"
+                                . "• 🚗 **Ride:** {$matchedVehicle['name']} (₹" . number_format($vRate) . "/day)\n"
+                                . "• 🏨 **Stay:** {$matchedHotel['name']} (" . ($matchedHotel['stars'] ?? '4') . "★, ₹" . number_format($hRate) . "/night)\n"
+                                . "• 🎯 **Activities:** {$actString}\n\n"
+                                . "Review your updated proposal card below and tap **Review My Trip in Builder →** to finalize in the builder!";
+                        } else {
+                            $reply = $derivedPrefix . "🌴 **I've prepared your custom Goa Trip Plan!**\n\n"
+                                . "• 👥 **Travellers:** {$craftMemberCount} " . ($craftMemberCount === 1 ? 'Adult' : 'Adults') . "\n"
+                                . "• 📅 **Dates:** {$pickupPretty} to {$dropPretty} ({$craftDays} Days)\n"
+                                . "• 🚗 **Ride:** {$matchedVehicle['name']} (₹" . number_format($vRate) . "/day)\n"
+                                . "• 🏨 **Stay:** {$matchedHotel['name']} (" . ($matchedHotel['stars'] ?? '4') . "★, ₹" . number_format($hRate) . "/night)\n"
+                                . "• 🎯 **Activities:** {$actString}\n\n"
+                                . "Review your proposal card below and tap **Review My Trip in Builder →** to finalize in the builder!";
+                        }
+                    }
+                }
+            }
+
+            // ─────────────────────────────────────────────────────────────────
+            // PRE-GROQ INTERCEPTORS: Handle common intents with structured replies
+            // These run before Groq so the AI never generates markdown tables
+            // ─────────────────────────────────────────────────────────────────
+
+            // Helper: Format bikes category-wise (clean, no markdown tables)
+            $formatBikesCategoryWise = function($bikes) {
+                $categories = [];
+                foreach ($bikes as $b) {
+                    $cat = trim($b['category'] ?? 'Other');
+                    $categories[$cat][] = $b;
+                }
+                $lines = [];
+                $catEmojis = [
+                    'scooter' => '🛵', 'automatic' => '🛵', 'moped' => '🛵',
+                    'cruiser' => '🏍️', 'classic' => '🏍️', 'standard' => '🏍️',
+                    'sports' => '🏎️', 'sport' => '🏎️', 'adventure' => '🧭',
+                    'super' => '⚡', 'premium' => '⚡', 'other' => '🛵'
+                ];
+                foreach ($categories as $cat => $items) {
+                    $catLower = strtolower($cat);
+                    $emoji = '🛵';
+                    foreach ($catEmojis as $key => $e) {
+                        if (strpos($catLower, $key) !== false) { $emoji = $e; break; }
+                    }
+                    $lines[] = "**{$emoji} {$cat}**";
+                    foreach ($items as $b) {
+                        $engine = !empty($b['engine']) ? " · " . $b['engine'] : '';
+                        $loc = !empty($b['location']) ? " · " . $b['location'] : '';
+                        $lines[] = "  • " . $b['name'] . " — ₹" . number_format($b['price']) . "/day{$engine}{$loc}";
+                    }
+                }
+                return implode("\n", $lines);
+            };
+
+            // Detect "list bikes" intent (before Groq)
+            $isAskingBikeList = !$reply && preg_match('/\b(bike|bikes|scooter|two.?wheel|two.?wheeler|motorcycle)\b/i', $msgClean)
+                && !preg_match('/\b(car|hotel|activity|sightseeing|package|flight|craft)\b/i', $msgClean)
+                && !$isBookingIntent;  // don't override booking intent
+
+            // Context from previous turn
+            $prevActiveType = $incomingContext['active_item_type'] ?? null;
+            $prevActiveName = $incomingContext['active_item_name'] ?? null;
+            $prevActiveId   = $incomingContext['active_item_id'] ?? null;
+
+            // ── INTERCEPTOR 1: List bikes (no specific bike mentioned, no booking) ──
+            if (!$reply && $isAskingBikeList && !$directMatch) {
+                $bikeList = !empty($dbBikes) ? $formatBikesCategoryWise($dbBikes)
+                    : "🛵 Scooter\n  • Honda Activa 6G — ₹450/day · 110cc · All Goa\n🏍️ Classic Cruiser\n  • Royal Enfield Classic 350 — ₹800/day · 350cc · Calangute / Baga\n🏎️ Sports\n  • Yamaha FZ-S V3 — ₹700/day · 150cc · Panaji / North Goa\n🧭 Adventure\n  • Royal Enfield Himalayan 450 — ₹1,100/day · 450cc · Airport / North Goa";
+
+                $reply = "🛵 **Here are our Bikes & Scooters available in Goa:**\n\n" . $bikeList
+                    . "\n\n🛡️ All rentals include **2 sanitized helmets** & a valid commercial road permit."
+                    . "\n📋 Requirements: Valid 2-wheeler driving license, 18+ years."
+                    . "\n\nWhich bike would you like to rent? Reply with the bike name and I will show you full details!";
+            }
+
+            // ── INTERCEPTOR 2: Direct item match + booking intent
+            //    e.g. "I want to book GT bike" or "book the Activa"
+            //    → Show vehicle card with two choices: [Book Vehicle →] and [Get Price for My Dates]
+            if (!$reply && $directMatch && $isBookingIntent) {
+                $dItem = $directMatch['item'];
+                $dType = $directMatch['type'];
+                $dName = $dItem['name'] ?? ($dItem['title'] ?? 'Item');
+                $dPrice = number_format(floatval($dItem['price']));
+
+                if ($dType === 'bike') {
+                    $dCat    = $dItem['category'] ?? 'Scooter / Bike';
+                    $dEngine = !empty($dItem['engine']) ? $dItem['engine'] : '—';
+                    $activeStage = 'item_selected';
+                    $reply = "🏍️ **{$dName}**\n"
+                        . "₹{$dPrice} / day\n\n"
+                        . "• **Category:** {$dCat}\n"
+                        . "• **Engine:** {$dEngine}\n"
+                        . "• **Inclusions:** 2 Sanitized Helmets & Commercial Permit\n\n"
+                        . "👉 **[Book {$dName} →](/bikes?id={$dItem['id']}&type=bike)**\n\n"
+                        . "💬 **[Get Price for My Dates](#get-price)**";
+                } elseif ($dType === 'car') {
+                    $dTrans  = $dItem['transmission'] ?? 'Automatic';
+                    $dSeats  = $dItem['seating'] ?? '5 Seater';
+                    $dFuel   = $dItem['fuel'] ?? 'Petrol';
+                    $activeStage = 'item_selected';
+                    $reply = "🚗 **{$dName}**\n"
+                        . "₹{$dPrice} / day\n\n"
+                        . "• **Transmission:** {$dTrans} • **Seating:** {$dSeats} • **Fuel:** {$dFuel}\n"
+                        . "• **Inclusions:** Free doorstep delivery across Goa, 24/7 on-road support\n\n"
+                        . "👉 **[Book {$dName} →](/cars?id={$dItem['id']}&type=car)**\n\n"
+                        . "💬 **[Get Price for My Dates](#get-price)**";
+                } elseif ($dType === 'hotel') {
+                    $dStars = $dItem['stars'] ?? '4';
+                    $dLoc   = $dItem['location'] ?? 'Goa Beachfront';
+                    $activeStage = 'item_selected';
+                    $reply = "🏨 **{$dName}** ({$dStars}★) is available! Here are the details:\n\n"
+                        . "• **Rating:** {$dStars}★\n"
+                        . "• **Location:** {$dLoc}\n"
+                        . "• **Starting from:** ₹{$dPrice}/night\n"
+                        . "• **Inclusions:** Daily buffet breakfast, pool access, free Wi-Fi\n\n"
+                        . "To book, head to our Hotels page and select your check-in dates:\n"
+                        . "👉 **[Book {$dName} →](/hotels?id={$dItem['id']}&type=hotel)**\n\n"
+                        . "Or tell me your **check-in & check-out dates** — I'll prepare your Booking Summary right here!";
+                } elseif ($dType === 'activity' || $dType === 'sightseeing') {
+                    $dLoc = $dItem['location'] ?? 'Goa';
+                    $dDur = $dItem['duration'] ?? '3-4 Hours';
+                    $activeStage = 'item_selected';
+                    $reply = "🤿 **{$dName}** is available! Here are the details:\n\n"
+                        . "• **Price:** ₹{$dPrice}/person\n"
+                        . "• **Location:** {$dLoc}\n"
+                        . "• **Duration:** {$dDur}\n\n"
+                        . "👉 **[Book {$dName} →](/activities?id={$dItem['id']}&type=activity)**\n\n"
+                        . "What date would you like to reserve this experience? Tell me the date and number of guests!";
+                }
+            }
+
+            // ── INTERCEPTOR 3: "I want to book" with no item named, but context has active item from prev turn ──
+            //    e.g. User just saw GT bike details, now says "I want to book"
+            //    CRITICAL: For bikes and cars, give two choices: [Book Vehicle →] and [Get Price for My Dates]
+            //    Do NOT force dates immediately!
+            if (!$reply && $isBookingIntent && !$directMatch && empty($activeDates) && empty($incomingContext['travel_dates']) && !$isConfirmationWord) {
+                // Resolve active item from context
+                $ctxItemId   = $incomingContext['active_item_id'] ?? null;
+                $ctxItemType = $incomingContext['active_item_type'] ?? null;
+                $ctxItemName = $incomingContext['active_item_name'] ?? null;
+
+                if ($ctxItemId && $ctxItemType && $ctxItemName) {
+                    $ctxEmoji = $ctxItemType === 'bike' ? '🏍️' : ($ctxItemType === 'car' ? '🚗' : ($ctxItemType === 'hotel' ? '🏨' : '🤿'));
+                    $ctxPage  = in_array($ctxItemType, ['bike']) ? "/bikes?id={$ctxItemId}&type=bike" : (in_array($ctxItemType, ['car']) ? "/cars?id={$ctxItemId}&type=car" : ($ctxItemType === 'hotel' ? "/hotels?id={$ctxItemId}&type=hotel" : "/activities?id={$ctxItemId}&type=activity"));
+                    $activeStage = 'item_selected';
+
+                    if ($ctxItemType === 'bike' || $ctxItemType === 'car') {
+                        $priceStr = isset($activeItem['price']) ? "₹" . number_format(floatval($activeItem['price'])) . " / day\n\n" : "";
+                        $reply = "{$ctxEmoji} **{$ctxItemName}**\n"
+                            . $priceStr
+                            . "👉 **[Book {$ctxItemName} →]({$ctxPage})**\n\n"
+                            . "💬 **[Get Price for My Dates](#get-price)**";
+                    } elseif ($ctxItemType === 'hotel') {
+                        $activeStage = 'awaiting_dates';
+                        $reply = "Great choice! 🏨 Let's book **{$ctxItemName}**!\n\n"
+                            . "To complete your booking, just tell me:\n"
+                            . "• 📅 **Check-in & Check-out dates** (e.g. *25th October to 28th October*)\n"
+                            . "• 👥 **Number of guests / rooms**\n\n"
+                            . "I'll prepare your Booking Summary card right here with the full pricing breakdown!\n\n"
+                            . "Or head directly to our booking page: 👉 **[Book {$ctxItemName} →]({$ctxPage})**";
+                    } else {
+                        $activeStage = 'awaiting_dates';
+                        $reply = "Great choice! 🤿 Let's book **{$ctxItemName}**!\n\n"
+                            . "To complete your booking, just tell me:\n"
+                            . "• 📅 **Date of experience** (e.g. *25th October*)\n"
+                            . "• 👥 **Number of participants / tickets**\n\n"
+                            . "Or head directly to our booking page: 👉 **[Book {$ctxItemName} →]({$ctxPage})**";
+                    }
+                } elseif (preg_match('/\b(bike|bikes|scooter|motorcycle|two.?wheel)\b/i', $msgClean)) {
+                    // Generic "book a bike" with no specific item in context
+                    $reply = "Sure! 🛵 Which bike would you like to rent?\n\n"
+                        . "We have:\n• 🛵 Honda Activa 6G — ₹450/day\n• 🏍️ Royal Enfield Classic 350 — ₹800/day\n• 🏎️ Yamaha FZ-S V3 — ₹700/day\n• 🧭 Royal Enfield Himalayan 450 — ₹1,100/day\n\n"
+                        . "Or browse all bikes here: 👉 **[Browse Bikes →](/bikes)**";
+                } elseif (preg_match('/\b(car|cars|suv|vehicle|self.?drive)\b/i', $msgClean)) {
+                    $reply = "Sure! 🚗 Which car would you like to rent?\n\n"
+                        . "We have:\n• 🚙 Mahindra Thar 4x4 — ₹3,000/day\n• 🚗 Hyundai Creta — ₹2,500/day\n• 🚐 Maruti Ertiga (7-Seater) — ₹2,800/day\n• 💎 Land Rover Defender — ₹9,500/day\n\n"
+                        . "Or browse all self-drive cars here: 👉 **[Browse Cars →](/cars)**";
+                } elseif (preg_match('/\b(hotel|hotels|resort|resorts|stay|stays|room|rooms)\b/i', $msgClean)) {
+                    $reply = "Sure! 🏨 Which hotel or resort would you like to book?\n\n"
+                        . "We have:\n• ⭐⭐⭐⭐⭐ Taj Exotica Resort & Spa (Benaulim) — ₹14,500/night\n• ⭐⭐⭐⭐ The Grand Candolim (Candolim) — ₹4,800/night\n• ⭐⭐⭐ Casa Baga (Baga) — ₹2,800/night\n\n"
+                        . "Or browse all verified hotels here: 👉 **[Browse Hotels →](/hotels)**";
+                } elseif (preg_match('/\b(activity|activities|sightseeing|experience|scuba|cruise|watersports?)\b/i', $msgClean)) {
+                    $reply = "Sure! 🤿 Which activity or tour would you like to reserve?\n\n"
+                        . "We offer:\n• 🤿 Scuba Diving at Grande Island — ₹2,499/person\n• 🚢 Sunset Dinner Cruise — ₹1,499/person\n• 🌊 Watersports Combo (5-in-1) — ₹1,800/person\n• 🏛️ North Goa Sightseeing Tour — ₹1,200/person\n\n"
+                        . "Tell me which one you'd like and your preferred date!";
+                }
+            }
+
+            // ── INTERCEPTOR 3.5: Customer clicks "Get Price for My Dates" or asks for price calculation ──
+            $isGetPriceIntent = preg_match('/\b(get\s+price(?:\s+for\s+my\s+dates)?|check\s+price|calculate\s+price|price\s+for\s+(?:my\s+)?dates|what(?:\'s|\s+is)\s+the\s+price\s+for\s+dates)\b/i', $msgClean);
+            if (!$reply && $isGetPriceIntent && empty($activeDates) && empty($incomingContext['travel_dates'])) {
+                $activeStage = 'awaiting_dates';
+                $reply = "What are your rental dates?\n\nPlease provide your start and end date.\nExample: 25 Sep to 27 Sep";
+            }
+
             // Try Groq first if real API key configured
             $groq_api_key = getenv('GROQ_API_KEY') ?: ($_ENV['GROQ_API_KEY'] ?? '');
-            $reply = null;
 
-            if (!empty($groq_api_key) && strpos($groq_api_key, 'demo') === false) {
+            if (!$reply && !empty($groq_api_key) && strpos($groq_api_key, 'demo') === false) {
                 $inventoryContext = "Live Inventory on TripGalileo:\n";
                 $inventoryContext .= "Cars: " . implode(', ', array_map(function($c) { return "{$c['name']} (₹{$c['price']}/day, {$c['transmission']}, {$c['seating']}, {$c['fuel']})"; }, $dbCars)) . "\n";
                 $inventoryContext .= "Bikes: " . implode(', ', array_map(function($b) { return "{$b['name']} (₹{$b['price']}/day)"; }, $dbBikes)) . "\n";
@@ -9000,7 +9901,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     . "4. If asked about Flights: Explain that flight search and live airline fare revalidation are available on our official Flights page, and guide them to navigate to Flights. Do NOT claim you can converse-book or issue airline tickets.\n"
                     . "5. If asked about Craft My Trip: Explain that custom day-by-day itineraries can be built on our official Craft My Trip builder (/craft), and guide them to navigate there. Do NOT fabricate conversational custom trip issuance.\n"
                     . "6. If asked about My Bookings, Vouchers, or Driver Status: Direct the customer to the My Bookings section where they can enter their registered mobile number to view reservations, download vouchers, and track their driver in real-time.\n"
-                    . "7. If asked about a specific vehicle, hotel, or activity, answer specifically about that item. Be warm, concise, and helpful. Use emojis. Stick to plain text.\n\n" . $inventoryContext;
+                    . "7. If asked about a specific vehicle, hotel, or activity, answer specifically about that item. Be warm, concise, and helpful. Use emojis.\n"
+                    . "8. FORMATTING RULES (CRITICAL — never break these):\n"
+                    . "   - NEVER use markdown tables (|column|column| format). This is forbidden.\n"
+                    . "   - Use bullet points (•) and bold (**text**) for listing items.\n"
+                    . "   - When listing bikes or cars, group them by category with an emoji heading.\n"
+                    . "   - Example bike listing format:\n"
+                    . "     🛵 Scooter\n"
+                    . "       • Honda Activa 6G — ₹450/day · 110cc · All Goa\n"
+                    . "     🏍️ Classic Cruiser\n"
+                    . "       • Royal Enfield Classic 350 — ₹800/day · 350cc · Calangute\n"
+                    . "9. BOOKING FLOW RULES:\n"
+                    . "   - When a customer says 'I want to book' or 'book now' after seeing a list of bikes/cars, DO NOT ask for their name or phone number.\n"
+                    . "   - Instead, ask which specific bike/car they want and their dates, OR provide the direct booking page link: 👉 **[Browse & Book Bikes →](/bikes)** or 👉 **[Browse & Book Cars →](/cars)**.\n"
+                    . "   - After they name a specific bike/car, show its details and ask for dates to generate the Booking Summary card.\n\n" . $inventoryContext;
 
                 $groqMessages = $messages;
                 array_unshift($groqMessages, ["role" => "system", "content" => $system_prompt]);
@@ -9055,37 +9969,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 elseif ($activeItem && !empty($detectedDates) && !empty($bookingPreview)) {
                     $itemName = $activeItem['title'] ?? ($activeItem['name'] ?? 'Experience');
                     $itemPrice = number_format(floatval($activeItem['price']));
-                    $itemEmoji = ($activeType === 'bike') ? '🛵' : (($activeType === 'car') ? '🚙' : (($activeType === 'hotel') ? '🏨' : '🤿'));
+                    $itemEmoji = ($activeType === 'bike') ? '🏍️' : (($activeType === 'car') ? '🚗' : (($activeType === 'hotel') ? '🏨' : '🤿'));
+                    $ctxPage  = in_array($activeType, ['bike']) ? "/bikes?id={$activeItem['id']}&type=bike" : (in_array($activeType, ['car']) ? "/cars?id={$activeItem['id']}&type=car" : ($activeType === 'hotel' ? "/hotels?id={$activeItem['id']}&type=hotel" : "/activities?id={$activeItem['id']}&type=activity"));
                     $activeStage = 'ready_to_confirm';
                     $activeBookingIntent = true;
 
                     if ($activeType === 'hotel') {
                         $nights = $bookingPreview['days'] ?? 1;
-                        $reply = "Got it! I've prepared your reservation for **{$itemName}** ({$bookingPreview['travel_dates']}, {$nights} " . ($nights === 1 ? 'Night' : 'Nights') . "). 🏨✨\n\nI have generated your **Booking Summary** below with authoritative rates. Please review the details and click **Confirm & Book** to secure your booking.";
+                        $reply = "Got it! I've prepared your reservation for **{$itemName}** ({$bookingPreview['travel_dates']}, {$nights} " . ($nights === 1 ? 'Night' : 'Nights') . "). 🏨✨\n\nI have generated your **Booking Summary** below with authoritative rates.\n\n👉 **[Confirm & Book {$itemName} →]({$ctxPage})**\n\nClick the button above to review details and finalize your booking.";
                     } elseif ($activeType === 'activity' || $activeType === 'sightseeing') {
                         $guests = $bookingPreview['guests'] ?? 1;
-                        $reply = "Got it! I've prepared your reservation for **{$itemName}** on {$bookingPreview['travel_dates']} for {$guests} " . ($guests === 1 ? 'Guest' : 'Guests') . ". 🤿✨\n\nI have generated your **Booking Summary** below. Please review the details and click **Confirm & Book** to secure your booking.";
+                        $reply = "Got it! I've prepared your reservation for **{$itemName}** on {$bookingPreview['travel_dates']} for {$guests} " . ($guests === 1 ? 'Guest' : 'Guests') . ". 🤿✨\n\nI have generated your **Booking Summary** below.\n\n👉 **[Confirm & Book {$itemName} →]({$ctxPage})**\n\nClick the button above to review details and finalize your booking.";
                     } else {
-                        $reply = "Got it! Dates noted: {$activeDates} for your {$itemName}. {$itemEmoji}✨\n\nI have generated your **Booking Summary** below. Please review the details and click **Confirm & Book** to secure your booking.";
+                        $days = $bookingPreview['days'] ?? 1;
+                        $estTotal = isset($bookingPreview['estimated_total']) ? number_format($bookingPreview['estimated_total']) : $itemPrice;
+                        $pDate = date('d M', strtotime($bookingPreview['pickup_date']));
+                        $dDate = date('d M', strtotime($bookingPreview['drop_date']));
+                        $reply = "{$itemEmoji} **{$itemName}**\n"
+                            . "₹{$itemPrice}/day\n\n"
+                            . "📅 **{$pDate} → {$dDate}**\n"
+                            . "⏱️ **{$days} " . ($days === 1 ? 'rental day' : 'rental days') . "**\n\n"
+                            . "💰 **Total: ₹{$estTotal}**\n\n"
+                            . "👉 **[Confirm & Book →]({$ctxPage})**";
                     }
                 }
                 // Flow Step 2: Active item exists, user expresses booking intent without dates (or dates not yet valid)
                 elseif ($activeItem && $isBookingIntent && empty($bookingPreview)) {
                     $itemName = $activeItem['title'] ?? ($activeItem['name'] ?? 'Experience');
                     $itemPrice = number_format(floatval($activeItem['price']));
-                    $itemEmoji = ($activeType === 'bike') ? '🛵' : (($activeType === 'car') ? '🚙' : (($activeType === 'hotel') ? '🏨' : '🤿'));
-                    $activeStage = 'awaiting_dates';
+                    $itemEmoji = ($activeType === 'bike') ? '🏍️' : (($activeType === 'car') ? '🚗' : (($activeType === 'hotel') ? '🏨' : '🤿'));
+                    $ctxPage  = in_array($activeType, ['bike']) ? "/bikes?id={$activeItem['id']}&type=bike" : (in_array($activeType, ['car']) ? "/cars?id={$activeItem['id']}&type=car" : ($activeType === 'hotel' ? "/hotels?id={$activeItem['id']}&type=hotel" : "/activities?id={$activeItem['id']}&type=activity"));
+                    $activeStage = 'item_selected';
 
-                    $reply = "Great! I can help you reserve {$itemName} {$itemEmoji} (₹{$itemPrice}) right away!\n\nWhat travel date do you need it for? (For example: '25th September' or 'tomorrow')";
+                    if ($activeType === 'bike' || $activeType === 'car') {
+                        $reply = "{$itemEmoji} **{$itemName}**\n"
+                            . "₹{$itemPrice} / day\n\n"
+                            . "👉 **[Book {$itemName} →]({$ctxPage})**\n\n"
+                            . "💬 **[Get Price for My Dates](#get-price)**";
+                    } else {
+                        $activeStage = 'awaiting_dates';
+                        $reply = "Great! I can help you reserve {$itemName} {$itemEmoji} (₹{$itemPrice}) right away!\n\nWhat travel date do you need it for? (For example: '25th September' or 'tomorrow')";
+                    }
                 }
-                // Flow Step 3: Active item & dates exist, user confirms
-                elseif ($activeItem && !empty($activeDates) && $isConfirmationWord) {
+                // Flow Step 3: Active item & dates exist, user confirms (or says "confirm and book")
+                elseif ($activeItem && !empty($activeDates) && ($isConfirmationWord || $isBookingIntent)) {
                     $itemName = $activeItem['title'] ?? ($activeItem['name'] ?? 'Experience');
                     $itemPrice = number_format(floatval($activeItem['price']));
-                    $itemEmoji = ($activeType === 'bike') ? '🛵' : (($activeType === 'car') ? '🚙' : (($activeType === 'hotel') ? '🏨' : '🤿'));
+                    $itemEmoji = ($activeType === 'bike') ? '🏍️' : (($activeType === 'car') ? '🚗' : (($activeType === 'hotel') ? '🏨' : '🤿'));
+                    $ctxPage  = in_array($activeType, ['bike']) ? "/bikes?id={$activeItem['id']}&type=bike" : (in_array($activeType, ['car']) ? "/cars?id={$activeItem['id']}&type=car" : ($activeType === 'hotel' ? "/hotels?id={$activeItem['id']}&type=hotel" : "/activities?id={$activeItem['id']}&type=activity"));
                     $activeStage = 'ready_to_confirm';
 
-                    $reply = "Your reservation request for {$itemName} ({$activeDates}) is ready! {$itemEmoji}📋\n\nPlease check the Booking Summary below and tap **Confirm & Book** to finalize your booking with our official booking system.";
+                    if ($activeType === 'bike' || $activeType === 'car') {
+                        $days = isset($bookingPreview['days']) ? $bookingPreview['days'] : 1;
+                        $estTotal = isset($bookingPreview['estimated_total']) ? number_format($bookingPreview['estimated_total']) : $itemPrice;
+                        $reply = "Your reservation request for **{$itemName}** ({$activeDates}) is ready! {$itemEmoji}📋\n\n"
+                            . "• **Rental Duration:** {$days} " . ($days === 1 ? 'rental day' : 'rental days') . "\n"
+                            . "• **Total:** ₹{$estTotal}\n\n"
+                            . "👉 **[Confirm & Book →]({$ctxPage})**\n\n"
+                            . "Click above to view full photos and complete your booking with our official booking system!";
+                    } else {
+                        $reply = "Your reservation request for **{$itemName}** ({$activeDates}) is ready! {$itemEmoji}📋\n\n"
+                            . "👉 **[Confirm & Book {$itemName} →]({$ctxPage})**\n\n"
+                            . "Click above to view full details and complete your reservation with our official booking system!";
+                    }
                 }
                 // Flow Step 4: Direct query matching a specific inventory item (e.g. GT bike, Defender, Scuba)
                 elseif ($directMatch) {
@@ -9264,6 +10210,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $contextResponse = [
+                'mode' => $isCraftMode ? 'craft_my_trip' : ($incomingContext['mode'] ?? null),
+                'craft_pickup_date' => $craftPickup ?? null,
+                'craft_drop_date' => $craftDrop ?? null,
+                'craft_duration_days' => $craftDuration ?? null,
+                'craft_member_count' => $craftMemberCount ?? null,
                 'active_item_id' => $activeItem['id'] ?? null,
                 'active_item_name' => $resolvedItemTitle,
                 'active_item_type' => $activeType ?? null,
@@ -9271,13 +10222,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'travel_dates' => $activeDates,
                 'booking_intent' => $activeBookingIntent,
                 'stage' => $activeStage,
-                'booking_preview' => $finalPreview
+                'booking_preview' => $finalPreview,
+                // Always carry the last known proposal in context so backend can reference it on next turn.
+                // When browsing options (craft_proposal is null), fall back to prevProposal so dates/vehicle/hotel are not lost.
+                'craft_proposal' => $craftProposal ?? ($prevProposal ?? null)
             ];
 
             echo json_encode([
                 "success" => true,
                 "reply" => $reply,
-                "context" => $contextResponse
+                "context" => $contextResponse,
+                "craft_proposal" => $craftProposal
             ]);
             exit;
         } elseif ($action === 'login') {

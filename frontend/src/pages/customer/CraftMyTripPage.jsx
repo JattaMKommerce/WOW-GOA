@@ -3,7 +3,7 @@ import {
   Car, Bike, Hotel, Plane, Users, CheckCircle, ArrowLeft, ArrowRight,
   Search, Star, MapPin, Zap, X, CreditCard, Shield, PlaneTakeoff, PlaneLanding, Calendar, User,
   Wand2, AlertCircle, BadgeCheck, Check, Loader2, Compass, Clock,
-  ChevronLeft, ChevronRight, Wallet, Crown, Gift
+  ChevronLeft, ChevronRight, Wallet, Crown, Gift, Sparkles, Bot
 } from 'lucide-react';
 import * as api from '../../services/api';
 import BookingConfirmationCard from '../../components/common/BookingConfirmationCard';
@@ -2060,8 +2060,9 @@ export default function CraftMyTripPage({
   const [viewingHotelDetails, setViewingHotelDetails] = useState(null);
   const [viewingActivityDetails, setViewingActivityDetails] = useState(null);
   const [viewingFlightDetails, setViewingFlightDetails] = useState(null);
+  const [showOverwriteConfirmModal, setShowOverwriteConfirmModal] = useState(false);
 
-  // 1. Restore draft state from sessionStorage
+  // 1. Restore draft state from sessionStorage on mount
   useEffect(() => {
     try {
       const savedDraft = sessionStorage.getItem('tg_craft_draft');
@@ -2077,6 +2078,55 @@ export default function CraftMyTripPage({
       }
     } catch (e) {}
   }, []);
+
+  // 1b. Real-time hydration listener when Sophia hands off an AI proposal
+  useEffect(() => {
+    const handleDraftUpdated = () => {
+      try {
+        const savedDraft = sessionStorage.getItem('tg_craft_draft');
+        if (savedDraft) {
+          const draft = JSON.parse(savedDraft);
+          if (draft.step) setStep(draft.step);
+          if (draft.selectedVehicle !== undefined) setSelectedVehicle(draft.selectedVehicle);
+          if (draft.memberCount !== undefined) setMemberCount(draft.memberCount);
+          if (draft.selectedHotel !== undefined) setSelectedHotel(draft.selectedHotel);
+          if (draft.selectedActivities !== undefined) setSelectedActivities(draft.selectedActivities || []);
+          if (draft.withFlight !== undefined) setWithFlight(draft.withFlight);
+          if (draft.selectedFlight !== undefined) setSelectedFlight(draft.selectedFlight);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      } catch (e) {}
+    };
+
+    window.addEventListener('craft_draft_updated', handleDraftUpdated);
+    return () => window.removeEventListener('craft_draft_updated', handleDraftUpdated);
+  }, []);
+
+  const handleOpenSophiaForCraft = () => {
+    // Manual Draft Protection: Check if user already has an in-progress manual trip
+    try {
+      const savedDraft = sessionStorage.getItem('tg_craft_draft');
+      if (savedDraft) {
+        const d = JSON.parse(savedDraft);
+        const hasExistingPlan = Boolean(d.selectedVehicle || d.selectedHotel || (d.selectedActivities && d.selectedActivities.length > 0) || d.selectedFlight);
+        if (hasExistingPlan) {
+          setShowOverwriteConfirmModal(true);
+          return;
+        }
+      }
+    } catch (e) {}
+
+    // Dispatch custom event to open Sophia in Craft My Trip mode
+    window.dispatchEvent(new CustomEvent('open_ai_chat', { detail: { mode: 'craft_my_trip' } }));
+  };
+
+  const handleConfirmReplaceWithAI = () => {
+    setShowOverwriteConfirmModal(false);
+    try {
+      sessionStorage.removeItem('tg_craft_draft');
+    } catch (e) {}
+    window.dispatchEvent(new CustomEvent('open_ai_chat', { detail: { mode: 'craft_my_trip' } }));
+  };
 
   // 2. Persist draft state to sessionStorage whenever it changes
   useEffect(() => {
@@ -2647,6 +2697,79 @@ export default function CraftMyTripPage({
 
       <div className="cmt-content">
         <StepIndicator currentStep={step} />
+
+        {/* ─── DUAL CHOICE HERO BANNER (STEP 1) ─── */}
+        {step === 1 && (
+          <div className="cmt-trip-mode-choice mb-4 p-3 p-md-4 rounded-4 shadow-sm" style={{ background: 'linear-gradient(135deg, #f0fdf4 0%, #ffffff 50%, #eff6ff 100%)', border: '1.5px solid #bbf7d0' }}>
+            <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+              <div>
+                <div className="d-flex align-items-center gap-2 mb-1">
+                  <span className="badge px-2.5 py-1 rounded-pill fw-bold text-xxs" style={{ background: '#059669', color: '#fff' }}>✨ Trip Creation Options</span>
+                  <span className="badge bg-light text-dark border text-xxs">Craft My Trip</span>
+                </div>
+                <h4 className="fw-extrabold text-dark mb-1" style={{ fontSize: '1.25rem' }}>How would you like to build your trip?</h4>
+                <p className="text-muted small mb-0">Choose your vehicle, hotel, activities and flight yourself, or let Sophia AI prepare your dream trip in seconds.</p>
+              </div>
+              <div className="d-flex align-items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  id="btn-build-trip-manual"
+                  className="btn btn-outline-dark rounded-pill px-3.5 py-2 text-xs fw-bold d-flex align-items-center gap-1.5 shadow-xs"
+                  onClick={() => {
+                    const el = document.querySelector('.cmt-step-body');
+                    if (el) el.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                >
+                  <span>🛠️ Build My Trip Manually</span>
+                </button>
+                <button
+                  type="button"
+                  id="btn-create-trip-ai"
+                  className="btn text-white rounded-pill px-4 py-2 text-xs fw-bold d-flex align-items-center gap-2 shadow-sm hover-scale"
+                  style={{ background: 'linear-gradient(135deg, #FF6B35, #FF9F1C)', border: 'none' }}
+                  onClick={handleOpenSophiaForCraft}
+                >
+                  <Sparkles size={15} />
+                  <span>Create My Trip with AI 🤖</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ─── MANUAL DRAFT PROTECTION MODAL ─── */}
+        {showOverwriteConfirmModal && (
+          <div className="modal show d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.6)', zIndex: 1060 }}>
+            <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: '440px' }}>
+              <div className="modal-content border-0 rounded-4 shadow-xl overflow-hidden p-4">
+                <div className="d-flex align-items-center gap-2 mb-2 text-warning">
+                  <AlertCircle size={22} />
+                  <h5 className="modal-title fw-bold text-dark mb-0">Trip Already in Progress</h5>
+                </div>
+                <p className="text-secondary small mb-4">
+                  You already have a trip in progress in your Craft My Trip builder. Do you want to replace it with Sophia's new plan, or keep your current selections?
+                </p>
+                <div className="d-flex gap-2 justify-content-end">
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-secondary rounded-pill px-3 py-2 text-xs fw-bold"
+                    onClick={() => setShowOverwriteConfirmModal(false)}
+                  >
+                    Keep My Current Trip
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm text-white rounded-pill px-3 py-2 text-xs fw-bold"
+                    style={{ background: 'linear-gradient(135deg, #FF6B35, #FF9F1C)', border: 'none' }}
+                    onClick={handleConfirmReplaceWithAI}
+                  >
+                    Replace With Sophia's Plan
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {step === 1 && (
           <Step1Vehicle
