@@ -3409,6 +3409,19 @@ export async function fetchBookingInvoiceData(bookingId) {
   return data;
 }
 
-
-
-
+export async function updateB2BBookingMarkup(bookingId, markupAmount) {
+  const res = await apiFetch(API_BASE, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'b2b_update_booking_markup',
+      booking_id: bookingId,
+      b2b_markup_amount: parseFloat(markupAmount) || 0
+    })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || 'Failed to update booking markup.');
+  }
+  return data;
+}

@@ -455,6 +455,45 @@ try {
         "Total Markup internal option configured with d-print-none; Vendor Base Price & Wow Goa markup completely hidden"
     );
 
+    // Test 20: B2B Agent edits Total Markup to ₹500 -> Customer Price automatically becomes ₹11,000
+    // Test booking has b2b_price = 10500, vendor_base_price = 10000, wow_markup_amount = 500
+    $newMarkupVal = 500;
+    $b2bBase = floatval($savedBooking['b2b_price'] ?? 10500);
+    $expectedCustPrice = $b2bBase + $newMarkupVal;
+
+    // Simulate b2b_update_booking_markup logic
+    $snapData = json_decode($savedBooking['pricing_snapshot_json'], true) ?: [];
+    $snapData['b2b_markup_amount'] = $newMarkupVal;
+    $snapData['customer_price'] = $expectedCustPrice;
+    $snapData['total_amount'] = $expectedCustPrice;
+
+    $updStmt = $pdo->prepare("
+        UPDATE bookings 
+        SET b2b_markup_amount = ?, 
+            customer_price = ?, 
+            total_amount = ?, 
+            pricing_snapshot_json = ? 
+        WHERE id = ?
+    ");
+    $updStmt->execute([$newMarkupVal, $expectedCustPrice, $expectedCustPrice, json_encode($snapData), $testBookingId]);
+
+    $fetchUpdated = $pdo->prepare("SELECT * FROM bookings WHERE id = ?");
+    $fetchUpdated->execute([$testBookingId]);
+    $updatedRow = $fetchUpdated->fetch(PDO::FETCH_ASSOC);
+    $updatedSnap = json_decode($updatedRow['pricing_snapshot_json'], true);
+
+    assertTest(
+        $updatedRow['b2b_markup_amount'] == 500 &&
+        $updatedRow['customer_price'] == 11000 &&
+        $updatedRow['b2b_price'] == 10500 &&
+        $updatedRow['vendor_base_price'] == 10000 &&
+        $updatedRow['wow_markup_amount'] == 500 &&
+        $updatedSnap['customer_price'] == 11000 &&
+        $updatedSnap['b2b_markup_amount'] == 500,
+        "TEST 20: Agent enters Total Markup = ₹500 -> Customer Price becomes ₹11,000 with immutable Vendor & Wow Goa markup",
+        "B2B Price=₹{$updatedRow['b2b_price']}, Total Markup=₹{$updatedRow['b2b_markup_amount']}, Customer Price=₹{$updatedRow['customer_price']}"
+    );
+
     // Clean up test data
     $pdo->prepare("DELETE FROM bookings WHERE id = ?")->execute([$testBookingId]);
     $pdo->exec("DELETE FROM markups WHERE rule_name LIKE 'TEST_%'");

@@ -6458,6 +6458,96 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 echo json_encode(["success" => false, "error" => $e->getMessage()]);
                 exit();
             }
+        } elseif ($action === 'b2b_update_booking_markup') {
+            $actor = authenticateRequest($pdo, false);
+            $partner = getAuthenticatedB2BPartner($pdo, false);
+            $userRole = strtolower($_SERVER['HTTP_X_USER_ROLE'] ?? ($actor['role'] ?? ($partner['role'] ?? '')));
+            $isAdmin = ($userRole === 'admin' || $userRole === 'superadmin');
+
+            $bookingId = trim($payload['booking_id'] ?? '');
+            $newMarkup = max(0, floatval($payload['b2b_markup_amount'] ?? 0));
+
+            if (!$bookingId) {
+                http_response_code(400);
+                echo json_encode(["success" => false, "error" => "Booking ID is required."]);
+                exit();
+            }
+
+            $stmt = $pdo->prepare("SELECT * FROM bookings WHERE id = ? LIMIT 1");
+            $stmt->execute([$bookingId]);
+            $booking = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$booking) {
+                http_response_code(404);
+                echo json_encode(["success" => false, "error" => "Booking not found."]);
+                exit();
+            }
+
+            // Security / RBAC check
+            if (!$isAdmin) {
+                if (!$partner || $partner['id'] !== $booking['b2b_partner_id']) {
+                    http_response_code(403);
+                    echo json_encode(["success" => false, "error" => "Forbidden: You are only authorized to modify your own agency bookings."]);
+                    exit();
+                }
+            }
+
+            // Authoritative Wholesale B2B Price:
+            // Use existing b2b_price if > 0; otherwise total_amount - existing b2b_markup_amount
+            $existingMarkup = floatval($booking['b2b_markup_amount'] ?? 0);
+            $existingTotal = floatval($booking['total_amount'] ?? ($booking['customer_price'] ?? 0));
+            $b2bPrice = floatval($booking['b2b_price'] ?? 0);
+            if ($b2bPrice <= 0) {
+                $b2bPrice = max(0, $existingTotal - $existingMarkup);
+            }
+
+            // Customer Price becomes B2B Price + New Markup
+            $newCustomerPrice = $b2bPrice + $newMarkup;
+
+            // Update pricing snapshot JSON if present
+            $snapshot = [];
+            if (!empty($booking['pricing_snapshot_json'])) {
+                $snapshot = json_decode($booking['pricing_snapshot_json'], true) ?: [];
+            }
+            $snapshot['b2b_price'] = $b2bPrice;
+            $snapshot['b2b_markup_amount'] = $newMarkup;
+            $snapshot['customer_price'] = $newCustomerPrice;
+            $snapshot['total_amount'] = $newCustomerPrice;
+            $newSnapshotJson = json_encode($snapshot);
+
+            // Update bookings record
+            $upd = $pdo->prepare("
+                UPDATE bookings 
+                SET b2b_price = ?,
+                    b2b_markup_amount = ?,
+                    customer_price = ?,
+                    total_amount = ?,
+                    pricing_snapshot_json = ?
+                WHERE id = ?
+            ");
+            $upd->execute([
+                $b2bPrice,
+                $newMarkup,
+                $newCustomerPrice,
+                $newCustomerPrice,
+                $newSnapshotJson,
+                $bookingId
+            ]);
+
+            // Re-fetch updated booking
+            $stmt->execute([$bookingId]);
+            $updatedBooking = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            echo json_encode([
+                "success" => true,
+                "message" => "Booking markup updated successfully.",
+                "booking" => $updatedBooking,
+                "pricing_snapshot" => $snapshot,
+                "b2b_price" => $b2bPrice,
+                "b2b_markup_amount" => $newMarkup,
+                "customer_price" => $newCustomerPrice
+            ]);
+            exit();
         } elseif ($action === 'save_b2b_partner') {
             // Admin only check
             $partnerId = trim($payload['id'] ?? '');

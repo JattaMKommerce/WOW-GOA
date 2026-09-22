@@ -56,12 +56,17 @@ export default function B2BBookingsTab({ partnerUser, forcedMode = null }) {
     const s = (status || 'pending').toLowerCase();
     switch (s) {
       case 'confirmed':
+        return <span className="badge bg-success text-white text-xxs px-2.5 py-1 rounded-pill fw-semibold">✓ Confirmed</span>;
       case 'completed':
-        return <span className="badge bg-success bg-opacity-15 text-success border border-success text-xxs px-2.5 py-1 rounded-pill">✓ Confirmed</span>;
+        return <span className="badge bg-success text-white text-xxs px-2.5 py-1 rounded-pill fw-semibold">✓ Completed</span>;
+      case 'checked in':
+        return <span className="badge bg-info text-dark text-xxs px-2.5 py-1 rounded-pill fw-semibold">🏨 Checked In</span>;
+      case 'checked out':
+        return <span className="badge bg-secondary text-white text-xxs px-2.5 py-1 rounded-pill fw-semibold">Checked Out</span>;
       case 'cancelled':
-        return <span className="badge bg-danger bg-opacity-15 text-danger border border-danger text-xxs px-2.5 py-1 rounded-pill">✕ Cancelled</span>;
+        return <span className="badge bg-danger text-white text-xxs px-2.5 py-1 rounded-pill fw-semibold">✕ Cancelled</span>;
       default:
-        return <span className="badge bg-warning bg-opacity-20 text-dark border border-warning text-xxs px-2.5 py-1 rounded-pill">⏳ Pending</span>;
+        return <span className="badge bg-warning text-dark text-xxs px-2.5 py-1 rounded-pill fw-semibold">⏳ {status || 'Pending'}</span>;
     }
   };
 

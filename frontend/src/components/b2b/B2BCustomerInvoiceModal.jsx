@@ -37,6 +37,9 @@ export default function B2BCustomerInvoiceModal({
   const [withGstNumber, setWithGstNumber] = useState(true);
   const [passengerWise, setPassengerWise] = useState(false);
   const [showInternalMarkup, setShowInternalMarkup] = useState(false);
+  const [customMarkup, setCustomMarkup] = useState(null);
+  const [isSavingMarkup, setIsSavingMarkup] = useState(false);
+  const [saveMarkupSuccess, setSaveMarkupSuccess] = useState(false);
 
   // Feedback states
   const [emailStatus, setEmailStatus] = useState('');
@@ -113,23 +116,63 @@ export default function B2BCustomerInvoiceModal({
   const guestPhone = booking.phone || '';
   const guestEmail = booking.email || '';
 
+  // B2B Wholesale Price
+  const rawB2BPrice = parseFloat(booking.b2b_price || snapshot.b2b_price || 0);
+  const existingTotal = parseFloat(booking.customer_price || snapshot.customer_price || booking.total_amount || 0);
+  const existingStoredMarkup = parseFloat(booking.b2b_markup_amount || snapshot.b2b_markup_amount || 0);
+  const b2bPrice = rawB2BPrice > 0 ? rawB2BPrice : Math.max(0, existingTotal - existingStoredMarkup);
+
+  // Initial Authoritative Total Markup from existing booking pricing data
+  let initialMarkup = 0;
+  if (booking.b2b_markup_amount !== undefined && booking.b2b_markup_amount !== null && parseFloat(booking.b2b_markup_amount) > 0) {
+    initialMarkup = parseFloat(booking.b2b_markup_amount);
+  } else if (snapshot.b2b_markup_amount !== undefined && snapshot.b2b_markup_amount !== null && parseFloat(snapshot.b2b_markup_amount) > 0) {
+    initialMarkup = parseFloat(snapshot.b2b_markup_amount);
+  } else if (existingTotal > b2bPrice && b2bPrice > 0) {
+    initialMarkup = existingTotal - b2bPrice;
+  }
+
+  // Active Total Markup (Immediate recalculation when edited)
+  const totalMarkup = customMarkup !== null ? (parseFloat(customMarkup) || 0) : initialMarkup;
+
   // Customer Selling Price (Never exposes vendor base or Wow Goa markup)
-  const customerPrice = parseFloat(booking.customer_price || snapshot.customer_price || booking.total_amount || 0);
+  const customerPrice = b2bPrice > 0 ? (b2bPrice + totalMarkup) : (existingTotal || totalMarkup);
   const totalPaid = parseFloat(booking.amount_paid || booking.total_paid || customerPrice);
   const remainingBal = Math.max(0, customerPrice - totalPaid);
 
-  // B2B Wholesale Price
-  const b2bPrice = parseFloat(booking.b2b_price || snapshot.b2b_price || 0);
-
-  // B2B Partner Total Markup (Authoritative existing booking pricing data — Internal Reference Only)
-  let totalMarkup = 0;
-  if (booking.b2b_markup_amount !== undefined && booking.b2b_markup_amount !== null && parseFloat(booking.b2b_markup_amount) > 0) {
-    totalMarkup = parseFloat(booking.b2b_markup_amount);
-  } else if (snapshot.b2b_markup_amount !== undefined && snapshot.b2b_markup_amount !== null && parseFloat(snapshot.b2b_markup_amount) > 0) {
-    totalMarkup = parseFloat(snapshot.b2b_markup_amount);
-  } else if (customerPrice > b2bPrice && b2bPrice > 0) {
-    totalMarkup = customerPrice - b2bPrice;
-  }
+  // Save entered markup with confirmed booking
+  const handleSaveMarkup = async () => {
+    const targetBookingId = booking.id || bookingId;
+    if (!targetBookingId) return;
+    setIsSavingMarkup(true);
+    try {
+      const res = await api.updateB2BBookingMarkup(targetBookingId, totalMarkup);
+      if (res && res.success) {
+        setInvoicePayload(prev => ({
+          ...prev,
+          booking: res.booking || {
+            ...prev?.booking,
+            b2b_price: b2bPrice,
+            b2b_markup_amount: totalMarkup,
+            customer_price: b2bPrice + totalMarkup,
+            total_amount: b2bPrice + totalMarkup
+          },
+          pricing_snapshot: res.pricing_snapshot || {
+            ...prev?.pricing_snapshot,
+            b2b_price: b2bPrice,
+            b2b_markup_amount: totalMarkup,
+            customer_price: b2bPrice + totalMarkup
+          }
+        }));
+        setSaveMarkupSuccess(true);
+        setTimeout(() => setSaveMarkupSuccess(false), 3000);
+      }
+    } catch (err) {
+      console.error('Failed to save markup:', err);
+    } finally {
+      setIsSavingMarkup(false);
+    }
+  };
 
   // Tax calculation
   const rawTax = parseFloat(snapshot.tax_amount || booking.tax_amount || (customerPrice * 0.05));
@@ -345,19 +388,50 @@ export default function B2BCustomerInvoiceModal({
               {/* Internal B2B Partner Total Markup Reference (Visible on Preparation/View Screen Only — Strictly Hidden in Print, PDF, Email & WhatsApp) */}
               {showInternalMarkup && (
                 <div
-                  className="d-print-none mb-3 p-3 rounded-3 bg-warning bg-opacity-10 border border-warning border-opacity-50 d-flex align-items-center justify-content-between flex-wrap gap-2 animate-fade-in mx-auto"
+                  className="d-print-none mb-3 p-3 rounded-3 bg-warning bg-opacity-10 border border-warning border-opacity-50 d-flex align-items-center justify-content-between flex-wrap gap-3 animate-fade-in mx-auto"
                   style={{ maxWidth: '800px' }}
                 >
                   <div className="d-flex align-items-center gap-2.5">
                     <div className="rounded-circle p-1.5 bg-warning text-dark d-flex align-items-center justify-content-center shadow-sm">
-                      <Tag size={16} />
+                      <Tag size={18} />
                     </div>
                     <div>
-                      <div className="fw-bold text-dark text-xs">
-                        Total Markup: <span className="font-monospace text-success fs-6">₹{totalMarkup.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                      <div className="d-flex align-items-center gap-2 flex-wrap">
+                        <label htmlFor="b2b-total-markup-input" className="fw-bold text-dark text-xs mb-0">
+                          Total Markup:
+                        </label>
+                        <div className="input-group input-group-sm" style={{ width: '150px' }}>
+                          <span className="input-group-text bg-white text-muted fw-bold">₹</span>
+                          <input
+                            id="b2b-total-markup-input"
+                            type="number"
+                            min="0"
+                            step="50"
+                            className="form-control form-control-sm font-monospace fw-bold text-success bg-white"
+                            value={customMarkup !== null ? customMarkup : (initialMarkup || '')}
+                            onChange={(e) => setCustomMarkup(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleSaveMarkup(); }}
+                            placeholder="e.g. 500"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleSaveMarkup}
+                          disabled={isSavingMarkup}
+                          className="btn btn-dark btn-xs rounded-pill px-2.5 py-1 text-xxs fw-bold d-inline-flex align-items-center gap-1 shadow-sm"
+                        >
+                          {isSavingMarkup ? 'Saving...' : 'Save Markup'}
+                        </button>
+                        {saveMarkupSuccess && (
+                          <span className="badge bg-success text-white text-xxs px-2 py-0.5 rounded-pill animate-fade-in">
+                            ✓ Saved
+                          </span>
+                        )}
                       </div>
-                      <div className="text-muted text-3xs">
-                        B2B Partner Total Markup • Internal Agency Reference (Preparation Screen Only)
+                      <div className="text-muted text-3xs mt-1">
+                        B2B Wholesale Price: <strong className="text-dark font-monospace">₹{b2bPrice.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                        {' '}+ Total Markup: <strong className="text-success font-monospace">₹{totalMarkup.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                        {' '}→ Customer Price: <strong className="text-primary font-monospace fs-7">₹{customerPrice.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
                       </div>
                     </div>
                   </div>
