@@ -1528,6 +1528,9 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
           {isBikeVehicle(detailVehicle) ? (
             <BikeDetailsPage
               bike={detailVehicle}
+              pickupDate={pickupDate}
+              dropDate={dropDate}
+              bookingDays={daysCount}
               actionLabel="Book for Guest"
               backLabel="Back to B2B Fleet"
               breadcrumbPrefix="B2B Portal / Self Drive Bikes"
@@ -1541,6 +1544,9 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
           ) : (
             <CarDetailsPage
               car={detailVehicle}
+              pickupDate={pickupDate}
+              dropDate={dropDate}
+              bookingDays={daysCount}
               actionLabel="Book for Guest"
               backLabel="Back to B2B Fleet"
               breadcrumbPrefix="B2B Portal / Self Drive Cars"

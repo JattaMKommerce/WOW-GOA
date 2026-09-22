@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   X, Send, Mic, Volume2, VolumeX, Sparkles, AlertCircle, 
   Compass, Hotel, Car, Users, Calendar, ArrowRight, CheckCircle2 
@@ -445,6 +445,28 @@ export default function AIChatbot() {
     setIsListening(false);
   };
 
+  // Resilient Client-Side Sync to IAMKRATU (Leads Force)
+  const syncToKratuClient = useCallback((action, data = {}) => {
+    try {
+      const kratuUrl = 'https://iamkratu.ai/customer-chat/?key=00b78eecd5bb542952945c6e8c8560db';
+      const form = new URLSearchParams();
+      form.append('action', action);
+      for (const [key, val] of Object.entries(data)) {
+        if (val !== undefined && val !== null) {
+          form.append(key, String(val));
+        }
+      }
+      fetch(kratuUrl, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: form.toString()
+      }).catch(() => {});
+    } catch (e) {
+      // Non-blocking
+    }
+  }, []);
+
   // Lead Submission
   const handleLeadSubmit = async (e) => {
     e.preventDefault();
@@ -462,24 +484,44 @@ export default function AIChatbot() {
       return;
     }
 
+    const preTyped = input ? input.trim() : '';
     setLeadName(cleanName);
     setLeadPhone(cleanPhone);
     setShowLeadForm(false);
 
+    let activeLId = null;
+    let activeAiId = null;
+
     try {
-      const res = await createAiLead(cleanName, cleanPhone);
+      const res = await createAiLead(cleanName, cleanPhone, preTyped);
       if (res && res.success) {
-        if (res.lead_id) setLeadId(res.lead_id);
-        else if (res.id) setLeadId(res.id);
-        if (res.id) setAiLeadId(res.id);
+        activeLId = res.lead_id || res.id;
+        activeAiId = res.id;
+        if (activeLId) setLeadId(activeLId);
+        if (activeAiId) setAiLeadId(activeAiId);
       }
     } catch (err) {
       console.error('Lead submit failed:', err);
     }
 
-    const preTyped = input ? input.trim() : '';
+    // Direct Browser Sync to IAMKRATU (reliable across local network / firewall blocks)
+    const kratuSess = 'sess_' + (activeAiId || activeLId || ('lead_' + Date.now())).replace(/[^a-zA-Z0-9_]/g, '_');
+    syncToKratuClient('save_lead', {
+      name: cleanName,
+      phone: cleanPhone,
+      session_id: kratuSess
+    });
     if (preTyped) {
-      handleSendMessage(null, preTyped);
+      syncToKratuClient('send_chat', {
+        message: preTyped,
+        session_id: kratuSess,
+        user_name: cleanName,
+        user_phone: cleanPhone
+      });
+    }
+
+    if (preTyped) {
+      handleSendMessage(null, preTyped, activeLId, activeAiId);
     } else {
       setMessages([{
         role: 'assistant',
@@ -489,10 +531,22 @@ export default function AIChatbot() {
   };
 
   // Message Handler
-  const handleSendMessage = async (e, directText = null) => {
+  const handleSendMessage = async (e, directText = null, overrideLeadId = null, overrideAiLeadId = null) => {
     if (e && e.preventDefault) e.preventDefault();
     const textToSend = typeof directText === 'string' ? directText : input;
     if (!textToSend.trim() || isLoading) return;
+
+    const effLeadId = overrideLeadId || leadId;
+    const effAiLeadId = overrideAiLeadId || aiLeadId;
+
+    // Direct Browser Sync message to IAMKRATU
+    const kratuSess = 'sess_' + (effAiLeadId || effLeadId || 'lead_guest').replace(/[^a-zA-Z0-9_]/g, '_');
+    syncToKratuClient('send_chat', {
+      message: textToSend.trim(),
+      session_id: kratuSess,
+      user_name: leadName || 'Customer',
+      user_phone: leadPhone || ''
+    });
 
     stopListening();
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
@@ -539,8 +593,8 @@ export default function AIChatbot() {
     setInput('');
     setIsLoading(true);
 
-    if (leadId) {
-      updateAiLeadChat(leadId, newMessages, aiLeadId).catch(() => {});
+    if (effLeadId) {
+      updateAiLeadChat(effLeadId, newMessages, effAiLeadId).catch(() => {});
     }
 
     try {
@@ -564,8 +618,8 @@ export default function AIChatbot() {
       const updatedMessages = [...newMessages, { role: 'assistant', content: replyText }];
       setMessages(updatedMessages);
 
-      if (leadId) {
-        updateAiLeadChat(leadId, updatedMessages, aiLeadId).catch(() => {});
+      if (effLeadId) {
+        updateAiLeadChat(effLeadId, updatedMessages, effAiLeadId).catch(() => {});
       }
     } catch (err) {
       const errorMessages = [...newMessages, { 

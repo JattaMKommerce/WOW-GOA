@@ -592,6 +592,9 @@ export default function B2BInventoryTab({
           {activeService === 'hotels' ? (
             <HotelDetailsPage
               hotel={detailItem}
+              pickupDate={guestDetails.checkInDate}
+              dropDate={guestDetails.checkOutDate}
+              nights={calculateHotelNights()}
               actionLabel="Book for Guest"
               backLabel="Back to B2B Hotels"
               breadcrumbPrefix="B2B Portal / Hotels"

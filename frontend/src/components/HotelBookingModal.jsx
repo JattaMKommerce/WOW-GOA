@@ -154,6 +154,20 @@ export default function HotelBookingModal({
   const [loyaltyInfo, setLoyaltyInfo] = useState(null);
   const [confirmedCashbackPreview, setConfirmedCashbackPreview] = useState(null);
 
+  // Inventory-aware maximum selectable rooms: min(5, available_rooms) with a minimum of 1
+  const availableInventory = selectedRoom?.available_rooms != null 
+    ? selectedRoom.available_rooms 
+    : (roomTypes.length > 0 
+        ? Math.max(...roomTypes.map(r => r.available_rooms != null ? r.available_rooms : 5))
+        : 5);
+  const maxRoomsSelectable = Math.max(1, Math.min(5, availableInventory));
+
+  useEffect(() => {
+    if (numRooms > maxRoomsSelectable) {
+      setNumRooms(maxRoomsSelectable);
+    }
+  }, [maxRoomsSelectable, numRooms]);
+
   // Repeat customer lookup for Date of Birth & Wallet Balance & Loyalty Tier
   useEffect(() => {
     const clean = String(guestPhone || '').replace(/\D/g, '');
@@ -566,12 +580,12 @@ export default function HotelBookingModal({
               <Calendar size={15} />
             </div>
             <div>
-              <span className="fw-bold text-dark small">Choose Dates &amp; Arrival / Departure Timings</span>
-              <small className="text-muted d-block" style={{ fontSize: '11px' }}>Adjust check-in/out to recalculate nights and rates in real time</small>
+              <span className="fw-bold text-dark small">Choose Dates, Timings &amp; Rooms</span>
+              <small className="text-muted d-block" style={{ fontSize: '11px' }}>Adjust check-in/out and rooms to recalculate nights and rates in real time</small>
             </div>
           </div>
           <span className="badge bg-light text-dark border px-2.5 py-1 text-xs">
-            📅 {formatDisplayDate(modalCheckInDate) || modalCheckInDate} ➔ {formatDisplayDate(modalCheckOutDate) || modalCheckOutDate}
+            📅 {formatDisplayDate(modalCheckInDate) || modalCheckInDate} ➔ {formatDisplayDate(modalCheckOutDate) || modalCheckOutDate} ({nights}N • {numRooms} Room{numRooms > 1 ? 's' : ''})
           </span>
         </div>
         <div className="card-body p-3">
@@ -592,7 +606,7 @@ export default function HotelBookingModal({
             </div>
 
             {/* Check-in Time */}
-            <div className="col-12 col-sm-6 col-lg-3">
+            <div className="col-12 col-sm-6 col-lg-2">
               <label className="form-label small fw-bold text-secondary mb-1 d-flex align-items-center gap-1" style={{ fontSize: '11px' }}>
                 <Clock size={12} className="text-primary" /> Check-in Time
               </label>
@@ -626,7 +640,7 @@ export default function HotelBookingModal({
             </div>
 
             {/* Check-out Time */}
-            <div className="col-12 col-sm-6 col-lg-3">
+            <div className="col-12 col-sm-6 col-lg-2">
               <label className="form-label small fw-bold text-secondary mb-1 d-flex align-items-center gap-1" style={{ fontSize: '11px' }}>
                 <Clock size={12} className="text-danger" /> Check-out Time
               </label>
@@ -637,6 +651,22 @@ export default function HotelBookingModal({
               >
                 {TIME_SLOTS.map(t => (
                   <option key={`out-${t}`} value={t}>{t} {t === '11:00 AM' ? '(Standard)' : ''}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Number of Rooms */}
+            <div className="col-12 col-sm-6 col-lg-2">
+              <label className="form-label small fw-bold text-secondary mb-1 d-flex align-items-center gap-1" style={{ fontSize: '11px' }}>
+                <BedDouble size={12} className="text-primary" /> Rooms
+              </label>
+              <select
+                className="form-select form-select-sm fw-bold"
+                value={numRooms}
+                onChange={(e) => setNumRooms(parseInt(e.target.value, 10) || 1)}
+              >
+                {Array.from({ length: maxRoomsSelectable }, (_, i) => i + 1).map(n => (
+                  <option key={n} value={n}>{n} {n === 1 ? 'Room' : 'Rooms'}</option>
                 ))}
               </select>
             </div>
@@ -887,9 +917,16 @@ export default function HotelBookingModal({
         <div className="row g-3 mb-4">
             <div className="col-md-4">
                 <label className="form-label small fw-bold">Number of Rooms</label>
-                <select className="form-select" value={numRooms} onChange={e => setNumRooms(parseInt(e.target.value))}>
-                    {[1,2,3,4,5].map(n => <option key={n} value={n}>{n} Room{n>1?'s':''}</option>)}
+                <select className="form-select" value={numRooms} onChange={e => setNumRooms(parseInt(e.target.value, 10) || 1)}>
+                    {Array.from({ length: maxRoomsSelectable }, (_, i) => i + 1).map(n => (
+                      <option key={n} value={n}>{n} Room{n > 1 ? 's' : ''}</option>
+                    ))}
                 </select>
+                {selectedRoom?.available_rooms != null && selectedRoom.available_rooms <= 5 && (
+                  <small className="text-muted" style={{ fontSize: '11px' }}>
+                    {selectedRoom.available_rooms} room{selectedRoom.available_rooms !== 1 ? 's' : ''} available in inventory
+                  </small>
+                )}
             </div>
             <div className="col-md-4">
                 <label className="form-label small fw-bold">Adults</label>
@@ -1161,30 +1198,43 @@ export default function HotelBookingModal({
     );
   };
 
-  const renderStep4 = () => (
-    <div className="py-2 animate-fade-in" style={{ maxWidth: '520px', margin: '0 auto' }}>
-      <BookingConfirmationCard
-        bookingId={bookingId}
-        customerName={guestName || 'Valued Guest'}
-        customerPhone={guestPhone}
-        serviceTitle={selectedBookingItem.name}
-        serviceSubtitle={`🏨 ${nights} ${nights === 1 ? 'Night' : 'Nights'} Resort Stay`}
-        cashbackPreview={confirmedCashbackPreview}
-        details={[
-          { label: 'Hotel Property', value: selectedBookingItem.name, icon: <BedDouble size={14} /> },
-          { label: 'Stay Schedule', value: `${modalCheckInDate} (${checkInTime}) → ${modalCheckOutDate} (${checkOutTime})`, icon: <Calendar size={14} /> },
-          { label: 'Room Category', value: selectedRoom?.name || 'Standard Resort Room', icon: <BedDouble size={14} /> },
-          { label: 'Guests & Rooms', value: `${totalGuestsCount} Guests (${roomsCount} Room${roomsCount > 1 ? 's' : ''})`, icon: <Users size={14} /> },
-          ...(appliedWalletAmount > 0 ? [{ label: 'Wallet Cashback Used', value: `-₹${appliedWalletAmount.toLocaleString('en-IN')}`, isSuccess: true }] : [])
-        ]}
-        totalAmount={totalAmount}
-        amountPaid={finalTotalPayable}
-        paymentMode={isPayAtHotel ? 'Pay at Hotel Front Desk' : 'Online / UPI'}
-        paymentStatus={isPayAtHotel ? 'Confirmed (Pay at Hotel)' : 'Confirmed & Paid'}
-        onClose={() => setSelectedBookingItem(null)}
-      />
-    </div>
-  );
+  const renderStep4 = () => {
+    const selectedCustom = paymentSettings.find(m => m.id?.toString() === paymentOption?.toString());
+    const effectiveAmountPaid = isPayAtHotel ? 0 : (paymentOption === 'partial' ? advanceAmount : finalTotalPayable);
+    const effectiveRemaining = isPayAtHotel ? finalTotalPayable : (paymentOption === 'partial' ? Math.max(0, finalTotalPayable - advanceAmount) : 0);
+
+    return (
+      <div className="py-2 animate-fade-in" style={{ maxWidth: '520px', margin: '0 auto' }}>
+        <BookingConfirmationCard
+          bookingId={bookingId}
+          customerName={guestName || 'Valued Guest'}
+          customerPhone={guestPhone}
+          serviceTitle={selectedBookingItem.name}
+          serviceSubtitle={`🏨 ${nights} ${nights === 1 ? 'Night' : 'Nights'} Resort Stay`}
+          cashbackPreview={confirmedCashbackPreview}
+          serviceType="hotel"
+          details={[
+            { label: 'Hotel Property', value: selectedBookingItem.name, icon: <BedDouble size={14} /> },
+            { label: 'Stay Schedule', value: `${modalCheckInDate} (${checkInTime}) → ${modalCheckOutDate} (${checkOutTime})`, icon: <Calendar size={14} /> },
+            { label: 'Room Category', value: selectedRoom?.name || 'Standard Resort Room', icon: <BedDouble size={14} /> },
+            { label: 'Guests & Rooms', value: `${totalGuestsCount} Guests (${roomsCount} Room${roomsCount > 1 ? 's' : ''})`, icon: <Users size={14} /> },
+            ...(appliedWalletAmount > 0 ? [{ label: 'Wallet Cashback Used', value: `-₹${appliedWalletAmount.toLocaleString('en-IN')}`, isSuccess: true }] : []),
+            ...(driverRequired ? [{
+              label: 'Chauffeur Service',
+              value: driverServiceType === 'full_day' ? 'Full-Day Sightseeing Chauffeur' : (driverServiceType === 'entire_stay' ? `Dedicated Chauffeur (${nights} Nights)` : 'Airport / Railway Transfer'),
+              isHighlight: true
+            }] : [])
+          ]}
+          totalAmount={totalAmount}
+          amountPaid={effectiveAmountPaid}
+          remainingBalance={effectiveRemaining}
+          paymentMode={isPayAtHotel ? 'Pay at Hotel Front Desk' : (selectedCustom?.method_name || (paymentOption === 'upi_direct' ? 'Online / UPI' : 'Prepaid'))}
+          paymentStatus={isPayAtHotel ? 'Confirmed (Pay at Hotel)' : 'Confirmed & Paid'}
+          onClose={() => setSelectedBookingItem(null)}
+        />
+      </div>
+    );
+  };
 
   if (!selectedBookingItem) return null;
 

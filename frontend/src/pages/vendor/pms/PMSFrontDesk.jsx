@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { LogIn, LogOut, ConciergeBell, CheckCircle, Clock, Phone, Calendar, BedDouble, User, AlertTriangle } from 'lucide-react';
+import { LogIn, LogOut, ConciergeBell, CheckCircle, Clock, Phone, Calendar, BedDouble, User, AlertTriangle, Building } from 'lucide-react';
+import * as api from '../../../services/api';
 
 export default function PMSFrontDesk({ mode = 'arrivals', currentUser, vendorHotels, vendorBookings }) {
   const today = new Date().toISOString().split('T')[0];

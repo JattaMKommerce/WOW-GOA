@@ -1101,12 +1101,26 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                         )}
                       </div>
                       {item.notes && !item.notes.includes('Inquired via') ? (
-                        <div className="fw-bold text-dark text-truncate" title={item.notes} style={{ fontSize: '0.76rem', color: '#0F172A' }}>
-                          <span className="text-primary me-1">📌</span>{item.notes}
+                        <div>
+                          <div className="fw-bold text-dark text-truncate" title={item.notes} style={{ fontSize: '0.76rem', color: '#0F172A' }}>
+                            <span className="text-primary me-1">💬</span>{item.notes}
+                          </div>
+                          {item.service && item.service !== 'AI Travel Assistant Chat' && (
+                            <div className="text-muted text-truncate mt-0.5" style={{ fontSize: '0.68rem', fontWeight: 600 }}>
+                              {item.service}
+                            </div>
+                          )}
                         </div>
                       ) : (
-                        <div className="fw-semibold text-truncate" title={item.service} style={{ color: '#0D1B2E', fontSize: '0.76rem' }}>
-                          {item.service || 'General Trip Consultation'}
+                        <div>
+                          <div className="fw-semibold text-truncate" title={item.service} style={{ color: '#0D1B2E', fontSize: '0.76rem' }}>
+                            {item.service || 'General Trip Consultation'}
+                          </div>
+                          {item.notes && (
+                            <div className="text-muted text-truncate mt-0.5" style={{ fontSize: '0.68rem' }}>
+                              {item.notes}
+                            </div>
+                          )}
                         </div>
                       )}
                     </td>

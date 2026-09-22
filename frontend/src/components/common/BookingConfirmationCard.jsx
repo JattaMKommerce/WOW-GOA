@@ -22,88 +22,39 @@ export function CashbackRewardCard({ cashbackPreview, isModalView = true, classN
 
   return (
     <div 
-      className={`card border-0 rounded-4 p-3.5 mb-3.5 text-start position-relative overflow-hidden shadow-sm ${className}`}
+      className={`card border-0 rounded-4 p-3 mb-3 text-start position-relative overflow-hidden shadow-sm ${className}`}
       style={{ 
-        background: 'linear-gradient(135deg, #0B192C 0%, #152A4A 60%, #1E3E62 100%)', 
-        color: '#ffffff',
-        border: '1px solid rgba(255, 193, 7, 0.35)',
-        boxShadow: '0 10px 28px rgba(11, 25, 44, 0.25)'
+        background: '#ffffff', 
+        color: '#0D1B2E',
+        border: '1.5px solid #fed7aa',
+        boxShadow: '0 4px 16px rgba(0, 0, 0, 0.04)'
       }}
     >
-      {/* Top Gold Badge */}
-      <div className="d-flex align-items-center justify-content-between mb-2">
-        <div className="d-inline-flex align-items-center gap-1.5 px-2.5 py-1 rounded-pill bg-warning text-dark text-xxs fw-black shadow-xs">
-          <Gift size={13} />
-          <span>🎁 Cashback Waiting for You</span>
+      <div className="d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div className="d-flex align-items-center gap-2.5">
+          <div 
+            className="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+            style={{ width: '38px', height: '38px', background: '#fef3c7', color: '#d97706' }}
+          >
+            <Gift size={20} />
+          </div>
+          <div>
+            <div className="d-flex align-items-center gap-2">
+              <span className="fw-black text-dark font-heading fs-5" style={{ lineHeight: 1.1 }}>
+                ₹{Number(cashbackAmount).toLocaleString('en-IN')}
+              </span>
+              <span className="badge bg-warning text-dark text-xxs fw-bold px-2 py-0.5 rounded-pill">
+                Cashback Reward
+              </span>
+            </div>
+            <div className="text-muted text-xs mt-0.5" style={{ fontSize: '11.5px' }}>
+              Added to your <strong>WOW GOA Wallet &amp; Rewards</strong> after booking is completed.
+            </div>
+          </div>
         </div>
-        <span className="badge bg-white bg-opacity-15 text-warning text-xxs fw-bold px-2 py-0.5 rounded-pill">
+        <span className="badge bg-warning bg-opacity-10 text-dark border border-warning border-opacity-25 text-xxs fw-bold px-2.5 py-1 rounded-pill flex-shrink-0">
           WOW GOA REWARDS
         </span>
-      </div>
-
-      {/* Cashback Amount Highlight */}
-      <div className="d-flex align-items-baseline gap-2 mb-1.5">
-        <div className="fw-black text-warning font-heading" style={{ fontSize: '1.85rem', lineHeight: 1.1 }}>
-          ₹{Number(cashbackAmount).toLocaleString('en-IN')}
-        </div>
-        <div className="text-white text-xs fw-bold">Cashback</div>
-      </div>
-
-      {/* Main Informative Message */}
-      <p className="text-white-50 text-xs mb-3" style={{ lineHeight: 1.45 }}>
-        This cashback will be added to your <strong>WOW GOA Wallet &amp; Rewards</strong> after your booking is completed.
-      </p>
-
-      {/* 4-Step Lifecycle Timeline */}
-      <div 
-        className="p-2.5 rounded-3 mb-3" 
-        style={{ 
-          background: 'rgba(255, 255, 255, 0.06)', 
-          border: '1px solid rgba(255, 255, 255, 0.1)' 
-        }}
-      >
-        <div className="text-white-50 text-xxs fw-bold text-uppercase mb-1.5 d-flex align-items-center gap-1">
-          <span>Cashback Lifecycle</span>
-        </div>
-        <div className="d-flex align-items-center justify-content-between text-xxs text-center gap-1">
-          <div className="d-flex flex-column align-items-center flex-1">
-            <span className="badge bg-success rounded-circle p-1 mb-1 text-white">
-              <Check size={9} strokeWidth={3} />
-            </span>
-            <span className="fw-bold text-white" style={{ fontSize: '10px' }}>1. Confirmed</span>
-          </div>
-          <span className="text-white-50">→</span>
-          <div className="d-flex flex-column align-items-center flex-1">
-            <span className="badge bg-secondary rounded-circle p-1 mb-1 text-white opacity-75" style={{ width: '16px', height: '16px', fontSize: '9px' }}>2</span>
-            <span className="text-white-50" style={{ fontSize: '10px' }}>2. Completed</span>
-          </div>
-          <span className="text-white-50">→</span>
-          <div className="d-flex flex-column align-items-center flex-1">
-            <span className="badge bg-warning text-dark rounded-circle p-1 mb-1 fw-bold" style={{ width: '16px', height: '16px', fontSize: '9px' }}>3</span>
-            <span className="text-warning fw-bold" style={{ fontSize: '10px' }}>3. Cashback Added</span>
-          </div>
-          <span className="text-white-50">→</span>
-          <div className="d-flex flex-column align-items-center flex-1">
-            <span className="badge bg-info text-white rounded-circle p-1 mb-1" style={{ width: '16px', height: '16px', fontSize: '9px' }}>4</span>
-            <span className="text-info" style={{ fontSize: '10px' }}>4. Use on Next Trip</span>
-          </div>
-        </div>
-      </div>
-
-      {/* 3 Core Business Rule Bullet Points */}
-      <div className="d-flex flex-column gap-1.5 pt-1 border-top border-white border-opacity-10">
-        <div className="d-flex align-items-center gap-2 text-xxs text-white-50">
-          <Clock size={12} className="text-warning flex-shrink-0" />
-          <span>⏳ <strong>Valid for 30 days</strong> after it is credited to your wallet</span>
-        </div>
-        <div className="d-flex align-items-center gap-2 text-xxs text-white-50">
-          <CreditCard size={12} className="text-info flex-shrink-0" />
-          <span>💳 <strong>Use it on your next eligible booking</strong> through Customer Portal</span>
-        </div>
-        <div className="d-flex align-items-center gap-2 text-xxs text-white-50">
-          <Lock size={12} className="text-success flex-shrink-0" />
-          <span>🔒 <strong>Up to 10%</strong> of the eligible booking value can be redeemed per booking</span>
-        </div>
       </div>
     </div>
   );
@@ -143,6 +94,8 @@ export default function BookingConfirmationCard({
   actions = null,
   showPortalCTA = true,
   isModalView = true,
+  serviceType = '',
+  portalDescription = null,
 }) {
   const handlePortalRedirect = () => {
     if (customerPhone) {
@@ -160,6 +113,71 @@ export default function BookingConfirmationCard({
     } else {
       window.location.href = '/customer';
     }
+  };
+
+  const renderPortalDescription = () => {
+    if (portalDescription) return portalDescription;
+
+    const hasDriver = details.some(d => 
+      d.label?.toLowerCase().includes('driver') || 
+      d.label?.toLowerCase().includes('chauffeur') ||
+      (typeof d.value === 'string' && (d.value.toLowerCase().includes('driver') || d.value.toLowerCase().includes('chauffeur')))
+    );
+
+    const isHotel = serviceType === 'hotel' || details.some(d => 
+      d.label?.toLowerCase().includes('hotel') || 
+      d.label?.toLowerCase().includes('stay schedule') || 
+      d.label?.toLowerCase().includes('room')
+    );
+
+    const isVehicle = serviceType === 'vehicle' || details.some(d => 
+      d.label?.toLowerCase().includes('vehicle') || 
+      d.label?.toLowerCase().includes('two wheeler') || 
+      d.label?.toLowerCase().includes('rental schedule')
+    );
+
+    const isActivity = serviceType === 'activity' || details.some(d => 
+      d.label?.toLowerCase().includes('experience') || 
+      d.label?.toLowerCase().includes('tour date')
+    );
+
+    if (isHotel) {
+      if (hasDriver) {
+        return (
+          <>Track your hotel reservation, live chauffeur assignment, stay vouchers, and <strong>Wallet Cashback</strong> anytime in your Customer Portal.</>
+        );
+      }
+      return (
+        <>Track your hotel reservation, check-in voucher, stay itinerary, and <strong>Wallet Cashback</strong> anytime in your Customer Portal.</>
+      );
+    }
+
+    if (isVehicle) {
+      if (hasDriver) {
+        return (
+          <>Track your booking itinerary, live driver assignment, vehicle voucher, and <strong>Wallet Cashback</strong> anytime in your Customer Portal.</>
+        );
+      }
+      return (
+        <>Track your vehicle rental details, pickup schedule, voucher downloads, and <strong>Wallet Cashback</strong> anytime in your Customer Portal.</>
+      );
+    }
+
+    if (isActivity) {
+      return (
+        <>Track your activity schedule, entry pass vouchers, and <strong>Wallet Cashback</strong> anytime in your Customer Portal.</>
+      );
+    }
+
+    if (hasDriver) {
+      return (
+        <>Track your booking itinerary, live driver assignment, voucher downloads, and <strong>Wallet Cashback</strong> anytime in your Customer Portal.</>
+      );
+    }
+
+    return (
+      <>Track your booking itinerary, voucher downloads, and <strong>Wallet Cashback</strong> anytime in your Customer Portal.</>
+    );
   };
 
   return (
@@ -185,9 +203,9 @@ export default function BookingConfirmationCard({
         </h3>
 
         {bookingId && (
-          <div className="d-inline-flex align-items-center gap-1.5 badge bg-dark text-white px-3 py-1.5 rounded-pill text-xs fw-bold mb-2 shadow-xs">
-            <span>Booking ID:</span>
-            <span className="text-warning font-monospace" style={{ letterSpacing: '0.5px' }}>
+          <div className="d-inline-flex align-items-center gap-1.5 badge bg-light text-dark border px-3 py-1.5 rounded-pill text-xs fw-bold mb-2 shadow-2xs">
+            <span className="text-muted">Booking ID:</span>
+            <span className="text-primary font-monospace fw-black" style={{ letterSpacing: '0.5px' }}>
               #{String(bookingId).replace(/^#/, '')}
             </span>
           </div>
@@ -255,7 +273,9 @@ export default function BookingConfirmationCard({
                   <span className="fw-bold text-dark">₹{Number(totalAmount).toLocaleString('en-IN')}</span>
                 </div>
               )}
-              {amountPaid !== null && (
+
+              {/* If amount was paid */}
+              {amountPaid !== null && Number(amountPaid) > 0 && (
                 <div className="d-flex justify-content-between align-items-center text-xs">
                   <span className="text-muted">
                     Amount Paid {paymentMode ? `(${paymentMode})` : ''}
@@ -263,10 +283,26 @@ export default function BookingConfirmationCard({
                   <span className="fw-black text-success fs-6">₹{Number(amountPaid).toLocaleString('en-IN')}</span>
                 </div>
               )}
+
+              {/* If nothing paid yet (e.g. Pay at Hotel / Cash on Arrival) */}
+              {(amountPaid === null || Number(amountPaid) === 0) && paymentMode && (
+                <div className="d-flex justify-content-between align-items-center text-xs">
+                  <span className="text-muted">Payment Mode</span>
+                  <span className="badge bg-warning-subtle text-dark border border-warning-subtle px-2 py-1 fw-bold">
+                    {paymentMode}
+                  </span>
+                </div>
+              )}
+
+              {/* Remaining balance / Payable at Check-in */}
               {remainingBalance !== null && Number(remainingBalance) > 0 && (
                 <div className="d-flex justify-content-between align-items-center text-xs text-primary fw-semibold pt-1 border-top border-light">
-                  <span>Remaining Balance (Due at Check-in)</span>
-                  <span className="fw-bold">₹{Number(remainingBalance).toLocaleString('en-IN')}</span>
+                  <span>
+                    {paymentMode && paymentMode.toLowerCase().includes('hotel') 
+                      ? 'Payable at Hotel Front Desk' 
+                      : (Number(amountPaid) > 0 ? 'Remaining Balance (Due at Check-in)' : 'Payable on Arrival / Check-in')}
+                  </span>
+                  <span className="fw-black text-primary fs-6">₹{Number(remainingBalance).toLocaleString('en-IN')}</span>
                 </div>
               )}
             </div>
@@ -287,7 +323,7 @@ export default function BookingConfirmationCard({
             </h6>
           </div>
           <p className="text-muted text-xs mb-3" style={{ lineHeight: 1.45 }}>
-            Track your booking itinerary, live driver assignment, voucher downloads, and <strong>Wallet Cashback</strong> anytime in your Customer Portal.
+            {renderPortalDescription()}
           </p>
           <button 
             type="button" 

@@ -3,10 +3,12 @@ import {
   Compass, Calendar, Car, Wallet, Gift, Clock, CheckCircle2,
   AlertCircle, ArrowRight, ShieldCheck, MapPin, ChevronRight,
   TrendingUp, Star, Phone, Bell, Eye, Download, Info, Hotel,
-  Plane, Fuel, Navigation, Check, X, Sparkles, Filter, Bike, Crown, Cake, ArrowUpRight
+  Plane, Fuel, Navigation, Check, X, Sparkles, Filter, Bike, Crown, Cake, ArrowUpRight,
+  Wand2
 } from 'lucide-react';
 import SelfDriveCategoryShowcase from '../widgets/SelfDriveCategoryShowcase';
 import CustomerLoyaltyCard from './CustomerLoyaltyCard';
+import CraftMyTripPage from '../../pages/customer/CraftMyTripPage';
 import { getBookingDisplayImage } from '../../utils/bookingImageHelper';
 import { isBikeVehicle } from '../../utils/vehicleHelper';
 import * as api from '../../services/api';
@@ -233,12 +235,14 @@ export default function CustomerOverviewTab({
     }
   }, [currentUser]);
   // Category state for Explore More WOW GOA
-  const [exploreCategory, setExploreCategory] = useState('selfdrive'); // 'selfdrive' | 'packages' | 'hotels' | 'cars' | 'flights'
+  const [exploreCategory, setExploreCategory] = useState('selfdrive'); // 'selfdrive' | 'packages' | 'craftmytrip' | 'hotels' | 'flights' | 'activities'
   const [selfDriveSubcategory, setSelfDriveSubcategory] = useState('all');
 
   useEffect(() => {
     if (exploreFocus === 'explore' || exploreFocus === 'fleets' || exploreFocus === 'book' || exploreFocus === 'selfdrive') {
       setExploreCategory('selfdrive');
+    } else if (exploreFocus === 'craft' || exploreFocus === 'craftmytrip') {
+      setExploreCategory('craftmytrip');
     }
   }, [exploreFocus]);
 
@@ -999,6 +1003,26 @@ export default function CustomerOverviewTab({
 
           <button
             type="button"
+            onClick={() => setExploreCategory('craftmytrip')}
+            className={`btn btn-sm rounded-pill px-3.5 py-2 text-xs fw-bold d-flex align-items-center gap-2 transition-all ${
+              exploreCategory === 'craftmytrip'
+                ? 'btn-warning text-dark shadow-sm border-0'
+                : 'btn-light text-dark border hover-bg-warning hover-text-dark'
+            }`}
+            style={{
+              background: exploreCategory === 'craftmytrip' ? 'linear-gradient(135deg, #FFC107 0%, #FF9800 100%)' : '#f8fafc',
+              fontWeight: 700
+            }}
+          >
+            <Wand2 size={16} />
+            <span>✨ Craft My Trip (Tailor-Made)</span>
+            <span className="badge bg-dark text-warning text-xxs px-1.5 py-0.5 rounded-pill fw-black ms-1">
+              HOT
+            </span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setExploreCategory('hotels')}
             className={`btn btn-sm rounded-pill px-3.5 py-2 text-xs fw-bold d-flex align-items-center gap-2 transition-all ${
               exploreCategory === 'hotels'
@@ -1202,6 +1226,27 @@ export default function CustomerOverviewTab({
                   );
                 })}
             </div>
+          </div>
+        )}
+
+        {/* ─── Craft My Trip Embedded Portal Builder ─── */}
+        {exploreCategory === 'craftmytrip' && (
+          <div className="cmt-portal-embedded-section mb-4">
+            <CraftMyTripPage
+              isPortal={true}
+              currentUser={currentUser}
+              allCars={cars}
+              allBikes={bikes}
+              allHotels={hotels}
+              allActivities={activities}
+              allFlights={flights}
+              bookings={bookings}
+              onConfirm={(rec) => {
+                if (typeof onSelectBooking === 'function' && rec) {
+                  onSelectBooking(rec);
+                }
+              }}
+            />
           </div>
         )}
 

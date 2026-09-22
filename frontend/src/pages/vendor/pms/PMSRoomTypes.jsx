@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   BedDouble, Plus, Edit, Trash2, CheckCircle, XCircle, Hash,
   Users, DollarSign, Building, ChevronDown, Save, AlertCircle,
-  Wifi, Wind, Tv, Coffee, Lock, Bath, X, Upload
+  Wifi, Wind, Tv, Coffee, Lock, Bath, X, Upload, Camera, Image as ImageIcon
 } from 'lucide-react';
 import * as api from '../../../services/api';
 
@@ -72,23 +72,89 @@ function BulkUploadModal({ onClose, onUpload }) {
 }
 
 function RoomTypeModal({ hotel, vendorId, existing, onSave, onClose }) {
-  const [form, setForm] = useState(existing || {
-    hotel_id: hotel?.id || '',
-    vendor_id: vendorId,
-    name: '', internal_code: '', description: '',
-    total_rooms: 1, max_adults: 2, max_children: 1, max_occupancy: 3, base_occupancy: 2,
-    bed_type: 'King', num_beds: 1, room_size: '', room_size_unit: 'sqft',
-    view_type: 'Garden View', smoking: false, air_conditioned: true,
-    private_bathroom: true, extra_bed_available: false,
-    base_price: '', selling_price: '', weekend_price: '',
-    extra_adult_charge: '', extra_bed_charge: '',
-    amenities: [], status: 'Active'
+  const parseImages = (item) => {
+    if (!item) return [];
+    if (Array.isArray(item.images)) return item.images.filter(Boolean);
+    if (item.images_json) {
+      try {
+        const parsed = typeof item.images_json === 'string' ? JSON.parse(item.images_json) : item.images_json;
+        if (Array.isArray(parsed)) return parsed.filter(Boolean);
+      } catch (e) {}
+    }
+    return [];
+  };
+
+  const [form, setForm] = useState(() => {
+    const existingImages = parseImages(existing);
+    if (existing) {
+      return {
+        ...existing,
+        images: existingImages
+      };
+    }
+    return {
+      hotel_id: hotel?.id || '',
+      vendor_id: vendorId,
+      name: '', internal_code: '', description: '',
+      total_rooms: 1, max_adults: 2, max_children: 1, max_occupancy: 3, base_occupancy: 2,
+      bed_type: 'King', num_beds: 1, room_size: '', room_size_unit: 'sqft',
+      view_type: 'Garden View', smoking: false, air_conditioned: true,
+      private_bathroom: true, extra_bed_available: false,
+      base_price: '', selling_price: '', weekend_price: '',
+      extra_adult_charge: '', extra_bed_charge: '',
+      amenities: [], images: [], status: 'Active'
+    };
   });
   const [saving, setSaving] = useState(false);
+  const [uploadingImages, setUploadingImages] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [urlInput, setUrlInput] = useState('');
   const [error, setError] = useState('');
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const toggleAmenity = (a) => set('amenities', form.amenities.includes(a) ? form.amenities.filter(x => x !== a) : [...form.amenities, a]);
+
+  const handleFiles = async (files) => {
+    if (!files || !files.length) return;
+    setUploadingImages(true);
+    setError('');
+    try {
+      const uploadedUrls = [];
+      for (const file of Array.from(files)) {
+        const res = await api.uploadImage(file);
+        const url = typeof res === 'string' ? res : (res?.url || '');
+        if (url) uploadedUrls.push(url);
+      }
+      if (uploadedUrls.length > 0) {
+        setForm(f => ({ ...f, images: [...(f.images || []), ...uploadedUrls] }));
+      }
+    } catch (err) {
+      setError('Failed to upload image: ' + err.message);
+    } finally {
+      setUploadingImages(false);
+    }
+  };
+
+  const handleRemoveImage = (idx) => {
+    setForm(f => ({ ...f, images: (f.images || []).filter((_, i) => i !== idx) }));
+  };
+
+  const handleSetCover = (idx) => {
+    if (idx === 0) return;
+    setForm(f => {
+      const imgs = [...(f.images || [])];
+      const [target] = imgs.splice(idx, 1);
+      imgs.unshift(target);
+      return { ...f, images: imgs };
+    });
+  };
+
+  const handleAddUrl = () => {
+    const trimmed = urlInput.trim();
+    if (!trimmed) return;
+    setForm(f => ({ ...f, images: [...(f.images || []), trimmed] }));
+    setUrlInput('');
+  };
 
   const handleSave = async () => {
     if (!form.name || !form.selling_price) { setError('Room type name and selling price are required'); return; }
@@ -108,7 +174,7 @@ function RoomTypeModal({ hotel, vendorId, existing, onSave, onClose }) {
 
   return (
     <div className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center" style={{ background: 'rgba(0,0,0,0.5)', zIndex: 1050 }}>
-      <div className="bg-white rounded-4 shadow-lg overflow-auto" style={{ width: '700px', maxWidth: '95vw', maxHeight: '90vh' }}>
+      <div className="bg-white rounded-4 shadow-lg overflow-auto" style={{ width: '720px', maxWidth: '95vw', maxHeight: '90vh' }}>
         <div className="p-4 border-bottom d-flex align-items-center justify-content-between">
           <h5 className="fw-bold mb-0">{existing ? 'Edit' : 'Add'} Room Type</h5>
           <button onClick={onClose} className="btn btn-sm btn-link text-muted p-0"><X size={20} /></button>
@@ -129,6 +195,132 @@ function RoomTypeModal({ hotel, vendorId, existing, onSave, onClose }) {
               <label className="form-label fw-semibold" style={{ fontSize: '0.82rem' }}>Description</label>
               <textarea className="form-control form-control-sm" rows={2} value={form.description} onChange={e => set('description', e.target.value)} placeholder="Describe this room type..."></textarea>
             </div>
+
+            {/* Room Photos Upload Section */}
+            <div className="col-12">
+              <div className="p-3 rounded-3 border" style={{ background: '#fcfcfc' }}>
+                <div className="d-flex align-items-center justify-content-between mb-2">
+                  <label className="form-label fw-bold mb-0 d-flex align-items-center gap-1.5" style={{ fontSize: '0.83rem', color: '#1a2b4a' }}>
+                    <Camera size={15} className="text-primary" /> Room Photos ({form.images?.length || 0})
+                  </label>
+                  <span className="text-muted" style={{ fontSize: '0.72rem' }}>
+                    Photos display in customer website room carousel
+                  </span>
+                </div>
+
+                {/* Dropzone */}
+                <div
+                  className="border-2 border-dashed rounded-3 p-3 text-center transition-all"
+                  style={{
+                    borderColor: isDragging ? '#00b894' : '#dee2e6',
+                    background: isDragging ? '#f0fff4' : '#fff',
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => document.getElementById('roomPhotoFileInput')?.click()}
+                  onDragOver={e => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); }}
+                  onDragLeave={e => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); }}
+                  onDrop={e => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsDragging(false);
+                    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                      handleFiles(e.dataTransfer.files);
+                    }
+                  }}
+                >
+                  <Upload size={24} className="text-muted mb-1 opacity-50" />
+                  <p className="text-muted mb-0 fw-semibold" style={{ fontSize: '0.82rem' }}>
+                    {uploadingImages ? '⏳ Uploading room photos, please wait...' : 'Click to select room photos or drag & drop here'}
+                  </p>
+                  <span className="text-muted" style={{ fontSize: '0.72rem' }}>
+                    JPG, PNG, WEBP (Select multiple files at once)
+                  </span>
+                  <input
+                    id="roomPhotoFileInput"
+                    type="file"
+                    multiple
+                    accept="image/*"
+                    className="d-none"
+                    onChange={e => {
+                      if (e.target.files && e.target.files.length > 0) {
+                        handleFiles(e.target.files);
+                        e.target.value = '';
+                      }
+                    }}
+                  />
+                </div>
+
+                {/* URL Input */}
+                <div className="input-group input-group-sm mt-2">
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Or paste direct image URL (e.g. https://...)"
+                    value={urlInput}
+                    onChange={e => setUrlInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddUrl(); } }}
+                    style={{ fontSize: '0.78rem' }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary"
+                    onClick={handleAddUrl}
+                    disabled={!urlInput.trim()}
+                    style={{ fontSize: '0.78rem' }}
+                  >
+                    Add URL
+                  </button>
+                </div>
+
+                {/* Thumbnails preview */}
+                {form.images && form.images.length > 0 && (
+                  <div className="d-flex flex-wrap gap-2 mt-3 pt-2 border-top">
+                    {form.images.map((imgUrl, idx) => (
+                      <div
+                        key={idx}
+                        className="position-relative rounded-2 overflow-hidden border shadow-sm"
+                        style={{ width: '85px', height: '65px', background: '#fff' }}
+                        title={idx === 0 ? 'Cover Photo' : 'Click to set as Cover Photo'}
+                      >
+                        <img
+                          src={imgUrl}
+                          alt={`Room ${idx + 1}`}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'pointer' }}
+                          onClick={() => handleSetCover(idx)}
+                        />
+                        {idx === 0 ? (
+                          <span
+                            className="position-absolute top-0 start-0 badge bg-dark text-white"
+                            style={{ fontSize: '0.6rem', padding: '2px 5px', borderBottomRightRadius: '4px' }}
+                          >
+                            Cover
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleSetCover(idx)}
+                            className="position-absolute bottom-0 start-0 w-100 btn btn-dark p-0 border-0 text-center"
+                            style={{ fontSize: '0.58rem', opacity: 0.85, lineHeight: '14px' }}
+                          >
+                            Set Cover
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleRemoveImage(idx); }}
+                          className="position-absolute top-0 end-0 btn btn-danger p-0 d-flex align-items-center justify-content-center border-0"
+                          style={{ width: '18px', height: '18px', borderRadius: '0 0 0 4px' }}
+                          title="Remove photo"
+                        >
+                          <X size={11} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
             <div className="col-4"><label className="form-label fw-semibold" style={{ fontSize: '0.82rem' }}>Total Rooms</label><input type="number" className="form-control form-control-sm" value={form.total_rooms} onChange={e => set('total_rooms', parseInt(e.target.value))} /></div>
             <div className="col-4"><label className="form-label fw-semibold" style={{ fontSize: '0.82rem' }}>Max Adults</label><input type="number" className="form-control form-control-sm" value={form.max_adults} onChange={e => set('max_adults', parseInt(e.target.value))} /></div>
             <div className="col-4"><label className="form-label fw-semibold" style={{ fontSize: '0.82rem' }}>Max Occupancy</label><input type="number" className="form-control form-control-sm" value={form.max_occupancy} onChange={e => set('max_occupancy', parseInt(e.target.value))} /></div>
@@ -175,7 +367,7 @@ function RoomTypeModal({ hotel, vendorId, existing, onSave, onClose }) {
         </div>
         <div className="p-4 border-top d-flex justify-content-end gap-2">
           <button onClick={onClose} className="btn btn-sm rounded-pill px-4" style={{ background: '#f0f2f5', color: '#495057' }}>Cancel</button>
-          <button onClick={handleSave} disabled={saving} className="btn btn-sm rounded-pill px-4 fw-bold" style={{ background: '#0D1B2E', color: '#fff' }}>
+          <button onClick={handleSave} disabled={saving || uploadingImages} className="btn btn-sm rounded-pill px-4 fw-bold" style={{ background: '#0D1B2E', color: '#fff' }}>
             <Save size={13} className="me-1" />{saving ? 'Saving...' : 'Save Room Type'}
           </button>
         </div>
@@ -421,52 +613,85 @@ export default function PMSRoomTypes({ currentUser, vendorHotels, mode }) {
           <div className="row g-3">
             {roomTypes.map(rt => {
               const amenities = (() => { try { return Array.isArray(rt.amenities) ? rt.amenities : JSON.parse(rt.amenities_json || '[]'); } catch { return []; } })();
+              const rtImages = (() => {
+                try {
+                  if (Array.isArray(rt.images) && rt.images.length > 0) return rt.images.filter(Boolean);
+                  if (rt.images_json) {
+                    const p = typeof rt.images_json === 'string' ? JSON.parse(rt.images_json) : rt.images_json;
+                    if (Array.isArray(p) && p.length > 0) return p.filter(Boolean);
+                  }
+                  return [];
+                } catch { return []; }
+              })();
+
               return (
                 <div key={rt.id} className="col-12 col-md-6 col-xl-4">
-                  <div className="card border-0 rounded-4 shadow-sm h-100 p-4" style={{ background: '#fff' }}>
-                    <div className="d-flex align-items-start justify-content-between mb-3">
-                      <div>
-                        <h6 className="fw-bold mb-1" style={{ color: '#1a2b4a' }}>{rt.name}</h6>
-                        {rt.hotel_name && <div className="text-muted" style={{ fontSize: '0.73rem' }}>{rt.hotel_name}</div>}
-                      </div>
-                      <span className="badge rounded-pill" style={{ background: rt.status === 'Active' ? '#edf7f0' : '#f8f9fa', color: rt.status === 'Active' ? '#00b894' : '#6c757d', fontSize: '0.7rem' }}>
-                        {rt.status}
-                      </span>
-                    </div>
-
-                    <div className="row g-2 mb-3">
-                      {[
-                        ['Total Rooms', rt.total_rooms], ['Max Adults', rt.max_adults],
-                        ['Bed Type', rt.bed_type], ['View', rt.view_type]
-                      ].map(([l, v]) => (
-                        <div key={l} className="col-6">
-                          <div className="p-2 rounded-3" style={{ background: '#f8f9fa' }}>
-                            <div className="text-muted" style={{ fontSize: '0.65rem' }}>{l}</div>
-                            <div className="fw-bold" style={{ fontSize: '0.82rem' }}>{v}</div>
-                          </div>
+                  <div className="card border-0 rounded-4 shadow-sm h-100 overflow-hidden" style={{ background: '#fff' }}>
+                    {/* Room Photo Banner */}
+                    {rtImages.length > 0 ? (
+                      <div className="position-relative" style={{ height: '140px', background: '#f8f9fa' }}>
+                        <img
+                          src={rtImages[0]}
+                          alt={rt.name}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          onError={(e) => { e.target.style.display = 'none'; }}
+                        />
+                        <div className="position-absolute bottom-0 end-0 m-2 badge bg-dark bg-opacity-75 text-white px-2 py-1 rounded-pill" style={{ fontSize: '0.68rem' }}>
+                          📷 {rtImages.length} {rtImages.length === 1 ? 'photo' : 'photos'}
                         </div>
-                      ))}
-                    </div>
-
-                    <div className="d-flex align-items-baseline gap-1 mb-2">
-                      <span className="fw-bold" style={{ fontSize: '1.1rem', color: '#0D1B2E' }}>₹{parseInt(rt.selling_price || rt.price || 0).toLocaleString('en-IN')}</span>
-                      <span className="text-muted" style={{ fontSize: '0.72rem' }}>/night</span>
-                    </div>
-
-                    {amenities.length > 0 && (
-                      <div className="d-flex flex-wrap gap-1 mb-3">
-                        {amenities.slice(0, 4).map(a => <span key={a} className="badge rounded-pill" style={{ background: '#f0f2f5', color: '#6c757d', fontSize: '0.68rem' }}>{a}</span>)}
-                        {amenities.length > 4 && <span className="badge rounded-pill" style={{ background: '#f0f2f5', color: '#6c757d', fontSize: '0.68rem' }}>+{amenities.length - 4}</span>}
+                      </div>
+                    ) : (
+                      <div className="d-flex align-items-center justify-content-between px-4 pt-3 pb-1 text-muted" style={{ fontSize: '0.72rem' }}>
+                        <span className="badge bg-light text-muted border">No custom photos</span>
+                        <span style={{ fontSize: '0.68rem' }}>Using hotel photos</span>
                       </div>
                     )}
 
-                    <div className="d-flex gap-2 mt-auto pt-3" style={{ borderTop: '1px solid #f0f2f5' }}>
-                      <button onClick={() => { setEditingType(rt); setShowTypeModal(true); }} className="btn btn-sm flex-grow-1 rounded-pill" style={{ background: '#f0f2f5', color: '#495057', fontSize: '0.78rem' }}>
-                        <Edit size={12} className="me-1" /> Edit
-                      </button>
-                      <button onClick={() => handleDeleteType(rt.id)} className="btn btn-sm rounded-pill" style={{ background: '#fff0f0', color: '#d63031', fontSize: '0.78rem' }}>
-                        <Trash2 size={12} />
-                      </button>
+                    <div className="p-4 d-flex flex-column flex-grow-1">
+                      <div className="d-flex align-items-start justify-content-between mb-3">
+                        <div>
+                          <h6 className="fw-bold mb-1" style={{ color: '#1a2b4a' }}>{rt.name}</h6>
+                          {rt.hotel_name && <div className="text-muted" style={{ fontSize: '0.73rem' }}>{rt.hotel_name}</div>}
+                        </div>
+                        <span className="badge rounded-pill" style={{ background: rt.status === 'Active' ? '#edf7f0' : '#f8f9fa', color: rt.status === 'Active' ? '#00b894' : '#6c757d', fontSize: '0.7rem' }}>
+                          {rt.status}
+                        </span>
+                      </div>
+
+                      <div className="row g-2 mb-3">
+                        {[
+                          ['Total Rooms', rt.total_rooms], ['Max Adults', rt.max_adults],
+                          ['Bed Type', rt.bed_type], ['View', rt.view_type]
+                        ].map(([l, v]) => (
+                          <div key={l} className="col-6">
+                            <div className="p-2 rounded-3" style={{ background: '#f8f9fa' }}>
+                              <div className="text-muted" style={{ fontSize: '0.65rem' }}>{l}</div>
+                              <div className="fw-bold" style={{ fontSize: '0.82rem' }}>{v}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="d-flex align-items-baseline gap-1 mb-2">
+                        <span className="fw-bold" style={{ fontSize: '1.1rem', color: '#0D1B2E' }}>₹{parseInt(rt.selling_price || rt.price || 0).toLocaleString('en-IN')}</span>
+                        <span className="text-muted" style={{ fontSize: '0.72rem' }}>/night</span>
+                      </div>
+
+                      {amenities.length > 0 && (
+                        <div className="d-flex flex-wrap gap-1 mb-3">
+                          {amenities.slice(0, 4).map(a => <span key={a} className="badge rounded-pill" style={{ background: '#f0f2f5', color: '#6c757d', fontSize: '0.68rem' }}>{a}</span>)}
+                          {amenities.length > 4 && <span className="badge rounded-pill" style={{ background: '#f0f2f5', color: '#6c757d', fontSize: '0.68rem' }}>+{amenities.length - 4}</span>}
+                        </div>
+                      )}
+
+                      <div className="d-flex gap-2 mt-auto pt-3" style={{ borderTop: '1px solid #f0f2f5' }}>
+                        <button onClick={() => { setEditingType(rt); setShowTypeModal(true); }} className="btn btn-sm flex-grow-1 rounded-pill" style={{ background: '#f0f2f5', color: '#495057', fontSize: '0.78rem' }}>
+                          <Edit size={12} className="me-1" /> Edit
+                        </button>
+                        <button onClick={() => handleDeleteType(rt.id)} className="btn btn-sm rounded-pill" style={{ background: '#fff0f0', color: '#d63031', fontSize: '0.78rem' }}>
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>

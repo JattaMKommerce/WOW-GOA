@@ -309,12 +309,17 @@ export default function HotelVendorPortalPage({
     return isOwner && self.findIndex(other => other.id === h.id) === idx;
   });
   
-  const vendorBookings = (bookings || []).filter(b =>
-    vendorHotels.some(h => h.id === b.item_id || h.name === b.item_name) ||
-    String(b.item_id).startsWith('hotel-') ||
-    b.property_type ||
-    b.stars
-  );
+  const vendorBookings = (bookings || []).filter(b => {
+    const isHotel = b.type === 'hotel' || String(b.item_id).startsWith('hotel-') || b.property_type || b.stars || b.hotel_name || b.room_type;
+    if (!isHotel) return false;
+    if (vendorHotels.length === 0) return true;
+    return vendorHotels.some(h => 
+      h.id === b.item_id || 
+      h.id === b.hotel_id || 
+      (b.item_name && h.name && b.item_name.toLowerCase().includes(h.name.toLowerCase())) ||
+      (b.hotel_name && h.name && b.hotel_name.toLowerCase().includes(h.name.toLowerCase()))
+    ) || (!b.vendor_id || b.vendor_id === currentUser?.id || b.vendor_id === currentUser?.username);
+  });
 
   const filteredSidebarGroups = SIDEBAR_GROUPS;
 

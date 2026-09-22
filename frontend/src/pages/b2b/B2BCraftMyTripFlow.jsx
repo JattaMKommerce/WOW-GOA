@@ -2,10 +2,16 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Car, Hotel, Plane, Wand2, Check, CheckCircle2, Star, Users, Calendar, 
   MapPin, Fuel, Gauge, ArrowRight, ArrowLeft, X, Wallet, ShieldCheck, Clock, 
-  Sparkles, Tag, Gift, ChevronRight, AlertCircle, Phone, Mail, User, CheckCircle
+  Sparkles, Tag, Gift, ChevronRight, AlertCircle, Phone, Mail, User, CheckCircle,
+  Eye, BedDouble, Utensils, Search
 } from 'lucide-react';
 import * as api from '../../services/api';
 import ImageCarousel from '../../components/common/ImageCarousel';
+import CarDetailsPage from '../customer/CarDetailsPage';
+import BikeDetailsPage from '../customer/BikeDetailsPage';
+import HotelDetailsPage from '../customer/HotelDetailsPage';
+import ActivityDetailsPage from '../customer/ActivityDetailsPage';
+import { isBikeVehicle } from '../../utils/vehicleHelper';
 
 const GOA_LOCATIONS = [
   'Manohar International Airport (Mopa - GOX)',
@@ -76,6 +82,13 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
   const [selectedHotel, setSelectedHotel] = useState(null);
   const [hotelRooms, setHotelRooms] = useState(1);
   const [hotelFilterStars, setHotelFilterStars] = useState('All');
+  const [hotelAreaFilter, setHotelAreaFilter] = useState('All');
+  const [hotelSearchQuery, setHotelSearchQuery] = useState('');
+
+  // Authoritative Full-Page Details Modal Views (matching main website CraftMyTripPage)
+  const [viewingVehicleDetails, setViewingVehicleDetails] = useState(null);
+  const [viewingHotelDetails, setViewingHotelDetails] = useState(null);
+  const [viewingActivityDetails, setViewingActivityDetails] = useState(null);
 
   // Step 3: Activities Selection
   const [activities, setActivities] = useState([]);
@@ -221,8 +234,31 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
         total_amount: retailSellingPrice,
         final_payable_amount: financialSnapshot.netPayable,
         special_requests: guestDetails.special_requests,
-        vehicle: selectedVehicle ? { id: selectedVehicle.id, name: selectedVehicle.name, cost: vehicleCost } : null,
-        hotel: selectedHotel ? { id: selectedHotel.id, name: selectedHotel.name, cost: hotelCost, rooms: hotelRooms } : null,
+        vehicle: selectedVehicle ? { 
+          id: selectedVehicle.id, 
+          name: selectedVehicle.name, 
+          image: selectedVehicle.image,
+          category: selectedVehicle.category,
+          fuel: selectedVehicle.fuel,
+          transmission: selectedVehicle.transmission,
+          seating: selectedVehicle.seating,
+          price_per_day: selectedVehicle.price,
+          cost: vehicleCost,
+          type: isBikeVehicle(selectedVehicle) ? 'bike' : 'car'
+        } : null,
+        hotel: selectedHotel ? { 
+          id: selectedHotel.id, 
+          name: selectedHotel.name, 
+          image: selectedHotel.image || selectedHotel.photo,
+          stars: selectedHotel.stars || selectedHotel.rating,
+          location: selectedHotel.location || selectedHotel.area,
+          room_type: selectedHotel.preselected_room?.name || selectedHotel.room_type || null,
+          rate_plan: selectedHotel.preselected_rate_plan?.name || selectedHotel.preselected_rate_plan?.meal_plan_label || selectedHotel.rate_plan || null,
+          night_price: selectedHotel.price || selectedHotel.price_per_night,
+          cost: hotelCost, 
+          rooms: hotelRooms,
+          nights: nights
+        } : null,
         activities: (selectedActivities || []).map(a => ({ id: a.id, name: a.title || a.name, type: a.type, price: a.price })),
         flight: includeFlight ? { airline: flightAirline, origin: flightOrigin, cost: flightCost, pax: memberCount } : null,
         pax: memberCount,
@@ -246,9 +282,37 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
   };
 
   const filteredHotels = useMemo(() => {
-    if (hotelFilterStars === 'All') return hotels;
-    return hotels.filter(h => String(h.stars || h.rating) === String(hotelFilterStars));
-  }, [hotels, hotelFilterStars]);
+    return hotels.filter(h => {
+      // 1. Star Rating
+      if (hotelFilterStars !== 'All') {
+        const s = String(h.stars || h.star_rating || h.rating || '3');
+        if (hotelFilterStars === 'boutique') {
+          const type = (h.property_type || h.type || '').toLowerCase();
+          const name = (h.name || '').toLowerCase();
+          if (!type.includes('boutique') && !type.includes('heritage') && !name.includes('heritage')) return false;
+        } else if (!s.includes(hotelFilterStars)) {
+          return false;
+        }
+      }
+      // 2. Area Filter
+      if (hotelAreaFilter !== 'All') {
+        const areaClean = hotelAreaFilter.toLowerCase();
+        const hArea = (h.area || '').toLowerCase();
+        const hLoc = (h.location || '').toLowerCase();
+        const hName = (h.name || '').toLowerCase();
+        if (!hArea.includes(areaClean) && !hLoc.includes(areaClean) && !hName.includes(areaClean)) return false;
+      }
+      // 3. Search Query
+      if (hotelSearchQuery.trim()) {
+        const q = hotelSearchQuery.trim().toLowerCase();
+        const hName = (h.name || '').toLowerCase();
+        const hArea = (h.area || '').toLowerCase();
+        const hLoc = (h.location || '').toLowerCase();
+        if (!hName.includes(q) && !hArea.includes(q) && !hLoc.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [hotels, hotelFilterStars, hotelAreaFilter, hotelSearchQuery]);
 
   // If booking succeeded, show confirmation voucher
   if (bookingSuccess) {
@@ -282,13 +346,19 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
           {selectedVehicle && (
             <div className="d-flex justify-content-between align-items-center mb-2">
               <span className="text-muted text-xs">🚗 Vehicle:</span>
-              <span className="fw-semibold text-dark text-xs">{selectedVehicle.name}</span>
+              <span className="fw-semibold text-dark text-xs">
+                {selectedVehicle.name} ({selectedVehicle.seating ? `${selectedVehicle.seating} Seats` : 'Standard'} • {selectedVehicle.fuel || 'Petrol'})
+              </span>
             </div>
           )}
           {selectedHotel && (
             <div className="d-flex justify-content-between align-items-center mb-2">
               <span className="text-muted text-xs">🏨 Resort:</span>
-              <span className="fw-semibold text-dark text-xs">{selectedHotel.name} ({hotelRooms} Room)</span>
+              <span className="fw-semibold text-dark text-xs">
+                {selectedHotel.name} ({hotelRooms} Room{hotelRooms > 1 ? 's' : ''})
+                {selectedHotel.preselected_room?.name && ` • ${selectedHotel.preselected_room.name}`}
+                {(selectedHotel.preselected_rate_plan?.name || selectedHotel.preselected_rate_plan?.meal_plan_label) && ` (${selectedHotel.preselected_rate_plan.name || selectedHotel.preselected_rate_plan.meal_plan_label})`}
+              </span>
             </div>
           )}
           {selectedActivities.length > 0 && (
@@ -484,6 +554,60 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
             </div>
           ) : (
             <>
+              {/* Selected Vehicle Rich Preview Banner */}
+              {selectedVehicle && (
+                <div className="p-3 rounded-4 bg-warning bg-opacity-10 border border-warning border-opacity-50 mb-3.5 d-flex align-items-center justify-content-between flex-wrap gap-3 shadow-xs">
+                  <div className="d-flex align-items-center gap-3">
+                    <img
+                      src={selectedVehicle.image || 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=400'}
+                      alt={selectedVehicle.name}
+                      className="rounded-3 object-fit-cover shadow-xs"
+                      style={{ width: '85px', height: '60px' }}
+                      onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=400'; }}
+                    />
+                    <div>
+                      <div className="d-flex align-items-center gap-2 mb-0.5">
+                        <span className="badge bg-warning text-dark text-3xs fw-bold px-2 py-0.5 rounded-pill">
+                          CURRENTLY SELECTED RIDE
+                        </span>
+                        <span className="text-3xs text-muted">
+                          {isBikeVehicle(selectedVehicle) ? '🏍️ Two-Wheeler' : '🚗 Self Drive Car'}
+                        </span>
+                      </div>
+                      <h6 className="fw-bold text-dark mb-0 text-sm font-heading">{selectedVehicle.name}</h6>
+                      <div className="d-flex align-items-center gap-2 text-3xs text-muted mt-1">
+                        {selectedVehicle.seating && <span>👥 {selectedVehicle.seating} Seats</span>}
+                        {selectedVehicle.fuel && <span>⛽ {selectedVehicle.fuel}</span>}
+                        {selectedVehicle.transmission && <span>⚙️ {selectedVehicle.transmission}</span>}
+                        <span>•</span>
+                        <span>₹{parseFloat(selectedVehicle.price || 0).toLocaleString()} / day</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="d-flex align-items-center gap-2">
+                    <div className="text-end me-2">
+                      <div className="text-3xs text-muted">Total Ride Cost ({nights} Days):</div>
+                      <div className="text-sm fw-black text-dark font-monospace">₹{vehicleCost.toLocaleString()}</div>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-xs btn-outline-dark rounded-pill px-3 py-1.5 fw-bold d-flex align-items-center gap-1"
+                      onClick={() => setViewingVehicleDetails(selectedVehicle)}
+                    >
+                      <Eye size={12} /> View Full Specs
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-xs btn-outline-danger rounded-pill px-2.5 py-1.5 fw-bold"
+                      onClick={() => setSelectedVehicle(null)}
+                      title="Remove selected vehicle"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Vehicle Location Selector */}
               <div className="row g-2 mb-3 align-items-center">
                 <div className="col-12 col-md-6">
@@ -528,7 +652,15 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
                         }`}
                         style={{ cursor: 'pointer', background: isSelected ? '#fffdf7' : '#ffffff' }}
                       >
-                        <div className="position-relative" style={{ height: '140px', background: '#f1f5f9' }}>
+                        <div 
+                          className="position-relative" 
+                          style={{ height: '140px', background: '#f1f5f9' }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setViewingVehicleDetails(v);
+                          }}
+                          title="Click to view full specifications and photos"
+                        >
                           <img 
                             src={v.image || (v.images_json ? JSON.parse(v.images_json)[0] : '') || 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=400'} 
                             alt={v.name}
@@ -543,13 +675,16 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
                           <span className="badge bg-dark bg-opacity-75 text-white position-absolute bottom-0 start-0 m-2 text-3xs px-2 py-0.5 rounded-pill">
                             {v.category || (vehicleTab === 'cars' ? 'Car' : 'Bike')}
                           </span>
+                          <span className="badge bg-dark bg-opacity-75 text-white position-absolute bottom-0 end-0 m-2 text-3xs px-2 py-0.5 rounded-pill d-flex align-items-center gap-1">
+                            <Eye size={10} /> View Info
+                          </span>
                         </div>
 
                         <div className="p-3 d-flex flex-column justify-content-between flex-grow-1">
                           <div>
                             <h6 className="fw-bold text-dark text-xs mb-1 text-truncate">{v.name}</h6>
                             <div className="d-flex align-items-center gap-2 text-3xs text-muted mb-2">
-                              {v.seating && <span>👥 {v.seating}</span>}
+                              {v.seating && <span>👥 {v.seating} Seats</span>}
                               {v.fuel && <span>⛽ {v.fuel}</span>}
                               {v.transmission && <span>⚙️ {v.transmission}</span>}
                             </div>
@@ -560,14 +695,30 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
                               <div className="text-3xs text-muted">₹{pricePerDay.toLocaleString()} / day</div>
                               <div className="text-xs fw-black text-dark font-monospace">₹{totalVehCost.toLocaleString()} total</div>
                             </div>
-                            <button 
-                              type="button" 
-                              className={`btn btn-xs rounded-pill px-2.5 py-1 fw-bold ${
-                                isSelected ? 'btn-warning text-dark' : 'btn-outline-secondary'
-                              }`}
-                            >
-                              {isSelected ? 'Selected' : 'Select'}
-                            </button>
+                            <div className="d-flex gap-1">
+                              <button 
+                                type="button" 
+                                className="btn btn-xs btn-outline-secondary rounded-pill px-2 py-1 fw-bold text-3xs d-flex align-items-center gap-1"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setViewingVehicleDetails(v);
+                                }}
+                              >
+                                <Eye size={11} /> Details
+                              </button>
+                              <button 
+                                type="button" 
+                                className={`btn btn-xs rounded-pill px-2.5 py-1 fw-bold text-3xs ${
+                                  isSelected ? 'btn-warning text-dark' : 'btn-outline-primary'
+                                }`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedVehicle(v);
+                                }}
+                              >
+                                {isSelected ? 'Selected' : 'Select'}
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -637,92 +788,236 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
             </div>
           ) : (
             <>
-              {/* Hotel Controls: Star filter & Rooms count */}
-              <div className="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
-                <div className="d-flex gap-1 bg-light p-1 rounded-pill border">
-                  {['All', '3', '4', '5'].map(star => (
-                    <button 
-                      key={star}
-                      type="button" 
-                      onClick={() => setHotelFilterStars(star)} 
-                      className={`btn btn-xs rounded-pill px-2.5 py-0.5 text-3xs fw-bold ${hotelFilterStars === star ? 'btn-dark text-white' : 'btn-light text-muted'}`}
+              {/* Selected Hotel Rich Preview Banner */}
+              {selectedHotel && (
+                <div className="p-3 rounded-4 bg-warning bg-opacity-10 border border-warning border-opacity-50 mb-3.5 d-flex align-items-center justify-content-between flex-wrap gap-3 shadow-xs">
+                  <div className="d-flex align-items-center gap-3">
+                    <img
+                      src={selectedHotel.image || (selectedHotel.images_json ? JSON.parse(selectedHotel.images_json)[0] : '') || 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400'}
+                      alt={selectedHotel.name}
+                      className="rounded-3 object-fit-cover shadow-xs"
+                      style={{ width: '85px', height: '60px' }}
+                      onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400'; }}
+                    />
+                    <div>
+                      <div className="d-flex align-items-center gap-2 mb-0.5">
+                        <span className="badge bg-warning text-dark text-3xs fw-bold px-2 py-0.5 rounded-pill">
+                          CURRENTLY SELECTED RESORT
+                        </span>
+                        <span className="text-3xs text-warning fw-bold d-flex align-items-center gap-1">
+                          <Star size={10} fill="#FFC107" /> {selectedHotel.stars || selectedHotel.rating || 4}★
+                        </span>
+                      </div>
+                      <h6 className="fw-bold text-dark mb-0 text-sm font-heading">{selectedHotel.name}</h6>
+                      <div className="text-3xs text-muted mt-0.5">
+                        <span>📍 {selectedHotel.location || selectedHotel.area || 'Goa'}</span>
+                        {selectedHotel.preselected_room?.name && (
+                          <span className="ms-2 badge bg-light text-dark border">
+                            🛏️ {selectedHotel.preselected_room.name}
+                          </span>
+                        )}
+                        {(selectedHotel.preselected_rate_plan?.name || selectedHotel.preselected_rate_plan?.meal_plan_label) && (
+                          <span className="ms-1 badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">
+                            🍴 {selectedHotel.preselected_rate_plan.name || selectedHotel.preselected_rate_plan.meal_plan_label}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="d-flex align-items-center gap-2">
+                    <div className="text-end me-2">
+                      <div className="text-3xs text-muted">Stay Total ({hotelRooms}R × {nights}N):</div>
+                      <div className="text-sm fw-black text-dark font-monospace">₹{hotelCost.toLocaleString()}</div>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-xs btn-outline-dark rounded-pill px-3 py-1.5 fw-bold d-flex align-items-center gap-1"
+                      onClick={() => setViewingHotelDetails(selectedHotel)}
                     >
-                      {star === 'All' ? 'All Ratings' : `${star}★ Star`}
+                      <Eye size={12} /> View Info & Rooms
                     </button>
-                  ))}
+                    <button
+                      type="button"
+                      className="btn btn-xs btn-outline-danger rounded-pill px-2.5 py-1.5 fw-bold"
+                      onClick={() => setSelectedHotel(null)}
+                      title="Remove selected stay"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Hotel Controls: Star filter, Area Pills, Search & Rooms count */}
+              <div className="p-3 bg-light rounded-4 border mb-3">
+                <div className="d-flex align-items-center justify-content-between mb-2.5 flex-wrap gap-2">
+                  <div className="d-flex gap-1 bg-white p-1 rounded-pill border">
+                    {[
+                      { id: 'All', label: 'All Stays' },
+                      { id: '5', label: '⭐ 5★' },
+                      { id: '4', label: '⭐ 4★' },
+                      { id: '3', label: '⭐ 3★' },
+                      { id: 'boutique', label: '🏛️ Boutique' }
+                    ].map(star => (
+                      <button 
+                        key={star.id}
+                        type="button" 
+                        onClick={() => setHotelFilterStars(star.id)} 
+                        className={`btn btn-xs rounded-pill px-2.5 py-0.5 text-3xs fw-bold ${hotelFilterStars === star.id ? 'btn-dark text-white' : 'btn-light text-muted'}`}
+                      >
+                        {star.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="d-flex align-items-center gap-2">
+                    <span className="text-xxs text-muted fw-bold">Rooms Required:</span>
+                    <div className="input-group input-group-sm" style={{ width: '100px' }}>
+                      <button type="button" className="btn btn-outline-secondary btn-xs" onClick={() => setHotelRooms(Math.max(1, hotelRooms - 1))}>−</button>
+                      <span className="form-control form-control-sm text-center fw-bold py-0 text-xs">{hotelRooms}</span>
+                      <button type="button" className="btn btn-outline-secondary btn-xs" onClick={() => setHotelRooms(hotelRooms + 1)}>+</button>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="d-flex align-items-center gap-2">
-                  <span className="text-xxs text-muted fw-bold">Rooms Required:</span>
-                  <div className="input-group input-group-sm" style={{ width: '100px' }}>
-                    <button type="button" className="btn btn-outline-secondary btn-xs" onClick={() => setHotelRooms(Math.max(1, hotelRooms - 1))}>−</button>
-                    <span className="form-control form-control-sm text-center fw-bold py-0 text-xs">{hotelRooms}</span>
-                    <button type="button" className="btn btn-outline-secondary btn-xs" onClick={() => setHotelRooms(hotelRooms + 1)}>+</button>
+                {/* Quick Area Filters and Search Box */}
+                <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 pt-2 border-top">
+                  <div className="d-flex flex-wrap gap-1">
+                    {['All', 'Calangute', 'Baga', 'Candolim', 'Panaji', 'Anjuna', 'Colva', 'North Goa', 'South Goa'].map(area => (
+                      <button
+                        key={area}
+                        type="button"
+                        onClick={() => setHotelAreaFilter(area)}
+                        className={`btn btn-xs rounded-pill px-2.5 py-0.5 text-3xs fw-semibold ${
+                          hotelAreaFilter === area ? 'btn-primary text-white' : 'btn-white bg-white text-secondary border'
+                        }`}
+                      >
+                        {area === 'All' ? 'All Areas' : area}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="input-group input-group-sm" style={{ maxWidth: '240px' }}>
+                    <span className="input-group-text bg-white border-end-0 text-muted"><Search size={13} /></span>
+                    <input
+                      type="text"
+                      className="form-control border-start-0 text-xs"
+                      placeholder="Search hotel name..."
+                      value={hotelSearchQuery}
+                      onChange={e => setHotelSearchQuery(e.target.value)}
+                    />
+                    {hotelSearchQuery && (
+                      <button className="btn btn-outline-secondary btn-xs bg-white" type="button" onClick={() => setHotelSearchQuery('')}>
+                        <X size={12} />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
 
               {/* Hotels Grid */}
               <div className="row g-3">
-                {filteredHotels.map((h) => {
-                  const isSelected = selectedHotel?.id === h.id;
-                  const pricePerNight = parseFloat(h.price || h.price_per_night || 3000);
-                  const totalHotelCost = Math.round(pricePerNight * nights * hotelRooms);
+                {filteredHotels.length === 0 ? (
+                  <div className="col-12 py-4 text-center text-muted">
+                    <Hotel size={36} className="mx-auto text-muted opacity-50 mb-2" />
+                    <h6 className="fw-bold text-dark mb-1">No hotels found matching filters</h6>
+                    <p className="text-3xs mb-2">Try clearing your area or rating filters to see more results.</p>
+                    <button 
+                      type="button" 
+                      className="btn btn-xs btn-outline-dark rounded-pill px-3 py-1"
+                      onClick={() => { setHotelFilterStars('All'); setHotelAreaFilter('All'); setHotelSearchQuery(''); }}
+                    >
+                      Clear Filters
+                    </button>
+                  </div>
+                ) : (
+                  filteredHotels.map((h) => {
+                    const isSelected = selectedHotel?.id === h.id;
+                    const pricePerNight = parseFloat(h.price || h.price_per_night || 3000);
+                    const totalHotelCost = Math.round(pricePerNight * nights * hotelRooms);
 
-                  return (
-                    <div key={h.id} className="col-12 col-sm-6 col-lg-4 col-xl-3">
-                      <div 
-                        onClick={() => setSelectedHotel(h)}
-                        className={`card h-100 rounded-4 overflow-hidden cursor-pointer transition-all border ${
-                          isSelected ? 'border-2 border-warning shadow-md' : 'border-light-subtle hover-shadow-sm'
-                        }`}
-                        style={{ cursor: 'pointer', background: isSelected ? '#fffdf7' : '#ffffff' }}
-                      >
-                        <div className="position-relative" style={{ height: '140px', background: '#f1f5f9' }}>
-                          <img 
-                            src={h.image || (h.images_json ? JSON.parse(h.images_json)[0] : '') || 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400'} 
-                            alt={h.name}
-                            className="w-100 h-100 object-fit-cover"
-                            onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400'; }}
-                          />
-                          {isSelected && (
-                            <span className="badge bg-warning text-dark position-absolute top-0 end-0 m-2 text-xxs fw-bold px-2 py-1 rounded-pill shadow-sm d-flex align-items-center gap-1">
-                              <Check size={12} /> Selected
+                    return (
+                      <div key={h.id} className="col-12 col-sm-6 col-lg-4 col-xl-3">
+                        <div 
+                          onClick={() => setSelectedHotel(h)}
+                          className={`card h-100 rounded-4 overflow-hidden cursor-pointer transition-all border ${
+                            isSelected ? 'border-2 border-warning shadow-md' : 'border-light-subtle hover-shadow-sm'
+                          }`}
+                          style={{ cursor: 'pointer', background: isSelected ? '#fffdf7' : '#ffffff' }}
+                        >
+                          <div 
+                            className="position-relative" 
+                            style={{ height: '140px', background: '#f1f5f9' }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setViewingHotelDetails(h);
+                            }}
+                            title="Click to view hotel rooms, photos, amenities and meal plans"
+                          >
+                            <img 
+                              src={h.image || (h.images_json ? JSON.parse(h.images_json)[0] : '') || 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400'} 
+                              alt={h.name}
+                              className="w-100 h-100 object-fit-cover"
+                              onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400'; }}
+                            />
+                            {isSelected && (
+                              <span className="badge bg-warning text-dark position-absolute top-0 end-0 m-2 text-xxs fw-bold px-2 py-1 rounded-pill shadow-sm d-flex align-items-center gap-1">
+                                <Check size={12} /> Selected
+                              </span>
+                            )}
+                            <span className="badge bg-dark bg-opacity-75 text-warning position-absolute bottom-0 start-0 m-2 text-3xs px-2 py-0.5 rounded-pill d-flex align-items-center gap-1">
+                              <Star size={10} fill="#FFC107" /> {h.stars || h.rating || 4}★
                             </span>
-                          )}
-                          <span className="badge bg-dark bg-opacity-75 text-warning position-absolute bottom-0 start-0 m-2 text-3xs px-2 py-0.5 rounded-pill d-flex align-items-center gap-1">
-                            <Star size={10} fill="#FFC107" /> {h.stars || h.rating || 4}★
-                          </span>
-                        </div>
-
-                        <div className="p-3 d-flex flex-column justify-content-between flex-grow-1">
-                          <div>
-                            <h6 className="fw-bold text-dark text-xs mb-1 text-truncate">{h.name}</h6>
-                            <div className="d-flex align-items-center gap-1 text-3xs text-muted mb-2 text-truncate">
-                              <MapPin size={10} className="text-warning flex-shrink-0" />
-                              <span>{h.location || h.area || 'Goa Beachfront'}</span>
-                            </div>
+                            <span className="badge bg-dark bg-opacity-75 text-white position-absolute bottom-0 end-0 m-2 text-3xs px-2 py-0.5 rounded-pill d-flex align-items-center gap-1">
+                              <Eye size={10} /> View Details
+                            </span>
                           </div>
 
-                          <div className="pt-2 border-top d-flex align-items-center justify-content-between">
+                          <div className="p-3 d-flex flex-column justify-content-between flex-grow-1">
                             <div>
-                              <div className="text-3xs text-muted">₹{pricePerNight.toLocaleString()} / night</div>
-                              <div className="text-xs fw-black text-dark font-monospace">₹{totalHotelCost.toLocaleString()} ({hotelRooms}R × {nights}N)</div>
+                              <h6 className="fw-bold text-dark text-xs mb-1 text-truncate">{h.name}</h6>
+                              <div className="d-flex align-items-center gap-1 text-3xs text-muted mb-2 text-truncate">
+                                <MapPin size={10} className="text-warning flex-shrink-0" />
+                                <span>{h.location || h.area || 'Goa Beachfront'}</span>
+                              </div>
                             </div>
-                            <button 
-                              type="button" 
-                              className={`btn btn-xs rounded-pill px-2.5 py-1 fw-bold ${
-                                isSelected ? 'btn-warning text-dark' : 'btn-outline-secondary'
-                              }`}
-                            >
-                              {isSelected ? 'Selected' : 'Select'}
-                            </button>
+
+                            <div className="pt-2 border-top d-flex align-items-center justify-content-between">
+                              <div>
+                                <div className="text-3xs text-muted">₹{pricePerNight.toLocaleString()} / night</div>
+                                <div className="text-xs fw-black text-dark font-monospace">₹{totalHotelCost.toLocaleString()} ({hotelRooms}R × {nights}N)</div>
+                              </div>
+                              <div className="d-flex gap-1">
+                                <button 
+                                  type="button" 
+                                  className="btn btn-xs btn-outline-secondary rounded-pill px-2 py-1 fw-bold text-3xs d-flex align-items-center gap-1"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setViewingHotelDetails(h);
+                                  }}
+                                >
+                                  <Eye size={11} /> Details
+                                </button>
+                                <button 
+                                  type="button" 
+                                  className={`btn btn-xs rounded-pill px-2.5 py-1 fw-bold text-3xs ${
+                                    isSelected ? 'btn-warning text-dark' : 'btn-outline-primary'
+                                  }`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedHotel(h);
+                                  }}
+                                >
+                                  {isSelected ? 'Selected' : 'Select'}
+                                </button>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
 
               {/* Bottom Actions */}
@@ -806,7 +1101,15 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
                       style={{ cursor: 'pointer', background: isSelected ? '#fffdf7' : '#ffffff' }}
                     >
                       <div className="row g-0 h-100">
-                        <div className="col-4 position-relative" style={{ minHeight: '130px', background: '#f1f5f9' }}>
+                        <div 
+                          className="col-4 position-relative" 
+                          style={{ minHeight: '130px', background: '#f1f5f9', cursor: 'pointer' }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setViewingActivityDetails(act);
+                          }}
+                          title="Click to view activity details and schedule"
+                        >
                           <img 
                             src={act.image_url || (isSightseeing ? 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=400' : 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400')} 
                             alt={act.title || act.name}
@@ -816,6 +1119,9 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
                             isSightseeing ? 'bg-primary text-white' : 'bg-success text-white'
                           }`}>
                             {isSightseeing ? 'Sightseeing' : 'Activity'}
+                          </span>
+                          <span className="badge bg-dark bg-opacity-75 text-white position-absolute bottom-0 end-0 m-1.5 text-3xs px-1.5 py-0.5 rounded-pill d-flex align-items-center gap-1">
+                            <Eye size={10} /> Details
                           </span>
                         </div>
                         <div className="col-8 p-3 d-flex flex-column justify-content-between">
@@ -842,15 +1148,27 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
                               <div className="text-3xs text-muted">₹{price.toLocaleString()} / person</div>
                               <div className="text-xs fw-black text-dark font-monospace">₹{totalPrice.toLocaleString()} ({memberCount} Pax)</div>
                             </div>
-                            <button
-                              type="button"
-                              className={`btn btn-xs rounded-pill px-2.5 py-1 fw-bold ${
-                                isSelected ? 'btn-warning text-dark' : 'btn-outline-secondary'
-                              }`}
-                              onClick={(e) => { e.stopPropagation(); toggleActivity(); }}
-                            >
-                              {isSelected ? '✓ Selected' : '+ Add'}
-                            </button>
+                            <div className="d-flex gap-1">
+                              <button
+                                type="button"
+                                className="btn btn-xs btn-outline-secondary rounded-pill px-2 py-1 fw-bold text-3xs d-flex align-items-center gap-1"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setViewingActivityDetails(act);
+                                }}
+                              >
+                                <Eye size={11} /> Details
+                              </button>
+                              <button
+                                type="button"
+                                className={`btn btn-xs rounded-pill px-2.5 py-1 fw-bold text-3xs ${
+                                  isSelected ? 'btn-warning text-dark' : 'btn-outline-primary'
+                                }`}
+                                onClick={(e) => { e.stopPropagation(); toggleActivity(); }}
+                              >
+                                {isSelected ? '✓ Added' : '+ Add'}
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1112,25 +1430,85 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
 
                   {/* Components List */}
                   <div className="d-flex flex-column gap-2 mb-3">
-                    {/* Vehicle */}
+                    {/* Vehicle Summary Item */}
                     <div className="p-2.5 rounded-3 bg-light border d-flex justify-content-between align-items-center">
-                      <div className="d-flex align-items-center gap-2">
-                        <Car size={16} className="text-primary flex-shrink-0" />
+                      <div className="d-flex align-items-center gap-2.5">
+                        {selectedVehicle ? (
+                          <img
+                            src={selectedVehicle.image || 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=400'}
+                            alt={selectedVehicle.name}
+                            className="rounded-2 object-fit-cover flex-shrink-0"
+                            style={{ width: '48px', height: '36px' }}
+                            onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=400'; }}
+                          />
+                        ) : (
+                          <div className="rounded-2 bg-secondary bg-opacity-10 p-2 text-muted">
+                            <Car size={18} />
+                          </div>
+                        )}
                         <div>
-                          <div className="fw-bold text-dark text-xs">{selectedVehicle ? selectedVehicle.name : 'No Vehicle Included'}</div>
-                          <div className="text-3xs text-muted">{selectedVehicle ? `${nights} rental days` : 'Skipped'}</div>
+                          <div className="d-flex align-items-center gap-1.5">
+                            <span className="fw-bold text-dark text-xs">{selectedVehicle ? selectedVehicle.name : 'No Vehicle Included'}</span>
+                            {selectedVehicle && (
+                              <button
+                                type="button"
+                                className="btn btn-link text-primary p-0 text-3xs text-decoration-none fw-bold"
+                                onClick={() => setViewingVehicleDetails(selectedVehicle)}
+                              >
+                                [Specs]
+                              </button>
+                            )}
+                          </div>
+                          <div className="text-3xs text-muted">
+                            {selectedVehicle ? (
+                              <span>
+                                {selectedVehicle.seating ? `${selectedVehicle.seating} Seats` : 'Standard'} • {selectedVehicle.fuel || 'Petrol'} • {nights} Days @ ₹{parseFloat(selectedVehicle.price || 0).toLocaleString()}/d
+                              </span>
+                            ) : 'Skipped'}
+                          </div>
                         </div>
                       </div>
                       <span className="text-xs fw-bold text-dark">₹{vehicleCost.toLocaleString()}</span>
                     </div>
 
-                    {/* Hotel */}
+                    {/* Hotel Summary Item */}
                     <div className="p-2.5 rounded-3 bg-light border d-flex justify-content-between align-items-center">
-                      <div className="d-flex align-items-center gap-2">
-                        <Hotel size={16} className="text-primary flex-shrink-0" />
+                      <div className="d-flex align-items-center gap-2.5">
+                        {selectedHotel ? (
+                          <img
+                            src={selectedHotel.image || (selectedHotel.images_json ? JSON.parse(selectedHotel.images_json)[0] : '') || 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400'}
+                            alt={selectedHotel.name}
+                            className="rounded-2 object-fit-cover flex-shrink-0"
+                            style={{ width: '48px', height: '36px' }}
+                            onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400'; }}
+                          />
+                        ) : (
+                          <div className="rounded-2 bg-secondary bg-opacity-10 p-2 text-muted">
+                            <Hotel size={18} />
+                          </div>
+                        )}
                         <div>
-                          <div className="fw-bold text-dark text-xs">{selectedHotel ? selectedHotel.name : 'No Hotel Included'}</div>
-                          <div className="text-3xs text-muted">{selectedHotel ? `${hotelRooms} room(s) × ${nights} nights` : 'Skipped'}</div>
+                          <div className="d-flex align-items-center gap-1.5">
+                            <span className="fw-bold text-dark text-xs">{selectedHotel ? selectedHotel.name : 'No Hotel Included'}</span>
+                            {selectedHotel && (
+                              <button
+                                type="button"
+                                className="btn btn-link text-primary p-0 text-3xs text-decoration-none fw-bold"
+                                onClick={() => setViewingHotelDetails(selectedHotel)}
+                              >
+                                [Rooms & Info]
+                              </button>
+                            )}
+                          </div>
+                          <div className="text-3xs text-muted">
+                            {selectedHotel ? (
+                              <span>
+                                {selectedHotel.preselected_room?.name ? `${selectedHotel.preselected_room.name}` : `${hotelRooms} Room(s)`}
+                                {(selectedHotel.preselected_rate_plan?.name || selectedHotel.preselected_rate_plan?.meal_plan_label) && ` • ${selectedHotel.preselected_rate_plan.name || selectedHotel.preselected_rate_plan.meal_plan_label}`}
+                                {` • ${nights}N @ ₹${parseFloat(selectedHotel.price || selectedHotel.price_per_night || 3000).toLocaleString()}/n`}
+                              </span>
+                            ) : 'Skipped'}
+                          </div>
                         </div>
                       </div>
                       <span className="text-xs fw-bold text-dark">₹{hotelCost.toLocaleString()}</span>
@@ -1219,6 +1597,122 @@ export default function B2BCraftMyTripFlow({ partner, activeMode, onBookingSucce
             </div>
           </div>
         </form>
+      )}
+
+      {/* ── AUTHORITATIVE D2C VEHICLE DETAILS MODAL (CARS & BIKES SEPARATED) ── */}
+      {viewingVehicleDetails && (
+        <div 
+          className="position-fixed top-0 start-0 w-100 h-100 bg-white"
+          style={{ zIndex: 1060, overflowY: 'auto' }}
+        >
+          {isBikeVehicle(viewingVehicleDetails) ? (
+            <BikeDetailsPage
+              bike={viewingVehicleDetails}
+              pickupDate={pickupDate}
+              dropDate={dropDate}
+              bookingDays={nights}
+              isCraftMyTrip={true}
+              backLabel="← Back to Craft My Trip"
+              actionLabel="Select & Continue"
+              breadcrumbPrefix="B2B Portal / Craft My Trip"
+              memberCount={memberCount}
+              onMemberCountChange={setMemberCount}
+              onBack={() => setViewingVehicleDetails(null)}
+              onBook={(veh) => {
+                const target = veh || viewingVehicleDetails;
+                setSelectedVehicle(target);
+                setViewingVehicleDetails(null);
+                setStep(2);
+              }}
+            />
+          ) : (
+            <CarDetailsPage
+              car={viewingVehicleDetails}
+              pickupDate={pickupDate}
+              dropDate={dropDate}
+              bookingDays={nights}
+              isCraftMyTrip={true}
+              backLabel="← Back to Craft My Trip"
+              actionLabel="Select & Continue"
+              breadcrumbPrefix="B2B Portal / Craft My Trip"
+              memberCount={memberCount}
+              onMemberCountChange={setMemberCount}
+              onBack={() => setViewingVehicleDetails(null)}
+              onBook={(veh) => {
+                const target = veh || viewingVehicleDetails;
+                setSelectedVehicle(target);
+                setViewingVehicleDetails(null);
+                setStep(2);
+              }}
+            />
+          )}
+        </div>
+      )}
+
+      {/* ── AUTHORITATIVE D2C HOTEL DETAILS MODAL (ROOMS & MEAL PLANS SELECTABLE) ── */}
+      {viewingHotelDetails && (
+        <div 
+          className="position-fixed top-0 start-0 w-100 h-100 bg-white"
+          style={{ zIndex: 1060, overflowY: 'auto' }}
+        >
+          <HotelDetailsPage
+            hotel={viewingHotelDetails}
+            pickupDate={pickupDate}
+            dropDate={dropDate}
+            nights={nights}
+            isCraftMyTrip={true}
+            backLabel="← Back to Craft My Trip"
+            actionLabel="Select & Continue"
+            breadcrumbPrefix="B2B Portal / Craft My Trip"
+            onBack={() => setViewingHotelDetails(null)}
+            onBook={(hotelItem, room, plan) => {
+              const item = hotelItem || viewingHotelDetails;
+              const nightPrice = plan?.base_price 
+                ? parseFloat(plan.base_price) 
+                : (parseFloat(item.price_per_night || item.price || item.rate || 0) || 3000);
+              const enrichedHotel = {
+                ...item,
+                preselected_room: room || null,
+                preselected_rate_plan: plan || null,
+                has_selected_room: Boolean(room && plan),
+                price: nightPrice,
+                price_per_night: nightPrice
+              };
+              setSelectedHotel(enrichedHotel);
+              setViewingHotelDetails(null);
+              setStep(3);
+            }}
+          />
+        </div>
+      )}
+
+      {/* ── AUTHORITATIVE D2C ACTIVITY DETAILS MODAL ── */}
+      {viewingActivityDetails && (
+        <div 
+          className="position-fixed top-0 start-0 w-100 h-100 bg-white"
+          style={{ zIndex: 1060, overflowY: 'auto' }}
+        >
+          <ActivityDetailsPage
+            activity={viewingActivityDetails}
+            pickupDate={pickupDate}
+            adultsCount={memberCount}
+            memberCount={memberCount}
+            isCraftMyTrip={true}
+            isSelected={selectedActivities.some(a => a.id === viewingActivityDetails.id)}
+            backLabel="← Back to Craft My Trip"
+            actionLabel={selectedActivities.some(a => a.id === viewingActivityDetails.id) ? "Continue to Flights" : "Add & Continue"}
+            breadcrumbPrefix="B2B Portal / Craft My Trip"
+            onBack={() => setViewingActivityDetails(null)}
+            onBook={(actData) => {
+              const act = actData || viewingActivityDetails;
+              if (!selectedActivities.some(a => a.id === act.id)) {
+                setSelectedActivities(prev => [...prev, act]);
+              }
+              setViewingActivityDetails(null);
+              setStep(4);
+            }}
+          />
+        </div>
       )}
     </div>
   );

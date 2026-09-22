@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   X, ChevronLeft, ChevronRight, Star, MapPin, ArrowLeft, CheckCircle, 
   Clock, ShieldCheck, Users, BedDouble, Maximize2, Coffee, Utensils, 
@@ -57,6 +58,27 @@ export default function HotelDetailsPage({
   // Selected Room & Plan Selection for quick review
   const [selectedRoomId, setSelectedRoomId] = useState(null);
   const [selectedPlanByRoom, setSelectedPlanByRoom] = useState({});
+
+  // Inventory-aware maximum selectable rooms: min(5, available_rooms) with a minimum of 1
+  const maxAvailableInventory = useMemo(() => {
+    if (selectedRoomId) {
+      const r = roomTypes.find(room => room.id === selectedRoomId);
+      if (r && r.available_rooms != null) return r.available_rooms;
+    }
+    if (roomTypes.length > 0) {
+      const maxInRooms = Math.max(...roomTypes.map(r => r.available_rooms != null ? r.available_rooms : 5));
+      return maxInRooms > 0 ? maxInRooms : 5;
+    }
+    return 5;
+  }, [selectedRoomId, roomTypes]);
+
+  const maxRoomsSelectable = Math.max(1, Math.min(5, maxAvailableInventory));
+
+  useEffect(() => {
+    if (numRooms > maxRoomsSelectable) {
+      setNumRooms(maxRoomsSelectable);
+    }
+  }, [maxRoomsSelectable, numRooms]);
 
   // 1. Fetch Real Room Types & Live Availability
   const loadRooms = async () => {
@@ -241,6 +263,17 @@ export default function HotelDetailsPage({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeLightboxImg, activeLightboxIdx, currentGalleryList, galleryOpen, mapModalOpen]);
+
+  // Lock body scroll when full gallery or lightbox is active to preserve viewport scroll position
+  useEffect(() => {
+    if (galleryOpen || activeLightboxImg) {
+      const prevOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = prevOverflow;
+      };
+    }
+  }, [galleryOpen, activeLightboxImg]);
 
   const starsCount = parseInt(hotel.stars || hotel.star_rating || 3, 10);
   const basePricePerNight = Math.round(parseFloat(hotel.price || 3500));
@@ -522,9 +555,9 @@ export default function HotelDetailsPage({
               <select 
                 className="form-select rounded-3" 
                 value={numRooms} 
-                onChange={(e) => setNumRooms(parseInt(e.target.value) || 1)}
+                onChange={(e) => setNumRooms(parseInt(e.target.value, 10) || 1)}
               >
-                {[1, 2, 3, 4, 5].map(n => (
+                {Array.from({ length: maxRoomsSelectable }, (_, i) => i + 1).map(n => (
                   <option key={n} value={n}>{n} {n === 1 ? 'Room' : 'Rooms'}</option>
                 ))}
               </select>
@@ -1145,12 +1178,12 @@ export default function HotelDetailsPage({
         </div>
       )}
 
-      {/* ─── 9. FULL PHOTO GALLERY & LIGHTBOX MODAL ─── */}
-      {galleryOpen && (
+      {/* ─── 9. FULL PHOTO GALLERY & LIGHTBOX MODAL (RENDERED VIA PORTAL) ─── */}
+      {galleryOpen && createPortal(
         <div 
           className="position-fixed d-flex flex-column" 
           style={{ 
-            zIndex: 1070, 
+            zIndex: 9999, 
             top: 0, 
             left: 0, 
             right: 0, 
@@ -1247,15 +1280,16 @@ export default function HotelDetailsPage({
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* ─── 10. LIGHTBOX FULLSCREEN PREVIEW WITH NAVIGATION & THUMBNAILS ─── */}
-      {activeLightboxImg && (
+      {/* ─── 10. LIGHTBOX FULLSCREEN PREVIEW WITH NAVIGATION & THUMBNAILS (RENDERED VIA PORTAL) ─── */}
+      {activeLightboxImg && createPortal(
         <div 
           className="position-fixed d-flex flex-column align-items-center justify-content-between p-3" 
           style={{ 
-            zIndex: 1080, 
+            zIndex: 10000, 
             top: 0, 
             left: 0, 
             right: 0, 
@@ -1270,7 +1304,7 @@ export default function HotelDetailsPage({
           {/* Lightbox Header Bar */}
           <div 
             className="w-100 d-flex justify-content-between align-items-center px-3 py-2 text-white" 
-            style={{ zIndex: 1090 }}
+            style={{ zIndex: 10010 }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="d-flex align-items-center gap-2">
@@ -1302,7 +1336,7 @@ export default function HotelDetailsPage({
                 type="button"
                 onClick={prevLightboxImg}
                 className="position-absolute start-0 ms-2 ms-md-4 btn btn-dark bg-opacity-75 text-white rounded-circle p-3 d-flex align-items-center justify-content-center border border-white border-opacity-25 hover-scale shadow"
-                style={{ zIndex: 1090 }}
+                style={{ zIndex: 10010 }}
                 title="Previous Photo (Left Arrow)"
               >
                 <ChevronLeft size={28} />
@@ -1329,7 +1363,7 @@ export default function HotelDetailsPage({
                 type="button"
                 onClick={nextLightboxImg}
                 className="position-absolute end-0 me-2 me-md-4 btn btn-dark bg-opacity-75 text-white rounded-circle p-3 d-flex align-items-center justify-content-center border border-white border-opacity-25 hover-scale shadow"
-                style={{ zIndex: 1090 }}
+                style={{ zIndex: 10010 }}
                 title="Next Photo (Right Arrow)"
               >
                 <ChevronRight size={28} />
@@ -1341,7 +1375,7 @@ export default function HotelDetailsPage({
           {currentGalleryList.length > 1 && (
             <div 
               className="d-flex align-items-center gap-2 overflow-auto py-2 px-3 w-100 justify-content-center" 
-              style={{ maxHeight: '70px', zIndex: 1090 }}
+              style={{ maxHeight: '70px', zIndex: 10010 }}
               onClick={(e) => e.stopPropagation()}
             >
               {currentGalleryList.map((thumb, tIdx) => (
@@ -1363,7 +1397,8 @@ export default function HotelDetailsPage({
               ))}
             </div>
           )}
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ─── 11. MOBILE STICKY BOTTOM BAR ─── */}

@@ -2910,4 +2910,68 @@
   transform: scale(0.98);
 }
 
+/* ─── Craft My Trip Portal Embedded Mode ─── */
+.cmt-portal-embedded {
+  min-height: auto !important;
+  background: transparent !important;
+  padding: 0 !important;
+  font-family: inherit !important;
+}
+
+.cmt-portal-embedded .cmt-content {
+  max-width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.cmt-portal-embedded .cmt-step-indicator {
+  background: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: none !important;
+  border-radius: 16px !important;
+  padding: 14px 20px !important;
+  margin-bottom: 20px !important;
+}
+
+.cmt-portal-embedded .cmt-step-circle {
+  background: #e2e8f0 !important;
+  border-color: #cbd5e1 !important;
+  color: #64748b !important;
+}
+
+.cmt-portal-embedded .cmt-step.active .cmt-step-circle {
+  background: linear-gradient(135deg, #0B192C 0%, #1E3E62 100%) !important;
+  border-color: #FFC107 !important;
+  color: #FFC107 !important;
+  box-shadow: 0 4px 14px rgba(11, 25, 44, 0.25) !important;
+}
+
+.cmt-portal-embedded .cmt-step.done .cmt-step-circle {
+  background: #10b981 !important;
+  border-color: #10b981 !important;
+  color: #ffffff !important;
+}
+
+.cmt-portal-embedded .cmt-step-body {
+  background: #ffffff !important;
+  border: 1px solid #eef2f6 !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04) !important;
+  border-radius: 20px !important;
+  padding: 24px !important;
+}
+
+.cmt-portal-embedded .cmt-btn-primary {
+  background: linear-gradient(135deg, #FFC107 0%, #FF9800 100%) !important;
+  color: #0B192C !important;
+  font-weight: 800 !important;
+  border: none !important;
+  box-shadow: 0 4px 14px rgba(255, 193, 7, 0.35) !important;
+}
+
+.cmt-portal-embedded .cmt-btn-primary:hover {
+  background: linear-gradient(135deg, #FFB300 0%, #F57C00 100%) !important;
+  box-shadow: 0 6px 20px rgba(255, 193, 7, 0.45) !important;
+}
+
+
 

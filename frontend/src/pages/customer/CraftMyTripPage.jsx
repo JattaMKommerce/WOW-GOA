@@ -1414,12 +1414,12 @@ function Step4Flight({ selectedFlight, setSelectedFlight, withFlight, setWithFli
   );
 }
 
-function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [], selectedFlight, withFlight, memberCount, pickupDate, dropDate, onBack, onConfirm }) {
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
-  const [license, setLicense] = useState('');
-  const [dob, setDob] = useState('');
+function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [], selectedFlight, withFlight, memberCount, pickupDate, dropDate, onBack, onConfirm, currentUser }) {
+  const [name, setName] = useState(currentUser?.name || currentUser?.username || '');
+  const [phone, setPhone] = useState(currentUser?.phone || '');
+  const [email, setEmail] = useState(currentUser?.email || '');
+  const [license, setLicense] = useState(currentUser?.license || '');
+  const [dob, setDob] = useState(currentUser?.date_of_birth || '');
   const [paymentMode, setPaymentMode] = useState('full');
   const [showSuccess, setShowSuccess] = useState(false);
   const [confirmedBookingId, setConfirmedBookingId] = useState(null);
@@ -1429,6 +1429,16 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
   const [walletBalance, setWalletBalance] = useState(0);
   const [useWalletCashback, setUseWalletCashback] = useState(false);
   const [loyaltyInfo, setLoyaltyInfo] = useState(null);
+
+  useEffect(() => {
+    if (currentUser) {
+      if (currentUser.name || currentUser.username) setName(prev => prev || currentUser.name || currentUser.username || '');
+      if (currentUser.phone) setPhone(prev => prev || currentUser.phone || '');
+      if (currentUser.email) setEmail(prev => prev || currentUser.email || '');
+      if (currentUser.license) setLicense(prev => prev || currentUser.license || '');
+      if (currentUser.date_of_birth) setDob(prev => prev || currentUser.date_of_birth || '');
+    }
+  }, [currentUser]);
 
   // Auto-fetch DOB & Wallet & Loyalty for repeat customer by phone
   useEffect(() => {
@@ -1547,7 +1557,7 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
       customer_name: name,
       phone,
       customer_phone: phone,
-      customer_id: `c_${cleanPhone || Date.now()}`,
+      customer_id: currentUser?.id || `c_${cleanPhone || Date.now()}`,
       license: selectedVehicle ? license : '',
       date_of_birth: dob || '',
       pickup_loc: selectedVehicle?.location || 'Goa',
@@ -1625,7 +1635,7 @@ function Step5ReviewPay({ selectedVehicle, selectedHotel, selectedActivities = [
       setConfirmedBookingId(bookingId);
       setConfirmedCashbackPreview(cashbackPreview);
       setShowSuccess(true);
-      if (onConfirm) onConfirm();
+      if (onConfirm) onConfirm(fullRecord);
     } catch (e) {
       setError('Booking failed: ' + e.message);
     } finally {
@@ -2047,7 +2057,10 @@ export default function CraftMyTripPage({
   appliedFilters = {},
   setAppliedFilters,
   searchQuery = '',
-  setSearchQuery
+  setSearchQuery,
+  currentUser = null,
+  isPortal = false,
+  onConfirm = null
 }) {
   const [step, setStep] = useState(1);
   const [selectedVehicle, setSelectedVehicle] = useState(null);
@@ -2394,16 +2407,29 @@ export default function CraftMyTripPage({
     return () => window.removeEventListener('popstate', handlePopState);
   }, [allCars, allBikes, allHotels, allActivities]);
 
+  const scrollToCraftView = () => {
+    if (isPortal) {
+      const el = document.getElementById('explore-more-section') || document.querySelector('.cmt-portal-embedded-section') || document.querySelector('.cmt-portal-embedded');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const handleOpenVehicleDetails = (vehicle) => {
     if (!vehicle) return;
     const isBike = isBikeVehicle(vehicle);
-    const targetUrl = isBike ? `/craft?bike=${encodeURIComponent(vehicle.id)}` : `/craft?car=${encodeURIComponent(vehicle.id)}`;
-    window.history.pushState({ craftStep: 1, vehicleId: vehicle.id, isBike }, '', targetUrl);
+    if (!isPortal) {
+      const targetUrl = isBike ? `/craft?bike=${encodeURIComponent(vehicle.id)}` : `/craft?car=${encodeURIComponent(vehicle.id)}`;
+      window.history.pushState({ craftStep: 1, vehicleId: vehicle.id, isBike }, '', targetUrl);
+    }
     try {
       sessionStorage.setItem('tg_craft_viewing_vehicle', JSON.stringify(vehicle));
     } catch (e) {}
     setViewingVehicleDetails(vehicle);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    scrollToCraftView();
   };
 
   const handleBackFromVehicleDetails = () => {
@@ -2411,8 +2437,10 @@ export default function CraftMyTripPage({
     try {
       sessionStorage.removeItem('tg_craft_viewing_vehicle');
     } catch (e) {}
-    window.history.pushState({ craftStep: 1 }, '', '/craft');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (!isPortal) {
+      window.history.pushState({ craftStep: 1 }, '', '/craft');
+    }
+    scrollToCraftView();
   };
 
   const handleSelectAndContinueVehicle = (vehicleItem) => {
@@ -2431,20 +2459,24 @@ export default function CraftMyTripPage({
     try {
       sessionStorage.removeItem('tg_craft_viewing_vehicle');
     } catch (e) {}
-    window.history.pushState({ craftStep: 2 }, '', '/craft');
+    if (!isPortal) {
+      window.history.pushState({ craftStep: 2 }, '', '/craft');
+    }
     setStep(2);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    scrollToCraftView();
   };
 
   const handleOpenHotelDetails = (hotel) => {
     if (!hotel) return;
-    const targetUrl = `/craft?hotel=${encodeURIComponent(hotel.id)}`;
-    window.history.pushState({ craftStep: 2, hotelId: hotel.id }, '', targetUrl);
+    if (!isPortal) {
+      const targetUrl = `/craft?hotel=${encodeURIComponent(hotel.id)}`;
+      window.history.pushState({ craftStep: 2, hotelId: hotel.id }, '', targetUrl);
+    }
     try {
       sessionStorage.setItem('tg_craft_viewing_hotel', JSON.stringify(hotel));
     } catch (e) {}
     setViewingHotelDetails(hotel);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    scrollToCraftView();
   };
 
   const handleBackFromHotelDetails = () => {
@@ -2452,8 +2484,10 @@ export default function CraftMyTripPage({
     try {
       sessionStorage.removeItem('tg_craft_viewing_hotel');
     } catch (e) {}
-    window.history.pushState({ craftStep: 2 }, '', '/craft');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (!isPortal) {
+      window.history.pushState({ craftStep: 2 }, '', '/craft');
+    }
+    scrollToCraftView();
   };
 
   const handleSelectAndContinueHotel = (hotelItem, room = null, plan = null) => {
@@ -2484,20 +2518,24 @@ export default function CraftMyTripPage({
     try {
       sessionStorage.removeItem('tg_craft_viewing_hotel');
     } catch (e) {}
-    window.history.pushState({ craftStep: 3 }, '', '/craft');
+    if (!isPortal) {
+      window.history.pushState({ craftStep: 3 }, '', '/craft');
+    }
     setStep(3);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    scrollToCraftView();
   };
 
   const handleOpenActivityDetails = (activity) => {
     if (!activity) return;
-    const targetUrl = `/craft?activity=${encodeURIComponent(activity.id)}`;
-    window.history.pushState({ craftStep: 3, activityId: activity.id }, '', targetUrl);
+    if (!isPortal) {
+      const targetUrl = `/craft?activity=${encodeURIComponent(activity.id)}`;
+      window.history.pushState({ craftStep: 3, activityId: activity.id }, '', targetUrl);
+    }
     try {
       sessionStorage.setItem('tg_craft_viewing_activity', JSON.stringify(activity));
     } catch {}
     setViewingActivityDetails(activity);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    scrollToCraftView();
   };
 
   const handleBackFromActivityDetails = () => {
@@ -2505,8 +2543,10 @@ export default function CraftMyTripPage({
     try {
       sessionStorage.removeItem('tg_craft_viewing_activity');
     } catch {}
-    window.history.pushState({ craftStep: 3 }, '', '/craft');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (!isPortal) {
+      window.history.pushState({ craftStep: 3 }, '', '/craft');
+    }
+    scrollToCraftView();
   };
 
   const handleSelectAndContinueActivity = (activityItem) => {
@@ -2523,20 +2563,24 @@ export default function CraftMyTripPage({
     try {
       sessionStorage.removeItem('tg_craft_viewing_activity');
     } catch {}
-    window.history.pushState({ craftStep: 4 }, '', '/craft');
+    if (!isPortal) {
+      window.history.pushState({ craftStep: 4 }, '', '/craft');
+    }
     setStep(4);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    scrollToCraftView();
   };
 
   const handleOpenFlightDetails = (flight) => {
     if (!flight) return;
-    const targetUrl = `/craft?flight=${encodeURIComponent(flight.id)}`;
-    window.history.pushState({ craftStep: 4, flightId: flight.id }, '', targetUrl);
+    if (!isPortal) {
+      const targetUrl = `/craft?flight=${encodeURIComponent(flight.id)}`;
+      window.history.pushState({ craftStep: 4, flightId: flight.id }, '', targetUrl);
+    }
     try {
       sessionStorage.setItem('tg_craft_viewing_flight', JSON.stringify(flight));
     } catch {}
     setViewingFlightDetails(flight);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    scrollToCraftView();
   };
 
   const handleBackFromFlightDetails = () => {
@@ -2544,8 +2588,10 @@ export default function CraftMyTripPage({
     try {
       sessionStorage.removeItem('tg_craft_viewing_flight');
     } catch {}
-    window.history.pushState({ craftStep: 4 }, '', '/craft');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (!isPortal) {
+      window.history.pushState({ craftStep: 4 }, '', '/craft');
+    }
+    scrollToCraftView();
   };
 
   const handleSelectAndContinueFlight = (flightItem) => {
@@ -2558,15 +2604,21 @@ export default function CraftMyTripPage({
     try {
       sessionStorage.removeItem('tg_craft_viewing_flight');
     } catch {}
-    window.history.pushState({ craftStep: 5 }, '', '/craft');
+    if (!isPortal) {
+      window.history.pushState({ craftStep: 5 }, '', '/craft');
+    }
     setStep(5);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    scrollToCraftView();
   };
 
-  const goNext = () => setStep(s => Math.min(s + 1, 5));
+  const goNext = () => {
+    setStep(s => Math.min(s + 1, 5));
+    scrollToCraftView();
+  };
   const goBack = () => {
     if (step === 1) { onBack(); return; }
     setStep(s => s - 1);
+    scrollToCraftView();
   };
 
   // ─── FULL-PAGE VEHICLE DETAILS VIEW ──────────────────────────────────────
@@ -2676,24 +2728,48 @@ export default function CraftMyTripPage({
   }
 
   return (
-    <div className="cmt-page">
+    <div className={`cmt-page ${isPortal ? 'cmt-portal-embedded' : ''}`}>
       {/* Page Header */}
-      <div className="cmt-page-hero">
-        <div className="cmt-hero-content">
-          <div className="cmt-hero-badge"><Wand2 size={16} /> Build From Scratch</div>
-          <h1 className="cmt-hero-title">Craft My Trip</h1>
-          <p className="cmt-hero-sub">Design your perfect Goa getaway — choose your ride, stay, activities, and fly your way</p>
-          <div className="cmt-hero-chips">
-            <span>🚗 Self Drive Vehicle</span>
-            <span>+</span>
-            <span>🏨 Hotel Stay</span>
-            <span>+</span>
-            <span>🎯 Sightseeing & Activities</span>
-            <span>+</span>
-            <span>✈️ Optional Flight</span>
+      {isPortal ? (
+        <div className="cmt-portal-header mb-4 p-3 p-md-4 rounded-4 shadow-sm" style={{ background: 'linear-gradient(135deg, #0B192C 0%, #1E3E62 100%)', color: '#fff' }}>
+          <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+            <div>
+              <div className="d-inline-flex align-items-center gap-2 px-3 py-1 rounded-pill bg-white bg-opacity-10 text-warning text-xs fw-bold mb-2">
+                <Sparkles size={14} className="text-warning" />
+                <span>⭐ CUSTOMER PORTAL · TAILOR-MADE ITINERARY</span>
+              </div>
+              <h3 className="fw-black mb-1 font-heading text-white" style={{ fontSize: '22px' }}>
+                Craft Your Custom Goa Trip 🌴
+              </h3>
+              <p className="text-white-50 mb-0 text-xs" style={{ maxWidth: '680px' }}>
+                Build your bespoke holiday — select a self-drive ride, resort stay, curated sightseeing, and optional flight. Direct booking with instant confirmation and 10% wallet cashback.
+              </p>
+            </div>
+            <div className="d-flex align-items-center gap-2">
+              <span className="badge bg-warning text-dark fw-bold px-3 py-2 rounded-pill text-xs shadow-sm">
+                💰 10% Wallet Cashback
+              </span>
+            </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="cmt-page-hero">
+          <div className="cmt-hero-content">
+            <div className="cmt-hero-badge"><Wand2 size={16} /> Build From Scratch</div>
+            <h1 className="cmt-hero-title">Craft My Trip</h1>
+            <p className="cmt-hero-sub">Design your perfect Goa getaway — choose your ride, stay, activities, and fly your way</p>
+            <div className="cmt-hero-chips">
+              <span>🚗 Self Drive Vehicle</span>
+              <span>+</span>
+              <span>🏨 Hotel Stay</span>
+              <span>+</span>
+              <span>🎯 Sightseeing & Activities</span>
+              <span>+</span>
+              <span>✈️ Optional Flight</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="cmt-content">
         <StepIndicator currentStep={step} />
@@ -2841,7 +2917,8 @@ export default function CraftMyTripPage({
             pickupDate={pickupDate}
             dropDate={dropDate}
             onBack={goBack}
-            onConfirm={null}
+            onConfirm={onConfirm}
+            currentUser={currentUser}
           />
         )}
       </div>

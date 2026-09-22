@@ -7023,6 +7023,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
             }
             $cleanEmail = trim($payload['email'] ?? '');
+            $initialQuery = trim($payload['message'] ?? ($payload['query'] ?? ''));
+            $detectedService = 'AI Travel Assistant Chat';
+            $detectedNotes = 'Inquired via Sophia AI Assistant';
+            if ($initialQuery) {
+                $detectedNotes = 'Customer asked: ' . $initialQuery;
+                if (preg_match('/\b(thar)\b/i', $initialQuery)) $detectedService = 'Mahindra Thar Rental Inquiry';
+                elseif (preg_match('/\b(gt)\b/i', $initialQuery)) $detectedService = 'GT Bike Rental Inquiry';
+                elseif (preg_match('/\b(innova|crysta)\b/i', $initialQuery)) $detectedService = 'Innova Crysta Rental Inquiry';
+                elseif (preg_match('/\b(fortuner)\b/i', $initialQuery)) $detectedService = 'Toyota Fortuner Rental Inquiry';
+                elseif (preg_match('/\b(scorpio)\b/i', $initialQuery)) $detectedService = 'Mahindra Scorpio Rental Inquiry';
+                elseif (preg_match('/\b(activa|jupiter|access)\b/i', $initialQuery)) $detectedService = 'Activa Scooter Rental Inquiry';
+                elseif (preg_match('/\b(bike|scooter|moped|motorcycle)\b/i', $initialQuery)) $detectedService = 'Bike / Scooter Rental Inquiry';
+                elseif (preg_match('/\b(car|cab|taxi|self\s*drive)\b/i', $initialQuery)) $detectedService = 'Car Rental Inquiry';
+                elseif (preg_match('/\b(hotel|resort|villa|stay)\b/i', $initialQuery)) $detectedService = 'Hotel / Stay Inquiry';
+                elseif (preg_match('/\b(scuba|water\s*sports?|cruise)\b/i', $initialQuery)) $detectedService = 'Water Sports Inquiry';
+                else $detectedService = 'Trip Inquiry: ' . mb_substr($initialQuery, 0, 35) . (mb_strlen($initialQuery) > 35 ? '...' : '');
+            }
+
+            // Ensure columns notes and service exist in ai_leads table
+            try { $pdo->exec("ALTER TABLE ai_leads ADD COLUMN notes TEXT DEFAULT NULL"); } catch (Exception $e) {}
+            try { $pdo->exec("ALTER TABLE ai_leads ADD COLUMN service VARCHAR(255) DEFAULT NULL"); } catch (Exception $e) {}
 
             // 1. Check or reuse in ai_leads table
             $existingAi = null;
@@ -7034,16 +7055,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($existingAi) {
                 $aiLeadId = $existingAi['id'];
+                $aiUpd = [];
+                $aiParams = [];
                 if ($cleanName && (empty($existingAi['name']) || $existingAi['name'] === 'Customer')) {
-                    $pdo->prepare("UPDATE ai_leads SET name = ? WHERE id = ?")->execute([$cleanName, $aiLeadId]);
+                    $aiUpd[] = "name = ?";
+                    $aiParams[] = $cleanName;
+                }
+                if ($detectedNotes !== 'Inquired via Sophia AI Assistant') {
+                    $aiUpd[] = "notes = ?";
+                    $aiParams[] = $detectedNotes;
+                }
+                if ($detectedService !== 'AI Travel Assistant Chat') {
+                    $aiUpd[] = "service = ?";
+                    $aiParams[] = $detectedService;
+                }
+                if (!empty($aiUpd)) {
+                    $aiParams[] = $aiLeadId;
+                    $pdo->prepare("UPDATE ai_leads SET " . implode(", ", $aiUpd) . " WHERE id = ?")->execute($aiParams);
                 }
             } else {
                 $aiLeadId = uniqid('ai-');
-                $stmt = $pdo->prepare("INSERT INTO ai_leads (id, name, phone, created_at) VALUES (?, ?, ?, ?)");
+                $stmt = $pdo->prepare("INSERT INTO ai_leads (id, name, phone, notes, service, created_at) VALUES (?, ?, ?, ?, ?, ?)");
                 $stmt->execute([
                     $aiLeadId,
                     $cleanName,
                     $cleanPhone,
+                    $detectedNotes,
+                    $detectedService,
                     date('Y-m-d H:i:s')
                 ]);
             }
@@ -7064,6 +7102,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $updFields[] = "email = ?";
                     $updParams[] = $cleanEmail;
                 }
+                if ($detectedNotes !== 'Inquired via Sophia AI Assistant') {
+                    $updFields[] = "notes = ?";
+                    $updParams[] = $detectedNotes;
+                }
+                if ($detectedService !== 'AI Travel Assistant Chat') {
+                    $updFields[] = "service = ?";
+                    $updParams[] = $detectedService;
+                }
                 // Transition status: if 'New', set to 'Pending Inquiry'. If already 'Booked' or 'Closed-Won', preserve booked status!
                 if ($existingLead['status'] === 'New') {
                     $updFields[] = "status = 'Pending Inquiry'";
@@ -7080,8 +7126,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Create new lead with status "Pending Inquiry"
                 $leadId = 'LD-' . rand(1000, 9999);
                 try {
-                    $leadStmt = $pdo->prepare("INSERT INTO leads (id, name, phone, email, source, service, assigned_to, status, budget, notes, admin_id, created_at, updated_at) VALUES (?, ?, ?, ?, 'AI Planner', 'AI Travel Assistant Chat', 'Unassigned', 'Pending Inquiry', '', 'Inquired via Sophia AI Assistant', 'admin', ?, ?)");
-                    $leadStmt->execute([$leadId, $cleanName, $cleanPhone, $cleanEmail, date('Y-m-d H:i:s'), date('Y-m-d H:i:s')]);
+                    $leadStmt = $pdo->prepare("INSERT INTO leads (id, name, phone, email, source, service, assigned_to, status, budget, notes, admin_id, created_at, updated_at) VALUES (?, ?, ?, ?, 'AI Planner', ?, 'Unassigned', 'Pending Inquiry', '', ?, 'admin', ?, ?)");
+                    $leadStmt->execute([$leadId, $cleanName, $cleanPhone, $cleanEmail, $detectedService, $detectedNotes, date('Y-m-d H:i:s'), date('Y-m-d H:i:s')]);
                 } catch (Exception $leade) {}
             }
 
@@ -7089,12 +7135,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             try {
                 $kratuKey = '00b78eecd5bb542952945c6e8c8560db';
                 $kratuUrl = 'https://iamkratu.ai/customer-chat/?key=' . $kratuKey;
+                $kratuSess = 'sess_' . preg_replace('/[^a-zA-Z0-9_]/', '_', $aiLeadId);
                 $kratuPayload = [
                     'action' => 'save_lead',
                     'name' => $cleanName,
                     'phone' => $cleanPhone,
                     'email' => $cleanEmail,
-                    'session_id' => 'sophia_' . $aiLeadId
+                    'session_id' => $kratuSess
                 ];
 
                 $ch = curl_init($kratuUrl);
@@ -7104,9 +7151,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
                 curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
                 curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-                curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
-                curl_setopt($ch, CURLOPT_TIMEOUT, 4);
+                curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 2);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 3);
                 curl_exec($ch);
+
+                if (!empty($initialQuery)) {
+                    $chatPayload = [
+                        'action' => 'send_chat',
+                        'session_id' => $kratuSess,
+                        'message' => $initialQuery,
+                        'user_name' => $cleanName,
+                        'user_phone' => $cleanPhone
+                    ];
+                    curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($chatPayload));
+                    curl_exec($ch);
+                }
+                curl_close($ch);
             } catch (Exception $kratuErr) {
                 error_log("Kratu lead sync error: " . $kratuErr->getMessage());
             }
@@ -7129,18 +7189,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $aiStmt->execute([$aiLeadId, $id, $leadRow['phone'] ?? '']);
                 $aiRow = $aiStmt->fetch(PDO::FETCH_ASSOC);
 
+                $parsedMsgs = is_array($chatHistory) ? $chatHistory : (json_decode($chatHistory, true) ?: []);
+                $userTexts = [];
+                $latestUserMsg = '';
+                foreach ($parsedMsgs as $msg) {
+                    if (($msg['role'] ?? '') === 'user' && !empty($msg['content'])) {
+                        $txt = trim($msg['content']);
+                        $userTexts[] = $txt;
+                        $latestUserMsg = $txt;
+                    }
+                }
+
                 $extracted = extractLeadRequirements($chatHistory, $leadRow['notes'] ?? '');
                 $chatHistStr = is_string($chatHistory) ? $chatHistory : json_encode($chatHistory);
 
+                // Build what the customer actually asked
+                $askedNotes = null;
+                $specificService = null;
+                if (!empty($userTexts)) {
+                    $askedNotes = 'Customer asked: ' . implode(' | ', $userTexts);
+                    $fullUserText = implode(' ', $userTexts);
+                    
+                    if (preg_match('/\b(thar)\b/i', $fullUserText)) $specificService = 'Mahindra Thar Rental Inquiry';
+                    elseif (preg_match('/\b(gt)\b/i', $fullUserText)) $specificService = 'GT Bike Rental Inquiry';
+                    elseif (preg_match('/\b(innova|crysta)\b/i', $fullUserText)) $specificService = 'Innova Crysta Rental Inquiry';
+                    elseif (preg_match('/\b(fortuner)\b/i', $fullUserText)) $specificService = 'Toyota Fortuner Rental Inquiry';
+                    elseif (preg_match('/\b(scorpio)\b/i', $fullUserText)) $specificService = 'Mahindra Scorpio Rental Inquiry';
+                    elseif (preg_match('/\b(activa|jupiter|access)\b/i', $fullUserText)) $specificService = 'Activa Scooter Rental Inquiry';
+                    elseif (preg_match('/\b(bike|scooter|moped|motorcycle)\b/i', $fullUserText)) $specificService = 'Bike / Scooter Rental Inquiry';
+                    elseif (preg_match('/\b(car|cab|taxi|self\s*drive)\b/i', $fullUserText)) $specificService = 'Car Rental Inquiry';
+                    elseif (preg_match('/\b(hotel|resort|villa|stay)\b/i', $fullUserText)) $specificService = 'Hotel / Stay Inquiry';
+                    elseif (preg_match('/\b(scuba|water\s*sports?|cruise)\b/i', $fullUserText)) $specificService = 'Water Sports Inquiry';
+                    elseif (!empty($extracted['requirement']) && $extracted['requirement'] !== 'Trip') {
+                        $specificService = $extracted['requirement'] . ' Inquiry';
+                    } else {
+                        $specificService = 'Trip Inquiry: ' . mb_substr($userTexts[0], 0, 35) . (mb_strlen($userTexts[0]) > 35 ? '...' : '');
+                    }
+                }
+
                 // Update enterprise leads table: customer requirement notes, budget, pax, and transcript
                 if ($leadRow) {
-                    $updNotes = $extracted['notes'];
+                    $updNotes = $askedNotes ?: $extracted['notes'];
+                    $updService = $specificService ?: ($leadRow['service'] ?? 'AI Travel Assistant Chat');
                     $updBudget = $extracted['budget'] ?: $leadRow['budget'];
                     $updPax = $extracted['pax'] ?: ($leadRow['pax'] ?? null);
 
-                    // Requirement: Set lead status flow: Pending -> Inquiry -> Booked
-                    // When customer begins discussing trip requirements in chat, advance 'Pending Inquiry' -> 'Inquiry'.
-                    // If already 'Booked' or 'Closed-Won', do NOT demote!
                     $currStatus = $leadRow['status'] ?? 'Pending Inquiry';
                     $newStatus = $currStatus;
                     if ($currStatus === 'Pending Inquiry' || $currStatus === 'Pending' || $currStatus === 'New') {
@@ -7149,18 +7242,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     $updLeads = $pdo->prepare("UPDATE leads SET 
                         notes = COALESCE(?, notes),
+                        service = COALESCE(?, service),
                         budget = COALESCE(?, budget),
                         pax = COALESCE(?, pax),
                         status = ?,
                         chat_history = ?,
                         updated_at = CURRENT_TIMESTAMP
                         WHERE id = ?");
-                    $updLeads->execute([$updNotes, $updBudget, $updPax, $newStatus, $chatHistStr, $leadRow['id']]);
+                    $updLeads->execute([$updNotes, $updService, $updBudget, $updPax, $newStatus, $chatHistStr, $leadRow['id']]);
                 }
 
-                // Update ai_leads table: destination, dates, budget, pax, transcript
+                // Update ai_leads table: notes, service, destination, dates, budget, pax, transcript
                 if ($aiRow) {
+                    try { $pdo->exec("ALTER TABLE ai_leads ADD COLUMN notes TEXT DEFAULT NULL"); } catch (Exception $e) {}
+                    try { $pdo->exec("ALTER TABLE ai_leads ADD COLUMN service VARCHAR(255) DEFAULT NULL"); } catch (Exception $e) {}
+
                     $updAi = $pdo->prepare("UPDATE ai_leads SET 
+                        notes = COALESCE(?, notes),
+                        service = COALESCE(?, service),
                         destination = COALESCE(NULLIF(?, ''), destination),
                         dates = COALESCE(NULLIF(?, ''), dates),
                         budget = COALESCE(NULLIF(?, ''), budget),
@@ -7169,6 +7268,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         status = 'Hot Lead'
                         WHERE id = ?");
                     $updAi->execute([
+                        $askedNotes ?: $extracted['notes'],
+                        $specificService ?: ($aiRow['service'] ?? 'AI Travel Assistant Chat'),
                         $extracted['destination'],
                         $extracted['duration'],
                         $extracted['budget'],
@@ -7176,6 +7277,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $chatHistStr,
                         $aiRow['id']
                     ]);
+                }
+
+                // Dual-sync latest inquiry to Kratu
+                if ($latestUserMsg) {
+                    try {
+                        $kratuKey = '00b78eecd5bb542952945c6e8c8560db';
+                        $kratuUrl = 'https://iamkratu.ai/customer-chat/?key=' . $kratuKey;
+                        $kratuSess = 'sess_' . preg_replace('/[^a-zA-Z0-9_]/', '_', ($aiRow['id'] ?? ($leadRow['id'] ?? $id)));
+                        $chatPayload = [
+                            'action' => 'send_chat',
+                            'session_id' => $kratuSess,
+                            'message' => $latestUserMsg,
+                            'user_name' => $leadRow['name'] ?? ($aiRow['name'] ?? 'Customer'),
+                            'user_phone' => $leadRow['phone'] ?? ($aiRow['phone'] ?? '')
+                        ];
+                        $ch = curl_init($kratuUrl);
+                        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                        curl_setopt($ch, CURLOPT_POST, true);
+                        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($chatPayload));
+                        curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+                        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+                        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 2);
+                        curl_setopt($ch, CURLOPT_TIMEOUT, 3);
+                        curl_exec($ch);
+                        curl_close($ch);
+                    } catch (Exception $ke) {}
                 }
             }
             echo json_encode(["success" => true, "message" => "Chat and customer requirements updated successfully."]);

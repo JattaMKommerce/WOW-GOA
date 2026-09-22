@@ -1596,11 +1596,11 @@ export async function setVendorPassword(id, password) {
   return data;
 }
 
-export async function createAiLead(name, phone) {
+export async function createAiLead(name, phone, message = '') {
   const res = await apiFetch(`${API_BASE}?action=create_ai_lead`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, phone })
+    body: JSON.stringify({ name, phone, message })
   });
   const data = await res.json();
   broadcastNotificationUpdate({ type: 'lead', title: `New Sophia AI Lead: ${name}` });
