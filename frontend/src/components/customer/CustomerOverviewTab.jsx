@@ -276,12 +276,14 @@ export default function CustomerOverviewTab({
 
   const getStatusBadge = (status) => {
     const s = (status || 'Pending').toLowerCase();
-    if (s === 'confirmed') return <span className="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-2.5 py-1 rounded-pill fw-bold">Confirmed</span>;
+    if (s === 'completed') return <span className="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-2.5 py-1 rounded-pill fw-bold">Completed</span>;
+    if (s === 'confirmed') return <span className="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 px-2.5 py-1 rounded-pill fw-bold">Confirmed</span>;
     if (s === 'upcoming') return <span className="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 px-2.5 py-1 rounded-pill fw-bold">Upcoming</span>;
     if (s === 'ongoing') return <span className="badge bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25 px-2.5 py-1 rounded-pill fw-bold">Ongoing</span>;
-    if (s === 'completed') return <span className="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2.5 py-1 rounded-pill fw-bold">Completed</span>;
     if (s === 'cancelled') return <span className="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25 px-2.5 py-1 rounded-pill fw-bold">Cancelled</span>;
-    return <span className="badge bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25 px-2.5 py-1 rounded-pill fw-bold">Pending Confirmation</span>;
+    if (s === 'rejected') return <span className="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25 px-2.5 py-1 rounded-pill fw-bold">Rejected</span>;
+    if (s === 'pending') return <span className="badge bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25 px-2.5 py-1 rounded-pill fw-bold">Pending Confirmation</span>;
+    return <span className="badge bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-25 px-2.5 py-1 rounded-pill fw-bold text-capitalize">{status || 'Pending'}</span>;
   };
 
   // Use exact live packages, hotels, cars, and flights available on the main website
@@ -330,7 +332,10 @@ export default function CustomerOverviewTab({
 
   // Sorted upcoming bookings (nearest upcoming date first)
   const sortedUpcomingBookings = [...myBookings]
-    .filter(b => (b.status || 'confirmed').toLowerCase() !== 'completed' && (b.status || '').toLowerCase() !== 'cancelled')
+    .filter(b => {
+      const s = (b.status || 'pending').toLowerCase();
+      return s !== 'completed' && s !== 'cancelled' && s !== 'rejected';
+    })
     .sort((a, b) => {
       const dateA = new Date(a.pickup_date || a.travel_date || a.departure_date || a.created_at || Date.now()).getTime();
       const dateB = new Date(b.pickup_date || b.travel_date || b.departure_date || b.created_at || Date.now()).getTime();

@@ -293,8 +293,16 @@ export default function VehicleCustomerManagement({ bookings = [] }) {
                     <span className="fw-bold" style={{ fontSize: '0.82rem', color: '#0D1B2E' }}>
                       #{b.id} — {b.item_name || 'Vehicle'}
                     </span>
-                    <span className="badge rounded-pill" style={{ background: b.status === 'Completed' ? '#dcfce7' : b.status === 'Cancelled' ? '#fee2e2' : '#dbeafe', color: b.status === 'Completed' ? '#16a34a' : b.status === 'Cancelled' ? '#dc2626' : '#2563eb', fontSize: '0.62rem' }}>
-                      {b.status || 'Confirmed'}
+                    <span className="badge rounded-pill" style={{ 
+                      background: (b.status || '').toLowerCase() === 'completed' ? '#dcfce7' : 
+                                  (b.status || '').toLowerCase() === 'confirmed' ? '#dbeafe' : 
+                                  ((b.status || '').toLowerCase() === 'cancelled' || (b.status || '').toLowerCase() === 'rejected') ? '#fee2e2' : '#fef9c3', 
+                      color: (b.status || '').toLowerCase() === 'completed' ? '#16a34a' : 
+                             (b.status || '').toLowerCase() === 'confirmed' ? '#2563eb' : 
+                             ((b.status || '').toLowerCase() === 'cancelled' || (b.status || '').toLowerCase() === 'rejected') ? '#dc2626' : '#ca8a04', 
+                      fontSize: '0.62rem' 
+                    }}>
+                      {b.status || 'Pending'}
                     </span>
                   </div>
                   <div className="d-flex justify-content-between" style={{ fontSize: '0.72rem', color: '#64748b' }}>

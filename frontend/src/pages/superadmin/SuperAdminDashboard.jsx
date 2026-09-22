@@ -141,7 +141,7 @@ function StatusBadge({ status }) {
   };
   const s = status?.toLowerCase();
   const style = map[s] || { bg: '#f1f5f9', color: '#64748b' };
-  return <span className="px-2 py-1 rounded-pill fw-bold" style={{ background: style.bg, color: style.color, fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{status || 'Active'}</span>;
+  return <span className="px-2 py-1 rounded-pill fw-bold" style={{ background: style.bg, color: style.color, fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{status || 'Pending'}</span>;
 }
 
 // ─── MODAL WRAPPER ───────────────────────────────────────────────────────────
@@ -1527,6 +1527,7 @@ function BookingsTab({ bookings = [], type, vendors = [], onRefresh }) {
                     <option value="Confirmed">Confirmed</option>
                     <option value="Completed">Completed</option>
                     <option value="Cancelled">Cancelled</option>
+                    <option value="Rejected">Rejected</option>
                   </select>
 
                   <button
@@ -1604,6 +1605,7 @@ function BookingsTab({ bookings = [], type, vendors = [], onRefresh }) {
                     <option value="Confirmed">Confirmed</option>
                     <option value="Completed">Completed</option>
                     <option value="Cancelled">Cancelled</option>
+                    <option value="Rejected">Rejected</option>
                   </select>
                 </div>
               </div>
@@ -1832,6 +1834,7 @@ function TripBookingsTab({ bookings = [], customEnquiries = [], vendors = [], on
                       <option value="Confirmed">Confirmed</option>
                       <option value="Completed">Completed</option>
                       <option value="Cancelled">Cancelled</option>
+                      <option value="Rejected">Rejected</option>
                     </select>
                   </div>
                 </td>
@@ -1881,6 +1884,7 @@ function TripBookingsTab({ bookings = [], customEnquiries = [], vendors = [], on
                     <option value="Confirmed">Confirmed</option>
                     <option value="Completed">Completed</option>
                     <option value="Cancelled">Cancelled</option>
+                    <option value="Rejected">Rejected</option>
                   </select>
                 </div>
               </div>

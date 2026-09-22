@@ -11,6 +11,7 @@ function StatusBadge({ status }) {
     pending: ['#fef9c3', '#ca8a04'],
     confirmed: ['#dcfce7', '#16a34a'],
     cancelled: ['#fee2e2', '#dc2626'],
+    rejected: ['#fee2e2', '#dc2626'],
     completed: ['#dcfce7', '#059669'],
     active: ['#dbeafe', '#2563eb'],
   };

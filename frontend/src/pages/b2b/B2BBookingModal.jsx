@@ -154,7 +154,7 @@ export default function B2BBookingModal({
                 <CheckCircle2 size={36} />
               </div>
               <h4 className="fw-bold text-dark font-heading mb-1">
-                {(confirmedBooking.status || 'Confirmed').toLowerCase() === 'pending'
+                {(confirmedBooking.status || 'Pending').toLowerCase() === 'pending'
                   ? 'Booking Received (Pending Confirmation)'
                   : `Booking ${confirmedBooking.status || 'Confirmed'} Successfully!`}
               </h4>
@@ -182,8 +182,13 @@ export default function B2BBookingModal({
                 </div>
                 <div className="d-flex justify-content-between border-top pt-2 mb-2">
                   <span className="text-muted">Fulfillment Status:</span>
-                  <span className={`badge ${(confirmedBooking.status || 'Confirmed').toLowerCase() === 'pending' ? 'bg-warning text-dark' : 'bg-success text-white'}`}>
-                    {confirmedBooking.status || 'Confirmed'}
+                  <span className={`badge ${
+                    (confirmedBooking.status || '').toLowerCase() === 'completed' ? 'bg-success text-white' :
+                    (confirmedBooking.status || '').toLowerCase() === 'confirmed' ? 'bg-primary text-white' :
+                    (confirmedBooking.status || '').toLowerCase() === 'cancelled' || (confirmedBooking.status || '').toLowerCase() === 'rejected' ? 'bg-danger text-white' :
+                    'bg-warning text-dark'
+                  } text-capitalize px-2.5 py-1 rounded-pill fw-bold`}>
+                    {confirmedBooking.status || 'Pending'}
                   </span>
                 </div>
                 <div className="d-flex justify-content-between mb-2">

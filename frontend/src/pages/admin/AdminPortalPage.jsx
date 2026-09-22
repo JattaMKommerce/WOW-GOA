@@ -804,7 +804,11 @@ export default function AdminPortalPage({
                           <td className="px-3 py-2">{b.item_name || '—'}</td>
                           <td className="px-3 py-2 fw-bold" style={{ color: '#16a34a' }}>₹{b.total_paid || b.amount_paid || 0}</td>
                           <td className="px-3 py-2">
-                            <span className="px-2 py-1 rounded-pill fw-bold" style={{ background: b.status === 'Confirmed' ? '#dcfce7' : '#fef9c3', color: b.status === 'Confirmed' ? '#16a34a' : '#ca8a04', fontSize: '0.7rem' }}>{b.status || 'Pending'}</span>
+                            <span className="px-2.5 py-1 rounded-pill fw-bold text-capitalize" style={{
+                              background: (b.status || '').toLowerCase() === 'completed' ? '#dcfce7' : (b.status || '').toLowerCase() === 'confirmed' ? '#dbeafe' : ((b.status || '').toLowerCase() === 'cancelled' || (b.status || '').toLowerCase() === 'rejected') ? '#fee2e2' : '#fef9c3',
+                              color: (b.status || '').toLowerCase() === 'completed' ? '#059669' : (b.status || '').toLowerCase() === 'confirmed' ? '#1d4ed8' : ((b.status || '').toLowerCase() === 'cancelled' || (b.status || '').toLowerCase() === 'rejected') ? '#991b1b' : '#ca8a04',
+                              fontSize: '0.7rem'
+                            }}>{b.status || 'Pending'}</span>
                           </td>
                           <td className="px-3 py-2">
                             {(b.payment_proof || b.payment_screenshot) ? (

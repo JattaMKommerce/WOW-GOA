@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Sparkles, AlertCircle, Edit2, Plane, MapPin, Calendar, Clock, CreditCard, ChevronDown, Check, Tag, Info, AlertTriangle, Play, Settings, X, PlusCircle } from 'lucide-react';
 import VendorPaymentSettings from './VendorPaymentSettings';
+import { updateBookingStatus } from '../../services/api';
 
 export default function FlightVendorDashboard({
   activeTab,
@@ -262,22 +263,64 @@ export default function FlightVendorDashboard({
                       <th>Flight Item</th>
                       <th>Amount Paid</th>
                       <th>Status</th>
+                      <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {bookings.filter(isMyFlightBooking).length === 0 ? (
-                      <tr><td colSpan="6" className="text-center text-muted py-4">No bookings found for your listings.</td></tr>
+                      <tr><td colSpan="7" className="text-center text-muted py-4">No bookings found for your listings.</td></tr>
                     ) : (
-                      bookings.filter(isMyFlightBooking).map((b, i) => (
-                      <tr key={i}>
-                        <td className="fw-bold">{b.id}</td>
-                        <td>{b.name}</td>
-                        <td>{b.phone}</td>
-                        <td className="fw-bold text-primary">{b.item_name}</td>
-                        <td className="fw-bold text-success">₹{b.total_paid}</td>
-                        <td><span className={`badge ${b.status === 'Confirmed' ? 'bg-success' : 'bg-warning text-dark'}`}>{b.status || 'Confirmed'}</span></td>
-                      </tr>
-                      ))
+                      bookings.filter(isMyFlightBooking).map((b, i) => {
+                        const s = (b.status || 'Pending').toLowerCase();
+                        let badgeClass = 'bg-warning text-dark';
+                        if (s === 'completed') badgeClass = 'bg-success text-white';
+                        else if (s === 'confirmed') badgeClass = 'bg-primary text-white';
+                        else if (s === 'cancelled' || s === 'rejected') badgeClass = 'bg-danger text-white';
+
+                        const handleStatus = async (newSt) => {
+                          try {
+                            await updateBookingStatus(b.id, newSt);
+                            b.status = newSt;
+                            window.dispatchEvent(new CustomEvent('new-booking-created'));
+                            window.dispatchEvent(new CustomEvent('booking-status-updated', { detail: { bookingId: b.id, status: newSt } }));
+                            window.dispatchEvent(new CustomEvent('tripgalileo-booking-sync', { detail: { bookingId: b.id, status: newSt } }));
+                            alert(`Flight Booking #${b.id} updated to ${newSt}`);
+                          } catch (err) {
+                            alert('Failed to update: ' + err.message);
+                          }
+                        };
+
+                        return (
+                          <tr key={i}>
+                            <td className="fw-bold">{b.id}</td>
+                            <td>{b.name}</td>
+                            <td>{b.phone}</td>
+                            <td className="fw-bold text-primary">{b.item_name}</td>
+                            <td className="fw-bold text-success">₹{b.total_paid}</td>
+                            <td>
+                              <span className={`badge ${badgeClass} text-capitalize px-2.5 py-1 rounded-pill fw-bold`}>
+                                {b.status || 'Pending'}
+                              </span>
+                            </td>
+                            <td>
+                              <div className="d-flex gap-1">
+                                {s !== 'completed' && s !== 'cancelled' && (
+                                  <>
+                                    {s !== 'confirmed' && (
+                                      <button onClick={() => handleStatus('Confirmed')} className="btn btn-xs btn-outline-success py-0.5 px-2 rounded-pill fw-bold" style={{ fontSize: '0.72rem' }}>
+                                        Confirm
+                                      </button>
+                                    )}
+                                    <button onClick={() => handleStatus('Completed')} className="btn btn-xs btn-success py-0.5 px-2 rounded-pill fw-bold text-white" style={{ fontSize: '0.72rem' }}>
+                                      Complete
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>

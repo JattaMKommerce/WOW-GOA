@@ -12,11 +12,12 @@ const STATUS_COLORS = {
   'Return': { bg: '#fce7f3', color: '#be185d' },
   'Completed': { bg: '#dcfce7', color: '#059669' },
   'Cancelled': { bg: '#fee2e2', color: '#dc2626' },
+  'Rejected': { bg: '#fee2e2', color: '#dc2626' },
 };
 
 function StatusBadge({ status }) {
   const s = STATUS_COLORS[status] || { bg: '#f1f5f9', color: '#64748b' };
-  return <span className="px-2 py-1 rounded-pill fw-bold" style={{ background: s.bg, color: s.color, fontSize: '0.65rem', textTransform: 'uppercase' }}>{status}</span>;
+  return <span className="px-2 py-1 rounded-pill fw-bold" style={{ background: s.bg, color: s.color, fontSize: '0.65rem', textTransform: 'uppercase' }}>{status || 'Pending'}</span>;
 }
 
 function WorkflowBadge({ status }) {
@@ -283,7 +284,7 @@ export default function VehicleBookingManagement({ bookings = [], cars = [], bik
       drop_date: b.drop_date || b.return_date || '',
       booking_days: b.booking_days || 1,
       total_amount: b.total_amount || b.total_paid || 0,
-      status: b.status || 'Confirmed',
+      status: b.status || 'Pending',
       payment_status: b.payment_status || 'Paid',
       payment_method: b.payment_method || b.payment_mode || 'Cash'
     });
@@ -313,6 +314,18 @@ export default function VehicleBookingManagement({ bookings = [], cars = [], bik
     }
   };
 
+  const broadcastBookingSync = (bookingId, newStatus) => {
+    try {
+      window.dispatchEvent(new CustomEvent('tripgalileo-booking-sync', { detail: { bookingId, status: newStatus } }));
+      window.dispatchEvent(new CustomEvent('booking-status-updated', { detail: { bookingId, status: newStatus } }));
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const bc = new BroadcastChannel('tripgalileo_bookings_sync');
+        bc.postMessage({ type: 'BOOKING_UPDATED', bookingId, status: newStatus, timestamp: Date.now() });
+        bc.close();
+      }
+    } catch (e) {}
+  };
+
   const advanceStatus = async (booking) => {
     const idx = WORKFLOW_STEPS.indexOf(booking.status);
     if (idx < WORKFLOW_STEPS.length - 1) {
@@ -323,9 +336,23 @@ export default function VehicleBookingManagement({ bookings = [], cars = [], bik
         setLocalBookings(updated);
         if (setBookingsList) setBookingsList(updated);
         if (selected?.id === booking.id) setSelected(prev => ({ ...prev, status: next }));
+        broadcastBookingSync(booking.id, next);
       } catch (e) {
         alert('Failed to update booking status: ' + e.message);
       }
+    }
+  };
+
+  const markCompleted = async (booking) => {
+    try {
+      await updateBookingStatus(booking.id, 'Completed');
+      const updated = localBookings.map(b => b.id === booking.id ? { ...b, status: 'Completed' } : b);
+      setLocalBookings(updated);
+      if (setBookingsList) setBookingsList(updated);
+      if (selected?.id === booking.id) setSelected(prev => ({ ...prev, status: 'Completed' }));
+      broadcastBookingSync(booking.id, 'Completed');
+    } catch (e) {
+      alert('Failed to mark booking as completed: ' + e.message);
     }
   };
 
@@ -337,6 +364,7 @@ export default function VehicleBookingManagement({ bookings = [], cars = [], bik
       setLocalBookings(updated);
       if (setBookingsList) setBookingsList(updated);
       if (selected?.id === id) setSelected(prev => ({ ...prev, status: 'Cancelled' }));
+      broadcastBookingSync(id, 'Cancelled');
     } catch (e) {
       alert('Failed to cancel booking: ' + e.message);
     }
@@ -618,8 +646,8 @@ export default function VehicleBookingManagement({ bookings = [], cars = [], bik
                 </div>
                 <div className="col-12 col-md-6">
                   <label className="form-label fw-bold" style={{ fontSize: '0.78rem', color: '#475569' }}>Booking Status</label>
-                  <select className="form-select" style={{ fontSize: '0.85rem', borderRadius: '8px' }} value={editForm.status || 'Confirmed'} onChange={e => setEditForm(f => ({ ...f, status: e.target.value }))}>
-                    {[...WORKFLOW_STEPS, 'Cancelled'].map(s => <option key={s} value={s}>{s}</option>)}
+                  <select className="form-select" style={{ fontSize: '0.85rem', borderRadius: '8px' }} value={editForm.status || 'Pending'} onChange={e => setEditForm(f => ({ ...f, status: e.target.value }))}>
+                    {[...WORKFLOW_STEPS, 'Cancelled', 'Rejected'].map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
                 <div className="col-12 col-md-6">
@@ -748,6 +776,14 @@ export default function VehicleBookingManagement({ bookings = [], cars = [], bik
                   title={selected.status === 'Return' ? 'Advance to Completed' : 'Advance to next workflow step'}
                 >
                   <ArrowRight size={13} /> Next
+                </button>
+                <button 
+                  onClick={() => markCompleted(selected)} 
+                  className="btn py-2 px-3 rounded-3 fw-bold text-white d-flex align-items-center justify-content-center gap-1" 
+                  style={{ background: '#059669', fontSize: '0.82rem' }}
+                  title="Directly mark this vehicle booking as Completed"
+                >
+                  <CheckCircle size={13} /> Complete
                 </button>
                 <button onClick={() => cancelBooking(selected.id)} className="btn py-2 px-3 rounded-3 fw-bold" style={{ background: '#fee2e2', color: '#dc2626', fontSize: '0.82rem' }}>
                   Cancel

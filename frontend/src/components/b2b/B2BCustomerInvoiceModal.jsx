@@ -501,8 +501,13 @@ export default function B2BCustomerInvoiceModal({
                     </div>
                   )}
                   <div className="mt-1">
-                    <span className={`badge ${booking.status === 'Confirmed' || booking.status === 'Completed' ? 'bg-success' : 'bg-warning text-dark'} text-3xs px-2 py-0.5 rounded-pill`}>
-                      {booking.status || 'Confirmed'}
+                    <span className={`badge ${
+                      (booking.status || '').toLowerCase() === 'completed' ? 'bg-success text-white' :
+                      (booking.status || '').toLowerCase() === 'confirmed' ? 'bg-primary text-white' :
+                      (booking.status || '').toLowerCase() === 'cancelled' || (booking.status || '').toLowerCase() === 'rejected' ? 'bg-danger text-white' :
+                      'bg-warning text-dark'
+                    } text-3xs px-2.5 py-0.5 rounded-pill text-capitalize fw-bold`}>
+                      {booking.status || 'Pending'}
                     </span>
                   </div>
                 </div>

@@ -393,9 +393,18 @@ export default function B2BDashboardTab({
                     </td>
                     <td className="fw-bold text-dark">₹{parseFloat(b.total_amount || 0).toLocaleString()}</td>
                     <td className="pe-2 text-end">
-                      <span className="badge bg-success bg-opacity-15 text-success border border-success text-xxs px-2 py-0.5 rounded-pill">
-                        {b.status || 'Confirmed'}
-                      </span>
+                      {(() => {
+                        const st = (b.status || 'Pending').toLowerCase();
+                        let badgeStyle = { background: '#fef9c3', color: '#854d0e', border: '1px solid #fde047' };
+                        if (st === 'completed') badgeStyle = { background: '#dcfce7', color: '#059669', border: '1px solid #86efac' };
+                        else if (st === 'confirmed') badgeStyle = { background: '#dbeafe', color: '#1d4ed8', border: '1px solid #93c5fd' };
+                        else if (st === 'cancelled' || st === 'rejected') badgeStyle = { background: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5' };
+                        return (
+                          <span className="badge text-xxs px-2 py-0.5 rounded-pill fw-semibold text-capitalize" style={badgeStyle}>
+                            {b.status || 'Pending'}
+                          </span>
+                        );
+                      })()}
                     </td>
                   </tr>
                 ))}

@@ -11114,6 +11114,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt->execute([$payment_status, $payload['id']]);
             }
 
+            // Cascade status update to child bookings (if master package booking)
+            if ($status) {
+                try {
+                    $stmtChild = $pdo->prepare("UPDATE bookings SET status = ? WHERE parent_booking_id = ?");
+                    $stmtChild->execute([$status, $payload['id']]);
+                } catch (Exception $chEx) {}
+
+                // If child booking is completed, check if all sibling children are completed to complete the parent
+                try {
+                    $stmtChkParent = $pdo->prepare("SELECT parent_booking_id FROM bookings WHERE id = ?");
+                    $stmtChkParent->execute([$payload['id']]);
+                    $pRow = $stmtChkParent->fetch(PDO::FETCH_ASSOC);
+                    if ($pRow && !empty($pRow['parent_booking_id'])) {
+                        $pId = $pRow['parent_booking_id'];
+                        if (strtolower(trim($status)) === 'completed') {
+                            $stmtSiblings = $pdo->prepare("SELECT COUNT(*) as uncompleted FROM bookings WHERE parent_booking_id = ? AND LOWER(status) != 'completed' AND id != ?");
+                            $stmtSiblings->execute([$pId, $payload['id']]);
+                            $sibRes = $stmtSiblings->fetch(PDO::FETCH_ASSOC);
+                            if (intval($sibRes['uncompleted'] ?? 0) === 0) {
+                                $stmtUpdParent = $pdo->prepare("UPDATE bookings SET status = 'Completed' WHERE id = ?");
+                                $stmtUpdParent->execute([$pId]);
+                            }
+                        }
+                    }
+                } catch (Exception $pEx) {}
+            }
+
             // Cashback & Loyalty Lifecycle Integration on Booking Completion / Cancellation
             if ($status) {
                 $cleanStatus = strtolower(trim($status));

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Filter, Download, Eye, CheckCircle, XCircle, Calendar, Phone, CreditCard, RefreshCw, ChevronDown, FileText } from 'lucide-react';
+import { updateBookingStatus } from '../../../services/api';
 
-const BOOKING_STATUSES = ['All', 'Confirmed', 'Pending', 'Checked In', 'Checked Out', 'Cancelled', 'No Show', 'Draft'];
+const BOOKING_STATUSES = ['All', 'Confirmed', 'Pending', 'Checked In', 'Checked Out', 'Completed', 'Cancelled', 'No Show', 'Draft'];
 const PAYMENT_STATUSES = ['All', 'Paid', 'Partially Paid', 'Unpaid', 'Refund Pending', 'Refunded'];
 const SOURCES = ['All', 'Website', 'Manual', 'Walk-in', 'Phone'];
 
@@ -59,6 +60,28 @@ export default function PMSAllBookings({ currentUser, vendorHotels, vendorBookin
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = 'bookings.csv'; a.click();
+  };
+
+  const handleStatusUpdate = async (bookingId, newStatus) => {
+    try {
+      await updateBookingStatus(bookingId, newStatus);
+      if (selectedBooking && selectedBooking.id === bookingId) {
+        setSelectedBooking(prev => ({ ...prev, status: newStatus }));
+      }
+      const target = vendorBookings.find(b => b.id === bookingId);
+      if (target) target.status = newStatus;
+      window.dispatchEvent(new CustomEvent('new-booking-created'));
+      window.dispatchEvent(new CustomEvent('booking-status-updated', { detail: { bookingId, status: newStatus } }));
+      window.dispatchEvent(new CustomEvent('tripgalileo-booking-sync', { detail: { bookingId, status: newStatus } }));
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const bc = new BroadcastChannel('tripgalileo_bookings_sync');
+        bc.postMessage({ type: 'BOOKING_UPDATED', bookingId, status: newStatus, timestamp: Date.now() });
+        bc.close();
+      }
+      alert(`Booking #${bookingId} status updated to ${newStatus}`);
+    } catch (err) {
+      alert('Failed to update status: ' + err.message);
+    }
   };
 
   return (
@@ -225,7 +248,35 @@ export default function PMSAllBookings({ currentUser, vendorHotels, vendorBookin
                 } catch { return null; }
               })()}
             </div>
-            <div className="p-4 border-top d-flex justify-content-end">
+            <div className="p-4 border-top d-flex align-items-center justify-content-between flex-wrap gap-2">
+              <div className="d-flex align-items-center gap-2">
+                {selectedBooking.status !== 'Completed' && selectedBooking.status !== 'Cancelled' && (
+                  <>
+                    {selectedBooking.status !== 'Confirmed' && (
+                      <button 
+                        onClick={() => handleStatusUpdate(selectedBooking.id, 'Confirmed')} 
+                        className="btn btn-sm rounded-pill px-3 fw-bold text-white" 
+                        style={{ background: '#00b894' }}
+                      >
+                        ✓ Confirm Booking
+                      </button>
+                    )}
+                    <button 
+                      onClick={() => handleStatusUpdate(selectedBooking.id, 'Completed')} 
+                      className="btn btn-sm rounded-pill px-3 fw-bold text-white" 
+                      style={{ background: '#0984e3' }}
+                    >
+                      ✓ Mark as Completed
+                    </button>
+                    <button 
+                      onClick={() => { if (window.confirm('Cancel this booking?')) handleStatusUpdate(selectedBooking.id, 'Cancelled'); }} 
+                      className="btn btn-sm rounded-pill px-3 fw-bold text-danger border border-danger-subtle bg-danger-subtle"
+                    >
+                      Cancel Booking
+                    </button>
+                  </>
+                )}
+              </div>
               <button onClick={() => setSelectedBooking(null)} className="btn rounded-pill px-4" style={{ background: '#f0f2f5', color: '#495057' }}>Close</button>
             </div>
           </div>

@@ -356,8 +356,8 @@ export default function AdminDashboardOverview({
                       <td className="px-3 py-2">
                         <span className="px-2 py-1 rounded-pill fw-bold" style={{
                           fontSize: '0.65rem',
-                          background: bk.status === 'Confirmed' ? '#dcfce7' : bk.status === 'Completed' ? '#e0f2fe' : '#fef9c3',
-                          color: bk.status === 'Confirmed' ? '#16a34a' : bk.status === 'Completed' ? '#0369a1' : '#ca8a04',
+                          background: (bk.status || '').toLowerCase() === 'completed' ? '#dcfce7' : (bk.status || '').toLowerCase() === 'confirmed' ? '#dbeafe' : ((bk.status || '').toLowerCase() === 'cancelled' || (bk.status || '').toLowerCase() === 'rejected') ? '#fee2e2' : '#fef9c3',
+                          color: (bk.status || '').toLowerCase() === 'completed' ? '#059669' : (bk.status || '').toLowerCase() === 'confirmed' ? '#1d4ed8' : ((bk.status || '').toLowerCase() === 'cancelled' || (bk.status || '').toLowerCase() === 'rejected') ? '#991b1b' : '#ca8a04',
                           textTransform: 'uppercase'
                         }}>
                           {bk.status || 'Pending'}

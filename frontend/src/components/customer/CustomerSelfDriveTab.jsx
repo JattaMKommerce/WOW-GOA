@@ -137,11 +137,11 @@ export default function CustomerSelfDriveTab({
                         #{b.id || b.booking_id || `WOW-SD-${1000 + idx}`}
                       </span>
                       <span className={`badge px-2.5 py-1 rounded-pill text-uppercase fw-bold text-xs ${
-                        b.status === 'Confirmed' ? 'bg-success text-white' : 
-                        b.status === 'Completed' ? 'bg-info text-white' : 
-                        b.status === 'Cancelled' ? 'bg-danger text-white' : 'bg-warning text-dark'
+                        (b.status || '').toLowerCase() === 'completed' ? 'bg-success text-white' : 
+                        (b.status || '').toLowerCase() === 'confirmed' ? 'bg-primary text-white' : 
+                        (b.status || '').toLowerCase() === 'cancelled' || (b.status || '').toLowerCase() === 'rejected' ? 'bg-danger text-white' : 'bg-warning text-dark'
                       }`}>
-                        {b.status || 'Confirmed'}
+                        {b.status || 'Pending'}
                       </span>
                     </div>
 

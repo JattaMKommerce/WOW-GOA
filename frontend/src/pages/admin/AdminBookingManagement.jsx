@@ -231,17 +231,29 @@ export function ChannelBadge({ channel, mode, partnerName }) {
 }
 
 function StatusBadge({ status }) {
-  const s = (status || 'pending').toLowerCase();
+  const s = (status || 'Pending').toLowerCase();
   if (s === 'confirmed') {
-    return <span className="badge rounded-pill px-2.5 py-1 fw-bold text-success border border-success-subtle" style={{ background: '#dcfce7', fontSize: '0.72rem' }}>Confirmed</span>;
+    return <span className="badge rounded-pill px-2.5 py-1 fw-bold text-primary border border-primary-subtle" style={{ background: '#dbeafe', fontSize: '0.72rem' }}>Confirmed</span>;
   }
   if (s === 'completed') {
-    return <span className="badge rounded-pill px-2.5 py-1 fw-bold text-primary border border-primary-subtle" style={{ background: '#dbeafe', fontSize: '0.72rem' }}>Completed</span>;
+    return <span className="badge rounded-pill px-2.5 py-1 fw-bold text-success border border-success-subtle" style={{ background: '#dcfce7', color: '#059669', fontSize: '0.72rem' }}>Completed</span>;
   }
-  if (s === 'cancelled' || s === 'rejected') {
+  if (s === 'rejected') {
+    return <span className="badge rounded-pill px-2.5 py-1 fw-bold text-danger border border-danger-subtle" style={{ background: '#fee2e2', fontSize: '0.72rem' }}>Rejected</span>;
+  }
+  if (s === 'cancelled') {
     return <span className="badge rounded-pill px-2.5 py-1 fw-bold text-danger border border-danger-subtle" style={{ background: '#fee2e2', fontSize: '0.72rem' }}>Cancelled</span>;
   }
-  return <span className="badge rounded-pill px-2.5 py-1 fw-bold text-warning border border-warning-subtle" style={{ background: '#fef9c3', color: '#854d0e', fontSize: '0.72rem' }}>Pending</span>;
+  if (s === 'checked in') {
+    return <span className="badge rounded-pill px-2.5 py-1 fw-bold text-info border border-info-subtle" style={{ background: '#e0f2fe', color: '#0369a1', fontSize: '0.72rem' }}>Checked In</span>;
+  }
+  if (s === 'checked out') {
+    return <span className="badge rounded-pill px-2.5 py-1 fw-bold text-secondary border border-secondary-subtle" style={{ background: '#f1f5f9', color: '#475569', fontSize: '0.72rem' }}>Checked Out</span>;
+  }
+  if (s === 'pending') {
+    return <span className="badge rounded-pill px-2.5 py-1 fw-bold text-warning border border-warning-subtle" style={{ background: '#fef9c3', color: '#854d0e', fontSize: '0.72rem' }}>Pending</span>;
+  }
+  return <span className="badge rounded-pill px-2.5 py-1 fw-bold border text-capitalize" style={{ background: '#f1f5f9', color: '#334155', fontSize: '0.72rem' }}>{status || 'Pending'}</span>;
 }
 
 function PaymentBadge({ status }) {
@@ -1205,8 +1217,8 @@ export default function AdminBookingManagement({
                           style={{
                             width: 'auto',
                             fontSize: '0.75rem',
-                            background: b.status === 'Confirmed' ? '#dcfce7' : b.status === 'Cancelled' ? '#fee2e2' : '#fef9c3',
-                            color: b.status === 'Confirmed' ? '#166534' : b.status === 'Cancelled' ? '#991b1b' : '#854d0e',
+                            background: b.status === 'Completed' ? '#dcfce7' : b.status === 'Confirmed' ? '#dbeafe' : (b.status === 'Cancelled' || b.status === 'Rejected') ? '#fee2e2' : '#fef9c3',
+                            color: b.status === 'Completed' ? '#059669' : b.status === 'Confirmed' ? '#1d4ed8' : (b.status === 'Cancelled' || b.status === 'Rejected') ? '#991b1b' : '#854d0e',
                             cursor: 'pointer'
                           }}
                           value={b.status || 'Pending'}
@@ -1216,6 +1228,7 @@ export default function AdminBookingManagement({
                           <option value="Confirmed">Confirmed</option>
                           <option value="Completed">Completed</option>
                           <option value="Cancelled">Cancelled</option>
+                          <option value="Rejected">Rejected</option>
                         </select>
                       </td>
                       <td>
@@ -1507,10 +1520,11 @@ export default function AdminBookingManagement({
                         value={formData.status}
                         onChange={e => setFormData({ ...formData, status: e.target.value })}
                       >
-                        <option value="Confirmed">Confirmed</option>
                         <option value="Pending">Pending</option>
+                        <option value="Confirmed">Confirmed</option>
                         <option value="Completed">Completed</option>
                         <option value="Cancelled">Cancelled</option>
+                        <option value="Rejected">Rejected</option>
                       </select>
                     </div>
                     <div className="col-md-6">
@@ -1717,6 +1731,7 @@ export default function AdminBookingManagement({
                       <option value="Confirmed">Confirmed</option>
                       <option value="Completed">Completed</option>
                       <option value="Cancelled">Cancelled</option>
+                      <option value="Rejected">Rejected</option>
                     </select>
                   </div>
                   <div className="mb-3">

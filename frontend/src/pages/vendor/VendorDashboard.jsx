@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Sparkles, AlertCircle, X, Check, XCircle, MapPin, Edit2, Save } from 'lucide-react';
-import { toggleVehicleAvailability, updateVehicle, uploadImage } from '../../services/api';
+import { toggleVehicleAvailability, updateVehicle, uploadImage, updateBookingStatus } from '../../services/api';
 
 // ─── GOA LOCATIONS ──────────────────────────────────────────────────────────
 const GOA_LOCATIONS = [
@@ -833,7 +833,16 @@ export default function VendorDashboard({
                                 <div className="text-muted small">{cust.vehicleDropLoc || 'Not specified'}</div>
                               </td>
                               <td className="fw-bold text-success">₹{b.total_paid}</td>
-                              <td><span className="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">Confirmed</span></td>
+                              <td>
+                                <span className={`badge ${
+                                  (b.status || '').toLowerCase() === 'completed' ? 'bg-success text-white' :
+                                  (b.status || '').toLowerCase() === 'confirmed' ? 'bg-primary text-white' :
+                                  (b.status || '').toLowerCase() === 'cancelled' || (b.status || '').toLowerCase() === 'rejected' ? 'bg-danger text-white' :
+                                  'bg-warning text-dark'
+                                } text-capitalize px-2.5 py-1 rounded-pill fw-bold`}>
+                                  {b.status || 'Pending'}
+                                </span>
+                              </td>
                             </tr>
                           );
                         })
@@ -889,7 +898,12 @@ export default function VendorDashboard({
                     <div className="col-md-6">
                       <h6 className="fw-bold text-primary mb-3">Booking Information</h6>
                       <p className="mb-1"><strong>Vehicle:</strong> {selectedBooking.item_name}</p>
-                      <p className="mb-1"><strong>Status:</strong> Confirmed</p>
+                      <p className="mb-1"><strong>Status:</strong> <span className={`badge ${
+                        (selectedBooking.status || '').toLowerCase() === 'completed' ? 'bg-success text-white' :
+                        (selectedBooking.status || '').toLowerCase() === 'confirmed' ? 'bg-primary text-white' :
+                        (selectedBooking.status || '').toLowerCase() === 'cancelled' || (selectedBooking.status || '').toLowerCase() === 'rejected' ? 'bg-danger text-white' :
+                        'bg-warning text-dark'
+                      } text-capitalize px-2.5 py-1 rounded-pill fw-bold`}>{selectedBooking.status || 'Pending'}</span></p>
                       <p className="mb-1"><strong>Total Paid:</strong> <span className="text-success fw-bold">₹{selectedBooking.total_paid}</span></p>
                     </div>
                     <div className="col-md-6">
@@ -904,8 +918,54 @@ export default function VendorDashboard({
                     </div>
                   </div>
                </div>
-               <div className="modal-footer border-0 pt-0">
-                  <button className="btn btn-secondary" onClick={() => setSelectedBooking(null)}>Close</button>
+               <div className="modal-footer border-0 pt-0 d-flex justify-content-between align-items-center">
+                  <div className="d-flex gap-2">
+                    {(selectedBooking.status || '').toLowerCase() !== 'completed' && (selectedBooking.status || '').toLowerCase() !== 'cancelled' && (
+                      <>
+                        {(selectedBooking.status || '').toLowerCase() !== 'confirmed' && (
+                          <button 
+                            className="btn btn-sm btn-outline-success fw-bold rounded-pill px-3" 
+                            onClick={async () => {
+                              try {
+                                await updateBookingStatus(selectedBooking.id, 'Confirmed');
+                                setSelectedBooking(prev => ({ ...prev, status: 'Confirmed' }));
+                                const target = bookings.find(b => b.id === selectedBooking.id);
+                                if (target) target.status = 'Confirmed';
+                                window.dispatchEvent(new CustomEvent('new-booking-created'));
+                                window.dispatchEvent(new CustomEvent('booking-status-updated', { detail: { bookingId: selectedBooking.id, status: 'Confirmed' } }));
+                                window.dispatchEvent(new CustomEvent('tripgalileo-booking-sync', { detail: { bookingId: selectedBooking.id, status: 'Confirmed' } }));
+                                alert(`Booking #${selectedBooking.id} Confirmed!`);
+                              } catch (e) {
+                                alert('Error: ' + e.message);
+                              }
+                            }}
+                          >
+                            ✓ Confirm
+                          </button>
+                        )}
+                        <button 
+                          className="btn btn-sm btn-success fw-bold text-white rounded-pill px-3" 
+                          onClick={async () => {
+                            try {
+                              await updateBookingStatus(selectedBooking.id, 'Completed');
+                              setSelectedBooking(prev => ({ ...prev, status: 'Completed' }));
+                              const target = bookings.find(b => b.id === selectedBooking.id);
+                              if (target) target.status = 'Completed';
+                              window.dispatchEvent(new CustomEvent('new-booking-created'));
+                              window.dispatchEvent(new CustomEvent('booking-status-updated', { detail: { bookingId: selectedBooking.id, status: 'Completed' } }));
+                              window.dispatchEvent(new CustomEvent('tripgalileo-booking-sync', { detail: { bookingId: selectedBooking.id, status: 'Completed' } }));
+                              alert(`Booking #${selectedBooking.id} marked as Completed!`);
+                            } catch (e) {
+                              alert('Error: ' + e.message);
+                            }
+                          }}
+                        >
+                          ✓ Mark as Completed
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  <button className="btn btn-secondary rounded-pill px-4" onClick={() => setSelectedBooking(null)}>Close</button>
                </div>
             </div>
           </div>

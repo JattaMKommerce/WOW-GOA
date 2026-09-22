@@ -62,7 +62,7 @@ export default function AdminB2BPortal({ activeSubTab = 'b2b_dashboard', onNavig
   };
 
   const getStatusBadgeStyle = (status) => {
-    const s = String(status || 'Confirmed').toUpperCase();
+    const s = String(status || 'Pending').toUpperCase();
     if (s === 'CONFIRMED') {
       return { background: '#dcfce7', color: '#166534', border: '1px solid #86efac' };
     }
@@ -72,7 +72,7 @@ export default function AdminB2BPortal({ activeSubTab = 'b2b_dashboard', onNavig
     if (s === 'COMPLETED') {
       return { background: '#dbeafe', color: '#1e40af', border: '1px solid #93c5fd' };
     }
-    if (s === 'CANCELLED') {
+    if (s === 'CANCELLED' || s === 'REJECTED') {
       return { background: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5' };
     }
     return { background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1' };
@@ -827,7 +827,7 @@ export default function AdminB2BPortal({ activeSubTab = 'b2b_dashboard', onNavig
                               cursor: 'pointer',
                               ...getStatusBadgeStyle(b.status)
                             }}
-                            value={b.status || 'Confirmed'}
+                            value={b.status || 'Pending'}
                             onChange={(e) => handleQuickBookingStatusChange(b.id, e.target.value, b.payment_status)}
                             disabled={actionLoading}
                             title="Click to change booking status"
@@ -836,6 +836,7 @@ export default function AdminB2BPortal({ activeSubTab = 'b2b_dashboard', onNavig
                             <option value="Pending">Pending</option>
                             <option value="Completed">Completed</option>
                             <option value="Cancelled">Cancelled</option>
+                            <option value="Rejected">Rejected</option>
                           </select>
                         </td>
                         <td className="pe-3 py-2 text-end">
@@ -929,7 +930,7 @@ export default function AdminB2BPortal({ activeSubTab = 'b2b_dashboard', onNavig
                               cursor: 'pointer',
                               ...getStatusBadgeStyle(b.status)
                             }}
-                            value={b.status || 'Confirmed'}
+                            value={b.status || 'Pending'}
                             onChange={(e) => handleQuickBookingStatusChange(b.id, e.target.value, b.payment_status)}
                             disabled={actionLoading}
                             title="Click to change booking status"
@@ -938,6 +939,7 @@ export default function AdminB2BPortal({ activeSubTab = 'b2b_dashboard', onNavig
                             <option value="Pending">Pending</option>
                             <option value="Completed">Completed</option>
                             <option value="Cancelled">Cancelled</option>
+                            <option value="Rejected">Rejected</option>
                           </select>
                         </td>
                         <td className="pe-3 py-2 text-end">

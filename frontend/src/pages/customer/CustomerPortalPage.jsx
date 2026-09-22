@@ -725,7 +725,7 @@ export default function CustomerPortalPage({
       if (!itemsMap.has(bKey)) {
         itemsMap.set(bKey, {
           id: bKey,
-          title: `Booking #${b.id || b.booking_id} ${b.status || 'Confirmed'}`,
+          title: `Booking #${b.id || b.booking_id} (${b.status || 'Pending'})`,
           message: `${b.item_name || b.package_name || 'Trip Reservation'} • ₹${parseFloat(b.total_amount || b.amount_paid || 0).toLocaleString('en-IN')}`,
           time: b.created_at ? String(b.created_at).slice(0, 16) : 'Recent',
           type: 'booking',

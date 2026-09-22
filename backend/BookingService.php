@@ -609,7 +609,7 @@ class BookingService {
             }
 
             // 10. Insert Authoritative Master Booking
-            $initStatus = $payload['status'] ?? 'Confirmed';
+            $initStatus = $payload['status'] ?? 'Pending';
             $paymentStatus = $payload['payment_status'] ?? 'Paid';
             $paymentMethod = $payload['payment_method'] ?? ($payload['payment_mode'] ?? ($isB2B ? 'B2B Account / Cash' : 'Cash'));
             $tenantId = $payload['tenant_id'] ?? ($actor['tenant_id'] ?? 'admin');
@@ -957,7 +957,7 @@ class BookingService {
                 pickup_date, drop_date, check_in_date, check_out_date, booking_days,
                 status, payment_status, total_amount, amount_paid, created_at, admin_id,
                 vendor_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'hotel', ?, ?, ?, ?, ?, 'Confirmed', 'Paid', 0, 0, ?, ?, ?)");
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'hotel', ?, ?, ?, ?, ?, ?, 'Paid', 0, 0, ?, ?, ?)");
             $stmtInsH->execute([
                 $childHotelId,
                 $masterBookingId,
@@ -971,6 +971,7 @@ class BookingService {
                 $pickupDate,
                 $dropDate,
                 $stayNights,
+                $initStatus,
                 date('Y-m-d H:i:s'),
                 $tenantId,
                 $hChildVendorId
@@ -1004,7 +1005,7 @@ class BookingService {
                 pickup_date, drop_date, departure_date, return_date, booking_days,
                 status, payment_status, total_amount, amount_paid, created_at, admin_id,
                 vendor_id, physical_unit_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'car', ?, ?, ?, ?, ?, 'Confirmed', 'Paid', 0, 0, ?, ?, ?, ?)");
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'car', ?, ?, ?, ?, ?, ?, 'Paid', 0, 0, ?, ?, ?, ?)");
             $stmtInsV->execute([
                 $childVehId,
                 $masterBookingId,
@@ -1018,6 +1019,7 @@ class BookingService {
                 $pickupDate,
                 $dropDate,
                 $daysCount,
+                $initStatus,
                 date('Y-m-d H:i:s'),
                 $tenantId,
                 $vChildVendorId,
@@ -1037,7 +1039,7 @@ class BookingService {
                 pickup_date, drop_date, driver_required, driver_days, driver_charge,
                 driver_earning, driver_job_status, driver_payment_status,
                 status, payment_status, total_amount, amount_paid, created_at, admin_id
-            ) VALUES (?, ?, ?, ?, ?, 'driver-transfer', 'Airport Transfer & Sightseeing Driver', 'driver', ?, ?, 1, ?, ?, ?, 'Pending', 'Pending', 'Confirmed', 'Paid', 0, 0, ?, ?)");
+            ) VALUES (?, ?, ?, ?, ?, 'driver-transfer', 'Airport Transfer & Sightseeing Driver', 'driver', ?, ?, 1, ?, ?, ?, 'Pending', 'Pending', ?, 'Paid', 0, 0, ?, ?)");
             $stmtInsD->execute([
                 $childDriverId,
                 $masterBookingId,
@@ -1049,6 +1051,7 @@ class BookingService {
                 $driverDays,
                 $driverCharge,
                 $driverCharge,
+                $initStatus,
                 date('Y-m-d H:i:s'),
                 $tenantId
             ]);

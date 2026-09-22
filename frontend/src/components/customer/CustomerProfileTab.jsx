@@ -30,7 +30,7 @@ export default function CustomerProfileTab({
   // Profile booking stats
   const totalBookings = bookings.length;
   const activeBookings = bookings.filter(b => {
-    const s = (b.status || 'confirmed').toLowerCase();
+    const s = (b.status || 'pending').toLowerCase();
     return s === 'confirmed' || s === 'upcoming' || s === 'ongoing';
   }).length;
   const completedBookings = bookings.filter(b => (b.status || '').toLowerCase() === 'completed').length;
