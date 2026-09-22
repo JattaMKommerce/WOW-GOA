@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import * as api from '../../services/api';
 import BookingVoucher from '../../components/common/BookingVoucher';
+import B2BCustomerInvoiceModal from '../../components/b2b/B2BCustomerInvoiceModal';
 
 export default function B2BBookingsTab({ partnerUser, forcedMode = null }) {
   // If forcedMode is passed ('COMMISSION' or 'NON_COMMISSION'), it locks strictly to that mode
@@ -16,6 +17,7 @@ export default function B2BBookingsTab({ partnerUser, forcedMode = null }) {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedBooking, setSelectedBooking] = useState(null);
+  const [selectedInvoiceBooking, setSelectedInvoiceBooking] = useState(null);
 
   useEffect(() => {
     if (forcedMode) {
@@ -288,13 +290,24 @@ export default function B2BBookingsTab({ partnerUser, forcedMode = null }) {
                       </td>
 
                       <td className="pe-3 text-end">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedBooking(b)}
-                          className="btn btn-outline-dark btn-xs rounded-pill px-2.5 py-1 text-xxs fw-semibold d-inline-flex align-items-center gap-1"
-                        >
-                          <Eye size={12} /> Voucher
-                        </button>
+                        <div className="d-inline-flex align-items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedInvoiceBooking(b)}
+                            className="btn btn-warning text-dark btn-xs rounded-pill px-2.5 py-1 text-xxs fw-bold d-inline-flex align-items-center gap-1 shadow-sm"
+                            title="Generate Customer Tax Invoice"
+                          >
+                            <FileText size={12} /> Invoice
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedBooking(b)}
+                            className="btn btn-outline-dark btn-xs rounded-pill px-2.5 py-1 text-xxs fw-semibold d-inline-flex align-items-center gap-1"
+                            title="View Operations Voucher"
+                          >
+                            <Eye size={12} /> Voucher
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -304,6 +317,16 @@ export default function B2BBookingsTab({ partnerUser, forcedMode = null }) {
           </table>
         </div>
       </div>
+
+      {/* Customer Tax Invoice Modal */}
+      {selectedInvoiceBooking && (
+        <B2BCustomerInvoiceModal
+          bookingId={selectedInvoiceBooking.id}
+          bookingData={selectedInvoiceBooking}
+          partnerUser={partnerUser}
+          onClose={() => setSelectedInvoiceBooking(null)}
+        />
+      )}
 
       {/* Booking Voucher Modal */}
       {selectedBooking && (

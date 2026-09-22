@@ -28,6 +28,10 @@ export default function B2BBookingModal({
   const [bookingDays, setBookingDays] = useState(2);
   const [specialRequests, setSpecialRequests] = useState('');
 
+  // B2B Partner Customer Markup State
+  const [b2bMarkupType, setB2bMarkupType] = useState('fixed'); // 'fixed' or 'percentage'
+  const [b2bMarkupValue, setB2bMarkupValue] = useState(500);
+
   // Authoritative Pricing State
   const [pricingSnapshot, setPricingSnapshot] = useState(null);
   const [loadingPricing, setLoadingPricing] = useState(true);
@@ -51,7 +55,9 @@ export default function B2BBookingModal({
           mode: b2bMode,
           room_price: selectedItem.price || selectedItem.price_per_night,
           guests: numGuests,
-          total_amount: selectedItem.price ? (selectedItem.price * bookingDays) : 5000
+          total_amount: selectedItem.price ? (selectedItem.price * bookingDays) : 5000,
+          b2b_markup_type: b2bMarkupType,
+          b2b_markup_value: b2bMarkupValue
         });
         if (isMounted) {
           setPricingSnapshot(preview);
@@ -67,7 +73,7 @@ export default function B2BBookingModal({
 
     fetchPricing();
     return () => { isMounted = false; };
-  }, [selectedItem, serviceType, b2bMode, bookingDays, numRooms, numGuests, partnerUser]);
+  }, [selectedItem, serviceType, b2bMode, bookingDays, numRooms, numGuests, partnerUser, b2bMarkupType, b2bMarkupValue]);
 
   const handleBookingSubmit = async (e) => {
     e.preventDefault();
@@ -98,6 +104,8 @@ export default function B2BBookingModal({
         num_rooms: numRooms,
         guests: numGuests,
         special_requests: specialRequests,
+        b2b_markup_type: b2bMarkupType,
+        b2b_markup_value: parseFloat(b2bMarkupValue || 0),
         idempotency_key: idempotencyKey,
         payment_method: 'B2B Account / Cash'
       };
@@ -339,14 +347,56 @@ export default function B2BBookingModal({
                         </div>
                       </>
                     )}
+                    {/* Agency Customer Markup Section */}
+                    <div className="p-3 bg-light rounded-3 border mb-3">
+                      <div className="d-flex justify-content-between align-items-center mb-2">
+                        <label className="form-label text-xs fw-bold text-dark mb-0 d-flex align-items-center gap-1">
+                          <Tag size={13} className="text-warning" /> 3. Total Markup (B2B Partner Markup)
+                        </label>
+                        <div className="btn-group btn-group-sm" role="group">
+                          <button
+                            type="button"
+                            className={`btn btn-xs ${b2bMarkupType === 'fixed' ? 'btn-dark text-white' : 'btn-outline-secondary'}`}
+                            onClick={() => setB2bMarkupType('fixed')}
+                          >
+                            ₹ Fixed
+                          </button>
+                          <button
+                            type="button"
+                            className={`btn btn-xs ${b2bMarkupType === 'percentage' ? 'btn-dark text-white' : 'btn-outline-secondary'}`}
+                            onClick={() => setB2bMarkupType('percentage')}
+                          >
+                            % Percent
+                          </button>
+                        </div>
+                      </div>
+                      <div className="input-group input-group-sm">
+                        <span className="input-group-text bg-white border-end-0">
+                          {b2bMarkupType === 'fixed' ? '₹' : '%'}
+                        </span>
+                        <input
+                          type="number"
+                          min="0"
+                          step={b2bMarkupType === 'percentage' ? '0.5' : '50'}
+                          className="form-control"
+                          placeholder={b2bMarkupType === 'fixed' ? "e.g. 500" : "e.g. 5"}
+                          value={b2bMarkupValue}
+                          onChange={(e) => setB2bMarkupValue(e.target.value)}
+                        />
+                      </div>
+                      <small className="text-muted text-xxs mt-1 d-block">
+                        Total B2B Partner markup for this booking. Applied to wholesale B2B price to compute final customer price.
+                      </small>
+                    </div>
                   </div>
                 </div>
 
                 {/* Authoritative Financial Breakdown Column */}
                 <div className="col-lg-5">
                   <div className="card border-0 rounded-4 shadow-sm p-3 bg-light border">
-                    <h6 className="fw-bold text-dark text-xs text-uppercase tracking-wider mb-2 pb-2 border-bottom">
-                      2. Authoritative B2B Pricing
+                    <h6 className="fw-bold text-dark text-xs text-uppercase tracking-wider mb-2 pb-2 border-bottom d-flex align-items-center justify-content-between">
+                      <span>Authoritative Pricing Breakdown</span>
+                      <span className="badge bg-dark text-white text-3xs">{b2bMode}</span>
                     </h6>
 
                     {loadingPricing ? (
@@ -356,51 +406,56 @@ export default function B2BBookingModal({
                       </div>
                     ) : pricingSnapshot ? (
                       <div className="small">
+                        {/* Price 1: Vendor / Base Price */}
                         <div className="d-flex justify-content-between mb-1.5 text-muted">
-                          <span>Reference Public Price:</span>
-                          <span>₹{pricingSnapshot.original_reference_price?.toLocaleString('en-IN')}</span>
+                          <span>1. Vendor / Base Price:</span>
+                          <span className="font-monospace">₹{pricingSnapshot.vendor_base_price?.toLocaleString('en-IN')}</span>
+                        </div>
+
+                        {/* Wow Goa Markup */}
+                        <div className="d-flex justify-content-between mb-1.5 text-muted">
+                          <span>• Wow Goa Markup ({pricingSnapshot.wow_markup_type === 'percentage' ? `${pricingSnapshot.wow_markup_value}%` : `₹${pricingSnapshot.wow_markup_value}`}):</span>
+                          <span className="text-dark font-monospace">+₹{pricingSnapshot.wow_markup_amount?.toLocaleString('en-IN')}</span>
+                        </div>
+
+                        {/* Price 2: B2B Wholesale Price */}
+                        <div className="d-flex justify-content-between mb-2 p-2 rounded bg-primary bg-opacity-10 text-primary fw-bold">
+                          <span>2. B2B Wholesale Price:</span>
+                          <span className="font-monospace">₹{pricingSnapshot.b2b_price?.toLocaleString('en-IN')}</span>
+                        </div>
+
+                        {/* B2B Partner Customer Markup */}
+                        <div className="d-flex justify-content-between mb-1.5 text-success fw-semibold">
+                          <span>• Total Markup:</span>
+                          <span className="font-monospace">+₹{pricingSnapshot.b2b_markup_amount?.toLocaleString('en-IN')}</span>
+                        </div>
+
+                        {/* Price 3: Final Customer Selling Price */}
+                        <div className="d-flex justify-content-between border-top pt-2 mb-2 fw-bold text-dark fs-6 bg-white p-2 rounded border">
+                          <span className="text-dark">3. Final Customer Price:</span>
+                          <span className="text-success font-heading font-monospace">₹{pricingSnapshot.customer_price?.toLocaleString('en-IN')}</span>
                         </div>
 
                         {b2bMode === 'COMMISSION' ? (
-                          <>
-                            <div className="d-flex justify-content-between mb-1.5 text-muted">
-                              <span>Applied Commission Rate:</span>
-                              <span className="fw-bold text-dark">{pricingSnapshot.b2b_commission_percentage}%</span>
-                            </div>
-                            <div className="d-flex justify-content-between mb-2 p-2 rounded bg-success bg-opacity-10 text-success fw-bold">
-                              <span className="d-flex align-items-center gap-1">
-                                <Gift size={13} /> Partner Commission:
-                              </span>
+                          <div className="p-2 rounded bg-success bg-opacity-10 text-success text-xs mb-2">
+                            <div className="d-flex justify-content-between fw-bold">
+                              <span>Agency Commission ({pricingSnapshot.b2b_commission_percentage}%):</span>
                               <span>+₹{pricingSnapshot.b2b_commission_amount?.toLocaleString('en-IN')}</span>
                             </div>
-                            <div className="d-flex justify-content-between border-top pt-2 mb-2 fw-bold text-dark fs-6">
-                              <span>Selling / Guest Price:</span>
+                            <small className="text-muted text-xxs d-block mt-0.5">
+                              * Accrues to agency statement upon trip completion.
+                            </small>
+                          </div>
+                        ) : (
+                          <div className="p-2 rounded bg-warning bg-opacity-15 text-dark text-xs mb-2">
+                            <div className="d-flex justify-content-between fw-bold">
+                              <span>Wholesale Payable:</span>
                               <span>₹{pricingSnapshot.final_payable_amount?.toLocaleString('en-IN')}</span>
                             </div>
-                            <div className="text-muted text-xxs">
-                              * Commission will be credited to agency statements upon booking completion.
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <div className="d-flex justify-content-between mb-1.5 text-muted">
-                              <span>B2B Net Discount:</span>
-                              <span className="fw-bold text-primary">{pricingSnapshot.b2b_net_discount_percentage}% OFF</span>
-                            </div>
-                            <div className="d-flex justify-content-between mb-2 p-2 rounded bg-primary bg-opacity-10 text-primary fw-bold">
-                              <span className="d-flex align-items-center gap-1">
-                                <Tag size={13} /> Partner Net Savings:
-                              </span>
-                              <span>-₹{(pricingSnapshot.original_reference_price - pricingSnapshot.final_payable_amount).toLocaleString('en-IN')}</span>
-                            </div>
-                            <div className="d-flex justify-content-between border-top pt-2 mb-2 fw-bold text-dark fs-6">
-                              <span>Partner Net Payable:</span>
-                              <span className="text-primary font-heading">₹{pricingSnapshot.final_payable_amount?.toLocaleString('en-IN')}</span>
-                            </div>
-                            <div className="text-muted text-xxs">
-                              * Net rate booking. No separate commission credited.
-                            </div>
-                          </>
+                            <small className="text-muted text-xxs d-block mt-0.5">
+                              * Net wholesale booking. Customer pays you ₹{pricingSnapshot.customer_price?.toLocaleString('en-IN')}.
+                            </small>
+                          </div>
                         )}
                       </div>
                     ) : null}

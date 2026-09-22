@@ -3347,6 +3347,68 @@ export async function processDriverMonthlyPayment(payload) {
   return data;
 }
 
+// ═══════════════════════════════════════════════════════
+// ─── PRICING, MARKUP & INVOICE SYSTEM HELPERS ──────────
+// ═══════════════════════════════════════════════════════
+
+export async function fetchPricingRules(params = {}) {
+  const query = new URLSearchParams(params).toString();
+  const res = await apiFetch(`${API_BASE}?resource=pricing_rules${query ? '&' + query : ''}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to fetch pricing and markup rules.');
+  }
+  return await res.json();
+}
+
+export async function savePricingRule(ruleData) {
+  const res = await apiFetch(API_BASE, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'save_pricing_rule', ...ruleData })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || data.message || 'Failed to save pricing rule.');
+  }
+  return data;
+}
+
+export async function deletePricingRule(ruleId) {
+  const res = await apiFetch(API_BASE, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'delete_pricing_rule', id: ruleId })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || data.message || 'Failed to delete pricing rule.');
+  }
+  return data;
+}
+
+export async function updateB2BProfile(profileData) {
+  const res = await apiFetch(API_BASE, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'b2b_update_profile', ...profileData })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || data.message || 'Failed to update B2B company profile.');
+  }
+  return data;
+}
+
+export async function fetchBookingInvoiceData(bookingId) {
+  const res = await apiFetch(`${API_BASE}?resource=booking_invoice_data&booking_id=${encodeURIComponent(bookingId)}`);
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || 'Failed to load booking invoice data.');
+  }
+  return data;
+}
+
 
 
 

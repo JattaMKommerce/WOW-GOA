@@ -293,6 +293,27 @@ if (!$connected) {
             "ALTER TABLE bookings ADD COLUMN b2b_net_price DECIMAL(10,2) DEFAULT 0.00",
             "ALTER TABLE bookings ADD COLUMN b2b_pricing_rule_id VARCHAR(50) DEFAULT NULL",
             "ALTER TABLE bookings ADD COLUMN idempotency_key VARCHAR(100) DEFAULT NULL",
+            "ALTER TABLE bookings ADD COLUMN vendor_base_price DECIMAL(10,2) DEFAULT 0.00",
+            "ALTER TABLE bookings ADD COLUMN wow_markup_type VARCHAR(20) DEFAULT 'percentage'",
+            "ALTER TABLE bookings ADD COLUMN wow_markup_value DECIMAL(10,2) DEFAULT 0.00",
+            "ALTER TABLE bookings ADD COLUMN wow_markup_amount DECIMAL(10,2) DEFAULT 0.00",
+            "ALTER TABLE bookings ADD COLUMN b2b_price DECIMAL(10,2) DEFAULT 0.00",
+            "ALTER TABLE bookings ADD COLUMN b2b_markup_type VARCHAR(20) DEFAULT 'percentage'",
+            "ALTER TABLE bookings ADD COLUMN b2b_markup_value DECIMAL(10,2) DEFAULT 0.00",
+            "ALTER TABLE bookings ADD COLUMN b2b_markup_amount DECIMAL(10,2) DEFAULT 0.00",
+            "ALTER TABLE bookings ADD COLUMN customer_price DECIMAL(10,2) DEFAULT 0.00",
+            "ALTER TABLE bookings ADD COLUMN pricing_snapshot_json TEXT DEFAULT NULL",
+            "ALTER TABLE markups ADD COLUMN rule_name VARCHAR(150) DEFAULT ''",
+            "ALTER TABLE markups ADD COLUMN target_channel VARCHAR(20) DEFAULT 'all'",
+            "ALTER TABLE markups ADD COLUMN service_type VARCHAR(50) DEFAULT 'all'",
+            "ALTER TABLE markups ADD COLUMN markup_type VARCHAR(20) DEFAULT 'percentage'",
+            "ALTER TABLE markups ADD COLUMN markup_value DECIMAL(10,2) DEFAULT 0.00",
+            "ALTER TABLE markups ADD COLUMN percentage DECIMAL(10,2) DEFAULT 0.00",
+            "ALTER TABLE markups ADD COLUMN amount DECIMAL(10,2) DEFAULT 0.00",
+            "ALTER TABLE markups ADD COLUMN is_active INT DEFAULT 1",
+            "ALTER TABLE markups ADD COLUMN status VARCHAR(20) DEFAULT 'Active'",
+            "ALTER TABLE markups ADD COLUMN notes TEXT DEFAULT NULL",
+            "ALTER TABLE users ADD COLUMN logo_url TEXT DEFAULT NULL",
             "CREATE TABLE IF NOT EXISTS b2b_pricing_rules (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 partner_id VARCHAR(50) NOT NULL DEFAULT 'all',
@@ -452,6 +473,8 @@ if (!$connected) {
             $pdo->exec("UPDATE hotel_room_types SET hotel_id = 'hotel-3star' WHERE hotel_id = 'hotel-1' OR hotel_id = 'hotel-3'");
             $pdo->exec("UPDATE hotel_room_types SET hotel_id = 'hotel-4star' WHERE hotel_id = 'hotel-2' OR hotel_id = 'hotel-4'");
             $pdo->exec("UPDATE hotel_room_types SET hotel_id = 'hotel-5star' WHERE hotel_id = 'hotel-5'");
+            $pdo->exec("UPDATE users SET gst_number = '30AAAAA0000A1Z5' WHERE (id = 'b2b_partner_a' OR username = 'partner_a') AND (gst_number IS NULL OR gst_number = '')");
+            $pdo->exec("UPDATE users SET gst_number = '30BBBBB1111B2Z6' WHERE (id = 'b2b_partner_b' OR username = 'partner_b') AND (gst_number IS NULL OR gst_number = '')");
         } catch (Exception $e) {}
 
 function seedDatabaseIfEmpty($pdo) {
@@ -716,6 +739,25 @@ function seedDatabaseIfEmpty($pdo) {
         "ALTER TABLE bookings ADD COLUMN b2b_net_price DECIMAL(10,2) DEFAULT 0.00",
         "ALTER TABLE bookings ADD COLUMN b2b_pricing_rule_id VARCHAR(50) DEFAULT NULL",
         "ALTER TABLE bookings ADD COLUMN idempotency_key VARCHAR(100) DEFAULT NULL",
+        "ALTER TABLE bookings ADD COLUMN vendor_base_price DECIMAL(10,2) DEFAULT 0.00",
+        "ALTER TABLE bookings ADD COLUMN wow_markup_type VARCHAR(20) DEFAULT 'percentage'",
+        "ALTER TABLE bookings ADD COLUMN wow_markup_value DECIMAL(10,2) DEFAULT 0.00",
+        "ALTER TABLE bookings ADD COLUMN wow_markup_amount DECIMAL(10,2) DEFAULT 0.00",
+        "ALTER TABLE bookings ADD COLUMN b2b_price DECIMAL(10,2) DEFAULT 0.00",
+        "ALTER TABLE bookings ADD COLUMN b2b_markup_type VARCHAR(20) DEFAULT 'percentage'",
+        "ALTER TABLE bookings ADD COLUMN b2b_markup_value DECIMAL(10,2) DEFAULT 0.00",
+        "ALTER TABLE bookings ADD COLUMN b2b_markup_amount DECIMAL(10,2) DEFAULT 0.00",
+        "ALTER TABLE bookings ADD COLUMN customer_price DECIMAL(10,2) DEFAULT 0.00",
+        "ALTER TABLE bookings ADD COLUMN pricing_snapshot_json TEXT DEFAULT NULL",
+        "ALTER TABLE markups ADD COLUMN rule_name VARCHAR(150) DEFAULT ''",
+        "ALTER TABLE markups ADD COLUMN target_channel VARCHAR(20) DEFAULT 'all'",
+        "ALTER TABLE markups ADD COLUMN service_type VARCHAR(50) DEFAULT 'all'",
+        "ALTER TABLE markups ADD COLUMN markup_type VARCHAR(20) DEFAULT 'percentage'",
+        "ALTER TABLE markups ADD COLUMN markup_value DECIMAL(10,2) DEFAULT 0.00",
+        "ALTER TABLE markups ADD COLUMN is_active INT DEFAULT 1",
+        "ALTER TABLE markups ADD COLUMN status VARCHAR(20) DEFAULT 'Active'",
+        "ALTER TABLE markups ADD COLUMN notes TEXT DEFAULT NULL",
+        "ALTER TABLE users ADD COLUMN logo_url TEXT DEFAULT NULL",
         "CREATE TABLE IF NOT EXISTS b2b_pricing_rules (
             id INT PRIMARY KEY AUTO_INCREMENT,
             partner_id VARCHAR(50) NOT NULL DEFAULT 'all',
@@ -2234,7 +2276,7 @@ function getAuthenticatedB2BPartner($pdo, $required = true) {
     }
 
     try {
-        $stmt = $pdo->prepare("SELECT id, username, email, phone, name, company_name, city, address, gst_number, role, status, allow_commission, allow_non_commission, default_commission_rate, default_net_discount_rate, credit_limit, wallet_balance, initial_mode, requested_mode, mode_request_status, mode_requested_at, mode_rejection_reason, created_at FROM users WHERE (id = ? OR username = ? OR email = ?) AND status = 'active' AND role IN ('b2b', 'agent', 'admin', 'superadmin')");
+        $stmt = $pdo->prepare("SELECT id, username, email, phone, name, company_name, city, address, gst_number, logo_url, role, status, allow_commission, allow_non_commission, default_commission_rate, default_net_discount_rate, credit_limit, wallet_balance, initial_mode, requested_mode, mode_request_status, mode_requested_at, mode_rejection_reason, created_at FROM users WHERE (id = ? OR username = ? OR email = ?) AND status = 'active' AND role IN ('b2b', 'agent', 'admin', 'superadmin')");
         $stmt->execute([$partnerIdOrToken, $partnerIdOrToken, $partnerIdOrToken]);
         $partner = $stmt->fetch(PDO::FETCH_ASSOC);
     } catch (Exception $e) {
@@ -2251,15 +2293,16 @@ function getAuthenticatedB2BPartner($pdo, $required = true) {
             $pEmail = $isB ? 'partner_b@agency.com' : 'partner_a@agency.com';
             $pUser = $isB ? 'partner_b' : ($partnerIdOrToken === 'b2b_partner_a' ? 'partner_a' : $partnerIdOrToken);
             $pPhone = $isB ? '9876543211' : '9876543210';
+            $pGst = $isB ? '30BBBBB1111B2Z6' : '30AAAAA0000A1Z5';
             $cLimit = 50000.00;
 
             $nowDate = date('Y-m-d H:i:s');
             $insPartner = $pdo->prepare("INSERT INTO users (
-                id, username, email, company_name, name, phone, role, status,
+                id, username, email, company_name, name, phone, gst_number, role, status,
                 allow_commission, allow_non_commission, default_commission_rate, default_net_discount_rate,
                 credit_limit, wallet_balance, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, 'b2b', 'active', 1, 1, 10.00, 10.00, ?, 0.00, ?)");
-            $insPartner->execute([$partnerIdOrToken, $pUser, $pEmail, $cName, $pName, $pPhone, $cLimit, $nowDate]);
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'b2b', 'active', 1, 1, 10.00, 10.00, ?, 0.00, ?)");
+            $insPartner->execute([$partnerIdOrToken, $pUser, $pEmail, $cName, $pName, $pPhone, $pGst, $cLimit, $nowDate]);
 
             $stmt->execute([$partnerIdOrToken, $partnerIdOrToken, $partnerIdOrToken]);
             $partner = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -2647,6 +2690,99 @@ function recordB2BAuditLog($pdo, $actorId, $partnerId, $bookingId, $action, $old
     }
 }
 
+function resolveServiceMarkupRule($pdo, $vendorId, $serviceType, $targetChannel = 'b2b') {
+    $normService = strtolower(trim($serviceType ?: 'all'));
+    if ($normService === 'car' || $normService === 'bike' || $normService === 'selfdrive') {
+        $normService = 'vehicle';
+    }
+    if ($normService === 'sightseeing' || $normService === 'activities') {
+        $normService = 'activity';
+    }
+    $normChannel = strtolower(trim($targetChannel ?: 'all'));
+    $vId = trim($vendorId ?: 'all');
+
+    // Priority 1: Specific Vendor + Specific Service + Channel
+    try {
+        $stmt1 = $pdo->prepare("SELECT * FROM markups WHERE (vendor_id = ? AND vendor_id != 'all' AND vendor_id != 'global') AND (service_type = ? OR entity_type = ?) AND (target_channel = ? OR target_channel = 'all' OR target_channel IS NULL) AND (is_active = 1 OR status = 'Active') ORDER BY id DESC LIMIT 1");
+        $stmt1->execute([$vId, $normService, $normService, $normChannel]);
+        $rule1 = $stmt1->fetch(PDO::FETCH_ASSOC);
+        if ($rule1) {
+            $mType = strtolower($rule1['markup_type'] ?? (!empty($rule1['amount']) && $rule1['amount'] > 0 ? 'fixed' : 'percentage'));
+            $mVal = floatval($rule1['markup_value'] ?? ($mType === 'percentage' ? ($rule1['percentage'] ?? 0) : ($rule1['amount'] ?? 0)));
+            return [
+                'rule_id' => 'mk_v_s_' . $rule1['id'],
+                'priority' => 1,
+                'source' => 'Vendor + Service Rule (' . ($rule1['rule_name'] ?? 'Custom') . ')',
+                'markup_type' => $mType,
+                'markup_value' => $mVal
+            ];
+        }
+    } catch (Exception $e1) {}
+
+    // Priority 2: Specific Vendor + All Services + Channel
+    try {
+        $stmt2 = $pdo->prepare("SELECT * FROM markups WHERE (vendor_id = ? AND vendor_id != 'all' AND vendor_id != 'global') AND (service_type = 'all' OR entity_type = 'all') AND (target_channel = ? OR target_channel = 'all' OR target_channel IS NULL) AND (is_active = 1 OR status = 'Active') ORDER BY id DESC LIMIT 1");
+        $stmt2->execute([$vId, $normChannel]);
+        $rule2 = $stmt2->fetch(PDO::FETCH_ASSOC);
+        if ($rule2) {
+            $mType = strtolower($rule2['markup_type'] ?? (!empty($rule2['amount']) && $rule2['amount'] > 0 ? 'fixed' : 'percentage'));
+            $mVal = floatval($rule2['markup_value'] ?? ($mType === 'percentage' ? ($rule2['percentage'] ?? 0) : ($rule2['amount'] ?? 0)));
+            return [
+                'rule_id' => 'mk_v_all_' . $rule2['id'],
+                'priority' => 2,
+                'source' => 'Vendor All-Services Rule',
+                'markup_type' => $mType,
+                'markup_value' => $mVal
+            ];
+        }
+    } catch (Exception $e2) {}
+
+    // Priority 3: Global Vendor ('all' or 'global') + Specific Service + Channel
+    try {
+        $stmt3 = $pdo->prepare("SELECT * FROM markups WHERE (vendor_id = 'all' OR vendor_id = 'global' OR vendor_id IS NULL OR vendor_id = '') AND (service_type = ? OR entity_type = ?) AND (target_channel = ? OR target_channel = 'all' OR target_channel IS NULL) AND (is_active = 1 OR status = 'Active') ORDER BY id DESC LIMIT 1");
+        $stmt3->execute([$normService, $normService, $normChannel]);
+        $rule3 = $stmt3->fetch(PDO::FETCH_ASSOC);
+        if ($rule3) {
+            $mType = strtolower($rule3['markup_type'] ?? (!empty($rule3['amount']) && $rule3['amount'] > 0 ? 'fixed' : 'percentage'));
+            $mVal = floatval($rule3['markup_value'] ?? ($mType === 'percentage' ? ($rule3['percentage'] ?? 0) : ($rule3['amount'] ?? 0)));
+            return [
+                'rule_id' => 'mk_g_s_' . $rule3['id'],
+                'priority' => 3,
+                'source' => 'Global Service Rule',
+                'markup_type' => $mType,
+                'markup_value' => $mVal
+            ];
+        }
+    } catch (Exception $e3) {}
+
+    // Priority 4: Global Vendor + All Services + Channel
+    try {
+        $stmt4 = $pdo->prepare("SELECT * FROM markups WHERE (vendor_id = 'all' OR vendor_id = 'global' OR vendor_id IS NULL OR vendor_id = '') AND (service_type = 'all' OR entity_type = 'all') AND (target_channel = ? OR target_channel = 'all' OR target_channel IS NULL) AND (is_active = 1 OR status = 'Active') ORDER BY id DESC LIMIT 1");
+        $stmt4->execute([$normChannel]);
+        $rule4 = $stmt4->fetch(PDO::FETCH_ASSOC);
+        if ($rule4) {
+            $mType = strtolower($rule4['markup_type'] ?? (!empty($rule4['amount']) && $rule4['amount'] > 0 ? 'fixed' : 'percentage'));
+            $mVal = floatval($rule4['markup_value'] ?? ($mType === 'percentage' ? ($rule4['percentage'] ?? 0) : ($rule4['amount'] ?? 0)));
+            return [
+                'rule_id' => 'mk_g_all_' . $rule4['id'],
+                'priority' => 4,
+                'source' => 'Global Default Markup Rule',
+                'markup_type' => $mType,
+                'markup_value' => $mVal
+            ];
+        }
+    } catch (Exception $e4) {}
+
+    // Priority 5: Fallback default (0 markup if none configured)
+    return [
+        'rule_id' => 'mk_fallback_0',
+        'priority' => 5,
+        'source' => 'System Standard Default (0%)',
+        'markup_type' => 'percentage',
+        'markup_value' => 0.00
+    ];
+}
+
 function resolveB2BPricingRule($pdo, $partnerId, $serviceType, $partnerUser = null) {
     $normService = strtolower(trim($serviceType ?: 'all'));
     if ($normService === 'car' || $normService === 'bike' || $normService === 'selfdrive') {
@@ -2751,6 +2887,7 @@ function calculateAuthoritativeB2BPrice($pdo, $serviceType, $itemId, $days, $qty
     $taxAmount = 0;
     $itemName = 'Trip Booking';
     $itemImage = '';
+    $vendorId = 'global';
 
     // Fetch live inventory rate authoritatively
     if ($normService === 'hotel') {
@@ -2758,13 +2895,14 @@ function calculateAuthoritativeB2BPrice($pdo, $serviceType, $itemId, $days, $qty
         $stmtH->execute([$itemId]);
         $hotel = $stmtH->fetch(PDO::FETCH_ASSOC);
         if ($hotel) {
+            $vendorId = $hotel['vendor_id'] ?? 'global';
             $itemName = $hotel['name'] ?? 'Hotel Stay';
             $itemImage = $hotel['image'] ?? '';
             $roomPrice = floatval($extraDetails['room_price'] ?? ($hotel['price_per_night'] ?? ($hotel['price'] ?? 2500)));
             $rooms = max(1, intval($extraDetails['num_rooms'] ?? $qtyCount));
             $roomSubtotal = $roomPrice * $rooms * $daysCount;
             $taxAmount = round($roomSubtotal * 0.18, 2);
-            $rawBasePrice = $roomSubtotal + $taxAmount;
+            $rawBasePrice = $roomSubtotal;
         } else {
             $rawBasePrice = floatval($extraDetails['total_amount'] ?? 5000);
             $taxAmount = round($rawBasePrice * 0.18, 2);
@@ -2779,13 +2917,14 @@ function calculateAuthoritativeB2BPrice($pdo, $serviceType, $itemId, $days, $qty
             $veh = $stmtB->fetch(PDO::FETCH_ASSOC);
         }
         if ($veh) {
+            $vendorId = $veh['vendor_id'] ?? 'global';
             $itemName = $veh['name'] ?? 'Vehicle Rental';
             $itemImage = $veh['image'] ?? '';
             $ratePerDay = floatval($veh['price'] ?? 1500);
 
             $vehSubtotal = $ratePerDay * $daysCount;
             $taxAmount = round($vehSubtotal * 0.18, 2);
-            $rawBasePrice = $vehSubtotal + $taxAmount;
+            $rawBasePrice = $vehSubtotal;
 
             $rawServiceType = strtoupper(trim($extraDetails['driver_service_type'] ?? ($extraDetails['extra_details']['driver_service_type'] ?? '')));
             if (in_array($rawServiceType, ['PICKUP', 'DROP', 'FULL'])) {
@@ -2812,6 +2951,7 @@ function calculateAuthoritativeB2BPrice($pdo, $serviceType, $itemId, $days, $qty
         $stmtP->execute([$itemId]);
         $pkg = $stmtP->fetch(PDO::FETCH_ASSOC);
         if ($pkg) {
+            $vendorId = $pkg['vendor_id'] ?? 'global';
             $itemName = $pkg['name'] ?? 'Trip Package';
             $itemImage = $pkg['image'] ?? '';
             $pkgPrice = floatval($pkg['price_discounted'] ?? ($pkg['price'] ?? 5000));
@@ -2827,16 +2967,19 @@ function calculateAuthoritativeB2BPrice($pdo, $serviceType, $itemId, $days, $qty
         $taxAmount = round($rawBasePrice * 0.12, 2);
         $itemName = $extraDetails['item_name'] ?? ($extraDetails['title'] ?? 'Flight Booking');
         $itemImage = $extraDetails['item_image'] ?? '';
+        $vendorId = $extraDetails['vendor_id'] ?? 'global';
     } elseif ($normService === 'craftmytrip' || $normService === 'craft' || $normService === 'custom') {
         $rawBasePrice = floatval($extraDetails['total_amount'] ?? ($extraDetails['budget'] ?? 15000));
         $taxAmount = round($rawBasePrice * 0.05, 2);
         $itemName = $extraDetails['item_name'] ?? 'Custom Tailor-Made Trip';
         $itemImage = $extraDetails['item_image'] ?? '';
+        $vendorId = 'global';
     } elseif ($normService === 'activity' || $normService === 'sightseeing') {
         $stmtA = $pdo->prepare("SELECT * FROM add_ons WHERE id = ?");
         $stmtA->execute([$itemId]);
         $act = $stmtA->fetch(PDO::FETCH_ASSOC);
         if ($act) {
+            $vendorId = $act['vendor_id'] ?? 'global';
             $itemName = !empty($act['title']) ? $act['title'] : ($act['name'] ?? 'Sightseeing & Activity');
             $itemImage = !empty($act['image_url']) ? $act['image_url'] : ($act['image'] ?? '');
             $actPrice = floatval($act['price'] ?? 1500);
@@ -2858,33 +3001,70 @@ function calculateAuthoritativeB2BPrice($pdo, $serviceType, $itemId, $days, $qty
         $rawBasePrice = floatval($extraDetails['total_amount'] ?? 5000);
     }
 
-    // Resolve authoritative rule
-    $rule = resolveB2BPricingRule($pdo, $partnerUser['id'] ?? 'all', $normService, $partnerUser);
-    if (!$rule) {
-        throw new Exception("Unable to resolve active B2B pricing rule for service: $normService.");
+    if (!empty($extraDetails['vendor_id'])) {
+        $vendorId = $extraDetails['vendor_id'];
     }
 
-    $originalSellingPrice = round($rawBasePrice, 2);
-    $baseBeforeTax = round($originalSellingPrice - $taxAmount, 2);
+    // ─── 1. VENDOR / BASE PRICE ───
+    $vendorBasePrice = round($rawBasePrice, 2);
 
+    // ─── 2. WOW GOA MARKUP (LEVEL 1) ───
+    $wowRule = resolveServiceMarkupRule($pdo, $vendorId, $normService, 'b2b');
+    $wowMarkupType = strtolower($wowRule['markup_type'] ?? 'percentage');
+    $wowMarkupValue = floatval($wowRule['markup_value'] ?? 0);
+    $wowMarkupAmount = 0.00;
+
+    if ($wowMarkupValue > 0) {
+        if ($wowMarkupType === 'percentage') {
+            $wowMarkupAmount = round($vendorBasePrice * ($wowMarkupValue / 100), 2);
+        } else {
+            $wowMarkupAmount = round($wowMarkupValue, 2);
+        }
+    }
+
+    // ─── 3. B2B WHOLESALE PRICE ───
+    $b2bPrice = round($vendorBasePrice + $wowMarkupAmount, 2);
+
+    // ─── 4. B2B PARTNER CUSTOMER MARKUP (LEVEL 2) ───
+    $b2bMarkupType = strtolower($extraDetails['b2b_markup_type'] ?? ($extraDetails['customer_markup_type'] ?? 'fixed'));
+    $b2bMarkupValue = floatval($extraDetails['b2b_markup_value'] ?? ($extraDetails['customer_markup_value'] ?? 0));
+    $b2bMarkupAmount = 0.00;
+
+    if ($b2bMarkupValue > 0) {
+        if ($b2bMarkupType === 'percentage') {
+            $b2bMarkupAmount = round($b2bPrice * ($b2bMarkupValue / 100), 2);
+        } else {
+            $b2bMarkupAmount = round($b2bMarkupValue, 2);
+        }
+    }
+
+    // ─── 5. FINAL CUSTOMER SELLING PRICE ───
+    $customerPrice = round($b2bPrice + $b2bMarkupAmount, 2);
+
+    // ─── 6. COMMISSION / NON-COMMISSION RESOLUTION ───
+    $b2bPricingRule = resolveB2BPricingRule($pdo, $partnerUser['id'] ?? 'all', $normService, $partnerUser);
     $commPercent = 0.00;
     $commAmount = 0.00;
     $netPercent = 0.00;
-    $netPrice = $originalSellingPrice;
-    $finalPayable = $originalSellingPrice;
+    $netPrice = $b2bPrice;
+    $finalPayable = $b2bPrice;
 
     if ($normMode === 'COMMISSION') {
-        $commPercent = floatval($rule['commission_percent'] ?? 10.00);
-        $commAmount = round($originalSellingPrice * ($commPercent / 100), 2);
+        $commPercent = floatval($b2bPricingRule['commission_percent'] ?? 10.00);
+        $commAmount = round($customerPrice * ($commPercent / 100), 2);
         $netPercent = 0.00;
-        $netPrice = round($originalSellingPrice - $commAmount, 2);
-        $finalPayable = $originalSellingPrice;
+        $netPrice = round($customerPrice - $commAmount, 2);
+        $finalPayable = $customerPrice;
     } else {
         // NON_COMMISSION
         $commPercent = 0.00;
         $commAmount = 0.00;
-        $netPercent = floatval($rule['net_discount_percent'] ?? 10.00);
-        $netPrice = round($originalSellingPrice * (1 - ($netPercent / 100)), 2);
+        $netPercent = floatval($b2bPricingRule['net_discount_percent'] ?? 0.00);
+        if ($netPercent > 0) {
+            $netPrice = round($b2bPrice * (1 - ($netPercent / 100)), 2);
+        } else {
+            $netPrice = $b2bPrice;
+        }
         $finalPayable = $netPrice;
     }
 
@@ -2894,16 +3074,33 @@ function calculateAuthoritativeB2BPrice($pdo, $serviceType, $itemId, $days, $qty
         'item_image' => $itemImage,
         'service_type' => $normService,
         'b2b_mode' => $normMode,
-        'pricing_rule_id' => $rule['rule_id'],
-        'pricing_rule_source' => $rule['source'],
-        'original_reference_price' => $originalSellingPrice,
-        'base_price' => $baseBeforeTax,
-        'tax_amount' => $taxAmount,
+        'vendor_id' => $vendorId,
+        // The 3 Crucial Isolated Prices
+        'vendor_base_price' => $vendorBasePrice,
+        'b2b_price' => $b2bPrice,
+        'customer_price' => $customerPrice,
+        // Wow Goa Markup Details
+        'wow_markup_type' => $wowMarkupType,
+        'wow_markup_value' => $wowMarkupValue,
+        'wow_markup_amount' => $wowMarkupAmount,
+        'wow_markup_rule_id' => $wowRule['rule_id'],
+        'wow_markup_source' => $wowRule['source'],
+        // B2B Partner Markup Details
+        'b2b_markup_type' => $b2bMarkupType,
+        'b2b_markup_value' => $b2bMarkupValue,
+        'b2b_markup_amount' => $b2bMarkupAmount,
+        // Commission / Commercials
         'b2b_commission_percentage' => $commPercent,
         'b2b_commission_amount' => $commAmount,
         'b2b_net_discount_percentage' => $netPercent,
         'b2b_net_price' => $netPrice,
-        'final_payable_amount' => $finalPayable
+        'pricing_rule_id' => $b2bPricingRule['rule_id'],
+        'pricing_rule_source' => $b2bPricingRule['source'],
+        'tax_amount' => $taxAmount,
+        'final_payable_amount' => $finalPayable,
+        'final_customer_price' => $customerPrice,
+        'original_reference_price' => $customerPrice,
+        'base_price' => $vendorBasePrice
     ];
 }
 
@@ -3837,6 +4034,176 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                     echo json_encode([]);
                 }
             }
+            exit;} elseif ($resource === 'pricing_rules') {
+            // Strict RBAC: Super Admin & Admin only. Vendors, Customers, and B2B Partners have NO access.
+            $actor = authenticateRequest($pdo, false);
+            $userRole = strtolower($_SERVER['HTTP_X_USER_ROLE'] ?? ($actor['role'] ?? ''));
+            $isSuperAdmin = ($userRole === 'superadmin' || ($actor && $actor['role'] === 'superadmin'));
+            $isAdmin = ($userRole === 'admin' || ($actor && $actor['role'] === 'admin') || $isSuperAdmin);
+
+            if (!$isAdmin) {
+                http_response_code(403);
+                echo json_encode(["success" => false, "error" => "Forbidden: Pricing & Markup setup is restricted to Administrators."]);
+                exit();
+            }
+
+            try {
+                $search = trim($_GET['search'] ?? '');
+                $vendorFilter = trim($_GET['vendor_id'] ?? 'all');
+                $serviceFilter = trim($_GET['service_type'] ?? 'all');
+                $channelFilter = trim($_GET['target_channel'] ?? 'all');
+                $statusFilter = trim($_GET['status'] ?? 'all');
+
+                $sql = "SELECT m.*, u.company_name as vendor_company, u.name as vendor_name FROM markups m LEFT JOIN users u ON m.vendor_id = u.id WHERE 1=1";
+                $params = [];
+
+                if ($vendorFilter !== 'all' && $vendorFilter !== '') {
+                    $sql .= " AND (m.vendor_id = ? OR m.vendor_id = 'all' OR m.vendor_id = 'global')";
+                    $params[] = $vendorFilter;
+                }
+                if ($serviceFilter !== 'all' && $serviceFilter !== '') {
+                    $sql .= " AND (m.service_type = ? OR m.entity_type = ? OR m.service_type = 'all' OR m.entity_type = 'all')";
+                    $params[] = $serviceFilter;
+                    $params[] = $serviceFilter;
+                }
+                if ($channelFilter !== 'all' && $channelFilter !== '') {
+                    $sql .= " AND (m.target_channel = ? OR m.target_channel = 'all' OR m.target_channel IS NULL)";
+                    $params[] = $channelFilter;
+                }
+                if ($statusFilter !== 'all' && $statusFilter !== '') {
+                    $sql .= " AND (m.status = ? OR (m.is_active = ?))";
+                    $params[] = ($statusFilter === 'active' ? 'Active' : 'Inactive');
+                    $params[] = ($statusFilter === 'active' ? 1 : 0);
+                }
+                if ($search !== '') {
+                    $sql .= " AND (m.rule_name LIKE ? OR m.service_type LIKE ? OR m.vendor_id LIKE ?)";
+                    $params[] = "%$search%";
+                    $params[] = "%$search%";
+                    $params[] = "%$search%";
+                }
+
+                $sql .= " ORDER BY m.id DESC";
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute($params);
+                $rules = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+                // Also provide available vendors for dropdowns
+                $stmtV = $pdo->query("SELECT id, name, company_name, username, role FROM users WHERE role IN ('vendor', 'hotel_vendor', 'vehicle_vendor', 'flight_vendor') ORDER BY name ASC");
+                $vendors = $stmtV ? $stmtV->fetchAll(PDO::FETCH_ASSOC) : [];
+
+                echo json_encode([
+                    "success" => true,
+                    "rules" => $rules ?: [],
+                    "vendors" => $vendors ?: []
+                ]);
+            } catch (Exception $e) {
+                echo json_encode(["success" => false, "error" => $e->getMessage(), "rules" => [], "vendors" => []]);
+            }
+            exit;} elseif ($resource === 'booking_invoice_data') {
+            // Fetch booking invoice data securely with role-aware verification
+            $bookingId = trim($_GET['booking_id'] ?? '');
+            if (!$bookingId) {
+                http_response_code(400);
+                echo json_encode(["success" => false, "error" => "Booking ID is required."]);
+                exit();
+            }
+
+            $stmt = $pdo->prepare("SELECT * FROM bookings WHERE id = ? LIMIT 1");
+            $stmt->execute([$bookingId]);
+            $booking = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$booking) {
+                http_response_code(404);
+                echo json_encode(["success" => false, "error" => "Booking not found."]);
+                exit();
+            }
+
+            // Security / RBAC Check
+            $actor = authenticateRequest($pdo, false);
+            $partner = getAuthenticatedB2BPartner($pdo, false);
+            $userRole = strtolower($_SERVER['HTTP_X_USER_ROLE'] ?? ($actor['role'] ?? ($partner['role'] ?? '')));
+            $isAdmin = ($userRole === 'admin' || $userRole === 'superadmin');
+
+            $isB2BBooking = (strtoupper($booking['booking_channel'] ?? '') === 'B2B' || !empty($booking['b2b_partner_id']));
+
+            if (!$isAdmin) {
+                if ($isB2BBooking) {
+                    if (!$partner || $partner['id'] !== $booking['b2b_partner_id']) {
+                        http_response_code(403);
+                        echo json_encode(["success" => false, "error" => "Forbidden: You are only authorized to access your own agency invoices."]);
+                        exit();
+                    }
+                } else {
+                    // D2C customer check: verify phone/email if authenticated
+                    if ($actor && !empty($actor['phone']) && !empty($booking['phone'])) {
+                        $p1 = preg_replace('/\D/', '', $actor['phone']);
+                        $p2 = preg_replace('/\D/', '', $booking['phone']);
+                        if (substr($p1, -10) !== substr($p2, -10)) {
+                            http_response_code(403);
+                            echo json_encode(["success" => false, "error" => "Forbidden: You are not authorized to view this booking document."]);
+                            exit();
+                        }
+                    }
+                }
+            }
+
+            // Partner branding
+            $partnerDetails = null;
+            $partnerLookupId = !empty($booking['b2b_partner_id']) ? $booking['b2b_partner_id'] : ($partner['id'] ?? null);
+            if ($partnerLookupId) {
+                $stmtP = $pdo->prepare("SELECT id, name, company_name, email, phone, address, city, gst_number, logo_url FROM users WHERE id = ? OR username = ? LIMIT 1");
+                $stmtP->execute([$partnerLookupId, $partnerLookupId]);
+                $partnerDetails = $stmtP->fetch(PDO::FETCH_ASSOC);
+            }
+            if (!$partnerDetails && $partner) {
+                $partnerDetails = $partner;
+            }
+            if ($partnerDetails && empty($partnerDetails['gst_number'])) {
+                $partnerDetails['gst_number'] = '30AAAAA0000A1Z5';
+            }
+
+            // Wow Goa Company Branding
+            $companyDetails = [
+                "company_name" => "WOW GOA Travel Solutions Pvt Ltd",
+                "tagline" => "Premier Goa Holiday Experiences & Rentals",
+                "logo_url" => "/images/wowgoa_logo.png",
+                "address" => "Suite 401, Coastal Horizon Tower, Panjim, Goa - 403001, India",
+                "phone" => "+91 98765 43210",
+                "email" => "support@wowgoa.com",
+                "website" => "www.wowgoa.com",
+                "gst_number" => "30AABCT1234F1Z5"
+            ];
+
+            // Parse stored snapshot
+            $pricingSnapshot = null;
+            if (!empty($booking['pricing_snapshot_json'])) {
+                $pricingSnapshot = json_decode($booking['pricing_snapshot_json'], true);
+            }
+            if (!$pricingSnapshot && !empty($booking['price_breakdown_json'])) {
+                $pricingSnapshot = json_decode($booking['price_breakdown_json'], true);
+            }
+
+            // Parse customizations
+            $customs = null;
+            if (!empty($booking['customizations'])) {
+                $customs = is_array($booking['customizations']) ? $booking['customizations'] : json_decode($booking['customizations'], true);
+            }
+
+            // Parse traveller details
+            $travellers = null;
+            if (!empty($booking['traveller_details_json'])) {
+                $travellers = json_decode($booking['traveller_details_json'], true);
+            }
+
+            echo json_encode([
+                "success" => true,
+                "booking" => $booking,
+                "pricing_snapshot" => $pricingSnapshot,
+                "customizations" => $customs,
+                "traveller_details" => $travellers,
+                "partner" => $partnerDetails,
+                "company" => $companyDetails
+            ]);
             exit;} elseif ($resource === 'b2b_pricing_rules') {
             try {
                 $stmt = $pdo->query("SELECT r.*, u.company_name, u.name as partner_contact_name FROM b2b_pricing_rules r LEFT JOIN users u ON r.partner_id = u.id ORDER BY r.partner_id, r.service_type");
@@ -6123,6 +6490,148 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             recordB2BAuditLog($pdo, $tenant_id, $partnerId, null, 'B2B_PARTNER_SAVED', null, $payload, "B2B Partner agency configuration updated");
 
             echo json_encode(["success" => true, "message" => "B2B partner agency saved successfully.", "partner_id" => $partnerId]);
+            exit();
+        } elseif ($action === 'save_pricing_rule') {
+            // Strict RBAC: Super Admin and Admin only
+            $actor = authenticateRequest($pdo, false);
+            $userRole = strtolower($_SERVER['HTTP_X_USER_ROLE'] ?? ($actor['role'] ?? ''));
+            $isSuperAdmin = ($userRole === 'superadmin' || ($actor && $actor['role'] === 'superadmin'));
+            $isAdmin = ($userRole === 'admin' || ($actor && $actor['role'] === 'admin') || $isSuperAdmin);
+
+            if (!$isAdmin) {
+                http_response_code(403);
+                echo json_encode(["success" => false, "error" => "Forbidden: Only administrators can configure pricing and markup rules."]);
+                exit();
+            }
+
+            $ruleId = intval($payload['id'] ?? 0);
+            $ruleName = trim($payload['rule_name'] ?? '');
+            $vendorId = trim($payload['vendor_id'] ?? 'all');
+            $serviceType = strtolower(trim($payload['service_type'] ?? 'all'));
+            $targetChannel = strtolower(trim($payload['target_channel'] ?? 'all'));
+            $markupType = strtolower(trim($payload['markup_type'] ?? 'percentage'));
+            $markupValue = floatval($payload['markup_value'] ?? 0);
+            $isActive = isset($payload['is_active']) ? intval($payload['is_active']) : 1;
+            $status = $isActive ? 'Active' : 'Inactive';
+            $notes = trim($payload['notes'] ?? '');
+
+            if (empty($ruleName)) {
+                $ruleName = ($vendorId !== 'all' ? "Vendor $vendorId " : "Global ") . ucfirst($serviceType) . " Markup (" . ($markupType === 'percentage' ? "$markupValue%" : "₹$markupValue") . ")";
+            }
+
+            if ($markupValue < 0) {
+                http_response_code(400);
+                echo json_encode(["success" => false, "error" => "Markup value cannot be negative."]);
+                exit();
+            }
+
+            if (!in_array($markupType, ['percentage', 'fixed', 'flat'])) {
+                http_response_code(400);
+                echo json_encode(["success" => false, "error" => "Invalid markup type. Must be Percentage or Fixed Amount."]);
+                exit();
+            }
+
+            if ($ruleId > 0) {
+                $stmt = $pdo->prepare("UPDATE markups SET rule_name = ?, vendor_id = ?, service_type = ?, entity_type = ?, target_channel = ?, markup_type = ?, markup_value = ?, amount = ?, percentage = ?, is_active = ?, status = ?, notes = ? WHERE id = ?");
+                $stmt->execute([
+                    $ruleName,
+                    $vendorId,
+                    $serviceType,
+                    $serviceType,
+                    $targetChannel,
+                    $markupType,
+                    $markupValue,
+                    ($markupType === 'percentage' ? 0 : intval($markupValue)),
+                    ($markupType === 'percentage' ? $markupValue : 0.00),
+                    $isActive,
+                    $status,
+                    $notes,
+                    $ruleId
+                ]);
+            } else {
+                $stmt = $pdo->prepare("INSERT INTO markups (rule_name, vendor_id, service_type, entity_type, target_channel, markup_type, markup_value, amount, percentage, is_active, status, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt->execute([
+                    $ruleName,
+                    $vendorId,
+                    $serviceType,
+                    $serviceType,
+                    $targetChannel,
+                    $markupType,
+                    $markupValue,
+                    ($markupType === 'percentage' ? 0 : intval($markupValue)),
+                    ($markupType === 'percentage' ? $markupValue : 0.00),
+                    $isActive,
+                    $status,
+                    $notes
+                ]);
+                $ruleId = $pdo->lastInsertId();
+            }
+
+            echo json_encode([
+                "success" => true,
+                "message" => "Pricing and markup rule saved successfully.",
+                "rule_id" => $ruleId
+            ]);
+            exit();
+        } elseif ($action === 'delete_pricing_rule') {
+            // Strict RBAC: Super Admin and Admin only
+            $actor = authenticateRequest($pdo, false);
+            $userRole = strtolower($_SERVER['HTTP_X_USER_ROLE'] ?? ($actor['role'] ?? ''));
+            $isSuperAdmin = ($userRole === 'superadmin' || ($actor && $actor['role'] === 'superadmin'));
+            $isAdmin = ($userRole === 'admin' || ($actor && $actor['role'] === 'admin') || $isSuperAdmin);
+
+            if (!$isAdmin) {
+                http_response_code(403);
+                echo json_encode(["success" => false, "error" => "Forbidden: Only administrators can delete pricing rules."]);
+                exit();
+            }
+
+            $ruleId = intval($payload['id'] ?? 0);
+            if ($ruleId <= 0) {
+                http_response_code(400);
+                echo json_encode(["success" => false, "error" => "Valid Rule ID is required."]);
+                exit();
+            }
+
+            $pdo->prepare("DELETE FROM markups WHERE id = ?")->execute([$ruleId]);
+            echo json_encode(["success" => true, "message" => "Pricing rule deleted successfully."]);
+            exit();
+        } elseif ($action === 'b2b_update_profile') {
+            $partner = getAuthenticatedB2BPartner($pdo, true);
+            $companyName = trim($payload['company_name'] ?? ($partner['company_name'] ?? ''));
+            $contactName = trim($payload['name'] ?? ($payload['contact_name'] ?? ($partner['name'] ?? '')));
+            $phone = trim($payload['phone'] ?? ($partner['phone'] ?? ''));
+            $email = trim($payload['email'] ?? ($partner['email'] ?? ''));
+            $address = trim($payload['address'] ?? ($partner['address'] ?? ''));
+            $gstNumber = trim($payload['gst_number'] ?? ($partner['gst_number'] ?? ''));
+            $logoUrl = trim($payload['logo_url'] ?? ($partner['logo_url'] ?? ''));
+
+            $stmt = $pdo->prepare("UPDATE users SET company_name = ?, name = ?, phone = ?, email = ?, address = ?, gst_number = ?, logo_url = ? WHERE id = ?");
+            $stmt->execute([
+                $companyName,
+                $contactName,
+                $phone,
+                $email,
+                $address,
+                $gstNumber,
+                $logoUrl,
+                $partner['id']
+            ]);
+
+            echo json_encode([
+                "success" => true,
+                "message" => "B2B company profile updated successfully.",
+                "partner" => [
+                    "id" => $partner['id'],
+                    "company_name" => $companyName,
+                    "name" => $contactName,
+                    "phone" => $phone,
+                    "email" => $email,
+                    "address" => $address,
+                    "gst_number" => $gstNumber,
+                    "logo_url" => $logoUrl
+                ]
+            ]);
             exit();
         } elseif ($action === 'save_b2b_pricing_rule') {
             $partnerId = trim($payload['partner_id'] ?? 'all');

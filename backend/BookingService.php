@@ -626,7 +626,10 @@ class BookingService {
                 b2b_original_price, b2b_base_price, b2b_tax_amount,
                 b2b_commission_percentage, b2b_commission_amount, b2b_commission_status,
                 b2b_net_discount_percentage, b2b_net_price, b2b_pricing_rule_id, idempotency_key,
-                vendor_id, physical_unit_id, driver_service_type, hotel_name, package_type, package_name
+                vendor_id, physical_unit_id, driver_service_type, hotel_name, package_type, package_name,
+                vendor_base_price, wow_markup_type, wow_markup_value, wow_markup_amount,
+                b2b_price, b2b_markup_type, b2b_markup_value, b2b_markup_amount,
+                customer_price, pricing_snapshot_json
             ) VALUES (
                 ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                 ?, ?, ?, ?, ?, ?, ?,
@@ -639,13 +642,46 @@ class BookingService {
                 ?, ?, ?,
                 ?, ?, ?,
                 ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?,
+                ?, ?, ?, ?,
+                ?, ?
             )";
 
             $isGenuineB2B = $isB2B && !empty($actor) && in_array(strtolower($actor['role'] ?? ''), ['b2b', 'agent']);
             $finalChannel = $isGenuineB2B ? 'B2B' : 'D2C';
             $authoritativeB2BPartnerId = $isGenuineB2B ? ($actor['id'] ?? null) : null;
             $authoritativeB2BPartnerName = $isGenuineB2B ? ($actor['company_name'] ?? ($actor['name'] ?? null)) : null;
+
+            // Compute immutable snapshot values
+            if ($isGenuineB2B && !empty($commercials)) {
+                $snapVendorBase = floatval($commercials['vendor_base_price'] ?? ($commercials['base_price'] ?? 0));
+                $snapWowType = strtolower($commercials['wow_markup_type'] ?? 'percentage');
+                $snapWowVal = floatval($commercials['wow_markup_value'] ?? 0);
+                $snapWowAmt = floatval($commercials['wow_markup_amount'] ?? 0);
+                $snapB2BPrice = floatval($commercials['b2b_price'] ?? ($snapVendorBase + $snapWowAmt));
+                $snapB2BType = strtolower($commercials['b2b_markup_type'] ?? 'percentage');
+                $snapB2BVal = floatval($commercials['b2b_markup_value'] ?? 0);
+                $snapB2BAmt = floatval($commercials['b2b_markup_amount'] ?? 0);
+                $snapCustPrice = floatval($commercials['customer_price'] ?? $totalAmount);
+                $snapJson = json_encode($commercials);
+            } else {
+                $snapVendorBase = floatval(max(0, $totalAmount - ($markupAmount ?? 0)));
+                $snapWowType = 'percentage';
+                $snapWowVal = 0.00;
+                $snapWowAmt = floatval($markupAmount ?? 0);
+                $snapB2BPrice = floatval($totalAmount);
+                $snapB2BType = 'fixed';
+                $snapB2BVal = 0.00;
+                $snapB2BAmt = 0.00;
+                $snapCustPrice = floatval($totalAmount);
+                $snapJson = json_encode([
+                    'vendor_base_price' => $snapVendorBase,
+                    'wow_markup_amount' => $snapWowAmt,
+                    'customer_price' => $snapCustPrice,
+                    'channel' => 'D2C'
+                ]);
+            }
 
             $stmtMaster = $pdo->prepare($sqlMaster);
             $stmtMaster->execute([
@@ -710,7 +746,18 @@ class BookingService {
                 $driverServiceType,
                 $payload['hotel_name'] ?? null,
                 $payload['package_type'] ?? null,
-                $payload['package_name'] ?? $itemName
+                $payload['package_name'] ?? $itemName,
+                // Pricing snapshot fields
+                $snapVendorBase,
+                $snapWowType,
+                $snapWowVal,
+                $snapWowAmt,
+                $snapB2BPrice,
+                $snapB2BType,
+                $snapB2BVal,
+                $snapB2BAmt,
+                $snapCustPrice,
+                $snapJson
             ]);
 
             // 11. Master-Child Booking Creation for Package Bookings (Phase 6)

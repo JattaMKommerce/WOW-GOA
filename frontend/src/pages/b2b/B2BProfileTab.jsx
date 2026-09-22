@@ -42,15 +42,62 @@ export default function B2BProfileTab({ partnerUser, onLogout, onPartnerRefresh 
     }
   };
 
+  const [editProfileOpen, setEditProfileOpen] = useState(false);
+  const [profileForm, setProfileForm] = useState({
+    company_name: partnerUser.company_name || '',
+    name: partnerUser.name || '',
+    phone: partnerUser.phone || '',
+    email: partnerUser.email || '',
+    address: partnerUser.address || '',
+    gst_number: partnerUser.gst_number || '',
+    logo_url: partnerUser.logo_url || ''
+  });
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileSaveSuccess, setProfileSaveSuccess] = useState('');
+  const [profileSaveError, setProfileSaveError] = useState('');
+
+  const handleSaveProfile = async (e) => {
+    e.preventDefault();
+    setSavingProfile(true);
+    setProfileSaveSuccess('');
+    setProfileSaveError('');
+    try {
+      const res = await api.updateB2BProfile({
+        b2b_partner_id: partnerUser.id,
+        ...profileForm
+      });
+      if (res && res.success) {
+        setProfileSaveSuccess('Company profile & branding updated successfully!');
+        setEditProfileOpen(false);
+        if (onPartnerRefresh) onPartnerRefresh();
+      } else {
+        setProfileSaveError(res.error || 'Failed to update company profile.');
+      }
+    } catch (err) {
+      setProfileSaveError(err.message || 'Error updating profile.');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
   return (
     <div className="animate-fade-in" style={{ maxWidth: '840px' }}>
       {/* Agency Identity Card */}
       <div className="card border-0 shadow-sm rounded-4 p-4 mb-4 bg-white">
         <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 pb-3 border-bottom mb-4">
           <div className="d-flex align-items-center gap-3">
-            <div className="rounded-circle p-3 bg-warning text-dark fw-bold d-flex align-items-center justify-content-center" style={{ width: '56px', height: '56px' }}>
-              <Building2 size={28} />
-            </div>
+            {partnerUser.logo_url ? (
+              <img
+                src={partnerUser.logo_url}
+                alt={partnerUser.company_name || 'Agency Logo'}
+                style={{ width: '56px', height: '56px', objectFit: 'contain' }}
+                className="rounded-3 border p-1 bg-light"
+              />
+            ) : (
+              <div className="rounded-circle p-3 bg-warning text-dark fw-bold d-flex align-items-center justify-content-center" style={{ width: '56px', height: '56px' }}>
+                <Building2 size={28} />
+              </div>
+            )}
             <div>
               <h5 className="fw-black text-dark font-heading mb-0.5">{partnerUser.company_name || partnerUser.name}</h5>
               <div className="d-flex align-items-center gap-2 flex-wrap">
@@ -66,10 +113,36 @@ export default function B2BProfileTab({ partnerUser, onLogout, onPartnerRefresh 
               </div>
             </div>
           </div>
-          <button onClick={onLogout} className="btn btn-outline-danger btn-sm rounded-pill px-3.5 text-xs font-heading">
-            Logout Agency
-          </button>
+          <div className="d-flex align-items-center gap-2">
+            <button
+              onClick={() => {
+                setProfileForm({
+                  company_name: partnerUser.company_name || '',
+                  name: partnerUser.name || '',
+                  phone: partnerUser.phone || '',
+                  email: partnerUser.email || '',
+                  address: partnerUser.address || '',
+                  gst_number: partnerUser.gst_number || '',
+                  logo_url: partnerUser.logo_url || ''
+                });
+                setEditProfileOpen(true);
+              }}
+              className="btn btn-warning text-dark btn-sm rounded-pill px-3.5 text-xs fw-bold font-heading shadow-sm"
+            >
+              Edit Branding &amp; Details
+            </button>
+            <button onClick={onLogout} className="btn btn-outline-danger btn-sm rounded-pill px-3.5 text-xs font-heading">
+              Logout
+            </button>
+          </div>
         </div>
+
+        {profileSaveSuccess && (
+          <div className="alert alert-success py-2 px-3 rounded-3 text-xs mb-3 d-flex align-items-center gap-2">
+            <CheckCircle2 size={16} />
+            <span>{profileSaveSuccess}</span>
+          </div>
+        )}
 
         <div className="row g-3">
           <div className="col-md-6">
@@ -94,6 +167,121 @@ export default function B2BProfileTab({ partnerUser, onLogout, onPartnerRefresh 
           </div>
         </div>
       </div>
+
+      {/* Edit Company Profile & Branding Modal */}
+      {editProfileOpen && (
+        <div className="modal-backdrop-custom d-flex align-items-center justify-content-center p-3" style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.6)', zIndex: 99999 }}>
+          <div className="card border-0 rounded-4 shadow-2xl p-4 bg-white" style={{ maxWidth: '580px', width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div className="d-flex justify-content-between align-items-center pb-2 mb-3 border-bottom">
+              <h6 className="fw-bold mb-0 font-heading text-dark">Edit Agency Profile &amp; Invoice Branding</h6>
+              <button type="button" className="btn btn-link text-muted p-0" onClick={() => setEditProfileOpen(false)}>
+                ✕
+              </button>
+            </div>
+
+            {profileSaveError && (
+              <div className="alert alert-danger py-2 text-xs mb-3">
+                {profileSaveError}
+              </div>
+            )}
+
+            <form onSubmit={handleSaveProfile}>
+              <div className="row g-3 text-start">
+                <div className="col-12">
+                  <label className="form-label text-xs fw-bold text-muted mb-1">Company / Agency Name</label>
+                  <input
+                    type="text"
+                    required
+                    className="form-control form-control-sm"
+                    value={profileForm.company_name}
+                    onChange={e => setProfileForm({ ...profileForm, company_name: e.target.value })}
+                  />
+                </div>
+
+                <div className="col-12">
+                  <label className="form-label text-xs fw-bold text-muted mb-1">Company Logo URL</label>
+                  <input
+                    type="url"
+                    placeholder="https://example.com/logo.png"
+                    className="form-control form-control-sm"
+                    value={profileForm.logo_url}
+                    onChange={e => setProfileForm({ ...profileForm, logo_url: e.target.value })}
+                  />
+                  {profileForm.logo_url && (
+                    <div className="mt-2 p-2 bg-light rounded border text-center">
+                      <span className="text-xxs text-muted d-block mb-1">Logo Preview:</span>
+                      <img src={profileForm.logo_url} alt="Logo Preview" style={{ maxHeight: '40px', maxWidth: '140px', objectFit: 'contain' }} onError={(e) => { e.target.style.display = 'none'; }} />
+                    </div>
+                  )}
+                </div>
+
+                <div className="col-md-6">
+                  <label className="form-label text-xs fw-bold text-muted mb-1">Primary Contact Person</label>
+                  <input
+                    type="text"
+                    required
+                    className="form-control form-control-sm"
+                    value={profileForm.name}
+                    onChange={e => setProfileForm({ ...profileForm, name: e.target.value })}
+                  />
+                </div>
+
+                <div className="col-md-6">
+                  <label className="form-label text-xs fw-bold text-muted mb-1">Phone Number</label>
+                  <input
+                    type="text"
+                    required
+                    className="form-control form-control-sm"
+                    value={profileForm.phone}
+                    onChange={e => setProfileForm({ ...profileForm, phone: e.target.value })}
+                  />
+                </div>
+
+                <div className="col-md-6">
+                  <label className="form-label text-xs fw-bold text-muted mb-1">Email Address</label>
+                  <input
+                    type="email"
+                    required
+                    className="form-control form-control-sm"
+                    value={profileForm.email}
+                    onChange={e => setProfileForm({ ...profileForm, email: e.target.value })}
+                  />
+                </div>
+
+                <div className="col-md-6">
+                  <label className="form-label text-xs fw-bold text-muted mb-1">GST Registration Number</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 30AABCT1234F1Z5"
+                    className="form-control form-control-sm font-monospace"
+                    value={profileForm.gst_number}
+                    onChange={e => setProfileForm({ ...profileForm, gst_number: e.target.value })}
+                  />
+                </div>
+
+                <div className="col-12">
+                  <label className="form-label text-xs fw-bold text-muted mb-1">Registered Address</label>
+                  <textarea
+                    rows="2"
+                    className="form-control form-control-sm"
+                    value={profileForm.address}
+                    onChange={e => setProfileForm({ ...profileForm, address: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="d-flex justify-content-end gap-2 mt-4 pt-2 border-top">
+                <button type="button" className="btn btn-outline-secondary btn-sm rounded-pill px-3 text-xs" onClick={() => setEditProfileOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" disabled={savingProfile} className="btn btn-warning text-dark btn-sm rounded-pill px-4 text-xs fw-bold">
+                  {savingProfile ? 'Saving...' : 'Save Branding Details'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Authorized Pricing Modes & Additional Mode Request Section */}
       <div className="card border-0 shadow-sm rounded-4 p-4 mb-4 bg-white">
