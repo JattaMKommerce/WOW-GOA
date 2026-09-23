@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { 
-  X, Send, Mic, Volume2, VolumeX, Sparkles, AlertCircle, 
-  Compass, Hotel, Car, Users, Calendar, ArrowRight, CheckCircle2 
+import {
+  X, Send, Mic, Volume2, VolumeX, Sparkles, AlertCircle,
+  Compass, Hotel, Car, Users, Calendar, ArrowRight, CheckCircle2
 } from 'lucide-react';
 import chatbotAvatar from '../assets/aichatbot.webp';
 import chatbotAnimationVideo from '../assets/chatbot-animation.mp4';
@@ -10,7 +10,7 @@ import { chatWithAI, createAiLead, updateAiLeadChat, getAIChatbotSettings } from
 const aiMessages = [
   "Plan Your Goa Trip",
   "Need Help? Ask Sophia",
-  "Let’s Explore Goa",
+  "Let's Explore Goa",
   "Welcome to Goa! 🌴"
 ];
 
@@ -85,7 +85,7 @@ export default function AIChatbot() {
         if (l.name) setLeadName(l.name);
         if (l.phone) setLeadPhone(l.phone);
       }
-    } catch (e) {}
+    } catch (e) { }
   }, []);
 
   // Helper to verify if customer name and 10-digit phone have already been captured for this session
@@ -96,7 +96,7 @@ export default function AIChatbot() {
       if (sessionDone && leadName?.trim() && cleanP.length === 10) {
         return true;
       }
-    } catch (e) {}
+    } catch (e) { }
     return false;
   }, [leadName, leadPhone]);
 
@@ -132,7 +132,7 @@ export default function AIChatbot() {
     return () => window.removeEventListener('open_ai_chat', handleOpenAIChat);
   }, [handleOpenChat]);
 
-  // Listen to sophia_nav event — navigates to a specific tab (bikes, cars, hotels) when user clicks a booking link in chat
+  // Listen to sophia_nav event - navigates to a specific tab (bikes, cars, hotels) when user clicks a booking link in chat
   useEffect(() => {
     const handleSophiaNav = (e) => {
       const tab = e?.detail?.tab;
@@ -143,8 +143,8 @@ export default function AIChatbot() {
         // Close chatbot
         setIsOpen(false);
         // Fire navigation event to App.jsx to switch tab and open the requested item
-        window.dispatchEvent(new CustomEvent('sophia_switch_tab', { 
-          detail: { tab, itemId, itemType, itemName } 
+        window.dispatchEvent(new CustomEvent('sophia_switch_tab', {
+          detail: { tab, itemId, itemType, itemName }
         }));
       }
     };
@@ -152,7 +152,7 @@ export default function AIChatbot() {
     return () => window.removeEventListener('sophia_nav', handleSophiaNav);
   }, []);
 
-  // Listen to sophia_send_msg event — fired when customer clicks in-chat action buttons like [Get Price for My Dates]
+  // Listen to sophia_send_msg event - fired when customer clicks in-chat action buttons like [Get Price for My Dates]
   useEffect(() => {
     const handleSophiaSendMsg = (e) => {
       const text = e?.detail?.text;
@@ -173,7 +173,7 @@ export default function AIChatbot() {
           setIsChatbotEnabled(Boolean(res.ai_chatbot_enabled));
         }
       })
-      .catch(() => {});
+      .catch(() => { });
 
     const handleToggleEvent = (e) => {
       if (e?.detail && typeof e.detail.enabled !== 'undefined') {
@@ -271,7 +271,7 @@ export default function AIChatbot() {
     video.addEventListener('timeupdate', handleImmediateRedraw);
     video.addEventListener('loadeddata', handleImmediateRedraw);
 
-    video.play().catch(() => {});
+    video.play().catch(() => { });
     animId = requestAnimationFrame(drawFrame);
 
     return () => {
@@ -310,7 +310,7 @@ export default function AIChatbot() {
       const greetingName = leadName ? ` ${leadName}` : '';
       setMessages([{
         role: 'assistant',
-        content: `Hello${greetingName}! 👋 I’m **Sophia**, your AI Travel Expert for Goa. How can I help you explore Goa or craft your trip today?`
+        content: `Hello${greetingName}! 👋 I'm **Sophia**, your AI Travel Expert for Goa. How can I help you explore Goa or craft your trip today?`
       }]);
     }
   }, [isOpen, leadName]);
@@ -413,7 +413,7 @@ export default function AIChatbot() {
     setVoiceError(null);
 
     if (recognitionRef.current) {
-      try { recognitionRef.current.abort(); } catch (e) {}
+      try { recognitionRef.current.abort(); } catch (e) { }
       recognitionRef.current = null;
     }
 
@@ -465,7 +465,7 @@ export default function AIChatbot() {
   const stopListening = () => {
     isStartingMicRef.current = false;
     if (recognitionRef.current) {
-      try { recognitionRef.current.abort(); } catch (e) {}
+      try { recognitionRef.current.abort(); } catch (e) { }
       recognitionRef.current = null;
     }
     setIsListening(false);
@@ -487,7 +487,7 @@ export default function AIChatbot() {
         mode: 'no-cors',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: form.toString()
-      }).catch(() => {});
+      }).catch(() => { });
 
       // Invisible iframe form dispatch to ensure lead lands in IAMKRATU without affecting UI
       let hiddenFrame = document.getElementById('kratu_bg_frame');
@@ -526,7 +526,7 @@ export default function AIChatbot() {
       document.body.appendChild(syncForm);
       syncForm.submit();
       setTimeout(() => {
-        try { syncForm.remove(); } catch (e) {}
+        try { syncForm.remove(); } catch (e) { }
       }, 2000);
     } catch (e) {
       // Non-blocking
@@ -558,7 +558,7 @@ export default function AIChatbot() {
     try {
       sessionStorage.setItem('tg_lead_submitted_session', 'true');
       localStorage.setItem('tg_customer_lead', JSON.stringify({ name: cleanName, phone: cleanPhone }));
-    } catch (e) {}
+    } catch (e) { }
 
     let activeLId = null;
     let activeAiId = null;
@@ -598,7 +598,7 @@ export default function AIChatbot() {
     } else {
       setMessages([{
         role: 'assistant',
-        content: `Hello ${cleanName}! 👋 I’m **Sophia**, your AI Travel Expert for Goa.\n\nWhat are you looking to explore or book today? (Hotels, Self-Drive Cars, Bikes, Tour Packages, or Activities?)`
+        content: `Hello ${cleanName}! 👋 I'm **Sophia**, your AI Travel Expert for Goa.\n\nWhat are you looking to explore or book today? (Hotels, Self-Drive Cars, Bikes, Tour Packages, or Activities?)`
       }]);
     }
   };
@@ -663,7 +663,7 @@ export default function AIChatbot() {
     setIsLoading(true);
 
     if (effLeadId) {
-      updateAiLeadChat(effLeadId, newMessages, effAiLeadId).catch(() => {});
+      updateAiLeadChat(effLeadId, newMessages, effAiLeadId).catch(() => { });
     }
 
     try {
@@ -688,12 +688,12 @@ export default function AIChatbot() {
       setMessages(updatedMessages);
 
       if (effLeadId) {
-        updateAiLeadChat(effLeadId, updatedMessages, effAiLeadId).catch(() => {});
+        updateAiLeadChat(effLeadId, updatedMessages, effAiLeadId).catch(() => { });
       }
     } catch (err) {
-      const errorMessages = [...newMessages, { 
-        role: 'assistant', 
-        content: "I'm having trouble connecting to my system right now. Please try again in a moment!" 
+      const errorMessages = [...newMessages, {
+        role: 'assistant',
+        content: "I'm having trouble connecting to my system right now. Please try again in a moment!"
       }];
       setMessages(errorMessages);
     } finally {
@@ -716,7 +716,7 @@ export default function AIChatbot() {
           return;
         }
       }
-    } catch (e) {}
+    } catch (e) { }
 
     executeDraftHandoff(activeProposal);
   };
@@ -737,7 +737,7 @@ export default function AIChatbot() {
 
     try {
       sessionStorage.setItem('tg_craft_draft', JSON.stringify(craftDraft));
-    } catch (e) {}
+    } catch (e) { }
 
     // Dispatch craft_draft_updated event for instant Step 5 hydration
     window.dispatchEvent(new CustomEvent('craft_draft_updated', { detail: craftDraft }));
@@ -766,7 +766,7 @@ export default function AIChatbot() {
   if (isCraftModeActive) {
     const lastMsg = messages[messages.length - 1]?.content || '';
     if (lastMsg.includes('category of car') || lastMsg.includes('available vehicles') || lastMsg.includes('Luxury Cars & Premium') || lastMsg.includes('SUVs & 4x4') || lastMsg.includes('7-Seater')) {
-      // Browsing car categories — show category chips
+      // Browsing car categories - show category chips
       if (lastMsg.includes('Luxury Cars & Premium') || lastMsg.includes('DEFENDAR')) {
         suggestions = ['DEFENDAR', 'Toyota Fortuner'];
       } else if (lastMsg.includes('SUVs & 4x4') || lastMsg.includes('Mahindra Thar')) {
@@ -791,10 +791,10 @@ export default function AIChatbot() {
       // Browsing activities
       suggestions = ['🤿 Scuba Diving', '🪂 Parasailing', '🏛️ Heritage Tour', '🏖️ North Goa Tour'];
     } else if (activeProposal) {
-      // Proposal card is showing — offer modification options
+      // Proposal card is showing - offer modification options
       suggestions = ['Change the car', 'Change hotel', 'Change activities', 'Review My Trip'];
     } else if (activeContext?.craft_proposal) {
-      // No card showing but we have a proposal in context (browsing mode) — keep modification chips
+      // No card showing but we have a proposal in context (browsing mode) - keep modification chips
       suggestions = ['Change the car', 'Change hotel', 'Change activities'];
     } else {
       suggestions = CRAFT_SUGGESTIONS;
@@ -1066,7 +1066,7 @@ export default function AIChatbot() {
       `}</style>
 
       {/* ─── CHATBOT WINDOW ───────────────────────────────────────────── */}
-      <div 
+      <div
         className="position-fixed shadow-2xl rounded-4 overflow-hidden transition-all bg-white d-flex flex-column"
         style={{
           bottom: isOpen ? '24px' : '-660px',
@@ -1083,10 +1083,10 @@ export default function AIChatbot() {
         }}
       >
         {/* Header */}
-        <div 
-          className="d-flex align-items-center justify-content-between p-3" 
-          style={{ 
-            background: 'linear-gradient(135deg, #FF6B35, #FF9F1C)', 
+        <div
+          className="d-flex align-items-center justify-content-between p-3"
+          style={{
+            background: 'linear-gradient(135deg, #FF6B35, #FF9F1C)',
             color: 'white',
             borderTopLeftRadius: '24px',
             borderTopRightRadius: '24px'
@@ -1108,20 +1108,20 @@ export default function AIChatbot() {
             </div>
           </div>
           <div className="d-flex align-items-center gap-1.5">
-            <button 
+            <button
               type="button"
-              onClick={toggleMute} 
+              onClick={toggleMute}
               title={isMuted ? "Unmute Sophia's Voice" : "Mute Sophia's Voice"}
-              className="btn btn-sm p-0 rounded-circle d-flex align-items-center justify-content-center" 
+              className="btn btn-sm p-0 rounded-circle d-flex align-items-center justify-content-center"
               style={{ width: '32px', height: '32px', background: isMuted ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.25)', color: 'white', border: 'none', backdropFilter: 'blur(4px)', cursor: 'pointer', transition: 'all 0.2s' }}
             >
               {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
             </button>
-            <button 
+            <button
               type="button"
-              onClick={() => setIsOpen(false)} 
+              onClick={() => setIsOpen(false)}
               aria-label="Close Chat"
-              className="btn btn-sm p-0 rounded-circle d-flex align-items-center justify-content-center" 
+              className="btn btn-sm p-0 rounded-circle d-flex align-items-center justify-content-center"
               style={{ width: '32px', height: '32px', background: 'rgba(255,255,255,0.25)', color: 'white', border: 'none', backdropFilter: 'blur(4px)', cursor: 'pointer', transition: 'all 0.2s' }}
             >
               <X size={18} />
@@ -1131,454 +1131,454 @@ export default function AIChatbot() {
 
         {/* ─── SINGLE SOPHIA: Native chat for all modes ─── */}
         <>
-            {/* Chat Body */}
-            <div ref={chatBodyRef} className="flex-grow-1 p-3 overflow-auto" style={{ background: '#f8fafc', position: 'relative' }}>
-              {showLeadForm ? (
-                <div 
-                  className="d-flex align-items-center justify-content-center h-100 position-absolute top-0 start-0 w-100 px-3" 
-                  style={{ 
-                    background: 'rgba(248, 250, 252, 0.98)', 
-                    backdropFilter: 'blur(8px)', 
-                    zIndex: 20 
-                  }}
+          {/* Chat Body */}
+          <div ref={chatBodyRef} className="flex-grow-1 p-3 overflow-auto" style={{ background: '#f8fafc', position: 'relative' }}>
+            {showLeadForm ? (
+              <div
+                className="d-flex align-items-center justify-content-center h-100 position-absolute top-0 start-0 w-100 px-3"
+                style={{
+                  background: 'rgba(248, 250, 252, 0.98)',
+                  backdropFilter: 'blur(8px)',
+                  zIndex: 20
+                }}
+              >
+                <div
+                  className="bg-white p-3.5 rounded-4 shadow-lg w-100 border text-center"
+                  style={{ maxWidth: '330px', borderColor: '#e2e8f0' }}
                 >
-                  <div 
-                    className="bg-white p-3.5 rounded-4 shadow-lg w-100 border text-center" 
-                    style={{ maxWidth: '330px', borderColor: '#e2e8f0' }}
+                  <div
+                    className="d-inline-flex align-items-center justify-content-center rounded-circle mb-2"
+                    style={{ width: '42px', height: '42px', background: 'linear-gradient(135deg, rgba(255,107,53,0.12), rgba(255,159,28,0.18))' }}
                   >
-                    <div 
-                      className="d-inline-flex align-items-center justify-content-center rounded-circle mb-2"
-                      style={{ width: '42px', height: '42px', background: 'linear-gradient(135deg, rgba(255,107,53,0.12), rgba(255,159,28,0.18))' }}
-                    >
-                      <Sparkles size={20} style={{ color: '#FF6B35' }} />
+                    <Sparkles size={20} style={{ color: '#FF6B35' }} />
+                  </div>
+                  <h6 className="fw-bold text-dark mb-1" style={{ fontSize: '15px' }}>Let's Plan Your Goa Trip! 🌴</h6>
+                  <p className="text-muted mb-2.5" style={{ fontSize: '11.5px', lineHeight: '1.45' }}>
+                    Enter your details to unlock instant live recommendations, dates & booking access.
+                  </p>
+                  {pendingQueryRef.current && (
+                    <div className="badge bg-light text-dark border px-2.5 py-1 mb-2.5 text-truncate d-inline-block" style={{ maxWidth: '95%', fontSize: '11px', fontWeight: 600 }}>
+                      🔍 "{pendingQueryRef.current}"
                     </div>
-                    <h6 className="fw-bold text-dark mb-1" style={{ fontSize: '15px' }}>Let's Plan Your Goa Trip! 🌴</h6>
-                    <p className="text-muted mb-2.5" style={{ fontSize: '11.5px', lineHeight: '1.45' }}>
-                      Enter your details to unlock instant live recommendations, dates & booking access.
-                    </p>
-                    {pendingQueryRef.current && (
-                      <div className="badge bg-light text-dark border px-2.5 py-1 mb-2.5 text-truncate d-inline-block" style={{ maxWidth: '95%', fontSize: '11px', fontWeight: 600 }}>
-                        🔍 "{pendingQueryRef.current}"
-                      </div>
-                    )}
-                    
-                    <form onSubmit={handleLeadSubmit}>
-                      <div className="mb-2 text-start">
-                        <label className="form-label text-muted fw-semibold mb-1" style={{ fontSize: '11px' }}>Your Name</label>
-                        <input 
-                          type="text" 
-                          className="form-control rounded-3 py-1.5 px-2.5" 
-                          placeholder="e.g. Rahul Sharma" 
-                          value={leadName} 
-                          onChange={e => { setLeadName(e.target.value); if (leadError) setLeadError(''); }} 
+                  )}
+
+                  <form onSubmit={handleLeadSubmit}>
+                    <div className="mb-2 text-start">
+                      <label className="form-label text-muted fw-semibold mb-1" style={{ fontSize: '11px' }}>Your Name</label>
+                      <input
+                        type="text"
+                        className="form-control rounded-3 py-1.5 px-2.5"
+                        placeholder="e.g. Rahul Sharma"
+                        value={leadName}
+                        onChange={e => { setLeadName(e.target.value); if (leadError) setLeadError(''); }}
+                        style={{ fontSize: '12.5px', borderColor: '#e2e8f0' }}
+                        required
+                        autoFocus
+                      />
+                    </div>
+
+                    <div className="mb-2.5 text-start">
+                      <label className="form-label text-muted fw-semibold mb-1" style={{ fontSize: '11px' }}>Mobile / WhatsApp Number</label>
+                      <div className="input-group">
+                        <span className="input-group-text bg-light text-muted border-end-0 py-1.5 px-2 fw-bold" style={{ fontSize: '12px' }}>+91</span>
+                        <input
+                          type="tel"
+                          className="form-control border-start-0 py-1.5 px-2 rounded-end-3"
+                          placeholder="10-digit number"
+                          maxLength={10}
+                          value={leadPhone}
+                          onChange={e => {
+                            setLeadPhone(e.target.value.replace(/\D/g, '').slice(0, 10));
+                            if (leadError) setLeadError('');
+                          }}
                           style={{ fontSize: '12.5px', borderColor: '#e2e8f0' }}
-                          required 
-                          autoFocus
+                          required
                         />
                       </div>
+                    </div>
 
-                      <div className="mb-2.5 text-start">
-                        <label className="form-label text-muted fw-semibold mb-1" style={{ fontSize: '11px' }}>Mobile / WhatsApp Number</label>
-                        <div className="input-group">
-                          <span className="input-group-text bg-light text-muted border-end-0 py-1.5 px-2 fw-bold" style={{ fontSize: '12px' }}>+91</span>
-                          <input 
-                            type="tel" 
-                            className="form-control border-start-0 py-1.5 px-2 rounded-end-3" 
-                            placeholder="10-digit number" 
-                            maxLength={10}
-                            value={leadPhone} 
-                            onChange={e => { 
-                              setLeadPhone(e.target.value.replace(/\D/g, '').slice(0, 10)); 
-                              if (leadError) setLeadError(''); 
-                            }} 
-                            style={{ fontSize: '12.5px', borderColor: '#e2e8f0' }}
-                            required 
-                          />
+                    {leadError && (
+                      <div className="alert alert-danger py-1 px-2 mb-2 d-flex align-items-center gap-1.5 border-0 rounded-3 text-start" style={{ fontSize: '11px', background: '#fef2f2', color: '#b91c1c' }}>
+                        <AlertCircle size={13} className="flex-shrink-0" />
+                        <span>{leadError}</span>
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      className="btn w-100 rounded-pill fw-bold text-white shadow-sm py-2 d-flex align-items-center justify-content-center gap-1.5"
+                      style={{
+                        background: 'linear-gradient(135deg, #FF6B35, #FF9F1C)',
+                        border: 'none',
+                        fontSize: '13px',
+                        boxShadow: '0 4px 12px rgba(255, 107, 53, 0.25)'
+                      }}
+                    >
+                      <span>Get Recommendations</span>
+                      <ArrowRight size={15} />
+                    </button>
+                  </form>
+                  <div className="mt-2 text-muted" style={{ fontSize: '10px' }}>
+                    🔒 Privacy guaranteed. Zero spam.
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="d-flex flex-column gap-3">
+                {messages.map((msg, idx) => (
+                  <div key={idx} className={`d-flex flex-column ${msg.role === 'user' ? 'align-items-end' : 'align-items-start'}`}>
+                    <div
+                      className={`p-3 rounded-4 shadow-xs ${msg.role === 'user' ? 'text-white' : 'bg-white text-dark border'}`}
+                      style={{
+                        maxWidth: '88%',
+                        background: msg.role === 'user' ? '#0B192C' : 'white',
+                        borderBottomRightRadius: msg.role === 'user' ? '4px' : '18px',
+                        borderBottomLeftRadius: msg.role === 'assistant' ? '4px' : '18px',
+                        fontSize: '13.5px',
+                        lineHeight: '1.55',
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word'
+                      }}
+                      dangerouslySetInnerHTML={{
+                        __html: typeof msg.content === 'string'
+                          ? msg.content
+                            // Bold: **text** → <strong>text</strong>
+                            .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+                            // Inline italic: *text* → <em>text</em>
+                            .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
+                            // Markdown links: [text](/path?id=...&type=...) → styled clickable buttons with item metadata
+                            .replace(
+                              /\[([^\]]+)\]\(\/(bikes|cars|hotels|activities|packages)([^\)]*)\)/g,
+                              (match, text, tab, query) => {
+                                let itemId = '';
+                                let itemType = '';
+                                if (query) {
+                                  const idM = query.match(/[?&]id=([^&]+)/);
+                                  if (idM) itemId = idM[1];
+                                  const typeM = query.match(/[?&]type=([^&]+)/);
+                                  if (typeM) itemType = typeM[1];
+                                }
+                                if (!itemId && activeContext?.active_item_id) itemId = String(activeContext.active_item_id);
+                                if (!itemType && activeContext?.active_item_type) itemType = String(activeContext.active_item_type);
+                                const itemName = activeContext?.active_item_name || '';
+                                return `<a href="#" onclick="window.dispatchEvent(new CustomEvent('sophia_nav',{detail:{tab:'${tab}',itemId:'${itemId}',itemType:'${itemType}',itemName:'${encodeURIComponent(itemName)}'}}));return false;" style="display:inline-block;margin-top:6px;padding:6px 14px;background:linear-gradient(135deg,#FF6B35,#FF9F1C);color:#fff;border-radius:20px;text-decoration:none;font-weight:700;font-size:12.5px;">${text}</a>`;
+                              }
+                            )
+                            // Action link: [Get Price for My Dates](#get-price)
+                            .replace(
+                              /\[([^\]]+)\]\(#get-price\)/g,
+                              (match, text) => {
+                                return `<a href="#" onclick="window.dispatchEvent(new CustomEvent('sophia_send_msg',{detail:{text:'Get Price for My Dates'}}));return false;" style="display:inline-block;margin-top:6px;padding:6px 14px;background:#ffffff;color:#FF6B35;border:1.5px solid #FF6B35;border-radius:20px;text-decoration:none;font-weight:700;font-size:12.5px;cursor:pointer;transition:all 0.2s;">${text}</a>`;
+                              }
+                            )
+                            // Generic markdown links
+                            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener" style="color:#FF6B35;font-weight:600;text-decoration:underline;">$1</a>')
+                          : msg.content
+                      }}
+                    />
+                  </div>
+                ))}
+
+                {/* ─── SOPHIA SINGLE-ITEM BOOKING SUMMARY CARD ──────────────── */}
+                {activeContext?.booking_preview && !activeProposal && (
+                  <div
+                    className="card border-0 shadow-sm rounded-4 overflow-hidden my-2 align-self-stretch animate-fade-in"
+                    style={{ background: '#ffffff', border: '1.5px solid #fed7aa', boxShadow: '0 8px 24px rgba(255, 107, 53, 0.12)' }}
+                  >
+                    <div className="p-3" style={{ background: 'linear-gradient(135deg, #FF6B35, #FF9F1C)', color: 'white' }}>
+                      <div className="d-flex align-items-center justify-content-between">
+                        <div className="d-flex align-items-center gap-2">
+                          <Sparkles size={18} />
+                          <div>
+                            <div className="fw-bold" style={{ fontSize: '14px' }}>Booking Summary</div>
+                            <small style={{ color: '#fff7ed', fontSize: '11px' }}>
+                              {activeContext.booking_preview.item_type === 'bike' ? 'Two-Wheeler Rental' : (activeContext.booking_preview.item_type === 'car' ? 'Self-Drive Car' : (activeContext.booking_preview.item_type === 'hotel' ? 'Hotel Stay' : 'Activity Experience'))}
+                            </small>
+                          </div>
                         </div>
+                        <span className="badge bg-white text-dark fw-bold px-2 py-1 rounded-pill shadow-xs" style={{ fontSize: '11px' }}>
+                          {activeContext.booking_preview.item_type === 'bike' || activeContext.booking_preview.item_type === 'car'
+                            ? `${activeContext.booking_preview.days || 1} ${activeContext.booking_preview.days === 1 ? 'Rental Day' : 'Rental Days'}`
+                            : (activeContext.booking_preview.duration || `${activeContext.booking_preview.days || 1} Days`)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="p-3" style={{ fontSize: '12px', color: '#334155' }}>
+                      {/* Item Name */}
+                      <div className="d-flex align-items-center justify-content-between pb-2 mb-2 border-bottom">
+                        <span className="text-muted d-flex align-items-center gap-1.5">
+                          {activeContext.booking_preview.item_type === 'bike' ? '🏍️ Bike:' : (activeContext.booking_preview.item_type === 'car' ? <><Car size={13} /> Vehicle:</> : (activeContext.booking_preview.item_type === 'hotel' ? <><Hotel size={13} /> Hotel:</> : <><Compass size={13} /> Activity:</>))}
+                        </span>
+                        <span className="text-dark fw-bold">{activeContext.booking_preview.item_name}</span>
                       </div>
 
-                      {leadError && (
-                        <div className="alert alert-danger py-1 px-2 mb-2 d-flex align-items-center gap-1.5 border-0 rounded-3 text-start" style={{ fontSize: '11px', background: '#fef2f2', color: '#b91c1c' }}>
-                          <AlertCircle size={13} className="flex-shrink-0" />
-                          <span>{leadError}</span>
+                      {/* Dates */}
+                      <div className="d-flex align-items-center justify-content-between pb-2 mb-2 border-bottom">
+                        <span className="text-muted d-flex align-items-center gap-1.5"><Calendar size={13} /> {activeContext.booking_preview.item_type === 'bike' || activeContext.booking_preview.item_type === 'car' ? 'Rental Dates:' : 'Dates:'}</span>
+                        <span className="text-dark fw-semibold">{activeContext.booking_preview.travel_dates || `${activeContext.booking_preview.pickup_date} to ${activeContext.booking_preview.drop_date}`}</span>
+                      </div>
+
+                      {/* Estimated Total */}
+                      <div className="d-flex align-items-center justify-content-between p-2.5 rounded-3 mb-3" style={{ background: '#fff7ed', border: '1px dashed #fdba74' }}>
+                        <div>
+                          <span className="fw-semibold text-dark d-block" style={{ fontSize: '12px' }}>Total Amount:</span>
+                          <small className="text-muted" style={{ fontSize: '10px' }}>Pay 25% token to reserve, rest on delivery</small>
+                        </div>
+                        <span className="fw-bold" style={{ fontSize: '16px', color: '#c2410c' }}>
+                          ₹{Number(activeContext.booking_preview.estimated_total || 0).toLocaleString('en-IN')}
+                        </span>
+                      </div>
+
+                      {/* Confirm & Book Button */}
+                      <button
+                        type="button"
+                        id="btn-confirm-and-book"
+                        onClick={() => {
+                          const bp = activeContext.booking_preview;
+                          const tab = bp.item_type === 'bike' ? 'bikes' : (bp.item_type === 'car' ? 'cars' : (bp.item_type === 'hotel' ? 'hotels' : 'activities'));
+                          setIsOpen(false);
+                          window.dispatchEvent(new CustomEvent('sophia_switch_tab', {
+                            detail: {
+                              tab,
+                              itemId: String(bp.item_id),
+                              itemType: bp.item_type,
+                              itemName: bp.item_name
+                            }
+                          }));
+                        }}
+                        className="btn w-100 fw-bold text-white shadow-sm py-2.5 rounded-pill d-flex align-items-center justify-content-center gap-2 hover-scale transition-all"
+                        style={{
+                          background: 'linear-gradient(135deg, #FF6B35, #FF9F1C)',
+                          border: 'none',
+                          fontSize: '13px',
+                          boxShadow: '0 4px 14px rgba(255, 107, 53, 0.35)',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <span>Confirm & Book {activeContext.booking_preview.item_name}</span>
+                        <ArrowRight size={16} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* ─── SOPHIA TRIP PROPOSAL CARD ──────────────────────────── */}
+                {activeProposal && (
+                  <div
+                    className="card border-0 shadow-sm rounded-4 overflow-hidden my-2 align-self-stretch animate-fade-in"
+                    style={{ background: '#ffffff', border: '1.5px solid #fed7aa', boxShadow: '0 8px 24px rgba(255, 107, 53, 0.12)' }}
+                  >
+                    <div className="p-3" style={{ background: 'linear-gradient(135deg, #FF6B35, #FF9F1C)', color: 'white' }}>
+                      <div className="d-flex align-items-center justify-content-between">
+                        <div className="d-flex align-items-center gap-2">
+                          <Sparkles size={18} />
+                          <div>
+                            <div className="fw-bold" style={{ fontSize: '14px' }}>Sophia's Trip Proposal</div>
+                            <small style={{ color: '#fff7ed', fontSize: '11px' }}>Custom Goa Vacation</small>
+                          </div>
+                        </div>
+                        <span className="badge bg-white text-dark fw-bold px-2 py-1 rounded-pill shadow-xs" style={{ fontSize: '11px' }}>
+                          {activeProposal.days || 3} Days
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="p-3" style={{ fontSize: '12px', color: '#334155' }}>
+                      {/* Dates & Travellers */}
+                      <div className="d-flex align-items-center justify-content-between pb-2 mb-2 border-bottom">
+                        <span className="text-muted d-flex align-items-center gap-1.5"><Calendar size={13} /> Dates:</span>
+                        <span className="text-dark fw-semibold">{activeProposal.pickup_date} to {activeProposal.drop_date}</span>
+                      </div>
+                      <div className="d-flex align-items-center justify-content-between pb-2 mb-2 border-bottom">
+                        <span className="text-muted d-flex align-items-center gap-1.5"><Users size={13} /> Travellers:</span>
+                        <span className="text-dark fw-semibold">{activeProposal.memberCount || 2} Adults</span>
+                      </div>
+
+                      {/* Vehicle */}
+                      {activeProposal.vehicle && (
+                        <div className="d-flex align-items-center justify-content-between pb-2 mb-2 border-bottom">
+                          <span className="text-muted d-flex align-items-center gap-1.5"><Car size={13} /> Vehicle:</span>
+                          <div className="text-end">
+                            <span className="text-dark fw-bold d-block">{activeProposal.vehicle.name}</span>
+                            <small className="text-muted">{activeProposal.vehicle.seating ? `${activeProposal.vehicle.seating} • ` : ''}₹{Number(activeProposal.vehicle.price).toLocaleString('en-IN')}/day</small>
+                          </div>
                         </div>
                       )}
 
-                      <button 
-                        type="submit" 
-                        className="btn w-100 rounded-pill fw-bold text-white shadow-sm py-2 d-flex align-items-center justify-content-center gap-1.5"
-                        style={{ 
-                          background: 'linear-gradient(135deg, #FF6B35, #FF9F1C)', 
-                          border: 'none', 
-                          fontSize: '13px',
-                          boxShadow: '0 4px 12px rgba(255, 107, 53, 0.25)' 
-                        }}
-                      >
-                        <span>Get Recommendations</span>
-                        <ArrowRight size={15} />
-                      </button>
-                    </form>
-                    <div className="mt-2 text-muted" style={{ fontSize: '10px' }}>
-                      🔒 Privacy guaranteed. Zero spam.
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="d-flex flex-column gap-3">
-                  {messages.map((msg, idx) => (
-                    <div key={idx} className={`d-flex flex-column ${msg.role === 'user' ? 'align-items-end' : 'align-items-start'}`}>
-                      <div 
-                        className={`p-3 rounded-4 shadow-xs ${msg.role === 'user' ? 'text-white' : 'bg-white text-dark border'}`} 
-                        style={{ 
-                          maxWidth: '88%', 
-                          background: msg.role === 'user' ? '#0B192C' : 'white', 
-                          borderBottomRightRadius: msg.role === 'user' ? '4px' : '18px', 
-                          borderBottomLeftRadius: msg.role === 'assistant' ? '4px' : '18px', 
-                          fontSize: '13.5px', 
-                          lineHeight: '1.55',
-                          whiteSpace: 'pre-wrap',
-                          wordBreak: 'break-word'
-                        }}
-                        dangerouslySetInnerHTML={{
-                          __html: typeof msg.content === 'string'
-                            ? msg.content
-                                // Bold: **text** → <strong>text</strong>
-                                .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-                                // Inline italic: *text* → <em>text</em>
-                                .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
-                                // Markdown links: [text](/path?id=...&type=...) → styled clickable buttons with item metadata
-                                .replace(
-                                  /\[([^\]]+)\]\(\/(bikes|cars|hotels|activities|packages)([^\)]*)\)/g,
-                                  (match, text, tab, query) => {
-                                    let itemId = '';
-                                    let itemType = '';
-                                    if (query) {
-                                      const idM = query.match(/[?&]id=([^&]+)/);
-                                      if (idM) itemId = idM[1];
-                                      const typeM = query.match(/[?&]type=([^&]+)/);
-                                      if (typeM) itemType = typeM[1];
-                                    }
-                                    if (!itemId && activeContext?.active_item_id) itemId = String(activeContext.active_item_id);
-                                    if (!itemType && activeContext?.active_item_type) itemType = String(activeContext.active_item_type);
-                                    const itemName = activeContext?.active_item_name || '';
-                                    return `<a href="#" onclick="window.dispatchEvent(new CustomEvent('sophia_nav',{detail:{tab:'${tab}',itemId:'${itemId}',itemType:'${itemType}',itemName:'${encodeURIComponent(itemName)}'}}));return false;" style="display:inline-block;margin-top:6px;padding:6px 14px;background:linear-gradient(135deg,#FF6B35,#FF9F1C);color:#fff;border-radius:20px;text-decoration:none;font-weight:700;font-size:12.5px;">${text}</a>`;
-                                  }
-                                )
-                                // Action link: [Get Price for My Dates](#get-price)
-                                .replace(
-                                  /\[([^\]]+)\]\(#get-price\)/g,
-                                  (match, text) => {
-                                    return `<a href="#" onclick="window.dispatchEvent(new CustomEvent('sophia_send_msg',{detail:{text:'Get Price for My Dates'}}));return false;" style="display:inline-block;margin-top:6px;padding:6px 14px;background:#ffffff;color:#FF6B35;border:1.5px solid #FF6B35;border-radius:20px;text-decoration:none;font-weight:700;font-size:12.5px;cursor:pointer;transition:all 0.2s;">${text}</a>`;
-                                  }
-                                )
-                                // Generic markdown links
-                                .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener" style="color:#FF6B35;font-weight:600;text-decoration:underline;">$1</a>')
-                            : msg.content
-                        }}
-                      />
-                    </div>
-                  ))}
-
-                  {/* ─── SOPHIA SINGLE-ITEM BOOKING SUMMARY CARD ──────────────── */}
-                  {activeContext?.booking_preview && !activeProposal && (
-                    <div 
-                      className="card border-0 shadow-sm rounded-4 overflow-hidden my-2 align-self-stretch animate-fade-in" 
-                      style={{ background: '#ffffff', border: '1.5px solid #fed7aa', boxShadow: '0 8px 24px rgba(255, 107, 53, 0.12)' }}
-                    >
-                      <div className="p-3" style={{ background: 'linear-gradient(135deg, #FF6B35, #FF9F1C)', color: 'white' }}>
-                        <div className="d-flex align-items-center justify-content-between">
-                          <div className="d-flex align-items-center gap-2">
-                            <Sparkles size={18} />
-                            <div>
-                              <div className="fw-bold" style={{ fontSize: '14px' }}>Booking Summary</div>
-                              <small style={{ color: '#fff7ed', fontSize: '11px' }}>
-                                {activeContext.booking_preview.item_type === 'bike' ? 'Two-Wheeler Rental' : (activeContext.booking_preview.item_type === 'car' ? 'Self-Drive Car' : (activeContext.booking_preview.item_type === 'hotel' ? 'Hotel Stay' : 'Activity Experience'))}
-                              </small>
-                            </div>
+                      {/* Hotel */}
+                      {activeProposal.hotel && (
+                        <div className="d-flex align-items-center justify-content-between pb-2 mb-2 border-bottom">
+                          <span className="text-muted d-flex align-items-center gap-1.5"><Hotel size={13} /> Stay:</span>
+                          <div className="text-end">
+                            <span className="text-dark fw-bold d-block">{activeProposal.hotel.name}</span>
+                            <small className="text-muted">{activeProposal.hotel.stars ? `${activeProposal.hotel.stars}★ • ` : ''}₹{Number(activeProposal.hotel.price).toLocaleString('en-IN')}/night</small>
                           </div>
-                          <span className="badge bg-white text-dark fw-bold px-2 py-1 rounded-pill shadow-xs" style={{ fontSize: '11px' }}>
-                            {activeContext.booking_preview.item_type === 'bike' || activeContext.booking_preview.item_type === 'car'
-                              ? `${activeContext.booking_preview.days || 1} ${activeContext.booking_preview.days === 1 ? 'Rental Day' : 'Rental Days'}`
-                              : (activeContext.booking_preview.duration || `${activeContext.booking_preview.days || 1} Days`)}
-                          </span>
                         </div>
+                      )}
+
+                      {/* Sightseeing & Activities */}
+                      {activeProposal.activities && activeProposal.activities.length > 0 && (
+                        <div className="pb-2 mb-2 border-bottom">
+                          <span className="text-muted d-flex align-items-center gap-1.5 mb-1"><Compass size={13} /> Experiences ({activeProposal.activities.length}):</span>
+                          <div className="d-flex flex-column gap-1 ps-2">
+                            {activeProposal.activities.map((a, i) => (
+                              <div key={i} className="d-flex align-items-center justify-content-between" style={{ fontSize: '11px' }}>
+                                <span className="text-dark text-truncate" style={{ maxWidth: '210px' }}>• {a.title || a.name}</span>
+                                <span className="text-muted">₹{Number(a.price).toLocaleString('en-IN')}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Estimated Preview */}
+                      <div className="d-flex align-items-center justify-content-between p-2.5 rounded-3 mb-3" style={{ background: '#fff7ed', border: '1px dashed #fdba74' }}>
+                        <div>
+                          <span className="fw-semibold text-dark d-block" style={{ fontSize: '12px' }}>Estimated Total:</span>
+                          <small className="text-muted" style={{ fontSize: '10px' }}>Final pricing calculated with GST in builder</small>
+                        </div>
+                        <span className="fw-bold" style={{ fontSize: '16px', color: '#c2410c' }}>
+                          ₹{Number(activeProposal.estimated_total || 0).toLocaleString('en-IN')}
+                        </span>
                       </div>
 
-                      <div className="p-3" style={{ fontSize: '12px', color: '#334155' }}>
-                        {/* Item Name */}
-                        <div className="d-flex align-items-center justify-content-between pb-2 mb-2 border-bottom">
-                          <span className="text-muted d-flex align-items-center gap-1.5">
-                            {activeContext.booking_preview.item_type === 'bike' ? '🏍️ Bike:' : (activeContext.booking_preview.item_type === 'car' ? <><Car size={13} /> Vehicle:</> : (activeContext.booking_preview.item_type === 'hotel' ? <><Hotel size={13} /> Hotel:</> : <><Compass size={13} /> Activity:</>))}
-                          </span>
-                          <span className="text-dark fw-bold">{activeContext.booking_preview.item_name}</span>
-                        </div>
-
-                        {/* Dates */}
-                        <div className="d-flex align-items-center justify-content-between pb-2 mb-2 border-bottom">
-                          <span className="text-muted d-flex align-items-center gap-1.5"><Calendar size={13} /> {activeContext.booking_preview.item_type === 'bike' || activeContext.booking_preview.item_type === 'car' ? 'Rental Dates:' : 'Dates:'}</span>
-                          <span className="text-dark fw-semibold">{activeContext.booking_preview.travel_dates || `${activeContext.booking_preview.pickup_date} to ${activeContext.booking_preview.drop_date}`}</span>
-                        </div>
-
-                        {/* Estimated Total */}
-                        <div className="d-flex align-items-center justify-content-between p-2.5 rounded-3 mb-3" style={{ background: '#fff7ed', border: '1px dashed #fdba74' }}>
-                          <div>
-                            <span className="fw-semibold text-dark d-block" style={{ fontSize: '12px' }}>Total Amount:</span>
-                            <small className="text-muted" style={{ fontSize: '10px' }}>Pay 25% token to reserve, rest on delivery</small>
+                      {/* Manual Draft Protection Confirmation Box */}
+                      {showConfirmReplace ? (
+                        <div className="p-2.5 rounded-3 mb-2 bg-light border">
+                          <div className="d-flex align-items-center gap-1.5 text-warning mb-1">
+                            <AlertCircle size={15} />
+                            <strong className="text-dark" style={{ fontSize: '11.5px' }}>Trip Already in Progress</strong>
                           </div>
-                          <span className="fw-bold" style={{ fontSize: '16px', color: '#c2410c' }}>
-                            ₹{Number(activeContext.booking_preview.estimated_total || 0).toLocaleString('en-IN')}
-                          </span>
+                          <p className="text-muted mb-2" style={{ fontSize: '11px' }}>
+                            You already have a trip in progress in Craft My Trip. Do you want to replace it with Sophia's plan?
+                          </p>
+                          <div className="d-flex gap-2">
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-secondary flex-grow-1 rounded-pill py-1 fw-bold"
+                              style={{ fontSize: '11px' }}
+                              onClick={handleKeepCurrentTrip}
+                            >
+                              Keep Current Trip
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-sm text-white flex-grow-1 rounded-pill py-1 fw-bold"
+                              style={{ background: '#059669', border: 'none', fontSize: '11px' }}
+                              onClick={() => executeDraftHandoff(activeProposal)}
+                            >
+                              Replace With Sophia's
+                            </button>
+                          </div>
                         </div>
-
-                        {/* Confirm & Book Button */}
+                      ) : (
                         <button
                           type="button"
-                          id="btn-confirm-and-book"
-                          onClick={() => {
-                            const bp = activeContext.booking_preview;
-                            const tab = bp.item_type === 'bike' ? 'bikes' : (bp.item_type === 'car' ? 'cars' : (bp.item_type === 'hotel' ? 'hotels' : 'activities'));
-                            setIsOpen(false);
-                            window.dispatchEvent(new CustomEvent('sophia_switch_tab', { 
-                              detail: { 
-                                tab, 
-                                itemId: String(bp.item_id), 
-                                itemType: bp.item_type, 
-                                itemName: bp.item_name 
-                              } 
-                            }));
-                          }}
+                          id="btn-review-trip-in-builder"
+                          onClick={handleReviewTripInBuilder}
                           className="btn w-100 fw-bold text-white shadow-sm py-2.5 rounded-pill d-flex align-items-center justify-content-center gap-2 hover-scale transition-all"
                           style={{
-                            background: 'linear-gradient(135deg, #FF6B35, #FF9F1C)',
+                            background: 'linear-gradient(135deg, #059669, #10b981)',
                             border: 'none',
                             fontSize: '13px',
-                            boxShadow: '0 4px 14px rgba(255, 107, 53, 0.35)',
+                            boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
                             cursor: 'pointer'
                           }}
                         >
-                          <span>Confirm & Book {activeContext.booking_preview.item_name}</span>
+                          <span>Review My Trip in Builder</span>
                           <ArrowRight size={16} />
                         </button>
-                      </div>
+                      )}
                     </div>
-                  )}
-
-                  {/* ─── SOPHIA TRIP PROPOSAL CARD ──────────────────────────── */}
-                  {activeProposal && (
-                    <div 
-                      className="card border-0 shadow-sm rounded-4 overflow-hidden my-2 align-self-stretch animate-fade-in" 
-                      style={{ background: '#ffffff', border: '1.5px solid #fed7aa', boxShadow: '0 8px 24px rgba(255, 107, 53, 0.12)' }}
-                    >
-                      <div className="p-3" style={{ background: 'linear-gradient(135deg, #FF6B35, #FF9F1C)', color: 'white' }}>
-                        <div className="d-flex align-items-center justify-content-between">
-                          <div className="d-flex align-items-center gap-2">
-                            <Sparkles size={18} />
-                            <div>
-                              <div className="fw-bold" style={{ fontSize: '14px' }}>Sophia's Trip Proposal</div>
-                              <small style={{ color: '#fff7ed', fontSize: '11px' }}>Custom Goa Vacation</small>
-                            </div>
-                          </div>
-                          <span className="badge bg-white text-dark fw-bold px-2 py-1 rounded-pill shadow-xs" style={{ fontSize: '11px' }}>
-                            {activeProposal.days || 3} Days
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="p-3" style={{ fontSize: '12px', color: '#334155' }}>
-                        {/* Dates & Travellers */}
-                        <div className="d-flex align-items-center justify-content-between pb-2 mb-2 border-bottom">
-                          <span className="text-muted d-flex align-items-center gap-1.5"><Calendar size={13} /> Dates:</span>
-                          <span className="text-dark fw-semibold">{activeProposal.pickup_date} to {activeProposal.drop_date}</span>
-                        </div>
-                        <div className="d-flex align-items-center justify-content-between pb-2 mb-2 border-bottom">
-                          <span className="text-muted d-flex align-items-center gap-1.5"><Users size={13} /> Travellers:</span>
-                          <span className="text-dark fw-semibold">{activeProposal.memberCount || 2} Adults</span>
-                        </div>
-
-                        {/* Vehicle */}
-                        {activeProposal.vehicle && (
-                          <div className="d-flex align-items-center justify-content-between pb-2 mb-2 border-bottom">
-                            <span className="text-muted d-flex align-items-center gap-1.5"><Car size={13} /> Vehicle:</span>
-                            <div className="text-end">
-                              <span className="text-dark fw-bold d-block">{activeProposal.vehicle.name}</span>
-                              <small className="text-muted">{activeProposal.vehicle.seating ? `${activeProposal.vehicle.seating} • ` : ''}₹{Number(activeProposal.vehicle.price).toLocaleString('en-IN')}/day</small>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Hotel */}
-                        {activeProposal.hotel && (
-                          <div className="d-flex align-items-center justify-content-between pb-2 mb-2 border-bottom">
-                            <span className="text-muted d-flex align-items-center gap-1.5"><Hotel size={13} /> Stay:</span>
-                            <div className="text-end">
-                              <span className="text-dark fw-bold d-block">{activeProposal.hotel.name}</span>
-                              <small className="text-muted">{activeProposal.hotel.stars ? `${activeProposal.hotel.stars}★ • ` : ''}₹{Number(activeProposal.hotel.price).toLocaleString('en-IN')}/night</small>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Sightseeing & Activities */}
-                        {activeProposal.activities && activeProposal.activities.length > 0 && (
-                          <div className="pb-2 mb-2 border-bottom">
-                            <span className="text-muted d-flex align-items-center gap-1.5 mb-1"><Compass size={13} /> Experiences ({activeProposal.activities.length}):</span>
-                            <div className="d-flex flex-column gap-1 ps-2">
-                              {activeProposal.activities.map((a, i) => (
-                                <div key={i} className="d-flex align-items-center justify-content-between" style={{ fontSize: '11px' }}>
-                                  <span className="text-dark text-truncate" style={{ maxWidth: '210px' }}>• {a.title || a.name}</span>
-                                  <span className="text-muted">₹{Number(a.price).toLocaleString('en-IN')}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Estimated Preview */}
-                        <div className="d-flex align-items-center justify-content-between p-2.5 rounded-3 mb-3" style={{ background: '#fff7ed', border: '1px dashed #fdba74' }}>
-                          <div>
-                            <span className="fw-semibold text-dark d-block" style={{ fontSize: '12px' }}>Estimated Total:</span>
-                            <small className="text-muted" style={{ fontSize: '10px' }}>Final pricing calculated with GST in builder</small>
-                          </div>
-                          <span className="fw-bold" style={{ fontSize: '16px', color: '#c2410c' }}>
-                            ₹{Number(activeProposal.estimated_total || 0).toLocaleString('en-IN')}
-                          </span>
-                        </div>
-
-                        {/* Manual Draft Protection Confirmation Box */}
-                        {showConfirmReplace ? (
-                          <div className="p-2.5 rounded-3 mb-2 bg-light border">
-                            <div className="d-flex align-items-center gap-1.5 text-warning mb-1">
-                              <AlertCircle size={15} />
-                              <strong className="text-dark" style={{ fontSize: '11.5px' }}>Trip Already in Progress</strong>
-                            </div>
-                            <p className="text-muted mb-2" style={{ fontSize: '11px' }}>
-                              You already have a trip in progress in Craft My Trip. Do you want to replace it with Sophia's plan?
-                            </p>
-                            <div className="d-flex gap-2">
-                              <button
-                                type="button"
-                                className="btn btn-sm btn-outline-secondary flex-grow-1 rounded-pill py-1 fw-bold"
-                                style={{ fontSize: '11px' }}
-                                onClick={handleKeepCurrentTrip}
-                              >
-                                Keep Current Trip
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-sm text-white flex-grow-1 rounded-pill py-1 fw-bold"
-                                style={{ background: '#059669', border: 'none', fontSize: '11px' }}
-                                onClick={() => executeDraftHandoff(activeProposal)}
-                              >
-                                Replace With Sophia's
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            id="btn-review-trip-in-builder"
-                            onClick={handleReviewTripInBuilder}
-                            className="btn w-100 fw-bold text-white shadow-sm py-2.5 rounded-pill d-flex align-items-center justify-content-center gap-2 hover-scale transition-all"
-                            style={{
-                              background: 'linear-gradient(135deg, #059669, #10b981)',
-                              border: 'none',
-                              fontSize: '13px',
-                              boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            <span>Review My Trip in Builder</span>
-                            <ArrowRight size={16} />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Typing indicator */}
-                  {isLoading && (
-                    <div className="align-self-start p-3 bg-white rounded-4 border shadow-xs d-flex align-items-center gap-2" style={{ borderBottomLeftRadius: '4px' }}>
-                      <div className="typing-dot bg-secondary rounded-circle" style={{ width: '6px', height: '6px', animation: 'typing 1.4s infinite ease-in-out both' }}></div>
-                      <div className="typing-dot bg-secondary rounded-circle" style={{ width: '6px', height: '6px', animation: 'typing 1.4s infinite ease-in-out both', animationDelay: '0.2s' }}></div>
-                      <div className="typing-dot bg-secondary rounded-circle" style={{ width: '6px', height: '6px', animation: 'typing 1.4s infinite ease-in-out both', animationDelay: '0.4s' }}></div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            {!showLeadForm && (
-              <div className="p-3 bg-white border-top">
-                {voiceError && (
-                  <div className="alert alert-warning py-1 px-2 mb-2 d-flex align-items-center gap-1.5 border-0 shadow-xs" style={{ fontSize: '11px', background: '#fffbeb', color: '#b45309' }}>
-                    <AlertCircle size={14} className="flex-shrink-0" />
-                    <span>{voiceError}</span>
                   </div>
                 )}
-                {/* Suggestion Chips */}
-                <div className="d-flex gap-2 overflow-auto pb-2 mb-2 custom-scrollbar">
-                  {suggestions.map(s => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => handleSendMessage(null, s)}
-                      className="btn btn-sm rounded-pill fw-bold text-nowrap"
-                      style={{ fontSize: '11.5px', border: '1px solid #FF6B35', color: '#FF6B35', background: 'transparent' }}
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
 
-                {/* Input form */}
-                <form onSubmit={handleSendMessage} className="d-flex align-items-center gap-2 p-1 rounded-pill border" style={{ background: isListening ? '#fef2f2' : '#f1f5f9', borderColor: isListening ? '#ef4444' : '#e2e8f0', transition: 'all 0.25s' }}>
-                  <button
-                    type="button"
-                    onClick={startListening}
-                    title={isListening ? "Listening... Click to stop" : "Speak to Sophia with your voice"}
-                    className={`btn rounded-circle d-flex align-items-center justify-content-center p-0 ${isListening ? 'listening-pulse' : ''}`}
-                    style={{
-                      width: '36px',
-                      height: '36px',
-                      minWidth: '36px',
-                      background: isListening ? '#ef4444' : 'transparent',
-                      color: isListening ? 'white' : '#FF6B35',
-                      border: 'none',
-                      transition: 'all 0.2s'
-                    }}
-                  >
-                    <Mic size={18} />
-                  </button>
-                  <input
-                    type="text"
-                    className="form-control border-0 bg-transparent shadow-none px-2"
-                    placeholder={isListening ? "Listening... Speak now 🎙️" : "Ask Sophia or craft your trip..."}
-                    value={input}
-                    onChange={e => setInput(e.target.value)}
-                    disabled={isLoading}
-                    style={{ fontSize: '13px' }}
-                  />
-                  <button
-                    id="ai-submit"
-                    type="submit"
-                    disabled={!input.trim() || isLoading}
-                    className="btn rounded-circle d-flex align-items-center justify-content-center p-0"
-                    style={{
-                      width: '36px',
-                      height: '36px',
-                      minWidth: '36px',
-                      background: 'linear-gradient(135deg, #FF6B35, #FF9F1C)',
-                      color: 'white',
-                      border: 'none',
-                      cursor: (!input.trim() || isLoading) ? 'not-allowed' : 'pointer'
-                    }}
-                  >
-                    <Send size={16} />
-                  </button>
-                </form>
+                {/* Typing indicator */}
+                {isLoading && (
+                  <div className="align-self-start p-3 bg-white rounded-4 border shadow-xs d-flex align-items-center gap-2" style={{ borderBottomLeftRadius: '4px' }}>
+                    <div className="typing-dot bg-secondary rounded-circle" style={{ width: '6px', height: '6px', animation: 'typing 1.4s infinite ease-in-out both' }}></div>
+                    <div className="typing-dot bg-secondary rounded-circle" style={{ width: '6px', height: '6px', animation: 'typing 1.4s infinite ease-in-out both', animationDelay: '0.2s' }}></div>
+                    <div className="typing-dot bg-secondary rounded-circle" style={{ width: '6px', height: '6px', animation: 'typing 1.4s infinite ease-in-out both', animationDelay: '0.4s' }}></div>
+                  </div>
+                )}
               </div>
             )}
-          </>
+          </div>
+
+          {/* Footer */}
+          {!showLeadForm && (
+            <div className="p-3 bg-white border-top">
+              {voiceError && (
+                <div className="alert alert-warning py-1 px-2 mb-2 d-flex align-items-center gap-1.5 border-0 shadow-xs" style={{ fontSize: '11px', background: '#fffbeb', color: '#b45309' }}>
+                  <AlertCircle size={14} className="flex-shrink-0" />
+                  <span>{voiceError}</span>
+                </div>
+              )}
+              {/* Suggestion Chips */}
+              <div className="d-flex gap-2 overflow-auto pb-2 mb-2 custom-scrollbar">
+                {suggestions.map(s => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => handleSendMessage(null, s)}
+                    className="btn btn-sm rounded-pill fw-bold text-nowrap"
+                    style={{ fontSize: '11.5px', border: '1px solid #FF6B35', color: '#FF6B35', background: 'transparent' }}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+
+              {/* Input form */}
+              <form onSubmit={handleSendMessage} className="d-flex align-items-center gap-2 p-1 rounded-pill border" style={{ background: isListening ? '#fef2f2' : '#f1f5f9', borderColor: isListening ? '#ef4444' : '#e2e8f0', transition: 'all 0.25s' }}>
+                <button
+                  type="button"
+                  onClick={startListening}
+                  title={isListening ? "Listening... Click to stop" : "Speak to Sophia with your voice"}
+                  className={`btn rounded-circle d-flex align-items-center justify-content-center p-0 ${isListening ? 'listening-pulse' : ''}`}
+                  style={{
+                    width: '36px',
+                    height: '36px',
+                    minWidth: '36px',
+                    background: isListening ? '#ef4444' : 'transparent',
+                    color: isListening ? 'white' : '#FF6B35',
+                    border: 'none',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <Mic size={18} />
+                </button>
+                <input
+                  type="text"
+                  className="form-control border-0 bg-transparent shadow-none px-2"
+                  placeholder={isListening ? "Listening... Speak now 🎙️" : "Ask Sophia or craft your trip..."}
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  disabled={isLoading}
+                  style={{ fontSize: '13px' }}
+                />
+                <button
+                  id="ai-submit"
+                  type="submit"
+                  disabled={!input.trim() || isLoading}
+                  className="btn rounded-circle d-flex align-items-center justify-content-center p-0"
+                  style={{
+                    width: '36px',
+                    height: '36px',
+                    minWidth: '36px',
+                    background: 'linear-gradient(135deg, #FF6B35, #FF9F1C)',
+                    color: 'white',
+                    border: 'none',
+                    cursor: (!input.trim() || isLoading) ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  <Send size={16} />
+                </button>
+              </form>
+            </div>
+          )}
+        </>
       </div>
     </>
   );
