@@ -22,10 +22,12 @@ const CRAFT_SUGGESTIONS = [
 ];
 
 const DEFAULT_SUGGESTIONS = [
-  'Craft My Trip with AI 🤖',
-  'Self Drive Packages',
-  'Rent a Thar',
-  'Best beaches in North Goa'
+  '🏨 Best Beach Resorts',
+  '🚙 Rent a Thar / SUV',
+  '🛵 Rent a Bike / Scooter',
+  '🌴 4-Day Tour Packages',
+  '🤿 Scuba & Water Sports',
+  '🤖 Craft My Trip with AI'
 ];
 
 export default function AIChatbot() {
@@ -52,6 +54,14 @@ export default function AIChatbot() {
   const [leadName, setLeadName] = useState('');
   const [leadPhone, setLeadPhone] = useState('');
   const [leadError, setLeadError] = useState('');
+  const [hasSubmittedLead, setHasSubmittedLead] = useState(() => {
+    try {
+      return sessionStorage.getItem('tg_lead_submitted_session') === 'true';
+    } catch (e) {
+      return false;
+    }
+  });
+  const pendingQueryRef = useRef('');
 
   // Voice state
   const [isListening, setIsListening] = useState(false);
@@ -66,45 +76,61 @@ export default function AIChatbot() {
 
   const SpeechRecognition = typeof window !== 'undefined' ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
 
-  // Auto pre-fill customer details from session
+  // Auto pre-fill customer details from session / localStorage if previously saved
   useEffect(() => {
     try {
-      const savedUser = localStorage.getItem('currentUser') || localStorage.getItem('customerUser');
-      if (savedUser) {
-        const u = JSON.parse(savedUser);
-        if (u && (u.name || u.customer_name)) {
-          setLeadName(u.name || u.customer_name);
-        }
-        if (u && (u.phone || u.customer_phone)) {
-          setLeadPhone(u.phone || u.customer_phone);
-        }
+      const savedLead = localStorage.getItem('tg_customer_lead');
+      if (savedLead) {
+        const l = JSON.parse(savedLead);
+        if (l.name) setLeadName(l.name);
+        if (l.phone) setLeadPhone(l.phone);
       }
     } catch (e) {}
   }, []);
 
+  // Helper to verify if customer name and 10-digit phone have already been captured for this session
+  const checkContactCollected = useCallback(() => {
+    try {
+      const sessionDone = sessionStorage.getItem('tg_lead_submitted_session') === 'true';
+      const cleanP = (leadPhone || '').replace(/\D/g, '').slice(-10);
+      if (sessionDone && leadName?.trim() && cleanP.length === 10) {
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }, [leadName, leadPhone]);
+
+  // Open chatbot window
+  const handleOpenChat = useCallback((extraOptions = {}) => {
+    setIsOpen(true);
+    const isCraftMode = extraOptions?.mode === 'craft_my_trip';
+    if (isCraftMode) {
+      setChatMode('craft_my_trip');
+      setActiveContext(prev => ({ ...(prev || {}), mode: 'craft_my_trip' }));
+      if (!checkContactCollected()) {
+        setShowLeadForm(true);
+      }
+      setMessages(prev => {
+        if (prev.length === 0) {
+          return [{
+            role: 'assistant',
+            content: "Hi! I'm **Sophia** 🌴 Let's craft your dream Goa trip together!\n\nHow many people are traveling, and what are your dates or preferences? (For example: *4 people from Oct 25 to Oct 28 with an SUV and beach resort*)"
+          }];
+        }
+        return prev;
+      });
+    }
+  }, [checkContactCollected]);
+
   // Listen to open_ai_chat event (including Craft My Trip mode)
   useEffect(() => {
     const handleOpenAIChat = (e) => {
-      setIsOpen(true);
       const isCraftMode = e?.detail?.mode === 'craft_my_trip';
-      if (isCraftMode) {
-        setChatMode('craft_my_trip');
-        setActiveContext(prev => ({ ...(prev || {}), mode: 'craft_my_trip' }));
-        // Add personalized Craft My Trip welcome message if chat is currently empty
-        setMessages(prev => {
-          if (prev.length === 0) {
-            return [{
-              role: 'assistant',
-              content: "Hi! I'm **Sophia** 🌴 Let's craft your dream Goa trip together!\n\nHow many people are traveling, and what are your dates or preferences? (For example: *4 people from Oct 25 to Oct 28 with an SUV and beach resort*)"
-            }];
-          }
-          return prev;
-        });
-      }
+      handleOpenChat(isCraftMode ? { mode: 'craft_my_trip' } : {});
     };
     window.addEventListener('open_ai_chat', handleOpenAIChat);
     return () => window.removeEventListener('open_ai_chat', handleOpenAIChat);
-  }, []);
+  }, [handleOpenChat]);
 
   // Listen to sophia_nav event — navigates to a specific tab (bikes, cars, hotels) when user clicks a booking link in chat
   useEffect(() => {
@@ -445,7 +471,7 @@ export default function AIChatbot() {
     setIsListening(false);
   };
 
-  // Resilient Client-Side Sync to IAMKRATU (Leads Force)
+  // Resilient Client-Side Sync to IAMKRATU (Leads Force - Completely Invisible)
   const syncToKratuClient = useCallback((action, data = {}) => {
     try {
       const kratuUrl = 'https://iamkratu.ai/customer-chat/?key=00b78eecd5bb542952945c6e8c8560db';
@@ -462,6 +488,46 @@ export default function AIChatbot() {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: form.toString()
       }).catch(() => {});
+
+      // Invisible iframe form dispatch to ensure lead lands in IAMKRATU without affecting UI
+      let hiddenFrame = document.getElementById('kratu_bg_frame');
+      if (!hiddenFrame) {
+        hiddenFrame = document.createElement('iframe');
+        hiddenFrame.id = 'kratu_bg_frame';
+        hiddenFrame.name = 'kratu_bg_frame';
+        hiddenFrame.style.display = 'none';
+        hiddenFrame.style.width = '0px';
+        hiddenFrame.style.height = '0px';
+        hiddenFrame.style.border = 'none';
+        document.body.appendChild(hiddenFrame);
+      }
+
+      const syncForm = document.createElement('form');
+      syncForm.method = 'POST';
+      syncForm.action = kratuUrl;
+      syncForm.target = 'kratu_bg_frame';
+      syncForm.style.display = 'none';
+
+      const actInput = document.createElement('input');
+      actInput.type = 'hidden';
+      actInput.name = 'action';
+      actInput.value = action;
+      syncForm.appendChild(actInput);
+
+      for (const [key, val] of Object.entries(data)) {
+        if (val !== undefined && val !== null) {
+          const inp = document.createElement('input');
+          inp.type = 'hidden';
+          inp.name = key;
+          inp.value = String(val);
+          syncForm.appendChild(inp);
+        }
+      }
+      document.body.appendChild(syncForm);
+      syncForm.submit();
+      setTimeout(() => {
+        try { syncForm.remove(); } catch (e) {}
+      }, 2000);
     } catch (e) {
       // Non-blocking
     }
@@ -484,16 +550,21 @@ export default function AIChatbot() {
       return;
     }
 
-    const preTyped = input ? input.trim() : '';
+    const preTyped = pendingQueryRef.current || (input ? input.trim() : '');
     setLeadName(cleanName);
     setLeadPhone(cleanPhone);
     setShowLeadForm(false);
+    setHasSubmittedLead(true);
+    try {
+      sessionStorage.setItem('tg_lead_submitted_session', 'true');
+      localStorage.setItem('tg_customer_lead', JSON.stringify({ name: cleanName, phone: cleanPhone }));
+    } catch (e) {}
 
     let activeLId = null;
     let activeAiId = null;
 
     try {
-      const res = await createAiLead(cleanName, cleanPhone, preTyped);
+      const res = await createAiLead(cleanName, cleanPhone, preTyped || 'Chat initiated via IAMKRATU AI');
       if (res && res.success) {
         activeLId = res.lead_id || res.id;
         activeAiId = res.id;
@@ -520,12 +591,14 @@ export default function AIChatbot() {
       });
     }
 
+    pendingQueryRef.current = '';
+    setInput('');
     if (preTyped) {
       handleSendMessage(null, preTyped, activeLId, activeAiId);
     } else {
       setMessages([{
         role: 'assistant',
-        content: `Hello ${cleanName}! 👋 I’m **Sophia**, your AI Travel Expert for Goa. How can I help you today?`
+        content: `Hello ${cleanName}! 👋 I’m **Sophia**, your AI Travel Expert for Goa.\n\nWhat are you looking to explore or book today? (Hotels, Self-Drive Cars, Bikes, Tour Packages, or Activities?)`
       }]);
     }
   };
@@ -535,6 +608,13 @@ export default function AIChatbot() {
     if (e && e.preventDefault) e.preventDefault();
     const textToSend = typeof directText === 'string' ? directText : input;
     if (!textToSend.trim() || isLoading) return;
+
+    // Contact Collection Gate: Enforce minimal Name & Mobile collection before processing recommendations
+    if (!checkContactCollected()) {
+      pendingQueryRef.current = textToSend.trim();
+      setShowLeadForm(true);
+      return;
+    }
 
     const effLeadId = overrideLeadId || leadId;
     const effAiLeadId = overrideAiLeadId || aiLeadId;
@@ -556,35 +636,24 @@ export default function AIChatbot() {
       setActiveContext(prev => ({ ...(prev || {}), mode: 'craft_my_trip' }));
     }
 
-    // Direct vehicle booking click from suggestion chip: "Book [Name] →"
-    if (textToSend.startsWith('Book ') && textToSend.endsWith('→') && activeContext?.active_item_id) {
-      const tab = activeContext.active_item_type === 'car' ? 'cars' : (activeContext.active_item_type === 'hotel' ? 'hotels' : (activeContext.active_item_type === 'activity' ? 'activities' : 'bikes'));
-      setIsOpen(false);
-      window.dispatchEvent(new CustomEvent('sophia_switch_tab', {
-        detail: {
-          tab,
-          itemId: String(activeContext.active_item_id),
-          itemType: activeContext.active_item_type,
-          itemName: activeContext.active_item_name
-        }
-      }));
-      return;
-    }
-
-    // Direct confirm and book from suggestion chip
-    if (textToSend.startsWith('Confirm & Book') && activeContext?.booking_preview) {
-      const bp = activeContext.booking_preview;
-      const tab = bp.item_type === 'car' ? 'cars' : (bp.item_type === 'hotel' ? 'hotels' : (bp.item_type === 'activity' ? 'activities' : 'bikes'));
-      setIsOpen(false);
-      window.dispatchEvent(new CustomEvent('sophia_switch_tab', {
-        detail: {
-          tab,
-          itemId: String(bp.item_id),
-          itemType: bp.item_type,
-          itemName: bp.item_name
-        }
-      }));
-      return;
+    // Direct booking / confirmation click from suggestion chip: "Book [Name] →" or "Confirm & Book →"
+    if ((textToSend.startsWith('Book ') || textToSend.startsWith('Confirm & Book') || textToSend.startsWith('View ')) && textToSend.endsWith('→')) {
+      const activeItId = activeContext?.booking_preview?.item_id || activeContext?.active_item_id;
+      const activeItType = activeContext?.booking_preview?.item_type || activeContext?.active_item_type;
+      const activeItName = activeContext?.booking_preview?.item_name || activeContext?.active_item_name;
+      if (activeItId || activeItName) {
+        const tab = activeItType === 'car' ? 'cars' : (activeItType === 'hotel' ? 'hotels' : (activeItType === 'activity' ? 'activities' : (activeItType === 'package' ? 'packages' : 'bikes')));
+        setIsOpen(false);
+        window.dispatchEvent(new CustomEvent('sophia_switch_tab', {
+          detail: {
+            tab,
+            itemId: String(activeItId || ''),
+            itemType: activeItType,
+            itemName: activeItName || textToSend.replace(/^(?:Book|Confirm & Book|View)\s+/, '').replace(/\s*→$/, '').trim()
+          }
+        }));
+        return;
+      }
     }
 
     const userMsg = { role: 'user', content: textToSend.trim() };
@@ -733,9 +802,21 @@ export default function AIChatbot() {
   } else {
     // Normal mode: dynamic chips for active item
     if (activeContext?.booking_preview) {
-      suggestions = ['Confirm & Book →', 'Change dates', 'Browse Bikes', 'Browse Cars'];
-    } else if (activeContext?.active_item_name && (activeContext.active_item_type === 'bike' || activeContext.active_item_type === 'car')) {
-      suggestions = [`Book ${activeContext.active_item_name} →`, 'Get Price for My Dates', 'Browse Bikes', 'Browse Cars'];
+      const itName = activeContext.booking_preview.item_name || activeContext.active_item_name || 'Now';
+      suggestions = [`Book ${itName} →`, 'Change dates', 'Explore Hotels', 'Rent a Car', 'Rent a Bike'];
+    } else if (activeContext?.active_item_name) {
+      suggestions = [`Book ${activeContext.active_item_name} →`, 'Tomorrow for 3 days', 'This Weekend', 'Oct 25 to Oct 28'];
+    } else if (messages.length > 0) {
+      const lastMsg = messages[messages.length - 1]?.content || '';
+      if (lastMsg.includes('dates') || lastMsg.includes('When are you planning') || lastMsg.includes('travel dates')) {
+        suggestions = ['Tomorrow for 3 days', 'This Weekend', 'Oct 25 to Oct 28'];
+      } else if (lastMsg.includes('hotel') || lastMsg.includes('resort') || lastMsg.includes('stay') || lastMsg.includes('room')) {
+        suggestions = ['Casa Baga Boutique Resort', 'The Grand Candolim', 'Taj Exotica Resort', 'Tomorrow for 3 days', 'This Weekend'];
+      } else if (lastMsg.includes('bike') || lastMsg.includes('scooter')) {
+        suggestions = ['Royal Enfield Hunter 350', 'Honda Activa 6G', 'Royal Enfield Classic 350', 'Browse Bikes'];
+      } else if (lastMsg.includes('car') || lastMsg.includes('thar') || lastMsg.includes('suv')) {
+        suggestions = ['Mahindra Thar 4x4', 'Maruti Suzuki Ertiga', 'Hyundai Creta', 'Browse Cars'];
+      }
     }
   }
 
@@ -756,7 +837,7 @@ export default function AIChatbot() {
       />
 
       <div
-        onClick={() => setIsOpen(true)}
+        onClick={() => handleOpenChat()}
         role="button"
         tabIndex={0}
         aria-label="Open Sophia AI Assistant"
@@ -764,7 +845,7 @@ export default function AIChatbot() {
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
-            setIsOpen(true);
+            handleOpenChat();
           }
         }}
       >
@@ -1018,7 +1099,7 @@ export default function AIChatbot() {
             <div>
               <div className="d-flex align-items-center gap-1.5">
                 <h6 className="mb-0 fw-bold text-white" style={{ fontSize: '15px' }}>Sophia</h6>
-                <span className="badge bg-white text-dark rounded-pill px-2 py-0.5" style={{ fontSize: '10px', fontWeight: 700 }}>AI Expert</span>
+                <span className="badge bg-white text-dark rounded-pill px-2 py-0.5" style={{ fontSize: '10px', fontWeight: 700 }}>AI Travel Expert</span>
               </div>
               <small style={{ opacity: 0.95, fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: '#4ade80' }}></span>
@@ -1048,90 +1129,98 @@ export default function AIChatbot() {
           </div>
         </div>
 
-        {/* Dual Mode Switcher Tabs */}
-        <div className="d-flex align-items-center justify-content-between px-3 py-1.5 bg-white border-bottom shadow-2xs" style={{ zIndex: 5 }}>
-          <div className="d-flex align-items-center gap-1.5 w-100">
-            <button
-              type="button"
-              id="btn-chat-mode-general"
-              onClick={() => {
-                setChatMode('normal');
-                setActiveContext(prev => ({ ...(prev || {}), mode: 'normal' }));
-              }}
-              className={`btn btn-sm flex-grow-1 rounded-pill py-1 fw-bold transition-all ${chatMode === 'normal' ? 'bg-dark text-white shadow-xs' : 'text-secondary bg-light'}`}
-              style={{ fontSize: '11px', border: 'none' }}
-            >
-              💬 Ask Questions
-            </button>
-            <button
-              type="button"
-              id="btn-chat-mode-craft"
-              onClick={() => {
-                setChatMode('craft_my_trip');
-                setActiveContext(prev => ({ ...(prev || {}), mode: 'craft_my_trip' }));
-                if (messages.length === 0) {
-                  setMessages([{
-                    role: 'assistant',
-                    content: "Hi! I'm **Sophia** 🌴 Let's craft your dream Goa trip together!\n\nHow many people are traveling, and what are your dates or preferences? (For example: *4 people from Oct 25 to Oct 28 with an SUV and beach resort*)"
-                  }]);
-                }
-              }}
-              className={`btn btn-sm flex-grow-1 rounded-pill py-1 fw-bold transition-all ${chatMode === 'craft_my_trip' ? 'text-white shadow-xs' : 'text-secondary bg-light'}`}
-              style={{
-                fontSize: '11px',
-                background: chatMode === 'craft_my_trip' ? 'linear-gradient(135deg, #FF6B35, #FF9F1C)' : '',
-                border: 'none'
-              }}
-            >
-              🌴 Plan Trip with AI 🤖
-            </button>
-          </div>
-        </div>
-
         {/* ─── SINGLE SOPHIA: Native chat for all modes ─── */}
         <>
             {/* Chat Body */}
             <div ref={chatBodyRef} className="flex-grow-1 p-3 overflow-auto" style={{ background: '#f8fafc', position: 'relative' }}>
               {showLeadForm ? (
-                <div className="d-flex align-items-center justify-content-center h-100 position-absolute top-0 start-0 w-100" style={{ background: 'rgba(255, 255, 255, 0.96)', backdropFilter: 'blur(5px)', zIndex: 10 }}>
-                  <div className="bg-white p-4 rounded-4 border shadow-sm w-85 text-center">
-                    <h5 className="fw-bold text-dark mb-1">Welcome to Goa! 🌴</h5>
-                    <p className="text-muted small mb-3" style={{ fontSize: '12.5px' }}>Enter your details to chat with Sophia, our AI travel specialist.</p>
+                <div 
+                  className="d-flex align-items-center justify-content-center h-100 position-absolute top-0 start-0 w-100 px-3" 
+                  style={{ 
+                    background: 'rgba(248, 250, 252, 0.98)', 
+                    backdropFilter: 'blur(8px)', 
+                    zIndex: 20 
+                  }}
+                >
+                  <div 
+                    className="bg-white p-3.5 rounded-4 shadow-lg w-100 border text-center" 
+                    style={{ maxWidth: '330px', borderColor: '#e2e8f0' }}
+                  >
+                    <div 
+                      className="d-inline-flex align-items-center justify-content-center rounded-circle mb-2"
+                      style={{ width: '42px', height: '42px', background: 'linear-gradient(135deg, rgba(255,107,53,0.12), rgba(255,159,28,0.18))' }}
+                    >
+                      <Sparkles size={20} style={{ color: '#FF6B35' }} />
+                    </div>
+                    <h6 className="fw-bold text-dark mb-1" style={{ fontSize: '15px' }}>Let's Plan Your Goa Trip! 🌴</h6>
+                    <p className="text-muted mb-2.5" style={{ fontSize: '11.5px', lineHeight: '1.45' }}>
+                      Enter your details to unlock instant live recommendations, dates & booking access.
+                    </p>
+                    {pendingQueryRef.current && (
+                      <div className="badge bg-light text-dark border px-2.5 py-1 mb-2.5 text-truncate d-inline-block" style={{ maxWidth: '95%', fontSize: '11px', fontWeight: 600 }}>
+                        🔍 "{pendingQueryRef.current}"
+                      </div>
+                    )}
+                    
                     <form onSubmit={handleLeadSubmit}>
-                      <input 
-                        type="text" 
-                        className="form-control form-control-sm mb-2" 
-                        placeholder="Your Name" 
-                        value={leadName} 
-                        onChange={e => { setLeadName(e.target.value); if (leadError) setLeadError(''); }} 
-                        required 
-                      />
-                      <input 
-                        type="tel" 
-                        className="form-control form-control-sm mb-2" 
-                        placeholder="10-digit Mobile Number" 
-                        maxLength={10}
-                        value={leadPhone} 
-                        onChange={e => { 
-                          setLeadPhone(e.target.value.replace(/\D/g, '').slice(0, 10)); 
-                          if (leadError) setLeadError(''); 
-                        }} 
-                        required 
-                      />
+                      <div className="mb-2 text-start">
+                        <label className="form-label text-muted fw-semibold mb-1" style={{ fontSize: '11px' }}>Your Name</label>
+                        <input 
+                          type="text" 
+                          className="form-control rounded-3 py-1.5 px-2.5" 
+                          placeholder="e.g. Rahul Sharma" 
+                          value={leadName} 
+                          onChange={e => { setLeadName(e.target.value); if (leadError) setLeadError(''); }} 
+                          style={{ fontSize: '12.5px', borderColor: '#e2e8f0' }}
+                          required 
+                          autoFocus
+                        />
+                      </div>
+
+                      <div className="mb-2.5 text-start">
+                        <label className="form-label text-muted fw-semibold mb-1" style={{ fontSize: '11px' }}>Mobile / WhatsApp Number</label>
+                        <div className="input-group">
+                          <span className="input-group-text bg-light text-muted border-end-0 py-1.5 px-2 fw-bold" style={{ fontSize: '12px' }}>+91</span>
+                          <input 
+                            type="tel" 
+                            className="form-control border-start-0 py-1.5 px-2 rounded-end-3" 
+                            placeholder="10-digit number" 
+                            maxLength={10}
+                            value={leadPhone} 
+                            onChange={e => { 
+                              setLeadPhone(e.target.value.replace(/\D/g, '').slice(0, 10)); 
+                              if (leadError) setLeadError(''); 
+                            }} 
+                            style={{ fontSize: '12.5px', borderColor: '#e2e8f0' }}
+                            required 
+                          />
+                        </div>
+                      </div>
+
                       {leadError && (
-                        <div className="alert alert-danger py-1 px-2 mb-2 d-flex align-items-center gap-1 border-0 shadow-sm text-start" style={{ fontSize: '11px', background: '#fef2f2', color: '#b91c1c' }}>
-                          <AlertCircle size={14} className="flex-shrink-0" />
+                        <div className="alert alert-danger py-1 px-2 mb-2 d-flex align-items-center gap-1.5 border-0 rounded-3 text-start" style={{ fontSize: '11px', background: '#fef2f2', color: '#b91c1c' }}>
+                          <AlertCircle size={13} className="flex-shrink-0" />
                           <span>{leadError}</span>
                         </div>
                       )}
+
                       <button 
                         type="submit" 
-                        className="btn w-100 rounded-pill fw-bold text-white shadow-sm mt-2 py-2"
-                        style={{ background: 'linear-gradient(135deg, #FF6B35, #FF9F1C)', border: 'none', fontSize: '13px' }}
+                        className="btn w-100 rounded-pill fw-bold text-white shadow-sm py-2 d-flex align-items-center justify-content-center gap-1.5"
+                        style={{ 
+                          background: 'linear-gradient(135deg, #FF6B35, #FF9F1C)', 
+                          border: 'none', 
+                          fontSize: '13px',
+                          boxShadow: '0 4px 12px rgba(255, 107, 53, 0.25)' 
+                        }}
                       >
-                        Start Chatting
+                        <span>Get Recommendations</span>
+                        <ArrowRight size={15} />
                       </button>
                     </form>
+                    <div className="mt-2 text-muted" style={{ fontSize: '10px' }}>
+                      🔒 Privacy guaranteed. Zero spam.
+                    </div>
                   </div>
                 </div>
               ) : (

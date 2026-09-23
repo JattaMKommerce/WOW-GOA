@@ -7747,12 +7747,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
                 curl_setopt($ch, CURLOPT_POST, true);
                 curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($kratuPayload));
-                curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
                 curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
                 curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-                curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 2);
-                curl_setopt($ch, CURLOPT_TIMEOUT, 3);
-                curl_exec($ch);
+                curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 8);
+                $kratuRes = curl_exec($ch);
+                curl_close($ch);
 
                 if (!empty($initialQuery)) {
                     $chatPayload = [
@@ -7762,10 +7762,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'user_name' => $cleanName,
                         'user_phone' => $cleanPhone
                     ];
-                    curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($chatPayload));
-                    curl_exec($ch);
+                    $ch2 = curl_init($kratuUrl);
+                    curl_setopt($ch2, CURLOPT_RETURNTRANSFER, true);
+                    curl_setopt($ch2, CURLOPT_POST, true);
+                    curl_setopt($ch2, CURLOPT_POSTFIELDS, http_build_query($chatPayload));
+                    curl_setopt($ch2, CURLOPT_SSL_VERIFYPEER, false);
+                    curl_setopt($ch2, CURLOPT_SSL_VERIFYHOST, false);
+                    curl_setopt($ch2, CURLOPT_CONNECTTIMEOUT, 5);
+                    curl_setopt($ch2, CURLOPT_TIMEOUT, 8);
+                    curl_exec($ch2);
+                    curl_close($ch2);
                 }
-                curl_close($ch);
             } catch (Exception $kratuErr) {
                 error_log("Kratu lead sync error: " . $kratuErr->getMessage());
             }
@@ -8995,40 +9002,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $pdo->prepare("DELETE FROM users WHERE id=?");
             $stmt->execute([$payload['id']]);
             echo json_encode(["success" => true, "message" => "User deleted."]);
-            exit;} elseif ($action === 'create_ai_lead') {
-            if (!isset($payload['name']) || !isset($payload['phone'])) {
-                throw new Exception("Missing name or phone.");
-            }
-            $cleanName = trim($payload['name']);
-            $cleanPhone = preg_replace('/\D/', '', $payload['phone']);
-            if (strlen($cleanPhone) > 10) {
-                $cleanPhone = substr($cleanPhone, -10);
-            }
-            if (!preg_match('/^\d{10}$/', $cleanPhone)) {
-                http_response_code(400);
-                echo json_encode(["success" => false, "error" => "Please enter a valid 10-digit mobile number."]);
-                exit;
-            }
-            $leadId = "lead-" . rand(10000, 99999);
-            $stmt = $pdo->prepare("INSERT INTO ai_leads (id, name, phone, created_at) VALUES (?, ?, ?, ?)");
-            $stmt->execute([
-                $leadId,
-                $cleanName,
-                $cleanPhone,
-                date('Y-m-d H:i:s')
-            ]);
-            echo json_encode(["success" => true, "id" => $leadId, "message" => "Lead created successfully."]);
-            exit;} elseif ($action === 'update_ai_lead_chat') {
-            if (!isset($payload['id']) || !isset($payload['chat_history'])) {
-                throw new Exception("Missing id or chat_history.");
-            }
-            $stmt = $pdo->prepare("UPDATE ai_leads SET chat_history = ? WHERE id = ?");
-            $stmt->execute([
-                $payload['chat_history'],
-                $payload['id']
-            ]);
-            echo json_encode(["success" => true, "message" => "Chat updated."]);
-            exit();
+            exit;
         } elseif ($action === 'chat_with_kratu') {
             // Sophia Clean Reset: Kratu cloud forwarding and automatic lead generation completely deactivated
             echo json_encode([
@@ -10843,7 +10817,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $reply = "🤿 Top Goa Sightseeing & Activities with TripGalileo:\n\n{$actListText}\n\nWould you like me to reserve any of these for your trip dates?";
 
                 // Flow Step 9: Specific questions — Self-drive cars only
-                } elseif (strpos($msgClean, 'car') !== false || strpos($msgClean, 'cars') !== false || strpos($msgClean, 'suv') !== false || strpos($msgClean, 'self drive') !== false || strpos($msgClean, 'self-drive') !== false || strpos($msgClean, 'vehicle') !== false) {
+                } elseif (preg_match('/\b(cars?|thars?|suvs?|ertiga|creta|swift|sedans?|self\s*drive|vehicles?)\b/i', $msgClean)) {
                     $carItems = [];
                     foreach ($dbCars as $c) {
                         $carItems[] = "• " . $c['name'] . " — ₹" . number_format($c['price']) . "/day (" . ($c['transmission'] ?? 'Automatic') . ", " . ($c['seating'] ?? '5 Seater') . ")";
@@ -10853,7 +10827,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $reply = "🚘 Here are our Self-Drive Cars available for rent in Goa:\n\n{$carListText}\n\n📍 Free doorstep delivery in North & South Goa and Airport handovers. Which car would you like to rent?";
 
                 // Flow Step 10: Specific questions — Bikes & Scooters only
-                } elseif (strpos($msgClean, 'bike') !== false || strpos($msgClean, 'bikes') !== false || strpos($msgClean, 'scooter') !== false || strpos($msgClean, 'two wheeler') !== false) {
+                } elseif (preg_match('/\b(bikes?|scooters?|activa|two\s*wheelers?|bullet|royal\s*enfield)\b/i', $msgClean)) {
                     $bikeItems = [];
                     foreach ($dbBikes as $b) {
                         $bikeItems[] = "• " . $b['name'] . " — ₹" . number_format($b['price']) . "/day";
@@ -10862,8 +10836,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     $reply = "🛵 Here are our Bikes & Scooters available for rent in Goa:\n\n{$bikeListText}\n\n🛡️ All rentals include 2 sanitized helmets & commercial road permits. What dates do you need it for?";
 
-                // Flow Step 11: Specific questions — Hotels & Resorts only
-                } elseif (strpos($msgClean, 'hotel') !== false || strpos($msgClean, 'hotels') !== false || strpos($msgClean, 'resort') !== false || strpos($msgClean, 'stay') !== false || strpos($msgClean, 'villa') !== false) {
+                // Flow Step 11: Specific questions — Hotels, Stays & Rooms
+                } elseif (preg_match('/\b(hotels?|resorts?|stays?|villas?|rooms?|rooom|cottages?|accommodations?|homestays?|guest\s*houses?)\b/i', $msgClean)) {
                     $hotelItems = [];
                     foreach ($dbHotels as $h) {
                         $stars = $h['stars'] ?? '4';
