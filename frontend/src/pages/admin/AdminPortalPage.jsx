@@ -80,6 +80,7 @@ const SIDEBAR_GROUPS = [
     label: 'Customers',
     items: [
       { id: 'bookings', label: 'Booking Management', icon: <Calendar size={15} /> },
+      { id: 'lead_management', label: 'Lead Management (AI)', icon: <Users size={15} /> },
       { id: 'enquiries', label: 'Custom Enquiries', icon: <FileText size={15} /> },
       { id: 'add_users', label: 'Create Sub-Admin / Add Users', icon: <UserPlus size={15} /> },
     ]
@@ -323,7 +324,7 @@ export default function AdminPortalPage({
   const [adminActiveTab, setAdminActiveTab] = useState(() => {
     if (initialTab) return initialTab;
     const currentPath = window.location.pathname;
-    if (currentPath === '/admin/leads') return 'leads';
+    if (currentPath === '/admin/leads' || currentPath === '/admin/lead-management') return 'lead_management';
     if (currentPath === '/admin/custom-enquiries') return 'enquiries';
     if (currentPath === '/admin/customers') return 'customers';
     if (currentPath === '/admin/add-users') return 'add_users';
@@ -337,7 +338,7 @@ export default function AdminPortalPage({
     setAdminActiveTab(tabId);
     try {
       localStorage.setItem('adminActiveTab', tabId);
-      if (tabId === 'leads') {
+      if (tabId === 'leads' || tabId === 'lead_management') {
         window.history.replaceState(null, '', '/admin/leads');
       } else if (tabId === 'enquiries') {
         window.history.replaceState(null, '', '/admin/custom-enquiries');
@@ -398,6 +399,8 @@ export default function AdminPortalPage({
   const [liveDrivers, setLiveDrivers] = useState([]);
   const [liveVendors, setLiveVendors] = useState(vendors);
   const [liveB2BPartners, setLiveB2BPartners] = useState([]);
+  const [liveAiLeads, setLiveAiLeads] = useState([]);
+  const [liveEnquiries, setLiveEnquiries] = useState([]);
   const [isDataSyncing, setIsDataSyncing] = useState(false);
 
   useEffect(() => {
@@ -427,6 +430,8 @@ export default function AdminPortalPage({
         freshDrivers,
         freshVendors,
         freshB2BPartners,
+        freshAiLeads,
+        freshEnquiries,
         notifsRes
       ] = await Promise.all([
         api.fetchBookings().catch(() => []),
@@ -434,6 +439,8 @@ export default function AdminPortalPage({
         api.fetchDrivers().catch(() => []),
         api.fetchVendors().catch(() => []),
         api.fetchB2BPartners().catch(() => []),
+        api.fetchAiLeads().catch(() => []),
+        api.fetchCustomEnquiries().catch(() => []),
         api.fetchNotifications({ role: 'admin', userId: currentUser?.id || 'admin' }).catch(() => ({ notifications: [] }))
       ]);
 
@@ -442,6 +449,8 @@ export default function AdminPortalPage({
       if (Array.isArray(freshDrivers) && freshDrivers.length > 0) setLiveDrivers(freshDrivers);
       if (Array.isArray(freshVendors) && freshVendors.length > 0) setLiveVendors(freshVendors);
       if (Array.isArray(freshB2BPartners) && freshB2BPartners.length > 0) setLiveB2BPartners(freshB2BPartners);
+      if (Array.isArray(freshAiLeads)) setLiveAiLeads(freshAiLeads);
+      if (Array.isArray(freshEnquiries)) setLiveEnquiries(freshEnquiries);
 
       if (notifsRes && Array.isArray(notifsRes.notifications)) {
         setBackendNotifs(prev => {
@@ -503,12 +512,18 @@ export default function AdminPortalPage({
     window.addEventListener('tripgalileo-notification-sync', handleSync);
     window.addEventListener('authoritative-notification-received', handleSync);
     window.addEventListener('tripgalileo-booking-sync', handleSync);
+    window.addEventListener('realtime-lead-created', handleSync);
+    window.addEventListener('lead_created', handleSync);
+    window.addEventListener('ai_leads_updated', handleSync);
 
     let bc = null;
+    let bcNotifs = null;
     try {
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
         bc = new BroadcastChannel('tripgalileo_bookings_sync');
         bc.onmessage = handleSync;
+        bcNotifs = new BroadcastChannel('tripgalileo_notifications_sync');
+        bcNotifs.onmessage = handleSync;
       }
     } catch (err) {}
 
@@ -523,7 +538,11 @@ export default function AdminPortalPage({
       window.removeEventListener('tripgalileo-notification-sync', handleSync);
       window.removeEventListener('authoritative-notification-received', handleSync);
       window.removeEventListener('tripgalileo-booking-sync', handleSync);
+      window.removeEventListener('realtime-lead-created', handleSync);
+      window.removeEventListener('lead_created', handleSync);
+      window.removeEventListener('ai_leads_updated', handleSync);
       if (bc) bc.close();
+      if (bcNotifs) bcNotifs.close();
     };
   }, [currentUser?.id]);
 
@@ -668,6 +687,8 @@ export default function AdminPortalPage({
             usersList={liveUsers}
             drivers={liveDrivers}
             b2bPartners={liveB2BPartners}
+            aiLeads={liveAiLeads}
+            enquiries={liveEnquiries}
             onNavigate={(tab) => handleTabChange(tab)}
             onRefresh={loadAllAdminData}
           />

@@ -80,6 +80,24 @@ const TRAVEL_CATEGORIES = [
   { id: 'luxury', label: 'Luxury Escapes', icon: '✨' }
 ];
 
+const SELF_DRIVE_LOCATIONS = [
+  { id: 'goa-airport-dabolim', name: 'Goa Airport (Dabolim - GOI)', category: 'Airports', desc: 'Dabolim Airport - Free Terminal Handover', note: 'Free airport handover', icon: '✈️' },
+  { id: 'goa-airport-mopa', name: 'Manohar Intl Airport (Mopa - GOX)', category: 'Airports', desc: 'North Goa Mopa Airport Terminal delivery', note: 'Free delivery', icon: '✈️' },
+  { id: 'madgaon-station', name: 'Madgaon Railway Station (MAO)', category: 'Stations', desc: 'South Goa Main Railway Junction', note: 'Free delivery', icon: '🚆' },
+  { id: 'thivim-station', name: 'Thivim Railway Station (THVM)', category: 'Stations', desc: 'North Goa Railway Station', note: 'Free delivery', icon: '🚆' },
+  { id: 'karmali-station', name: 'Karmali Railway Station (KRMI)', category: 'Stations', desc: 'Old Goa / Panaji Rail Station', note: 'Free delivery', icon: '🚆' },
+  { id: 'calangute', name: 'Calangute', category: 'North Goa', desc: 'Calangute Beach / Circle', note: 'Free delivery', icon: '🏖️' },
+  { id: 'baga', name: 'Baga Beach', category: 'North Goa', desc: 'Baga Beach & Tito\'s Lane', note: 'Free delivery', icon: '🏖️' },
+  { id: 'candolim', name: 'Candolim', category: 'North Goa', desc: 'Candolim Beach Road & Fort Aguada', note: 'Free delivery', icon: '🏖️' },
+  { id: 'anjuna-vagator', name: 'Anjuna / Vagator', category: 'North Goa', desc: 'Anjuna Flea Market & Vagator Cliffs', note: 'Free delivery', icon: '🏖️' },
+  { id: 'morjim-arambol', name: 'Morjim / Arambol', category: 'North Goa', desc: 'Morjim Turtle Beach & Arambol', note: 'Free delivery', icon: '🏖️' },
+  { id: 'panaji', name: 'Panaji City', category: 'Central Goa', desc: 'Panaji Bus Stand & Fontainhas Latin Quarter', note: 'Central Goa hub', icon: '🏙️' },
+  { id: 'vasco', name: 'Vasco da Gama', category: 'Central Goa', desc: 'Vasco City Center & Harbour Area', note: 'Free delivery', icon: '⚓' },
+  { id: 'colva-benaulim', name: 'Colva / Benaulim', category: 'South Goa', desc: 'Colva, Benaulim & Varca Beach Resort Hub', note: 'Free delivery', icon: '🌴' },
+  { id: 'palolem-agonda', name: 'Palolem / Agonda', category: 'South Goa', desc: 'South Goa Scenic Coast & Resorts', note: 'Free delivery', icon: '🌴' },
+  { id: 'doorstep', name: 'Hotel / Resort Delivery', category: 'Doorstep', desc: 'Doorstep Delivery at Any Hotel / Villa in Goa', note: 'Anywhere in Goa', icon: '🏨' },
+];
+
 // ─── MAIN SEARCH WIDGET COMPONENT ─────────────────────────────────────────────
 
 export default function SearchWidget({
@@ -136,6 +154,32 @@ export default function SearchWidget({
   const [toSearchQuery, setToSearchQuery] = useState('');
   const [flightFromSearch, setFlightFromSearch] = useState('');
   const [flightToSearch, setFlightToSearch] = useState('');
+
+  // Self Drive Location Popover States
+  const [sdPickupSearch, setSdPickupSearch] = useState('');
+  const [sdDropSearch, setSdDropSearch] = useState('');
+  const [sdPickupCategory, setSdPickupCategory] = useState('All');
+  const [sdDropCategory, setSdDropCategory] = useState('All');
+
+  const filteredPickupLocations = SELF_DRIVE_LOCATIONS.filter(loc => {
+    const matchesCat = sdPickupCategory === 'All' || loc.category === sdPickupCategory;
+    const q = sdPickupSearch.toLowerCase().trim();
+    if (!q) return matchesCat;
+    const matchesQuery = loc.name.toLowerCase().includes(q) || 
+      loc.desc.toLowerCase().includes(q) || 
+      loc.category.toLowerCase().includes(q);
+    return matchesCat && matchesQuery;
+  });
+
+  const filteredDropLocations = SELF_DRIVE_LOCATIONS.filter(loc => {
+    const matchesCat = sdDropCategory === 'All' || loc.category === sdDropCategory;
+    const q = sdDropSearch.toLowerCase().trim();
+    if (!q) return matchesCat;
+    const matchesQuery = loc.name.toLowerCase().includes(q) || 
+      loc.desc.toLowerCase().includes(q) || 
+      loc.category.toLowerCase().includes(q);
+    return matchesCat && matchesQuery;
+  });
 
   // Local filter states for all 4 search tabs
   const [localFilters, setLocalFilters] = useState({
@@ -602,7 +646,7 @@ export default function SearchWidget({
                   <span>City or Hotel Name</span>
                   <ChevronDown size={14} />
                 </span>
-                <div className="input-block-val">{pickupLoc && !['Hubli', 'Bengaluru', 'Mumbai', 'DEL', 'BLR', 'BOM', 'HYD', 'MAA', 'CCU', 'PNQ', 'AMD', 'COK', 'JAI', 'HBX'].includes(pickupLoc) ? pickupLoc : (dropLoc || 'Goa')}</div>
+                <div className="input-block-val">{dropLoc || pickupLoc || 'Goa'}</div>
                 <span className="input-block-sub">India</span>
 
                 {activeDropdown === 'hotel-loc' && (
@@ -618,7 +662,7 @@ export default function SearchWidget({
                         type="text" 
                         className="form-control form-control-sm ps-4" 
                         placeholder="Search Goa, Calangute, Baga..." 
-                        value={pickupLoc && !['Hubli', 'Bengaluru', 'Mumbai', 'DEL', 'BLR', 'BOM', 'HYD', 'MAA', 'CCU', 'PNQ', 'AMD', 'COK', 'JAI', 'HBX'].includes(pickupLoc) ? pickupLoc : ''} 
+                        value={dropLoc || ''} 
                         onChange={e => { setPickupLoc(e.target.value); setDropLoc(e.target.value); }} 
                         autoFocus 
                       />
@@ -1039,13 +1083,15 @@ export default function SearchWidget({
                   <span className="d-flex align-items-center gap-1"><MapPin size={13} className="text-warning" /> Pickup Location</span>
                   <ChevronDown size={14} />
                 </span>
-                <div className="input-block-val">{pickupLoc || 'Goa Airport'}</div>
-                <span className="input-block-sub">Goa, India</span>
+                <div className="input-block-val text-truncate" title={pickupLoc || 'Goa Airport'}>
+                  {pickupLoc || 'Goa Airport'}
+                </div>
+                <span className="input-block-sub">Goa, India · Free Handover</span>
 
                 {activeDropdown === 'sd-pickup' && (
                   <div className="tg-popover-card shadow-xl p-3" onClick={e => e.stopPropagation()}>
                     <div className="d-flex justify-content-between align-items-center pb-2 mb-2 border-bottom">
-                      <span className="fw-bold text-dark small"><MapPin size={14} className="text-primary me-1" /> Choose Pickup Point</span>
+                      <span className="fw-bold text-dark small"><MapPin size={14} className="text-primary me-1" /> Choose Pickup Location</span>
                       <button type="button" className="btn btn-sm btn-link p-0 text-muted" onClick={() => setActiveDropdown(null)}><X size={16} /></button>
                     </div>
 
@@ -1053,12 +1099,28 @@ export default function SearchWidget({
                       <SearchIcon size={16} className="position-absolute text-muted" style={{ top: '10px', left: '10px' }} />
                       <input 
                         type="text" 
-                        className="form-control form-control-sm ps-4" 
-                        placeholder="Search Goa Airport, Baga, Candolim..." 
-                        value={fromSearchQuery} 
-                        onChange={e => setFromSearchQuery(e.target.value)} 
+                        className="form-control form-control-sm ps-4 pe-4" 
+                        placeholder="Search Airport, Baga, Candolim, Hotel..." 
+                        value={sdPickupSearch} 
+                        onChange={e => setSdPickupSearch(e.target.value)} 
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && sdPickupSearch.trim()) {
+                            setPickupLoc(sdPickupSearch.trim());
+                            setActiveDropdown(null);
+                          }
+                        }}
                         autoFocus 
                       />
+                      {sdPickupSearch && (
+                        <button 
+                          type="button" 
+                          className="btn btn-sm btn-link position-absolute p-0 text-muted"
+                          style={{ top: '6px', right: '10px' }}
+                          onClick={() => setSdPickupSearch('')}
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
                     </div>
 
                     <button
@@ -1072,35 +1134,75 @@ export default function SearchWidget({
                       <span className="fw-bold small">{isLocating ? 'Detecting...' : '📍 Use Current Location (GPS)'}</span>
                     </button>
 
-                    <div className="text-muted small fw-bold mb-1">Popular Pickup Locations</div>
-                    <div className="tg-scroll-area">
-                      {[
-                        { name: 'Goa Airport', full: 'Goa Airport (Dabolim - GOI)', note: 'Free airport handover' },
-                        { name: 'Mopa Airport', full: 'Manohar Intl Airport (Mopa - GOX)', note: 'North Goa Airport delivery' },
-                        { name: 'Calangute', full: 'Calangute Beach / Circle', note: 'Free delivery' },
-                        { name: 'Baga Beach', full: 'Baga Beach & Tito\'s Lane', note: 'Free delivery' },
-                        { name: 'Candolim', full: 'Candolim Beach Road', note: 'Free delivery' },
-                        { name: 'Panaji', full: 'Panaji Bus Stand / Latin Quarter', note: 'Central Goa hub' },
-                        { name: 'Anjuna / Vagator', full: 'Anjuna & Vagator Coast', note: 'North Goa delivery' },
-                        { name: 'Madgaon', full: 'Madgaon Railway Station', note: 'South Goa delivery' },
-                        { name: 'South Goa', full: 'Colva / Benaulim / Varca', note: 'Resort delivery' }
-                      ].filter(loc => 
-                        loc.name.toLowerCase().includes(fromSearchQuery.toLowerCase()) || 
-                        loc.full.toLowerCase().includes(fromSearchQuery.toLowerCase())
-                      ).map(loc => (
+                    {sdPickupSearch.trim() && (
+                      <button
+                        type="button"
+                        className="btn btn-outline-primary btn-sm w-100 text-start mb-2 py-1 px-2 fw-semibold d-flex align-items-center justify-content-between"
+                        style={{ fontSize: '12px' }}
+                        onClick={() => {
+                          setPickupLoc(sdPickupSearch.trim());
+                          setActiveDropdown(null);
+                        }}
+                      >
+                        <span className="text-truncate">📍 Use &ldquo;{sdPickupSearch.trim()}&rdquo; as Pickup</span>
+                        <span className="badge bg-primary text-white">Select</span>
+                      </button>
+                    )}
+
+                    {/* Category Filter Pills */}
+                    <div className="d-flex align-items-center gap-1 mb-2 overflow-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+                      {['All', 'Airports', 'Stations', 'North Goa', 'South Goa'].map(cat => (
                         <button
-                          key={loc.name}
+                          key={cat}
                           type="button"
-                          className="btn btn-light w-100 text-start p-2 d-flex justify-content-between align-items-center mb-1 border-0"
-                          onClick={() => { setPickupLoc(loc.name); setActiveDropdown('sd-drop'); }}
+                          className={`btn btn-xs rounded-pill px-2 py-0 fw-semibold ${sdPickupCategory === cat ? 'btn-dark text-white' : 'btn-light border'}`}
+                          style={{ fontSize: '11px', whiteSpace: 'nowrap' }}
+                          onClick={() => setSdPickupCategory(cat)}
                         >
-                          <div>
-                            <div className="fw-bold text-dark">{loc.name}</div>
-                            <div className="text-muted" style={{ fontSize: '11px' }}>{loc.full} · {loc.note}</div>
-                          </div>
-                          <span className="badge bg-success bg-opacity-10 text-success small">Free Handover</span>
+                          {cat}
                         </button>
                       ))}
+                    </div>
+
+                    <div className="text-muted small fw-bold mb-1">Available Pickup Locations</div>
+                    <div className="tg-scroll-area" style={{ maxHeight: '220px', overflowY: 'auto' }}>
+                      {filteredPickupLocations.length > 0 ? (
+                        filteredPickupLocations.map(loc => (
+                          <button
+                            key={loc.id}
+                            type="button"
+                            className={`btn btn-light w-100 text-start p-2 d-flex justify-content-between align-items-center mb-1 border-0 ${pickupLoc === loc.name ? 'border border-primary bg-primary bg-opacity-10' : ''}`}
+                            onClick={() => {
+                              setPickupLoc(loc.name);
+                              setActiveDropdown(null);
+                            }}
+                          >
+                            <div className="d-flex align-items-center gap-2">
+                              <span style={{ fontSize: '16px' }}>{loc.icon}</span>
+                              <div>
+                                <div className="fw-bold text-dark small">{loc.name}</div>
+                                <div className="text-muted" style={{ fontSize: '11px' }}>{loc.desc}</div>
+                              </div>
+                            </div>
+                            <span className="badge bg-success bg-opacity-10 text-success small">Free Handover</span>
+                          </button>
+                        ))
+                      ) : (
+                        <div className="text-center py-3 bg-light rounded-2">
+                          <p className="text-muted small mb-2">No predefined locations match &ldquo;{sdPickupSearch}&rdquo;</p>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-primary"
+                            style={{ fontSize: '12px' }}
+                            onClick={() => {
+                              setPickupLoc(sdPickupSearch.trim());
+                              setActiveDropdown(null);
+                            }}
+                          >
+                            📍 Set &ldquo;{sdPickupSearch.trim()}&rdquo; as Pickup Location
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1115,39 +1217,135 @@ export default function SearchWidget({
                   <span className="d-flex align-items-center gap-1"><Navigation size={13} className="text-info" /> Drop Location</span>
                   <ChevronDown size={14} />
                 </span>
-                <div className="input-block-val">{dropLoc || 'North Goa'}</div>
-                <span className="input-block-sub text-success fw-bold">Free delivery</span>
+                <div className="input-block-val text-truncate" title={dropLoc || (pickupLoc ? `${pickupLoc} (Same)` : 'North Goa')}>
+                  {dropLoc || (pickupLoc ? `${pickupLoc} (Same)` : 'North Goa')}
+                </div>
+                <span className="input-block-sub text-success fw-bold">Free delivery &amp; return</span>
 
                 {activeDropdown === 'sd-drop' && (
                   <div className="tg-popover-card shadow-xl p-3" onClick={e => e.stopPropagation()}>
                     <div className="d-flex justify-content-between align-items-center pb-2 mb-2 border-bottom">
-                      <span className="fw-bold text-dark small"><Navigation size={14} className="text-primary me-1" /> Choose Return Point</span>
+                      <span className="fw-bold text-dark small"><Navigation size={14} className="text-primary me-1" /> Choose Return / Drop Location</span>
                       <button type="button" className="btn btn-sm btn-link p-0 text-muted" onClick={() => setActiveDropdown(null)}><X size={16} /></button>
                     </div>
 
-                    <div className="text-muted small fw-bold mb-1">Return / Drop Locations</div>
-                    <div className="tg-scroll-area">
-                      {[
-                        { name: 'North Goa', desc: 'Calangute, Baga, Candolim, Anjuna', badge: 'Free delivery' },
-                        { name: 'Goa Airport', desc: 'Dabolim Airport Drop-off', badge: 'Free delivery' },
-                        { name: 'Mopa Airport', desc: 'Manohar Intl Airport Drop-off', badge: 'Free delivery' },
-                        { name: 'South Goa', desc: 'Colva, Benaulim, Madgaon', badge: 'Free delivery' },
-                        { name: 'Panaji City', desc: 'Capital city return point', badge: 'Free delivery' },
-                        { name: 'Same as Pickup Location', desc: 'Return at pickup spot', badge: 'Standard' }
-                      ].map(item => (
-                        <button
-                          key={item.name}
-                          type="button"
-                          className="btn btn-light w-100 text-start p-2 d-flex justify-content-between align-items-center mb-1 border-0"
-                          onClick={() => { setDropLoc(item.name === 'Same as Pickup Location' ? (pickupLoc || 'Goa Airport') : item.name); setActiveDropdown(null); }}
+                    <div className="position-relative mb-2">
+                      <SearchIcon size={16} className="position-absolute text-muted" style={{ top: '10px', left: '10px' }} />
+                      <input 
+                        type="text" 
+                        className="form-control form-control-sm ps-4 pe-4" 
+                        placeholder="Search Return Point, Airport, Hotel..." 
+                        value={sdDropSearch} 
+                        onChange={e => setSdDropSearch(e.target.value)} 
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && sdDropSearch.trim()) {
+                            setDropLoc(sdDropSearch.trim());
+                            setActiveDropdown(null);
+                          }
+                        }}
+                        autoFocus 
+                      />
+                      {sdDropSearch && (
+                        <button 
+                          type="button" 
+                          className="btn btn-sm btn-link position-absolute p-0 text-muted"
+                          style={{ top: '6px', right: '10px' }}
+                          onClick={() => setSdDropSearch('')}
                         >
-                          <div>
-                            <div className="fw-bold text-dark">{item.name}</div>
-                            <div className="text-muted" style={{ fontSize: '11px' }}>{item.desc}</div>
-                          </div>
-                          <span className="badge bg-success bg-opacity-10 text-success small">{item.badge}</span>
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Quick Option: Return at Same as Pickup Spot */}
+                    <button
+                      type="button"
+                      className="btn btn-light w-100 text-start d-flex align-items-center justify-content-between p-2 rounded-2 mb-2 border"
+                      style={{ background: '#f0fdf4', borderColor: '#bbf7d0' }}
+                      onClick={() => {
+                        setDropLoc(pickupLoc || 'Goa Airport');
+                        setActiveDropdown(null);
+                      }}
+                    >
+                      <div className="d-flex align-items-center gap-2">
+                        <span>🔄</span>
+                        <div>
+                          <div className="fw-bold small text-success">Same as Pickup Location</div>
+                          <div className="text-muted" style={{ fontSize: '11px' }}>{pickupLoc || 'Goa Airport'}</div>
+                        </div>
+                      </div>
+                      <span className="badge bg-success text-white small">Most Convenient</span>
+                    </button>
+
+                    {sdDropSearch.trim() && (
+                      <button
+                        type="button"
+                        className="btn btn-outline-primary btn-sm w-100 text-start mb-2 py-1 px-2 fw-semibold d-flex align-items-center justify-content-between"
+                        style={{ fontSize: '12px' }}
+                        onClick={() => {
+                          setDropLoc(sdDropSearch.trim());
+                          setActiveDropdown(null);
+                        }}
+                      >
+                        <span className="text-truncate">📍 Use &ldquo;{sdDropSearch.trim()}&rdquo; as Drop Point</span>
+                        <span className="badge bg-primary text-white">Select</span>
+                      </button>
+                    )}
+
+                    {/* Category Filter Pills */}
+                    <div className="d-flex align-items-center gap-1 mb-2 overflow-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+                      {['All', 'Airports', 'Stations', 'North Goa', 'South Goa'].map(cat => (
+                        <button
+                          key={cat}
+                          type="button"
+                          className={`btn btn-xs rounded-pill px-2 py-0 fw-semibold ${sdDropCategory === cat ? 'btn-dark text-white' : 'btn-light border'}`}
+                          style={{ fontSize: '11px', whiteSpace: 'nowrap' }}
+                          onClick={() => setSdDropCategory(cat)}
+                        >
+                          {cat}
                         </button>
                       ))}
+                    </div>
+
+                    <div className="text-muted small fw-bold mb-1">Return / Drop Locations</div>
+                    <div className="tg-scroll-area" style={{ maxHeight: '220px', overflowY: 'auto' }}>
+                      {filteredDropLocations.length > 0 ? (
+                        filteredDropLocations.map(loc => (
+                          <button
+                            key={loc.id}
+                            type="button"
+                            className={`btn btn-light w-100 text-start p-2 d-flex justify-content-between align-items-center mb-1 border-0 ${dropLoc === loc.name ? 'border border-primary bg-primary bg-opacity-10' : ''}`}
+                            onClick={() => {
+                              setDropLoc(loc.name);
+                              setActiveDropdown(null);
+                            }}
+                          >
+                            <div className="d-flex align-items-center gap-2">
+                              <span style={{ fontSize: '16px' }}>{loc.icon}</span>
+                              <div>
+                                <div className="fw-bold text-dark small">{loc.name}</div>
+                                <div className="text-muted" style={{ fontSize: '11px' }}>{loc.desc}</div>
+                              </div>
+                            </div>
+                            <span className="badge bg-success bg-opacity-10 text-success small">Free Handover</span>
+                          </button>
+                        ))
+                      ) : (
+                        <div className="text-center py-3 bg-light rounded-2">
+                          <p className="text-muted small mb-2">No predefined locations match &ldquo;{sdDropSearch}&rdquo;</p>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-primary"
+                            style={{ fontSize: '12px' }}
+                            onClick={() => {
+                              setDropLoc(sdDropSearch.trim());
+                              setActiveDropdown(null);
+                            }}
+                          >
+                            📍 Set &ldquo;{sdDropSearch.trim()}&rdquo; as Drop Location
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1681,7 +1879,7 @@ export default function SearchWidget({
                   <span>From City</span>
                   <ChevronDown size={14} />
                 </span>
-                <div className="input-block-val">{pickupLoc || 'Hubli'}</div>
+                <div className="input-block-val">{pickupLoc || 'Select Departure City'}</div>
                 <span className="input-block-sub">India</span>
 
                 {activeDropdown === 'from' && (
@@ -1696,7 +1894,7 @@ export default function SearchWidget({
                       <input 
                         type="text" 
                         className="form-control form-control-sm ps-4" 
-                        placeholder="Search departure city e.g. Bengaluru..." 
+                        placeholder="Search departure city e.g. Bengaluru, Hubli..." 
                         value={fromSearchQuery} 
                         onChange={e => setFromSearchQuery(e.target.value)} 
                         autoFocus 
@@ -1718,6 +1916,21 @@ export default function SearchWidget({
                       <div className={`p-2 rounded small mb-2 ${locationStatus.type === 'error' || locationStatus.type === 'denied' ? 'bg-danger bg-opacity-10 text-danger' : 'bg-success bg-opacity-10 text-success'}`}>
                         {locationStatus.msg}
                       </div>
+                    )}
+
+                    {fromSearchQuery.trim() && (
+                      <button
+                        type="button"
+                        className="btn btn-outline-primary btn-sm w-100 text-start mb-2 py-1 px-2 fw-semibold d-flex align-items-center justify-content-between"
+                        style={{ fontSize: '12px' }}
+                        onClick={() => {
+                          setPickupLoc(fromSearchQuery.trim());
+                          setActiveDropdown('to');
+                        }}
+                      >
+                        <span className="text-truncate">📍 Use &ldquo;{fromSearchQuery.trim()}&rdquo; as Departure City</span>
+                        <span className="badge bg-primary text-white">Select</span>
+                      </button>
                     )}
 
                     <div className="text-muted small fw-bold mb-1">Popular Departure Cities</div>
@@ -1978,17 +2191,48 @@ export default function SearchWidget({
 
 // ─── EMBEDDED CALENDAR POPUP VIEW ─────────────────────────────────────────────
 
+function getInitialYearMonth(selectedDate, minDate) {
+  if (selectedDate) {
+    const [sY, sM] = selectedDate.split('-').map(Number);
+    if (sY && sM) return { year: sY, month: sM - 1 };
+  }
+  if (minDate) {
+    const [mY, mM] = minDate.split('-').map(Number);
+    if (mY && mM) return { year: mY, month: mM - 1 };
+  }
+  const now = new Date();
+  return { year: now.getFullYear(), month: now.getMonth() };
+}
+
 function CalendarPickerView({ title, selectedDate, minDate, onSelect, onClose }) {
-  const initial = selectedDate ? new Date(selectedDate) : new Date();
-  const validInitial = isNaN(initial.getTime()) ? new Date() : initial;
-  const [viewYear, setViewYear] = useState(validInitial.getFullYear());
-  const [viewMonth, setViewMonth] = useState(validInitial.getMonth());
+  const initial = getInitialYearMonth(selectedDate, minDate);
+  const [viewYear, setViewYear] = useState(initial.year);
+  const [viewMonth, setViewMonth] = useState(initial.month);
+
+  // Synchronize when selectedDate or minDate updates externally
+  useEffect(() => {
+    const updated = getInitialYearMonth(selectedDate, minDate);
+    setViewYear(updated.year);
+    setViewMonth(updated.month);
+  }, [selectedDate, minDate]);
 
   const weekdays = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
   const monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
+
+  // Dynamic future years list (minimum year to minimum year + 5)
+  const currentSystemYear = new Date().getFullYear();
+  const minYear = minDate ? parseInt(minDate.split('-')[0], 10) : currentSystemYear;
+  const minMonthIndex = (minDate && parseInt(minDate.split('-')[0], 10) === viewYear) 
+    ? parseInt(minDate.split('-')[1], 10) - 1 
+    : 0;
+
+  const availableYears = [];
+  for (let y = minYear; y <= minYear + 5; y++) {
+    availableYears.push(y);
+  }
 
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const firstDay = new Date(viewYear, viewMonth, 1).getDay();
@@ -2018,8 +2262,23 @@ function CalendarPickerView({ title, selectedDate, minDate, onSelect, onClose })
     }
   };
 
+  const handleYearChange = (newYear) => {
+    const y = parseInt(newYear, 10);
+    setViewYear(y);
+    if (minDate) {
+      const [minY, minM] = minDate.split('-').map(Number);
+      if (y === minY && viewMonth < minM - 1) {
+        setViewMonth(minM - 1);
+      }
+    }
+  };
+
+  const handleMonthChange = (newMonth) => {
+    setViewMonth(parseInt(newMonth, 10));
+  };
+
   return (
-    <div className="p-3" style={{ minWidth: '320px' }}>
+    <div className="p-3" style={{ minWidth: '320px', maxWidth: '360px' }}>
       <div className="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
         <span className="fw-bold text-dark small d-flex align-items-center gap-1">
           <CalendarIcon size={14} className="text-warning" />
@@ -2030,23 +2289,77 @@ function CalendarPickerView({ title, selectedDate, minDate, onSelect, onClose })
         </button>
       </div>
 
-      <div className="d-flex justify-content-between align-items-center mb-2">
+      {/* Year & Month Selection Controls */}
+      <div className="d-flex align-items-center justify-content-between gap-1 mb-2">
         <button 
           type="button" 
-          className="btn btn-sm btn-light border rounded-circle p-1"
+          className="btn btn-sm btn-light border rounded-circle p-1 d-flex align-items-center justify-content-center"
+          style={{ width: '28px', height: '28px' }}
           onClick={handlePrev}
           disabled={isCurrentMonthOrPast()}
+          title="Previous Month"
         >
           <ChevronLeft size={16} />
         </button>
-        <span className="fw-bold text-dark small">{monthNames[viewMonth]} {viewYear}</span>
+
+        <div className="d-flex align-items-center gap-1 flex-grow-1 justify-content-center">
+          {/* Month Selector */}
+          <select
+            className="form-select form-select-sm fw-bold border-0 bg-light py-1 ps-2 pe-3"
+            style={{ fontSize: '13px', cursor: 'pointer', maxWidth: '130px' }}
+            value={viewMonth}
+            onChange={(e) => handleMonthChange(e.target.value)}
+          >
+            {monthNames.map((mName, idx) => {
+              const isDisabled = viewYear === minYear && idx < minMonthIndex;
+              return (
+                <option key={mName} value={idx} disabled={isDisabled}>
+                  {mName}
+                </option>
+              );
+            })}
+          </select>
+
+          {/* Year Selector */}
+          <select
+            className="form-select form-select-sm fw-bold border-0 bg-light py-1 ps-2 pe-3"
+            style={{ fontSize: '13px', cursor: 'pointer', maxWidth: '95px' }}
+            value={viewYear}
+            onChange={(e) => handleYearChange(e.target.value)}
+          >
+            {availableYears.map(yr => (
+              <option key={yr} value={yr}>
+                {yr}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <button 
           type="button" 
-          className="btn btn-sm btn-light border rounded-circle p-1"
+          className="btn btn-sm btn-light border rounded-circle p-1 d-flex align-items-center justify-content-center"
+          style={{ width: '28px', height: '28px' }}
           onClick={handleNext}
+          title="Next Month"
         >
           <ChevronRight size={16} />
         </button>
+      </div>
+
+      {/* Quick Year Jump Chips */}
+      <div className="d-flex align-items-center gap-1 mb-2 overflow-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+        <span className="text-muted fw-bold" style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Year:</span>
+        {availableYears.slice(0, 4).map(yr => (
+          <button
+            key={yr}
+            type="button"
+            className={`btn btn-xs rounded-pill px-2 py-0 fw-bold ${viewYear === yr ? 'btn-primary text-white' : 'btn-light border'}`}
+            style={{ fontSize: '11px', lineHeight: '1.6' }}
+            onClick={() => handleYearChange(yr)}
+          >
+            {yr}
+          </button>
+        ))}
       </div>
 
       <div className="mb-1" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', fontSize: '11px', fontWeight: 700, color: '#94a3b8' }}>

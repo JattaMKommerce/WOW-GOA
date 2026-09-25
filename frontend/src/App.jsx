@@ -1427,7 +1427,7 @@ export default function App() {
         pickup_date: pDate,
         pickup_time: extraDetails.pickupTime || pickupTime || '10:00 AM',
         drop_date: dDate,
-        drop_location: extraDetails.pickupLoc || pickupLoc || 'Goa Airport',
+        drop_location: extraDetails.dropLoc || dropLoc || extraDetails.pickupLoc || pickupLoc || 'Goa Airport',
         drop_time: extraDetails.dropTime || dropTime || '10:00 AM',
         item_id: selectedBookingItem.id || 'custom',
         item_name: selectedBookingItem.name || selectedBookingItem.title || (isTripPkg ? 'Trip Package' : isActivity ? 'Goa Experience' : 'Trip Booking'),
@@ -2628,6 +2628,8 @@ export default function App() {
             userLicense={userLicense}
             setUserLicense={setUserLicense}
             pickupLoc={pickupLoc}
+            dropLoc={dropLoc}
+            setDropLoc={setDropLoc}
             pickupDate={pickupDate}
             pickupTime={pickupTime}
             dropDate={dropDate}

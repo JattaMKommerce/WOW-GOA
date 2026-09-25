@@ -9,7 +9,7 @@ import { chatWithAI, createAiLead, updateAiLeadChat, getAIChatbotSettings } from
 
 const aiMessages = [
   "Plan Your Goa Trip",
-  "Need Help? Ask Sophia",
+  "Need Help? Ask Luzia",
   "Let's Explore Goa",
   "Welcome to Goa! 🌴"
 ];
@@ -45,6 +45,26 @@ export default function AIChatbot() {
   const avatarVideoRef = useRef(null);
   const canvasRef = useRef(null);
   const chatBodyRef = useRef(null);
+  const inputRef = useRef(null);
+
+  // Auto-focus helper to ensure cursor is ALWAYS in the input box
+  const focusInput = useCallback(() => {
+    setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.focus();
+      }
+    }, 60);
+  }, []);
+
+  // Clear stale session on fresh browser load so every page refresh is a clean new chatbot session
+  useEffect(() => {
+    try {
+      sessionStorage.removeItem('tg_lead_submitted_session');
+      sessionStorage.removeItem('tg_lead_id');
+      sessionStorage.removeItem('tg_ai_lead_id');
+      localStorage.removeItem('tg_customer_lead');
+    } catch (e) { }
+  }, []);
 
   // Chat state
   const [messages, setMessages] = useState([]);
@@ -54,13 +74,7 @@ export default function AIChatbot() {
   const [leadName, setLeadName] = useState('');
   const [leadPhone, setLeadPhone] = useState('');
   const [leadError, setLeadError] = useState('');
-  const [hasSubmittedLead, setHasSubmittedLead] = useState(() => {
-    try {
-      return sessionStorage.getItem('tg_lead_submitted_session') === 'true';
-    } catch (e) {
-      return false;
-    }
-  });
+  const [hasSubmittedLead, setHasSubmittedLead] = useState(false);
   const pendingQueryRef = useRef('');
 
   // Voice state
@@ -75,18 +89,6 @@ export default function AIChatbot() {
   const [availableVoices, setAvailableVoices] = useState([]);
 
   const SpeechRecognition = typeof window !== 'undefined' ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
-
-  // Auto pre-fill customer details from session / localStorage if previously saved
-  useEffect(() => {
-    try {
-      const savedLead = localStorage.getItem('tg_customer_lead');
-      if (savedLead) {
-        const l = JSON.parse(savedLead);
-        if (l.name) setLeadName(l.name);
-        if (l.phone) setLeadPhone(l.phone);
-      }
-    } catch (e) { }
-  }, []);
 
   // Helper to verify if customer name and 10-digit phone have already been captured for this session
   const checkContactCollected = useCallback(() => {
@@ -114,7 +116,7 @@ export default function AIChatbot() {
         if (prev.length === 0) {
           return [{
             role: 'assistant',
-            content: "Hi! I'm **Sophia** 🌴 Let's craft your dream Goa trip together!\n\nHow many people are traveling, and what are your dates or preferences? (For example: *4 people from Oct 25 to Oct 28 with an SUV and beach resort*)"
+            content: "Olá! I’m **Luzia** 🌴 Let's craft your dream Goa trip together!\n\nAre you looking for accommodation, a self-drive vehicle, experiences, or a complete Goa holiday?"
           }];
         }
         return prev;
@@ -307,13 +309,26 @@ export default function AIChatbot() {
   // Initial welcome message if chat opened fresh
   useEffect(() => {
     if (isOpen && messages.length === 0) {
-      const greetingName = leadName ? ` ${leadName}` : '';
       setMessages([{
         role: 'assistant',
-        content: `Hello${greetingName}! 👋 I'm **Sophia**, your AI Travel Expert for Goa. How can I help you explore Goa or craft your trip today?`
+        content: "Olá! I’m Luzia. Are you looking for accommodation, a self-drive vehicle, experiences, or a complete Goa holiday?"
       }]);
     }
-  }, [isOpen, leadName]);
+  }, [isOpen]);
+
+  // Auto-focus input whenever chat window opens and lead form is not showing
+  useEffect(() => {
+    if (isOpen && !showLeadForm) {
+      focusInput();
+    }
+  }, [isOpen, showLeadForm, focusInput]);
+
+  // Keep cursor focused automatically when response finishes loading
+  useEffect(() => {
+    if (!isLoading && isOpen && !showLeadForm) {
+      focusInput();
+    }
+  }, [isLoading, isOpen, showLeadForm, focusInput]);
 
   // Tiered Natural Female Voice Selection
   const getBestFemaleEnglishVoice = (voices) => {
@@ -557,7 +572,6 @@ export default function AIChatbot() {
     setHasSubmittedLead(true);
     try {
       sessionStorage.setItem('tg_lead_submitted_session', 'true');
-      localStorage.setItem('tg_customer_lead', JSON.stringify({ name: cleanName, phone: cleanPhone }));
     } catch (e) { }
 
     let activeLId = null;
@@ -568,8 +582,16 @@ export default function AIChatbot() {
       if (res && res.success) {
         activeLId = res.lead_id || res.id;
         activeAiId = res.id;
-        if (activeLId) setLeadId(activeLId);
-        if (activeAiId) setAiLeadId(activeAiId);
+        if (activeLId) {
+          setLeadId(activeLId);
+          try { sessionStorage.setItem('tg_lead_id', activeLId); } catch (e) { }
+        }
+        if (activeAiId) {
+          setAiLeadId(activeAiId);
+          try { sessionStorage.setItem('tg_ai_lead_id', activeAiId); } catch (e) { }
+        }
+        window.dispatchEvent(new CustomEvent('realtime-lead-created', { detail: { lead_id: activeLId, ai_lead_id: activeAiId, name: cleanName, phone: cleanPhone } }));
+        window.dispatchEvent(new CustomEvent('tripgalileo-notification-sync', { detail: { type: 'lead', lead_id: activeLId } }));
       }
     } catch (err) {
       console.error('Lead submit failed:', err);
@@ -593,12 +615,13 @@ export default function AIChatbot() {
 
     pendingQueryRef.current = '';
     setInput('');
+    focusInput();
     if (preTyped) {
       handleSendMessage(null, preTyped, activeLId, activeAiId);
     } else {
       setMessages([{
         role: 'assistant',
-        content: `Hello ${cleanName}! 👋 I'm **Sophia**, your AI Travel Expert for Goa.\n\nWhat are you looking to explore or book today? (Hotels, Self-Drive Cars, Bikes, Tour Packages, or Activities?)`
+        content: `Olá ${cleanName}! I’m **Luzia**. Are you looking for accommodation, a self-drive vehicle, experiences, or a complete Goa holiday?`
       }]);
     }
   };
@@ -656,19 +679,80 @@ export default function AIChatbot() {
       }
     }
 
+    // Detect service category switch (e.g. user was on hotel and now mentions vehicles/cars/bikes)
+    const textLower = textToSend.toLowerCase();
+    const curType = activeContext?.booking_preview?.item_type || activeContext?.active_item_type;
+    const isSwitchingToVehicle = /\b(vehicles?|cars?|thars?|suvs?|bikes?|scooters?|activa|two\s*wheelers?)\b/i.test(textLower) && curType === 'hotel';
+    const isSwitchingToHotel = /\b(hotels?|resorts?|stays?|rooms?|villas?)\b/i.test(textLower) && (curType === 'car' || curType === 'bike' || curType === 'vehicle');
+    const isSwitchingToActivity = /\b(activities|sightseeing|scuba|watersports?|cruises?)\b/i.test(textLower) && curType && curType !== 'activity' && curType !== 'sightseeing';
+    const isResettingCategory = /\b(other|another|different|change|switch)\s+(cars?|bikes?|hotels?|resorts?|vehicles?|stays?)\b/i.test(textLower);
+
+    let effectiveContext = activeContext;
+    if (isSwitchingToVehicle || isSwitchingToHotel || isSwitchingToActivity || isResettingCategory) {
+      effectiveContext = {
+        ...(activeContext || {}),
+        active_item_id: null,
+        active_item_name: null,
+        booking_preview: null,
+        active_item_type: null
+      };
+      setActiveContext(effectiveContext);
+    }
+
     const userMsg = { role: 'user', content: textToSend.trim() };
     const newMessages = [...messages, userMsg];
     setMessages(newMessages);
     setInput('');
     setIsLoading(true);
 
-    if (effLeadId) {
-      updateAiLeadChat(effLeadId, newMessages, effAiLeadId).catch(() => { });
+    let currentLeadId = effLeadId;
+    let currentAiLeadId = effAiLeadId;
+    const cleanP = (leadPhone || '').replace(/\D/g, '').slice(-10);
+
+    // Auto-create lead in CRM if contact info exists but leadId is not yet assigned
+    if (!currentLeadId && cleanP.length === 10) {
+      try {
+        const autoLeadRes = await createAiLead(leadName || 'Customer', cleanP, textToSend.trim());
+        if (autoLeadRes && autoLeadRes.success) {
+          currentLeadId = autoLeadRes.lead_id || autoLeadRes.id;
+          currentAiLeadId = autoLeadRes.id;
+          if (currentLeadId) {
+            setLeadId(currentLeadId);
+            try { sessionStorage.setItem('tg_lead_id', currentLeadId); } catch (e) { }
+          }
+          if (currentAiLeadId) {
+            setAiLeadId(currentAiLeadId);
+            try { sessionStorage.setItem('tg_ai_lead_id', currentAiLeadId); } catch (e) { }
+          }
+          window.dispatchEvent(new CustomEvent('realtime-lead-created', { detail: { lead_id: currentLeadId, ai_lead_id: currentAiLeadId } }));
+          window.dispatchEvent(new CustomEvent('tripgalileo-notification-sync', { detail: { type: 'lead', lead_id: currentLeadId } }));
+        }
+      } catch (e) { }
+    }
+
+    if (currentLeadId) {
+      updateAiLeadChat(currentLeadId, newMessages, currentAiLeadId).catch(() => { });
     }
 
     try {
-      const aiRes = await chatWithAI(newMessages, activeContext);
+      const aiRes = await chatWithAI(newMessages, effectiveContext, {
+        lead_id: currentLeadId,
+        ai_lead_id: currentAiLeadId,
+        customer_name: leadName || '',
+        customer_phone: cleanP || ''
+      });
       const replyText = typeof aiRes === 'string' ? aiRes : (aiRes?.reply || '');
+
+      if (aiRes && aiRes.lead_id && !currentLeadId) {
+        currentLeadId = aiRes.lead_id;
+        setLeadId(aiRes.lead_id);
+        try { sessionStorage.setItem('tg_lead_id', aiRes.lead_id); } catch (e) { }
+      }
+      if (aiRes && aiRes.ai_lead_id && !currentAiLeadId) {
+        currentAiLeadId = aiRes.ai_lead_id;
+        setAiLeadId(aiRes.ai_lead_id);
+        try { sessionStorage.setItem('tg_ai_lead_id', aiRes.ai_lead_id); } catch (e) { }
+      }
 
       if (aiRes && aiRes.context) {
         // Always preserve the last known craft_proposal in context so backend can rebuild it on next turn
@@ -687,9 +771,11 @@ export default function AIChatbot() {
       const updatedMessages = [...newMessages, { role: 'assistant', content: replyText }];
       setMessages(updatedMessages);
 
-      if (effLeadId) {
-        updateAiLeadChat(effLeadId, updatedMessages, effAiLeadId).catch(() => { });
+      if (currentLeadId) {
+        updateAiLeadChat(currentLeadId, updatedMessages, currentAiLeadId).catch(() => { });
       }
+      window.dispatchEvent(new CustomEvent('realtime-lead-created', { detail: { lead_id: currentLeadId, ai_lead_id: currentAiLeadId } }));
+      window.dispatchEvent(new CustomEvent('tripgalileo-notification-sync', { detail: { type: 'lead', lead_id: currentLeadId } }));
     } catch (err) {
       const errorMessages = [...newMessages, {
         role: 'assistant',
@@ -698,6 +784,7 @@ export default function AIChatbot() {
       setMessages(errorMessages);
     } finally {
       setIsLoading(false);
+      focusInput();
     }
   };
 
@@ -808,14 +895,19 @@ export default function AIChatbot() {
       suggestions = [`Book ${activeContext.active_item_name} →`, 'Tomorrow for 3 days', 'This Weekend', 'Oct 25 to Oct 28'];
     } else if (messages.length > 0) {
       const lastMsg = messages[messages.length - 1]?.content || '';
-      if (lastMsg.includes('dates') || lastMsg.includes('When are you planning') || lastMsg.includes('travel dates')) {
+      const lastMsgLower = lastMsg.toLowerCase();
+      if (lastMsgLower.includes('dates') || lastMsgLower.includes('when are you planning') || lastMsgLower.includes('travel dates')) {
         suggestions = ['Tomorrow for 3 days', 'This Weekend', 'Oct 25 to Oct 28'];
-      } else if (lastMsg.includes('hotel') || lastMsg.includes('resort') || lastMsg.includes('stay') || lastMsg.includes('room')) {
+      } else if (lastMsgLower.includes('vehicle') || lastMsgLower.includes('car or a bike')) {
+        suggestions = ['Browse Cars', 'Browse Bikes', 'Mahindra Thar 4x4', 'Honda Activa 6G'];
+      } else if (lastMsgLower.includes('hotel') || lastMsgLower.includes('resort') || lastMsgLower.includes('stay') || lastMsgLower.includes('room')) {
         suggestions = ['Casa Baga Boutique Resort', 'The Grand Candolim', 'Taj Exotica Resort', 'Tomorrow for 3 days', 'This Weekend'];
-      } else if (lastMsg.includes('bike') || lastMsg.includes('scooter')) {
+      } else if (lastMsgLower.includes('bike') || lastMsgLower.includes('scooter')) {
         suggestions = ['Royal Enfield Hunter 350', 'Honda Activa 6G', 'Royal Enfield Classic 350', 'Browse Bikes'];
-      } else if (lastMsg.includes('car') || lastMsg.includes('thar') || lastMsg.includes('suv')) {
+      } else if (lastMsgLower.includes('car') || lastMsgLower.includes('thar') || lastMsgLower.includes('suv')) {
         suggestions = ['Mahindra Thar 4x4', 'Maruti Suzuki Ertiga', 'Hyundai Creta', 'Browse Cars'];
+      } else if (lastMsgLower.includes('scuba') || lastMsgLower.includes('activity') || lastMsgLower.includes('watersport')) {
+        suggestions = ['Scuba Diving Experience', 'Dudhsagar Waterfall Tour', 'Mandovi Sunset Cruise', 'Explore Activities'];
       }
     }
   }
@@ -840,7 +932,7 @@ export default function AIChatbot() {
         onClick={() => handleOpenChat()}
         role="button"
         tabIndex={0}
-        aria-label="Open Sophia AI Assistant"
+        aria-label="Open Luzia AI Assistant"
         className={`sophia-floating-trigger ai-floating-trigger ${isOpen ? 'is-hidden' : 'is-visible'}`}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -1094,11 +1186,11 @@ export default function AIChatbot() {
         >
           <div className="d-flex align-items-center gap-2.5">
             <div className="rounded-circle bg-white d-flex align-items-center justify-content-center shadow-sm overflow-hidden" style={{ width: '40px', height: '40px' }}>
-              <img src={chatbotAvatar} alt="Sophia AI" style={{ width: '92%', height: '92%', objectFit: 'contain' }} />
+              <img src={chatbotAvatar} alt="Luzia AI" style={{ width: '92%', height: '92%', objectFit: 'contain' }} />
             </div>
             <div>
               <div className="d-flex align-items-center gap-1.5">
-                <h6 className="mb-0 fw-bold text-white" style={{ fontSize: '15px' }}>Sophia</h6>
+                <h6 className="mb-0 fw-bold text-white" style={{ fontSize: '15px' }}>Luzia</h6>
                 <span className="badge bg-white text-dark rounded-pill px-2 py-0.5" style={{ fontSize: '10px', fontWeight: 700 }}>AI Travel Expert</span>
               </div>
               <small style={{ opacity: 0.95, fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -1111,7 +1203,7 @@ export default function AIChatbot() {
             <button
               type="button"
               onClick={toggleMute}
-              title={isMuted ? "Unmute Sophia's Voice" : "Mute Sophia's Voice"}
+              title={isMuted ? "Unmute Luzia's Voice" : "Mute Luzia's Voice"}
               className="btn btn-sm p-0 rounded-circle d-flex align-items-center justify-content-center"
               style={{ width: '32px', height: '32px', background: isMuted ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.25)', color: 'white', border: 'none', backdropFilter: 'blur(4px)', cursor: 'pointer', transition: 'all 0.2s' }}
             >
@@ -1521,7 +1613,10 @@ export default function AIChatbot() {
                   <button
                     key={s}
                     type="button"
-                    onClick={() => handleSendMessage(null, s)}
+                    onClick={() => {
+                      handleSendMessage(null, s);
+                      focusInput();
+                    }}
                     className="btn btn-sm rounded-pill fw-bold text-nowrap"
                     style={{ fontSize: '11.5px', border: '1px solid #FF6B35', color: '#FF6B35', background: 'transparent' }}
                   >
@@ -1535,7 +1630,7 @@ export default function AIChatbot() {
                 <button
                   type="button"
                   onClick={startListening}
-                  title={isListening ? "Listening... Click to stop" : "Speak to Sophia with your voice"}
+                  title={isListening ? "Listening... Click to stop" : "Speak to Luzia with your voice"}
                   className={`btn rounded-circle d-flex align-items-center justify-content-center p-0 ${isListening ? 'listening-pulse' : ''}`}
                   style={{
                     width: '36px',
@@ -1550,12 +1645,14 @@ export default function AIChatbot() {
                   <Mic size={18} />
                 </button>
                 <input
+                  ref={inputRef}
                   type="text"
                   className="form-control border-0 bg-transparent shadow-none px-2"
-                  placeholder={isListening ? "Listening... Speak now 🎙️" : "Ask Sophia or craft your trip..."}
+                  placeholder={isListening ? "Listening... Speak now 🎙️" : "Ask Luzia or craft your trip..."}
                   value={input}
                   onChange={e => setInput(e.target.value)}
-                  disabled={isLoading}
+                  readOnly={isLoading}
+                  autoFocus
                   style={{ fontSize: '13px' }}
                 />
                 <button

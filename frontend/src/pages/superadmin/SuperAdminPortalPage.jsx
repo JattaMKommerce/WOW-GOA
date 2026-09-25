@@ -578,6 +578,9 @@ export default function SuperAdminPortalPage({
     window.addEventListener('tripgalileo-notification-sync', handleSync);
     window.addEventListener('tripgalileo-booking-sync', handleSync);
     window.addEventListener('authoritative-notification-received', handleSync);
+    window.addEventListener('realtime-lead-created', handleSync);
+    window.addEventListener('lead_created', handleSync);
+    window.addEventListener('ai_leads_updated', handleSync);
     window.addEventListener('driver-assigned', handleSync);
     window.addEventListener('driver-status-updated', handleSync);
     window.addEventListener('b2b-booking-created', handleSync);
@@ -604,6 +607,9 @@ export default function SuperAdminPortalPage({
       window.removeEventListener('tripgalileo-notification-sync', handleSync);
       window.removeEventListener('tripgalileo-booking-sync', handleSync);
       window.removeEventListener('authoritative-notification-received', handleSync);
+      window.removeEventListener('realtime-lead-created', handleSync);
+      window.removeEventListener('lead_created', handleSync);
+      window.removeEventListener('ai_leads_updated', handleSync);
       window.removeEventListener('driver-assigned', handleSync);
       window.removeEventListener('driver-status-updated', handleSync);
       window.removeEventListener('b2b-booking-created', handleSync);

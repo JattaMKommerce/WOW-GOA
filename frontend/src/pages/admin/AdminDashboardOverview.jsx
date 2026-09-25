@@ -61,6 +61,8 @@ export default function AdminDashboardOverview({
   usersList = [],
   drivers = [],
   b2bPartners = [],
+  aiLeads = [],
+  enquiries = [],
   currentUser,
   onNavigate,
   onRefresh
@@ -182,6 +184,14 @@ export default function AdminDashboardOverview({
       color: '#0891b2',
       sub: 'Partners & operators',
       onClick: () => onNavigate?.('vendors')
+    },
+    { 
+      label: 'AI Leads & Inquiries', 
+      value: (aiLeads?.length || 0) + (enquiries?.length || 0), 
+      icon: <Users size={16} />, 
+      color: '#16a34a',
+      sub: `${aiLeads?.length || 0} Sophia AI · ${enquiries?.length || 0} custom`,
+      onClick: () => onNavigate?.('lead_management')
     },
     { 
       label: 'Customers / Users', 

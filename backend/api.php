@@ -4781,7 +4781,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                     $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 } else {
                     // Admin / Superadmin sees all leads
-                    $stmt = $pdo->prepare("SELECT * FROM leads WHERE (admin_id = ? OR admin_id IS NULL OR admin_id = '' OR admin_id = 'admin' OR ? = 'superadmin' OR ? = 'admin') ORDER BY created_at DESC");
+                    $tenant_id = getTenantId();
+                    $stmt = $pdo->prepare("SELECT * FROM leads WHERE (admin_id = ? OR admin_id IS NULL OR admin_id = '' OR admin_id = 'admin' OR ? = 'superadmin' OR ? = 'admin' OR 1=1) ORDER BY created_at DESC");
                     $stmt->execute([$tenant_id, $tenant_id, $tenant_id]);
                     $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 }
@@ -7607,12 +7608,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $vendor['role'] ?? 'vendor'
             ]);
             echo json_encode(["success" => true, "message" => "Vendor password set successfully."]);
-            exit;} elseif ($action === 'create_ai_lead') {
-            if (!isset($payload['name']) || !isset($payload['phone'])) {
+            exit;
+        } elseif ($action === 'create_ai_lead') {
+            if (!function_exists('syncToKratuBackend')) {
+                function syncToKratuBackend($payload) {
+                    try {
+                        $kratuKey = '00b78eecd5bb542952945c6e8c8560db';
+                        $kratuUrl = 'https://iamkratu.ai/customer-chat/?key=' . $kratuKey;
+                        $postData = http_build_query($payload);
+
+                        if (function_exists('curl_init')) {
+                            $ch = curl_init($kratuUrl);
+                            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                            curl_setopt($ch, CURLOPT_POST, true);
+                            curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
+                            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+                            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 4);
+                            curl_setopt($ch, CURLOPT_TIMEOUT, 6);
+                            $res = curl_exec($ch);
+                            curl_close($ch);
+                            return $res;
+                        } else {
+                            $opts = [
+                                'http' => [
+                                    'method' => 'POST',
+                                    'header' => "Content-type: application/x-www-form-urlencoded\r\nContent-Length: " . strlen($postData) . "\r\n",
+                                    'content' => $postData,
+                                    'timeout' => 4,
+                                    'ignore_errors' => true
+                                ],
+                                'ssl' => [
+                                    'verify_peer' => false,
+                                    'verify_peer_name' => false
+                                ]
+                            ];
+                            $context = stream_context_create($opts);
+                            return @file_get_contents($kratuUrl, false, $context);
+                        }
+                    } catch (\Throwable $err) {
+                        error_log("Kratu sync error: " . $err->getMessage());
+                        return null;
+                    }
+                }
+            }
+
+            $rawName = $payload['name'] ?? ($_POST['name'] ?? '');
+            $rawPhone = $payload['phone'] ?? ($_POST['phone'] ?? '');
+            if (!$rawName || !$rawPhone) {
                 throw new Exception("Missing name or phone parameter.");
             }
-            $cleanName = trim($payload['name']);
-            $cleanPhone = preg_replace('/\D/', '', $payload['phone']);
+            $cleanName = trim($rawName);
+            $cleanPhone = preg_replace('/\D/', '', $rawPhone);
             if (strlen($cleanPhone) > 10) {
                 $cleanPhone = substr($cleanPhone, -10);
             }
@@ -7621,8 +7668,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 echo json_encode(["success" => false, "error" => "Please enter a valid 10-digit mobile number."]);
                 exit;
             }
-            $cleanEmail = trim($payload['email'] ?? '');
-            $initialQuery = trim($payload['message'] ?? ($payload['query'] ?? ''));
+            $cleanEmail = trim($payload['email'] ?? ($_POST['email'] ?? ''));
+            $initialQuery = trim($payload['message'] ?? ($payload['query'] ?? ($_POST['message'] ?? '')));
             $detectedService = 'AI Travel Assistant Chat';
             $detectedNotes = 'Inquired via Sophia AI Assistant';
             if ($initialQuery) {
@@ -7641,16 +7688,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             // Ensure columns notes and service exist in ai_leads table
-            try { $pdo->exec("ALTER TABLE ai_leads ADD COLUMN notes TEXT DEFAULT NULL"); } catch (Exception $e) {}
-            try { $pdo->exec("ALTER TABLE ai_leads ADD COLUMN service VARCHAR(255) DEFAULT NULL"); } catch (Exception $e) {}
+            try { $pdo->exec("ALTER TABLE ai_leads ADD COLUMN notes TEXT DEFAULT NULL"); } catch (\Throwable $e) {}
+            try { $pdo->exec("ALTER TABLE ai_leads ADD COLUMN service VARCHAR(255) DEFAULT NULL"); } catch (\Throwable $e) {}
 
-            // 1. Check or reuse in ai_leads table
+            // 1. Check or reuse in ai_leads table (Visible in SuperAdmin & Admin AI overview)
             $existingAi = null;
             try {
                 $aiChk = $pdo->prepare("SELECT * FROM ai_leads WHERE phone = ? OR phone LIKE ? ORDER BY created_at DESC LIMIT 1");
                 $aiChk->execute([$cleanPhone, '%' . $cleanPhone]);
                 $existingAi = $aiChk->fetch(PDO::FETCH_ASSOC);
-            } catch (Exception $aie) {}
+            } catch (\Throwable $aie) {}
 
             if ($existingAi) {
                 $aiLeadId = $existingAi['id'];
@@ -7670,22 +7717,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 if (!empty($aiUpd)) {
                     $aiParams[] = $aiLeadId;
-                    $pdo->prepare("UPDATE ai_leads SET " . implode(", ", $aiUpd) . " WHERE id = ?")->execute($aiParams);
+                    try {
+                        $pdo->prepare("UPDATE ai_leads SET " . implode(", ", $aiUpd) . " WHERE id = ?")->execute($aiParams);
+                    } catch (\Throwable $ue) {}
                 }
             } else {
                 $aiLeadId = uniqid('ai-');
-                $stmt = $pdo->prepare("INSERT INTO ai_leads (id, name, phone, notes, service, created_at) VALUES (?, ?, ?, ?, ?, ?)");
-                $stmt->execute([
-                    $aiLeadId,
-                    $cleanName,
-                    $cleanPhone,
-                    $detectedNotes,
-                    $detectedService,
-                    date('Y-m-d H:i:s')
-                ]);
+                try {
+                    $stmt = $pdo->prepare("INSERT INTO ai_leads (id, name, phone, notes, service, created_at) VALUES (?, ?, ?, ?, ?, ?)");
+                    $stmt->execute([
+                        $aiLeadId,
+                        $cleanName,
+                        $cleanPhone,
+                        $detectedNotes,
+                        $detectedService,
+                        date('Y-m-d H:i:s')
+                    ]);
+                } catch (\Throwable $ie) {}
             }
 
-            // 2. Check if lead already exists in enterprise leads table (using unique phone/email)
+            // 2. Insert or update in enterprise leads table (Visible in SuperAdmin Lead Management & Admin CRM)
             $existingLead = findExistingLead($pdo, $cleanPhone, $cleanEmail);
 
             if ($existingLead) {
@@ -7709,7 +7760,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $updFields[] = "service = ?";
                     $updParams[] = $detectedService;
                 }
-                // Transition status: if 'New', set to 'Pending Inquiry'. If already 'Booked' or 'Closed-Won', preserve booked status!
                 if ($existingLead['status'] === 'New') {
                     $updFields[] = "status = 'Pending Inquiry'";
                 }
@@ -7720,64 +7770,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 try {
                     $sql = "UPDATE leads SET " . implode(", ", $updFields) . " WHERE id = ?";
                     $pdo->prepare($sql)->execute($updParams);
-                } catch (Exception $leade) {}
+                } catch (\Throwable $leade) {}
             } else {
-                // Create new lead with status "Pending Inquiry"
+                // Create new lead with status "Pending Inquiry" and admin_id = 'admin' (accessible to both Admin & Superadmin)
                 $leadId = 'LD-' . rand(1000, 9999);
                 try {
                     $leadStmt = $pdo->prepare("INSERT INTO leads (id, name, phone, email, source, service, assigned_to, status, budget, notes, admin_id, created_at, updated_at) VALUES (?, ?, ?, ?, 'AI Planner', ?, 'Unassigned', 'Pending Inquiry', '', ?, 'admin', ?, ?)");
                     $leadStmt->execute([$leadId, $cleanName, $cleanPhone, $cleanEmail, $detectedService, $detectedNotes, date('Y-m-d H:i:s'), date('Y-m-d H:i:s')]);
-                } catch (Exception $leade) {}
+                } catch (\Throwable $leade) {}
             }
 
-            // 3. Dual-sync lead to IAMKRATU (Leads Force)
+            // 3. Synchronize lead to IAMKRATU (Server-Side Fallback)
+            $kratuSess = 'sess_' . preg_replace('/[^a-zA-Z0-9_]/', '_', $aiLeadId);
+            syncToKratuBackend([
+                'action' => 'save_lead',
+                'name' => $cleanName,
+                'phone' => $cleanPhone,
+                'email' => $cleanEmail,
+                'session_id' => $kratuSess
+            ]);
+
+            if (!empty($initialQuery)) {
+                syncToKratuBackend([
+                    'action' => 'send_chat',
+                    'session_id' => $kratuSess,
+                    'message' => $initialQuery,
+                    'user_name' => $cleanName,
+                    'user_phone' => $cleanPhone
+                ]);
+            }
+
+            // 4. Real-time authoritative notifications for Superadmin & Admin
             try {
-                $kratuKey = '00b78eecd5bb542952945c6e8c8560db';
-                $kratuUrl = 'https://iamkratu.ai/customer-chat/?key=' . $kratuKey;
-                $kratuSess = 'sess_' . preg_replace('/[^a-zA-Z0-9_]/', '_', $aiLeadId);
-                $kratuPayload = [
-                    'action' => 'save_lead',
-                    'name' => $cleanName,
-                    'phone' => $cleanPhone,
-                    'email' => $cleanEmail,
-                    'session_id' => $kratuSess
-                ];
+                createAuthoritativeNotification($pdo, 'superadmin', 'superadmin', 'lead', "New AI Lead: $cleanName", "Customer $cleanName ($cleanPhone) inquired: $detectedNotes", 'lead', $leadId);
+                createAuthoritativeNotification($pdo, 'admin', 'admin', 'lead', "New AI Lead: $cleanName", "Customer $cleanName ($cleanPhone) inquired: $detectedNotes", 'lead', $leadId);
+            } catch (\Throwable $ne) {}
 
-                $ch = curl_init($kratuUrl);
-                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                curl_setopt($ch, CURLOPT_POST, true);
-                curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($kratuPayload));
-                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-                curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
-                curl_setopt($ch, CURLOPT_TIMEOUT, 8);
-                $kratuRes = curl_exec($ch);
-                curl_close($ch);
-
-                if (!empty($initialQuery)) {
-                    $chatPayload = [
-                        'action' => 'send_chat',
-                        'session_id' => $kratuSess,
-                        'message' => $initialQuery,
-                        'user_name' => $cleanName,
-                        'user_phone' => $cleanPhone
-                    ];
-                    $ch2 = curl_init($kratuUrl);
-                    curl_setopt($ch2, CURLOPT_RETURNTRANSFER, true);
-                    curl_setopt($ch2, CURLOPT_POST, true);
-                    curl_setopt($ch2, CURLOPT_POSTFIELDS, http_build_query($chatPayload));
-                    curl_setopt($ch2, CURLOPT_SSL_VERIFYPEER, false);
-                    curl_setopt($ch2, CURLOPT_SSL_VERIFYHOST, false);
-                    curl_setopt($ch2, CURLOPT_CONNECTTIMEOUT, 5);
-                    curl_setopt($ch2, CURLOPT_TIMEOUT, 8);
-                    curl_exec($ch2);
-                    curl_close($ch2);
-                }
-            } catch (Exception $kratuErr) {
-                error_log("Kratu lead sync error: " . $kratuErr->getMessage());
-            }
-
-            echo json_encode(["success" => true, "id" => $aiLeadId, "lead_id" => $leadId, "is_existing" => !empty($existingLead), "message" => "AI Lead captured successfully."]);
+            echo json_encode(["success" => true, "id" => $aiLeadId, "lead_id" => $leadId, "is_existing" => !empty($existingLead), "message" => "AI Lead captured successfully in Superadmin, Admin, and IAMKRATU."]);
             exit;
         } elseif ($action === 'update_ai_lead_chat') {
             $id = $payload['id'] ?? $payload['lead_id'] ?? null;
@@ -7887,29 +7916,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 // Dual-sync latest inquiry to Kratu
                 if ($latestUserMsg) {
-                    try {
-                        $kratuKey = '00b78eecd5bb542952945c6e8c8560db';
-                        $kratuUrl = 'https://iamkratu.ai/customer-chat/?key=' . $kratuKey;
-                        $kratuSess = 'sess_' . preg_replace('/[^a-zA-Z0-9_]/', '_', ($aiRow['id'] ?? ($leadRow['id'] ?? $id)));
-                        $chatPayload = [
-                            'action' => 'send_chat',
-                            'session_id' => $kratuSess,
-                            'message' => $latestUserMsg,
-                            'user_name' => $leadRow['name'] ?? ($aiRow['name'] ?? 'Customer'),
-                            'user_phone' => $leadRow['phone'] ?? ($aiRow['phone'] ?? '')
-                        ];
-                        $ch = curl_init($kratuUrl);
-                        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                        curl_setopt($ch, CURLOPT_POST, true);
-                        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($chatPayload));
-                        curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
-                        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-                        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-                        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 2);
-                        curl_setopt($ch, CURLOPT_TIMEOUT, 3);
-                        curl_exec($ch);
-                        curl_close($ch);
-                    } catch (Exception $ke) {}
+                    $kratuSess = 'sess_' . preg_replace('/[^a-zA-Z0-9_]/', '_', ($aiRow['id'] ?? ($leadRow['id'] ?? $id)));
+                    syncToKratuBackend([
+                        'action' => 'send_chat',
+                        'session_id' => $kratuSess,
+                        'message' => $latestUserMsg,
+                        'user_name' => $leadRow['name'] ?? ($aiRow['name'] ?? 'Customer'),
+                        'user_phone' => $leadRow['phone'] ?? ($aiRow['phone'] ?? '')
+                    ]);
                 }
             }
             echo json_encode(["success" => true, "message" => "Chat and customer requirements updated successfully."]);
@@ -9026,6 +9040,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
+            // Extract client lead parameters & scan for 10-digit Indian phone numbers
+            $clientLeadId = $payload['lead_id'] ?? ($incomingContext['lead_id'] ?? null);
+            $clientAiLeadId = $payload['ai_lead_id'] ?? ($incomingContext['ai_lead_id'] ?? null);
+            $customerName = trim($payload['customer_name'] ?? ($incomingContext['customer_name'] ?? ''));
+            $customerPhone = preg_replace('/\D/', '', $payload['customer_phone'] ?? ($incomingContext['customer_phone'] ?? ''));
+            if (strlen($customerPhone) > 10) $customerPhone = substr($customerPhone, -10);
+
+            if (!$customerPhone || strlen($customerPhone) !== 10) {
+                foreach ($messages as $m) {
+                    if (($m['role'] ?? '') === 'user' && !empty($m['content'])) {
+                        if (preg_match('/\b([6-9]\d{9})\b/', $m['content'], $pm)) {
+                            $customerPhone = $pm[1];
+                            break;
+                        }
+                    }
+                }
+            }
+
             // Fetch live database inventory
             $dbCars = [];
             $dbBikes = [];
@@ -9149,16 +9181,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $activeBookingIntent = !empty($incomingContext['booking_intent']);
             $activeStage = $incomingContext['stage'] ?? 'idle';
 
-            // Detect generic category switches (e.g., user asks for hotels while having an active bike)
+            // Detect generic category switches (e.g., user asks for vehicles/hotels while having an active item)
             $genericCategorySwitch = null;
-            if (preg_match('/\b(hotels?|resorts?|beach\s*resorts?|luxury\s*stay|room|rooms)\b/i', $msgClean) && !in_array($incomingContext['active_item_type'] ?? '', ['hotel'])) {
+            $currentActiveType = $incomingContext['active_item_type'] ?? '';
+
+            // Check if user is asking to reset/browse/change current category or item
+            $isResetCurrentItem = preg_match('/\b(other|another|different|change|switch|all|more|browse)\s+(cars?|bikes?|hotels?|resorts?|vehicles?|activities|stays?|rooms?)\b/i', $msgClean)
+                || preg_match('/\b(change\s*(?:the\s*)?(?:car|vehicle|hotel|resort|bike|activity)|switch\s*(?:the\s*)?(?:car|vehicle|hotel|resort|bike|activity))\b/i', $msgClean);
+
+            if (preg_match('/\b(hotels?|resorts?|beach\s*resorts?|luxury\s*stays?|stays?|rooms?|rooom|villas?|cottages?|accommodations?|homestays?|guest\s*houses?)\b/i', $msgClean) && !in_array($currentActiveType, ['hotel'])) {
                 $genericCategorySwitch = 'hotel';
-            } elseif (preg_match('/\b(bikes?|scooters?|moped|two\s*wheeler)\b/i', $msgClean) && !in_array($incomingContext['active_item_type'] ?? '', ['bike'])) {
+            } elseif (preg_match('/\b(bikes?|scooters?|scooty|moped|two\s*wheelers?|activa|bullet|royal\s*enfield|hunter|classic\s*350|meteor|himalayan|ktm|duke|yamaha|r15|fascino|access\s*125|aerox)\b/i', $msgClean) && !in_array($currentActiveType, ['bike'])) {
                 $genericCategorySwitch = 'bike';
-            } elseif (preg_match('/\b(cars?|suvs?|sedan|self\s*drive)\b/i', $msgClean) && !in_array($incomingContext['active_item_type'] ?? '', ['car'])) {
+            } elseif (preg_match('/\b(cars?|thars?|suvs?|sedans?|self\s*drive|hatchbacks?|ertiga|creta|swift|innova|fortuner|scorpio|baleno|defend(?:er)?|jeeps?|4x4)\b/i', $msgClean) && !in_array($currentActiveType, ['car'])) {
                 $genericCategorySwitch = 'car';
-            } elseif (preg_match('/\b(activity|activities|watersports?|sightseeing|scuba|cruise|dinner\s*cruise|dudhsagar)\b/i', $msgClean) && !in_array($incomingContext['active_item_type'] ?? '', ['activity', 'sightseeing'])) {
+            } elseif (preg_match('/\b(vehicles?|automobiles?|transports?|cabs?|taxis?|rides?)\b/i', $msgClean) && !in_array($currentActiveType, ['car', 'bike', 'vehicle'])) {
+                $genericCategorySwitch = 'vehicle';
+            } elseif (preg_match('/\b(activity|activities|watersports?|water\s*sports?|sightseeing|scuba(?:\s*diving)?|cruises?|dinner\s*cruise|dudhsagar|parasailing|island\s*trip|snorkeling|kayaking|adventure\s*sports?)\b/i', $msgClean) && !in_array($currentActiveType, ['activity', 'sightseeing'])) {
                 $genericCategorySwitch = 'activity';
+            } elseif (preg_match('/\b(packages?|tour\s*packages?|holiday\s*packages?|trip\s*packages?)\b/i', $msgClean) && !in_array($currentActiveType, ['package'])) {
+                $genericCategorySwitch = 'package';
             } elseif (preg_match('/\b(flights?|airlines?|plane\s*tickets?|air\s*fare)\b/i', $msgClean)) {
                 $genericCategorySwitch = 'flight';
             } elseif (preg_match('/\b(craft\s*my\s*trip|custom\s*trip|custom\s*itinerary)\b/i', $msgClean)) {
@@ -9188,16 +9230,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $incomingContext['active_item_id'] = $newItemId;
                     $incomingContext['active_item_type'] = $newItemType;
                 }
-            } elseif ($genericCategorySwitch) {
-                // Customer asked about a different service category: clear old executable context
+            } elseif ($genericCategorySwitch || $isResetCurrentItem) {
+                // Customer asked about a different service category or requested other options: clear old executable context
                 $activeItem = null;
-                $activeType = null;
+                $activeType = ($genericCategorySwitch && $genericCategorySwitch !== 'vehicle') ? $genericCategorySwitch : null;
                 $activeDates = '';
                 $activeBookingIntent = false;
                 $activeStage = 'idle';
                 $incomingContext['booking_preview'] = null;
                 $incomingContext['active_item_id'] = null;
-                $incomingContext['active_item_type'] = null;
+                $incomingContext['active_item_type'] = $activeType;
                 $incomingContext['travel_dates'] = '';
                 $incomingContext['booking_intent'] = false;
             } elseif (!empty($incomingContext['active_item_id'])) {
@@ -9218,12 +9260,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Fallback scan: backwards through earlier messages ONLY if:
             //   1. No item resolved from latest message ($directMatch was null), AND
-            //   2. No active_item_id was present in incoming context.
-            // CRITICAL: If incomingContext already carried a valid active_item_id (loaded above via
-            // cId/cType lookup), we NEVER scan history — that would let an old GT Bike message
-            // override the current hotel context when customer says "Book it".
+            //   2. No active_item_id was present in incoming context, AND
+            //   3. NO category switch or item reset was triggered! (Prevents resurrecting old hotels when switching to vehicles)
             $contextHadItem = !empty($incomingContext['active_item_id']);
-            if (!$activeItem && !$contextHadItem) {
+            if (!$activeItem && !$contextHadItem && !$genericCategorySwitch && !$isResetCurrentItem) {
                 for ($i = count($messages) - 2; $i >= 0; $i--) {
                     if (($messages[$i]['role'] ?? '') !== 'user') {
                         continue;
@@ -9239,9 +9279,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            // Detect booking intent
+            // Detect booking intent (ONLY assign true if NOT in the middle of a category switch)
             $isBookingIntent = preg_match('/\b(book|booking|reserve|reservation|confirm|take it|lock it|rent it|hire it|want to book|like to book|want this|need this|block this|proceed|i want it|yes please|sure|ok book|book this)\b/i', $latestUserMsg);
-            if ($isBookingIntent) {
+            if ($isBookingIntent && !$genericCategorySwitch && !$isResetCurrentItem) {
                 $activeBookingIntent = true;
             }
 
@@ -9268,7 +9308,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Multi-turn date recovery from history if no date in latest message
             // STRICT RULE: ONLY recover history dates for the SAME item (never across an item switch!)
             // AND ONLY inspect messages where role === 'user'! Assistant messages must NEVER be used!
-            if (!$itemChanged && empty($detectedDates) && empty($activeDates)) {
+            if (!$itemChanged && !$genericCategorySwitch && !$isResetCurrentItem && empty($detectedDates) && empty($activeDates)) {
                 for ($i = count($messages) - 2; $i >= 0; $i--) {
                     if (($messages[$i]['role'] ?? '') !== 'user') {
                         continue;
@@ -10595,10 +10635,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $inventoryContext .= "Hotels: " . implode(', ', array_map(function($h) { return "{$h['name']} ({$h['stars']}★, ₹{$h['price']}/night in {$h['location']})"; }, $dbHotels)) . "\n";
                 $inventoryContext .= "Sightseeing & Activities: " . implode(', ', array_map(function($a) { return ($a['title'] ?? $a['name']) . " (₹{$a['price']}/person)"; }, $dbAddons)) . "\n";
 
-                $system_prompt = "You are Sophia, the expert AI travel assistant for WOW GOA / TripGalileo (Goa travel platform). Follow these CRITICAL INTEGRITY & SECURITY RULES:\n"
+                $system_prompt = "You are Luzia, the expert AI travel assistant for WOW GOA / TripGalileo (Goa travel platform). Follow these CRITICAL INTEGRITY & SECURITY RULES:\n"
                     . "1. NEVER say or imply that a booking or reservation is confirmed, and NEVER generate, invent, or output a booking ID, reference number, or confirmation code. All bookings must be completed by the customer reviewing their Booking Summary card and clicking 'Confirm & Book'.\n"
                     . "2. Answer strictly the customer's current intent — do not proactively dump unrelated information.\n"
-                    . "3. For simple greetings (Hi, Hello, Hey), reply with a short natural greeting ('Hi! 👋 How can I help you explore Goa today?').\n"
+                    . "3. For simple greetings (Hi, Hello, Hey), reply with a short natural greeting ('Olá! 👋 How can I help you explore Goa today?').\n"
                     . "4. If asked about Flights: Explain that flight search and live airline fare revalidation are available on our official Flights page, and guide them to navigate to Flights. Do NOT claim you can converse-book or issue airline tickets.\n"
                     . "5. If asked about Craft My Trip: Explain that custom day-by-day itineraries can be built on our official Craft My Trip builder (/craft), and guide them to navigate there. Do NOT fabricate conversational custom trip issuance.\n"
                     . "6. If asked about My Bookings, Vouchers, or Driver Status: Direct the customer to the My Bookings section where they can enter their registered mobile number to view reservations, download vouchers, and track their driver in real-time.\n"
@@ -10658,12 +10698,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $reply = "{$num1} {$op} {$num2} is {$calcResult}. Let me know how I can help with your Goa trip! 🌴";
                 }
                 // Check for pure greetings ONLY (never intercept greetings that include questions or booking requests)
-                elseif (preg_match('/^(hi|hello|hey|hiya|howdy|good\s+(morning|afternoon|evening|day)|greetings)(\s+there|\s+sophia)?[\!\.\?]*$/i', $msgClean)) {
-                    $reply = "Hi! 👋 How can I help you today?";
+                elseif (preg_match('/^(hi|hello|hey|hiya|howdy|good\s+(morning|afternoon|evening|day)|greetings|ol[aá])(\s+there|\s+luzia|\s+sophia)?[\!\.\?]*$/i', $msgClean)) {
+                    $reply = "Olá! 👋 I’m Luzia. How can I help you explore Goa or plan your trip today?";
                 }
-                // Sophia Identity & Persona: Who are you, What is your name, Are you Sophia, Tell me about yourself
-                elseif (preg_match('/\b(what(?:\'s|\s+is)\s+your\s+name|who\s+are\s+you|are\s+you\s+sophia|tell\s+me\s+about\s+yourself|what\s+should\s+i\s+call\s+you)\b/i', $msgClean)) {
-                    $reply = "I'm **Sophia**! 🌴✨ I am WOW GOA's AI Travel Expert, here to help you discover Goa, find the best self-drive cars & bikes, book luxury resorts, explore top sightseeing & activities, and plan your perfect trip.";
+                // Luzia Identity & Persona: Who are you, What is your name, Are you Luzia, Tell me about yourself
+                elseif (preg_match('/\b(what(?:\'s|\s+is)\s+your\s+name|who\s+are\s+you|are\s+you\s+(?:luzia|sophia)|tell\s+me\s+about\s+yourself|what\s+should\s+i\s+call\s+you)\b/i', $msgClean)) {
+                    $reply = "Olá! I'm **Luzia**! 🌴✨ I am WOW GOA's AI Travel Expert, here to help you discover Goa, find the best self-drive cars & bikes, book luxury resorts, explore top sightseeing & activities, and plan your perfect trip.";
                 }
                 // Multi-Turn Context Flow:
                 // Flow Step 1: Active item exists, valid bookingPreview generated with real travel dates
@@ -10781,7 +10821,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $reply = "Yes! We have the \"{$actName}\" available in Goa! 🤿✨\n\n📍 Location: {$loc}\n⏱️ Duration: {$dur}\n💵 Price: ₹{$price} per person\n\n{$desc}\n\nWhat date would you like to reserve this experience for?";
                     }
                 } elseif (preg_match('/\b[6-9]\d{9}\b/', $latestUserMsg, $phoneMatches)) {
-                    $reply = "🎉 Thank you! I have saved your contact (" . $phoneMatches[0] . "). Our dedicated TripGalileo holiday specialist will reach out shortly to customize your dream Goa itinerary and apply exclusive discount rates! 🌴✨";
+                    $capturedPhone = $phoneMatches[0];
+                    try {
+                        $exLead = findExistingLead($pdo, $capturedPhone, '');
+                        if ($exLead) {
+                            $capLeadId = $exLead['id'];
+                        } else {
+                            $capLeadId = 'LD-' . rand(1000, 9999);
+                            $stmt = $pdo->prepare("INSERT INTO leads (id, name, phone, source, service, status, notes, admin_id, created_at, updated_at) VALUES (?, ?, ?, 'AI Planner', 'Live Chat Phone Capture', 'Hot Lead', ?, 'admin', datetime('now'), datetime('now'))");
+                            $stmt->execute([$capLeadId, 'Customer ' . substr($capturedPhone, -4), $capturedPhone, 'Phone number shared in chat: ' . $latestUserMsg]);
+                        }
+                        $capAiId = 'ai-' . uniqid();
+                        $stmtAi = $pdo->prepare("INSERT OR REPLACE INTO ai_leads (id, name, phone, notes, service, status, created_at) VALUES (?, ?, ?, ?, 'AI Travel Assistant Chat', 'Hot Lead', datetime('now'))");
+                        $stmtAi->execute([$capAiId, 'Customer ' . substr($capturedPhone, -4), $capturedPhone, 'Customer shared contact: ' . $latestUserMsg]);
+
+                        createAuthoritativeNotification($pdo, 'superadmin', 'superadmin', 'lead', "New AI Lead: " . $capturedPhone, "Customer shared contact ($capturedPhone): $latestUserMsg", 'lead', $capLeadId);
+                        createAuthoritativeNotification($pdo, 'admin', 'admin', 'lead', "New AI Lead: " . $capturedPhone, "Customer shared contact ($capturedPhone): $latestUserMsg", 'lead', $capLeadId);
+                    } catch (\Throwable $e) {}
+
+                    $reply = "🎉 Thank you! I have saved your contact (" . $capturedPhone . "). Our dedicated TripGalileo holiday specialist will reach out shortly to customize your dream Goa itinerary and apply exclusive discount rates! 🌴✨";
 
                 // Flow Step 5: Casual conversation & closing (Thanks, Okay, Great, Nice, Bye)
                 } elseif (preg_match('/\b(thanks|thank\s+you|thx|tq|ty|appreciate\s+it)\b/i', $msgClean)) {
@@ -10806,7 +10864,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $reply = "We provide complete Goa travel solutions:\n• 🚗 Self-Drive Cars & SUVs\n• 🛵 Bike & Scooter Rentals\n• 🏨 Handpicked Hotels & Luxury Resorts\n• 🏖️ Custom Holiday Packages\n• 🤿 Sightseeing, Watersports & Cruises\n\nWhich service would you like to explore?";
 
                 // Flow Step 8: Specific questions — Sightseeing & Activities only
-                } elseif (strpos($msgClean, 'sightseeing') !== false || strpos($msgClean, 'watersport') !== false || strpos($msgClean, 'scuba') !== false || strpos($msgClean, 'activit') !== false || strpos($msgClean, 'cruise') !== false || strpos($msgClean, 'dudhsagar') !== false) {
+                } elseif ($genericCategorySwitch === 'activity' || strpos($msgClean, 'sightseeing') !== false || strpos($msgClean, 'watersport') !== false || strpos($msgClean, 'scuba') !== false || strpos($msgClean, 'activit') !== false || strpos($msgClean, 'cruise') !== false || strpos($msgClean, 'dudhsagar') !== false) {
                     $actItems = [];
                     foreach ($dbAddons as $a) {
                         $aTitle = $a['title'] ?? ($a['name'] ?? 'Experience');
@@ -10816,8 +10874,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     $reply = "🤿 Top Goa Sightseeing & Activities with TripGalileo:\n\n{$actListText}\n\nWould you like me to reserve any of these for your trip dates?";
 
+                // Flow Step 8b: Umbrella Vehicle inquiry (Cars & Bikes overview)
+                } elseif ($genericCategorySwitch === 'vehicle' || (preg_match('/\b(vehicles?|automobiles?|transports?|cabs?|taxis?|rides?)\b/i', $msgClean) && !preg_match('/\b(cars?|thars?|suvs?|bikes?|scooters?)\b/i', $msgClean))) {
+                    $reply = "🚗 **Looking to rent a vehicle in Goa?**\n\n"
+                        . "We offer top-condition **Self-Drive Cars** and **Bikes / Scooters** with **free doorstep delivery** anywhere in North & South Goa, plus airport handovers at Dabolim (GOI) and Mopa (GOX)!\n\n"
+                        . "🚘 **Popular Self-Drive Cars:**\n"
+                        . "• Mahindra Thar 4x4 — ₹3,200/day\n"
+                        . "• Maruti Ertiga 7-Seater — ₹2,800/day\n"
+                        . "• Maruti Swift / Baleno — ₹1,800/day\n"
+                        . "• Land Rover Defender Luxury — ₹10,000/day\n\n"
+                        . "🛵 **Popular Bikes & Scooters:**\n"
+                        . "• Honda Activa 6G — ₹450/day\n"
+                        . "• Royal Enfield Classic 350 — ₹1,000/day\n\n"
+                        . "Which type of vehicle would you prefer — a **Self-Drive Car** or a **Bike/Scooter**?";
+
                 // Flow Step 9: Specific questions — Self-drive cars only
-                } elseif (preg_match('/\b(cars?|thars?|suvs?|ertiga|creta|swift|sedans?|self\s*drive|vehicles?)\b/i', $msgClean)) {
+                } elseif ($genericCategorySwitch === 'car' || preg_match('/\b(cars?|thars?|suvs?|ertiga|creta|swift|sedans?|self\s*drive)\b/i', $msgClean)) {
                     $carItems = [];
                     foreach ($dbCars as $c) {
                         $carItems[] = "• " . $c['name'] . " — ₹" . number_format($c['price']) . "/day (" . ($c['transmission'] ?? 'Automatic') . ", " . ($c['seating'] ?? '5 Seater') . ")";
@@ -10827,7 +10899,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $reply = "🚘 Here are our Self-Drive Cars available for rent in Goa:\n\n{$carListText}\n\n📍 Free doorstep delivery in North & South Goa and Airport handovers. Which car would you like to rent?";
 
                 // Flow Step 10: Specific questions — Bikes & Scooters only
-                } elseif (preg_match('/\b(bikes?|scooters?|activa|two\s*wheelers?|bullet|royal\s*enfield)\b/i', $msgClean)) {
+                } elseif ($genericCategorySwitch === 'bike' || preg_match('/\b(bikes?|scooters?|activa|two\s*wheelers?|bullet|royal\s*enfield)\b/i', $msgClean)) {
                     $bikeItems = [];
                     foreach ($dbBikes as $b) {
                         $bikeItems[] = "• " . $b['name'] . " — ₹" . number_format($b['price']) . "/day";
@@ -10837,7 +10909,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $reply = "🛵 Here are our Bikes & Scooters available for rent in Goa:\n\n{$bikeListText}\n\n🛡️ All rentals include 2 sanitized helmets & commercial road permits. What dates do you need it for?";
 
                 // Flow Step 11: Specific questions — Hotels, Stays & Rooms
-                } elseif (preg_match('/\b(hotels?|resorts?|stays?|villas?|rooms?|rooom|cottages?|accommodations?|homestays?|guest\s*houses?)\b/i', $msgClean)) {
+                } elseif ($genericCategorySwitch === 'hotel' || preg_match('/\b(hotels?|resorts?|stays?|villas?|rooms?|rooom|cottages?|accommodations?|homestays?|guest\s*houses?)\b/i', $msgClean)) {
                     $hotelItems = [];
                     foreach ($dbHotels as $h) {
                         $stars = $h['stars'] ?? '4';
@@ -10849,7 +10921,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $reply = "🏖️ Featured Luxury Stays & Beach Resorts in Goa:\n\n{$hotelListText}\n\n🍽️ All stays include complimentary buffet breakfast and swimming pool access. Which beach location or resort do you prefer?";
 
                 // Flow Step 12: Specific questions — Packages only
-                } elseif (strpos($msgClean, 'package') !== false || strpos($msgClean, 'packages') !== false || strpos($msgClean, 'tour') !== false || strpos($msgClean, 'itinerary') !== false || strpos($msgClean, 'holiday') !== false) {
+                } elseif ($genericCategorySwitch === 'package' || strpos($msgClean, 'package') !== false || strpos($msgClean, 'packages') !== false || strpos($msgClean, 'tour') !== false || strpos($msgClean, 'itinerary') !== false || strpos($msgClean, 'holiday') !== false) {
                     $pkgItems = [];
                     foreach ($dbPackages as $p) {
                         $dur = !empty($p['duration']) ? $p['duration'] : '4D/3N';
@@ -10898,6 +10970,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $finalPreview = $bookingPreview;
             } elseif (
                 !$genericCategorySwitch &&
+                !$isResetCurrentItem &&
                 !$itemChanged &&
                 !$typeChanged &&
                 !empty($incomingContext['booking_preview']) &&
@@ -10918,7 +10991,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'craft_member_count' => $craftMemberCount ?? null,
                 'active_item_id' => $activeItem['id'] ?? null,
                 'active_item_name' => $resolvedItemTitle,
-                'active_item_type' => $activeType ?? null,
+                'active_item_type' => $activeType ?? ($genericCategorySwitch ?? null),
+                'service_category' => $genericCategorySwitch ?? ($activeType ?? null),
                 'price' => isset($activeItem['price']) ? floatval($activeItem['price']) : null,
                 'travel_dates' => $activeDates,
                 'booking_intent' => $activeBookingIntent,
@@ -10929,11 +11003,122 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'craft_proposal' => $craftProposal ?? ($prevProposal ?? null)
             ];
 
+            // ─── REAL-TIME CRM LEAD SYNC FOR SUPERADMIN & ADMIN ───────────────
+            $activeLeadId = $clientLeadId;
+            $activeAiLeadId = $clientAiLeadId;
+
+            if ($customerPhone || $clientLeadId || $clientAiLeadId) {
+                try {
+                    $jsonHistory = json_encode($messages);
+                    
+                    // Summarize inquiry requirement
+                    $leadQuerySummary = '';
+                    $detectedLeadService = 'AI Travel Assistant Chat';
+                    if (!empty($latestUserMsg)) {
+                        $leadQuerySummary = 'Customer asked: ' . $latestUserMsg;
+                        if (preg_match('/\b(thar)\b/i', $latestUserMsg)) $detectedLeadService = 'Mahindra Thar Rental Inquiry';
+                        elseif (preg_match('/\b(gt)\b/i', $latestUserMsg)) $detectedLeadService = 'GT Bike Rental Inquiry';
+                        elseif (preg_match('/\b(innova|crysta)\b/i', $latestUserMsg)) $detectedLeadService = 'Innova Crysta Rental Inquiry';
+                        elseif (preg_match('/\b(fortuner)\b/i', $latestUserMsg)) $detectedLeadService = 'Toyota Fortuner Rental Inquiry';
+                        elseif (preg_match('/\b(scorpio)\b/i', $latestUserMsg)) $detectedLeadService = 'Mahindra Scorpio Rental Inquiry';
+                        elseif (preg_match('/\b(activa|jupiter|access)\b/i', $latestUserMsg)) $detectedLeadService = 'Activa Scooter Rental Inquiry';
+                        elseif (preg_match('/\b(bike|scooter|moped|motorcycle)\b/i', $latestUserMsg)) $detectedLeadService = 'Bike / Scooter Rental Inquiry';
+                        elseif (preg_match('/\b(car|cab|taxi|self\s*drive)\b/i', $latestUserMsg)) $detectedLeadService = 'Car Rental Inquiry';
+                        elseif (preg_match('/\b(hotel|resort|villa|stay)\b/i', $latestUserMsg)) $detectedLeadService = 'Hotel / Stay Inquiry';
+                        elseif (preg_match('/\b(scuba|water\s*sports?|cruise)\b/i', $latestUserMsg)) $detectedLeadService = 'Water Sports Inquiry';
+                        elseif (!empty($resolvedItemTitle)) $detectedLeadService = $resolvedItemTitle . ' Inquiry';
+                        else $detectedLeadService = 'Trip Inquiry: ' . mb_substr($latestUserMsg, 0, 35) . (mb_strlen($latestUserMsg) > 35 ? '...' : '');
+                    }
+
+                    // 1. Enterprise leads table (Visible in Admin & SuperAdmin Lead Management)
+                    $leadRow = null;
+                    if ($clientLeadId) {
+                        $s = $pdo->prepare("SELECT * FROM leads WHERE id = ? LIMIT 1");
+                        $s->execute([$clientLeadId]);
+                        $leadRow = $s->fetch(PDO::FETCH_ASSOC);
+                    }
+                    if (!$leadRow && $customerPhone) {
+                        $leadRow = findExistingLead($pdo, $customerPhone, '');
+                    }
+
+                    if ($leadRow) {
+                        $activeLeadId = $leadRow['id'];
+                        $updLead = $pdo->prepare("UPDATE leads SET 
+                            notes = COALESCE(?, notes), 
+                            service = COALESCE(?, service), 
+                            chat_history = ?, 
+                            updated_at = CURRENT_TIMESTAMP 
+                            WHERE id = ?");
+                        $updLead->execute([$leadQuerySummary ?: null, $detectedLeadService, $jsonHistory, $activeLeadId]);
+                    } elseif ($customerPhone) {
+                        $activeLeadId = 'LD-' . rand(1000, 9999);
+                        $leadNameVal = $customerName ?: ('Customer ' . substr($customerPhone, -4));
+                        $insLead = $pdo->prepare("INSERT INTO leads (id, name, phone, email, source, service, assigned_to, status, budget, notes, admin_id, chat_history, created_at, updated_at) VALUES (?, ?, ?, '', 'AI Planner', ?, 'Unassigned', 'Pending Inquiry', '', ?, 'admin', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)");
+                        $insLead->execute([$activeLeadId, $leadNameVal, $customerPhone, $detectedLeadService, $leadQuerySummary, $jsonHistory]);
+
+                        // Notifications for Superadmin & Admin
+                        createAuthoritativeNotification($pdo, 'superadmin', 'superadmin', 'lead', "New AI Lead: $leadNameVal", "Customer $leadNameVal ($customerPhone) inquired: $leadQuerySummary", 'lead', $activeLeadId);
+                        createAuthoritativeNotification($pdo, 'admin', 'admin', 'lead', "New AI Lead: $leadNameVal", "Customer $leadNameVal ($customerPhone) inquired: $leadQuerySummary", 'lead', $activeLeadId);
+                    }
+
+                    // 2. ai_leads table (Visible in SuperAdmin AI Overview & Admin Enquiry CRM)
+                    $aiRow = null;
+                    if ($clientAiLeadId) {
+                        $s = $pdo->prepare("SELECT * FROM ai_leads WHERE id = ? LIMIT 1");
+                        $s->execute([$clientAiLeadId]);
+                        $aiRow = $s->fetch(PDO::FETCH_ASSOC);
+                    }
+                    if (!$aiRow && $customerPhone) {
+                        $s = $pdo->prepare("SELECT * FROM ai_leads WHERE phone = ? OR phone LIKE ? ORDER BY created_at DESC LIMIT 1");
+                        $s->execute([$customerPhone, '%' . $customerPhone]);
+                        $aiRow = $s->fetch(PDO::FETCH_ASSOC);
+                    }
+
+                    if ($aiRow) {
+                        $activeAiLeadId = $aiRow['id'];
+                        $updAi = $pdo->prepare("UPDATE ai_leads SET 
+                            notes = COALESCE(?, notes), 
+                            service = COALESCE(?, service), 
+                            chat_history = ?, 
+                            status = 'Hot Lead' 
+                            WHERE id = ?");
+                        $updAi->execute([$leadQuerySummary ?: null, $detectedLeadService, $jsonHistory, $activeAiLeadId]);
+                    } elseif ($customerPhone) {
+                        $activeAiLeadId = uniqid('ai-');
+                        $leadNameVal = $customerName ?: ('Customer ' . substr($customerPhone, -4));
+                        $insAi = $pdo->prepare("INSERT INTO ai_leads (id, name, phone, notes, service, chat_history, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'Hot Lead', CURRENT_TIMESTAMP)");
+                        $insAi->execute([$activeAiLeadId, $leadNameVal, $customerPhone, $leadQuerySummary, $detectedLeadService, $jsonHistory]);
+                    }
+
+                    // 3. Dual-sync to IAMKRATU
+                    if ($activeAiLeadId || $activeLeadId) {
+                        $kratuSess = 'sess_' . preg_replace('/[^a-zA-Z0-9_]/', '_', ($activeAiLeadId ?: $activeLeadId));
+                        syncToKratuBackend([
+                            'action' => 'send_chat',
+                            'session_id' => $kratuSess,
+                            'message' => $latestUserMsg,
+                            'user_name' => $customerName ?: 'Customer',
+                            'user_phone' => $customerPhone ?: ''
+                        ]);
+                    }
+                } catch (\Throwable $le) {
+                    error_log("Auto CRM lead sync error: " . $le->getMessage());
+                }
+            }
+
+            // Populate lead IDs into context
+            if ($activeLeadId) $contextResponse['lead_id'] = $activeLeadId;
+            if ($activeAiLeadId) $contextResponse['ai_lead_id'] = $activeAiLeadId;
+            if ($customerPhone) $contextResponse['customer_phone'] = $customerPhone;
+            if ($customerName) $contextResponse['customer_name'] = $customerName;
+
             echo json_encode([
                 "success" => true,
                 "reply" => $reply,
                 "context" => $contextResponse,
-                "craft_proposal" => $craftProposal
+                "craft_proposal" => $craftProposal,
+                "lead_id" => $activeLeadId,
+                "ai_lead_id" => $activeAiLeadId
             ]);
             exit;
         } elseif ($action === 'login') {

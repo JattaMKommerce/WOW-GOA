@@ -581,7 +581,7 @@ export default function CustomerPortalPage({
         pickup_date: pDate,
         pickup_time: details.pickupTime || '10:00 AM',
         drop_date: dDate,
-        drop_location: details.pickupLoc || 'Goa Airport',
+        drop_location: details.dropLoc || details.pickupLoc || 'Goa Airport',
         drop_time: details.dropTime || '10:00 AM',
         item_id: directBookingItem?.id || 'custom',
         item_name: directBookingItem?.name || 'Trip Booking',

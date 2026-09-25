@@ -40,6 +40,7 @@ export default function BookingModal({
   userLicense,
   setUserLicense,
   pickupLoc,
+  dropLoc,
   pickupDate,
   pickupTime,
   dropDate,
@@ -57,7 +58,8 @@ export default function BookingModal({
   const [modalDropDate, setModalDropDate] = useState(dropDate || addDays(pickupDate || getTodayDateStr(), bookingDays || 2));
   const [modalPickupTime, setModalPickupTime] = useState(normalizeTimeStr(pickupTime || '10:00 AM'));
   const [modalDropTime, setModalDropTime] = useState(normalizeTimeStr(dropTime || '10:00 AM'));
-  const [modalPickupLoc, setModalPickupLoc] = useState(pickupLoc || 'Goa Airport (Dabolim / Mopa)');
+  const [modalPickupLoc, setModalPickupLoc] = useState(pickupLoc || 'Goa Airport (Dabolim - GOI)');
+  const [modalDropLoc, setModalDropLoc] = useState(dropLoc || pickupLoc || 'Goa Airport (Dabolim - GOI)');
   const [userDob, setUserDob] = useState('');
   const [isDobSaved, setIsDobSaved] = useState(false);
   const [dobChecking, setDobChecking] = useState(false);
@@ -74,7 +76,8 @@ export default function BookingModal({
     if (pickupTime) setModalPickupTime(normalizeTimeStr(pickupTime));
     if (dropTime) setModalDropTime(normalizeTimeStr(dropTime));
     if (pickupLoc) setModalPickupLoc(pickupLoc);
-  }, [pickupDate, dropDate, pickupTime, dropTime, pickupLoc]);
+    if (dropLoc) setModalDropLoc(dropLoc);
+  }, [pickupDate, dropDate, pickupTime, dropTime, pickupLoc, dropLoc]);
 
   // Repeat customer lookup for Date of Birth & Wallet Balance & Loyalty Tier
   useEffect(() => {
@@ -539,6 +542,7 @@ export default function BookingModal({
       pickupTime: modalPickupTime,
       dropTime: modalDropTime,
       pickupLoc: modalPickupLoc,
+      dropLoc: modalDropLoc,
       bookingDays: calculatedDays,
       total_members: totalMembers,
       guests: totalMembers,
@@ -610,6 +614,7 @@ export default function BookingModal({
                   { label: isBike ? 'Two Wheeler' : 'Vehicle Model', value: selectedBookingItem.name, icon: isBike ? <Bike size={14} /> : <Car size={14} /> },
                   { label: 'Rental Schedule', value: `${modalPickupDate} (${modalPickupTime}) → ${modalDropDate} (${modalDropTime})`, icon: <Calendar size={14} /> },
                   { label: 'Pickup Location', value: modalPickupLoc, icon: <MapPin size={14} /> },
+                  { label: 'Drop Location', value: modalDropLoc, icon: <MapPin size={14} /> },
                   { label: 'Rental Duration', value: `${calculatedDays} ${calculatedDays === 1 ? 'Day' : 'Days'}`, icon: <Clock size={14} /> },
                   ...(addonPackage ? [{ label: 'Bundled Package', value: addonPackage.name, isSuccess: true }] : []),
                   ...(addonVehicle ? [{ label: 'Bundled Vehicle', value: addonVehicle.name, isSuccess: true }] : []),
@@ -863,41 +868,75 @@ export default function BookingModal({
                         </>
                       )}
 
-                      {/* Pickup Location */}
-                      <div className="col-12 mt-1">
-                        <label className="form-label small fw-bold text-secondary mb-1">
-                          {isFlight ? 'Route / Sector' : 'Pickup & Drop Location'}
-                        </label>
-                        {isFlight ? (
+                      {/* Pickup & Drop Locations */}
+                      {isFlight ? (
+                        <div className="col-12 mt-1">
+                          <label className="form-label small fw-bold text-secondary mb-1">Route / Sector</label>
                           <input
                             type="text"
                             className="form-control form-control-sm bg-white"
                             readOnly
                             value={`${selectedBookingItem.from || 'Origin'} to ${selectedBookingItem.to || 'Destination'}`}
                           />
-                        ) : (
-                          <select
-                            className="form-select form-select-sm fw-semibold"
-                            value={modalPickupLoc}
-                            onChange={(e) => setModalPickupLoc(e.target.value)}
-                          >
-                            <option value="Goa Airport (Dabolim / Mopa)">✈️ Goa Airport (Dabolim / Mopa)</option>
-                            <option value="Dabolim Airport (GOI)">✈️ Dabolim Airport (GOI)</option>
-                            <option value="Mopa Airport (GOX)">✈️ Manohar International Airport (Mopa / GOX)</option>
-                            <option value="Madgaon Railway Station">🚆 Madgaon Railway Station</option>
-                            <option value="Thivim Railway Station">🚆 Thivim Railway Station</option>
-                            <option value="Karmali Railway Station">🚆 Karmali Railway Station</option>
-                            <option value="Calangute, Goa">🏖️ Calangute, Goa</option>
-                            <option value="Baga, Goa">🏖️ Baga, Goa</option>
-                            <option value="Candolim, Goa">🏖️ Candolim, Goa</option>
-                            <option value="Anjuna, Goa">🏖️ Anjuna, Goa</option>
-                            <option value="Vagator, Goa">🏖️ Vagator, Goa</option>
-                            <option value="Panaji, Goa">🏙️ Panaji (City Center), Goa</option>
-                            <option value="Margao, Goa">🏙️ Margao, Goa</option>
-                            <option value="All Goa Hotel Delivery">📍 All Goa Hotel Delivery</option>
-                          </select>
-                        )}
-                      </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="col-sm-6 mt-1">
+                            <label className="form-label small fw-bold text-secondary mb-1">
+                              Pickup Location
+                            </label>
+                            <select
+                              className="form-select form-select-sm fw-semibold"
+                              value={modalPickupLoc}
+                              onChange={(e) => setModalPickupLoc(e.target.value)}
+                            >
+                              <option value="Goa Airport (Dabolim - GOI)">✈️ Goa Airport (Dabolim - GOI)</option>
+                              <option value="Manohar Intl Airport (Mopa - GOX)">✈️ Manohar Intl Airport (Mopa - GOX)</option>
+                              <option value="Madgaon Railway Station (MAO)">🚆 Madgaon Railway Station (MAO)</option>
+                              <option value="Thivim Railway Station (THVM)">🚆 Thivim Railway Station (THVM)</option>
+                              <option value="Karmali Railway Station (KRMI)">🚆 Karmali Railway Station (KRMI)</option>
+                              <option value="Calangute">🏖️ Calangute Beach / Circle</option>
+                              <option value="Baga Beach">🏖️ Baga Beach & Tito's Lane</option>
+                              <option value="Candolim">🏖️ Candolim Beach Road</option>
+                              <option value="Anjuna / Vagator">🏖️ Anjuna / Vagator Coast</option>
+                              <option value="Morjim / Arambol">🏖️ Morjim / Arambol Coast</option>
+                              <option value="Panaji City">🏙️ Panaji (City Center), Goa</option>
+                              <option value="Vasco da Gama">⚓ Vasco da Gama</option>
+                              <option value="Colva / Benaulim">🌴 Colva / Benaulim / Varca</option>
+                              <option value="Palolem / Agonda">🌴 Palolem / Agonda Bay</option>
+                              <option value="Hotel / Resort Delivery">📍 All Goa Hotel / Resort Delivery</option>
+                            </select>
+                          </div>
+
+                          <div className="col-sm-6 mt-1">
+                            <label className="form-label small fw-bold text-secondary mb-1">
+                              Drop / Return Location
+                            </label>
+                            <select
+                              className="form-select form-select-sm fw-semibold"
+                              value={modalDropLoc}
+                              onChange={(e) => setModalDropLoc(e.target.value)}
+                            >
+                              <option value={modalPickupLoc}>🔄 Same as Pickup Spot ({modalPickupLoc})</option>
+                              <option value="Goa Airport (Dabolim - GOI)">✈️ Goa Airport (Dabolim - GOI)</option>
+                              <option value="Manohar Intl Airport (Mopa - GOX)">✈️ Manohar Intl Airport (Mopa - GOX)</option>
+                              <option value="Madgaon Railway Station (MAO)">🚆 Madgaon Railway Station (MAO)</option>
+                              <option value="Thivim Railway Station (THVM)">🚆 Thivim Railway Station (THVM)</option>
+                              <option value="Karmali Railway Station (KRMI)">🚆 Karmali Railway Station (KRMI)</option>
+                              <option value="Calangute">🏖️ Calangute Beach / Circle</option>
+                              <option value="Baga Beach">🏖️ Baga Beach & Tito's Lane</option>
+                              <option value="Candolim">🏖️ Candolim Beach Road</option>
+                              <option value="Anjuna / Vagator">🏖️ Anjuna / Vagator Coast</option>
+                              <option value="Morjim / Arambol">🏖️ Morjim / Arambol Coast</option>
+                              <option value="Panaji City">🏙️ Panaji (City Center), Goa</option>
+                              <option value="Vasco da Gama">⚓ Vasco da Gama</option>
+                              <option value="Colva / Benaulim">🌴 Colva / Benaulim / Varca</option>
+                              <option value="Palolem / Agonda">🌴 Palolem / Agonda Bay</option>
+                              <option value="Hotel / Resort Delivery">📍 All Goa Hotel / Resort Delivery</option>
+                            </select>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
 

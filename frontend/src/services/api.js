@@ -972,9 +972,14 @@ export function broadcastBookingSync(detail = {}) {
 export function broadcastNotificationUpdate(detail = {}) {
   try {
     window.dispatchEvent(new CustomEvent('tripgalileo-notification-sync', { detail }));
+    if (detail?.type === 'lead' || detail?.type === 'ai_lead' || detail?.action === 'create_ai_lead') {
+      window.dispatchEvent(new CustomEvent('realtime-lead-created', { detail }));
+      window.dispatchEvent(new CustomEvent('lead_created', { detail }));
+      window.dispatchEvent(new CustomEvent('ai_leads_updated', { detail }));
+    }
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
       const bc = new BroadcastChannel('tripgalileo_notifications_sync');
-      bc.postMessage({ type: 'NOTIFICATIONS_SYNC', detail, timestamp: Date.now() });
+      bc.postMessage({ type: 'lead', detail, timestamp: Date.now() });
       bc.close();
     }
   } catch (e) {}
@@ -1537,18 +1542,30 @@ export async function deleteUser(id) {
   }
 }
 
-export async function chatWithAI(messages, context = null) {
+export async function chatWithAI(messages, context = null, leadMeta = {}) {
   const res = await apiFetch(`${API_BASE}?action=chat_with_ai`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages, context })
+    body: JSON.stringify({ 
+      messages, 
+      context,
+      lead_id: leadMeta?.lead_id || null,
+      ai_lead_id: leadMeta?.ai_lead_id || null,
+      customer_name: leadMeta?.customer_name || '',
+      customer_phone: leadMeta?.customer_phone || ''
+    })
   });
   const data = await res.json();
   if (!res.ok || !data.success) throw new Error(data.error || 'AI Chat failed');
+  if (data.lead_id || data.ai_lead_id) {
+    broadcastNotificationUpdate({ type: 'lead', lead_id: data.lead_id, ai_lead_id: data.ai_lead_id });
+  }
   return {
     reply: data.reply,
     context: data.context || null,
-    craft_proposal: data.craft_proposal || null
+    craft_proposal: data.craft_proposal || null,
+    lead_id: data.lead_id || null,
+    ai_lead_id: data.ai_lead_id || null
   };
 }
 

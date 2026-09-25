@@ -526,6 +526,8 @@ export default function LeadManagement({ usersList = [], currentUser }) {
       }
     };
     window.addEventListener('realtime-lead-created', handleRealtimeLead);
+    window.addEventListener('lead_created', handleRealtimeLead);
+    window.addEventListener('ai_leads_updated', handleRealtimeLead);
     window.addEventListener('new-booking-created', handleRealtimeLead);
     window.addEventListener('tripgalileo-notification-sync', handleRealtimeLead);
     window.addEventListener('tripgalileo-booking-sync', handleRealtimeLead);
@@ -545,13 +547,13 @@ export default function LeadManagement({ usersList = [], currentUser }) {
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
         bcBookings = new BroadcastChannel('tripgalileo_bookings_sync');
         bcBookings.onmessage = (ev) => {
-          if (ev.data?.type && ev.data.type.startsWith('lead')) {
+          if (ev.data?.type && (ev.data.type.startsWith('lead') || ev.data.type === 'NOTIFICATIONS_SYNC' || ev.data?.detail?.type === 'lead')) {
             handleRealtimeLead();
           }
         };
         bcNotif = new BroadcastChannel('tripgalileo_notifications_sync');
         bcNotif.onmessage = (ev) => {
-          if (ev.data?.type === 'lead') {
+          if (ev.data?.type === 'lead' || ev.data?.type === 'NOTIFICATIONS_SYNC' || ev.data?.detail?.type === 'lead') {
             handleRealtimeLead();
           }
         };
@@ -561,6 +563,8 @@ export default function LeadManagement({ usersList = [], currentUser }) {
     return () => {
       clearInterval(syncInterval);
       window.removeEventListener('realtime-lead-created', handleRealtimeLead);
+      window.removeEventListener('lead_created', handleRealtimeLead);
+      window.removeEventListener('ai_leads_updated', handleRealtimeLead);
       window.removeEventListener('new-booking-created', handleRealtimeLead);
       window.removeEventListener('tripgalileo-notification-sync', handleRealtimeLead);
       window.removeEventListener('tripgalileo-booking-sync', handleRealtimeLead);
@@ -1531,7 +1535,7 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                               }}
                             >
                               <div className="fw-bold mb-0.5" style={{ fontSize: '0.65rem', color: isUser ? '#2563eb' : '#FF8A00' }}>
-                                {isUser ? (selectedLead.name || 'Customer') : 'Sophia AI'}
+                                {isUser ? (selectedLead.name || 'Customer') : 'Luzia AI'}
                               </div>
                               <div>{m.content}</div>
                             </div>
@@ -2258,7 +2262,7 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                       <Sparkles size={14} style={{ color: '#FF6333' }} /> AI CHATBOT CONVERSATION TRANSCRIPT
                     </span>
                     <span className="badge rounded-pill bg-light text-muted border" style={{ fontSize: '0.68rem' }}>
-                      Sophia AI Assistant
+                      Luzia AI Assistant
                     </span>
                   </div>
                   <div className="d-flex flex-column gap-2" style={{ maxHeight: '200px', overflowY: 'auto' }}>
@@ -2286,7 +2290,7 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                             }}
                           >
                             <div className="fw-bold mb-0.5" style={{ fontSize: '0.66rem', color: isUser ? '#2563eb' : '#FF8A00' }}>
-                              {isUser ? (previewLead.name || 'Customer') : 'Sophia AI'}
+                              {isUser ? (previewLead.name || 'Customer') : 'Luzia AI'}
                             </div>
                             <div>{m.content}</div>
                           </div>
@@ -2655,7 +2659,7 @@ export default function LeadManagement({ usersList = [], currentUser }) {
                           <span className="fw-bold text-dark small">{previewLead.notes || 'General Trip Consultation'}</span>
                         </div>
                         <p className="text-muted mb-0" style={{ fontSize: '0.8rem' }}>
-                          The customer connected via Sophia AI Assistant. Review the conversation transcript above for full context and use the quick action buttons to follow up.
+                          The customer connected via Luzia AI Assistant. Review the conversation transcript above for full context and use the quick action buttons to follow up.
                         </p>
                       </div>
                     </div>
