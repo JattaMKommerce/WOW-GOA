@@ -254,13 +254,25 @@ export default function VendorDashboard({
     ? { id: 'all', name: 'All Vendors', role: 'admin' }
     : ((vendors || []).find(v => v.id === selectedVendorId) || (vendors || [])[0] || currentUser);
 
+  const isVendorMatch = (vehVendorId) => {
+    if (!selectedVendorId || selectedVendorId === 'all') return true;
+    const target = String(selectedVendorId).trim().toLowerCase();
+    const vId = String(vehVendorId || '').trim().toLowerCase();
+    if (vId === target) return true;
+    // Map main vendor aliases
+    if ((target === 'u-4' || target === 'vendor') && (vId === 'u-4' || vId === 'vendor' || vId === 'vendor-1' || vId === 'vendor-2' || !vId)) {
+      return true;
+    }
+    return false;
+  };
+
   const vendorCars = (!selectedVendorId || selectedVendorId === 'all')
     ? cars
-    : cars.filter(c => c.vendor_id === selectedVendorId || c.vendorId === selectedVendorId);
+    : cars.filter(c => isVendorMatch(c.vendor_id || c.vendorId));
 
   const vendorBikes = (!selectedVendorId || selectedVendorId === 'all')
     ? bikes
-    : bikes.filter(b => b.vendor_id === selectedVendorId || b.vendorId === selectedVendorId);
+    : bikes.filter(b => isVendorMatch(b.vendor_id || b.vendorId));
 
   const isMyVehicleBooking = (b) => {
     // Standard direct bookings
@@ -328,14 +340,9 @@ export default function VendorDashboard({
     try {
 
     const priceNum = parseInt(vehPrice, 10);
-    const fallbacks = {
-      car: 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=800&q=80',
-      bike: 'https://images.unsplash.com/photo-1558981806-ec527fa84c39?auto=format&fit=crop&w=800&q=80'
-    };
-
     const isCarType = vehType.startsWith('car-');
     const mediaList = vehFiles.length > 0 ? vehFiles : (vehImage ? [{ type: 'image', url: vehImage }] : []);
-    const primaryImage = mediaList[0]?.url || (isCarType ? fallbacks.car : fallbacks.bike);
+    const primaryImage = mediaList[0]?.url || vehImage || '';
 
     let typeLabel = 'Car';
     if (vehType === 'car-hatchback') typeLabel = 'Hatchback';

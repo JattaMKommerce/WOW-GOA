@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Star, Users, TrendingUp, ShieldCheck, Award, Filter, AlertCircle, RotateCcw, ChevronRight } from 'lucide-react';
+import { Star, Users, TrendingUp, ShieldCheck, Award, Filter, AlertCircle, RotateCcw, ChevronRight, Camera } from 'lucide-react';
 
 const BIKE_CATEGORIES = new Set([
   'scooter', 'scooter / moped', 'sports bike', 'cruiser', 'tourer / adventure',
@@ -238,7 +238,7 @@ export default function CarsPage({
 
             const mediaList = Array.from(new Set(parsedImages.filter(Boolean)));
             const activeIdx = activeMediaIndexes[car.id] || 0;
-            const currentImg = mediaList[activeIdx] || car.image || 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=400&q=80';
+            const currentImg = mediaList[activeIdx] || car.image || '';
 
             return (
               <div key={car.id} className="col-md-6 col-lg-4">
@@ -250,13 +250,28 @@ export default function CarsPage({
                     if (onViewDetails) onViewDetails(car);
                   }}
                 >
-                  <div className="position-relative bg-dark" style={{ height: '200px' }}>
-                    <img 
-                      src={currentImg} 
-                      alt={car.name} 
-                      className="w-100 h-100 object-fit-cover"
-                      onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=400&q=80'; }}
-                    />
+                  <div className="position-relative" style={{ height: '200px', background: '#f8fafc' }}>
+                    {currentImg ? (
+                      <img 
+                        src={currentImg} 
+                        alt={car.name} 
+                        className="w-100 h-100 object-fit-cover"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          const fallbackEl = e.target.parentElement.querySelector('.no-photo-fallback');
+                          if (fallbackEl) fallbackEl.style.display = 'flex';
+                        }}
+                      />
+                    ) : null}
+                    <div 
+                      className="no-photo-fallback flex-column align-items-center justify-content-center w-100 h-100 text-muted" 
+                      style={{ display: currentImg ? 'none' : 'flex', background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)' }}
+                    >
+                      <div className="rounded-circle d-flex align-items-center justify-content-center mb-2 shadow-xs" style={{ width: '44px', height: '44px', background: 'rgba(100,116,139,0.1)', border: '1px dashed rgba(100,116,139,0.25)' }}>
+                        <Camera size={20} className="text-secondary opacity-75" />
+                      </div>
+                      <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#475569', letterSpacing: '0.2px' }}>No Photo Uploaded</span>
+                    </div>
                     <span className="badge bg-dark bg-opacity-75 text-white position-absolute top-0 start-0 m-3 px-2 py-1 rounded-pill small" style={{ zIndex: 2 }}>
                       {car.category || 'Hatchback'}
                     </span>

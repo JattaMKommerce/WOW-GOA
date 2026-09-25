@@ -319,7 +319,8 @@ export default function AdminPortalPage({
   markups = [],
   onSaveMarkup,
   bookings = [],
-  usersList = []
+  usersList = [],
+  vehicleUnits = []
 }) {
   const [adminActiveTab, setAdminActiveTab] = useState(() => {
     if (initialTab) return initialTab;
@@ -401,6 +402,7 @@ export default function AdminPortalPage({
   const [liveB2BPartners, setLiveB2BPartners] = useState([]);
   const [liveAiLeads, setLiveAiLeads] = useState([]);
   const [liveEnquiries, setLiveEnquiries] = useState([]);
+  const [liveVehicleUnits, setLiveVehicleUnits] = useState(vehicleUnits);
   const [isDataSyncing, setIsDataSyncing] = useState(false);
 
   useEffect(() => {
@@ -414,6 +416,10 @@ export default function AdminPortalPage({
   useEffect(() => {
     if (vendors && vendors.length > 0) setLiveVendors(vendors);
   }, [vendors]);
+
+  useEffect(() => {
+    if (vehicleUnits && vehicleUnits.length > 0) setLiveVehicleUnits(vehicleUnits);
+  }, [vehicleUnits]);
 
   const [backendNotifs, setBackendNotifs] = useState([]);
   const [adminToasts, setAdminToasts] = useState([]);
@@ -432,6 +438,7 @@ export default function AdminPortalPage({
         freshB2BPartners,
         freshAiLeads,
         freshEnquiries,
+        freshVehicleUnits,
         notifsRes
       ] = await Promise.all([
         api.fetchBookings().catch(() => []),
@@ -441,6 +448,7 @@ export default function AdminPortalPage({
         api.fetchB2BPartners().catch(() => []),
         api.fetchAiLeads().catch(() => []),
         api.fetchCustomEnquiries().catch(() => []),
+        api.fetchVehicleUnits().catch(() => []),
         api.fetchNotifications({ role: 'admin', userId: currentUser?.id || 'admin' }).catch(() => ({ notifications: [] }))
       ]);
 
@@ -451,6 +459,7 @@ export default function AdminPortalPage({
       if (Array.isArray(freshB2BPartners) && freshB2BPartners.length > 0) setLiveB2BPartners(freshB2BPartners);
       if (Array.isArray(freshAiLeads)) setLiveAiLeads(freshAiLeads);
       if (Array.isArray(freshEnquiries)) setLiveEnquiries(freshEnquiries);
+      if (Array.isArray(freshVehicleUnits) && freshVehicleUnits.length > 0) setLiveVehicleUnits(freshVehicleUnits);
 
       if (notifsRes && Array.isArray(notifsRes.notifications)) {
         setBackendNotifs(prev => {
@@ -761,18 +770,17 @@ export default function AdminPortalPage({
         return <AdminActivitiesManagement currentUser={currentUser} />;
       case 'availability': {
         return (
-          <div className="p-4">
-            <div className="rounded-3 shadow-sm border" style={{ background: '#fff' }}>
-              <AdminAvailabilityCalendar
-                currentUser={currentUser}
-                hotels={hotels}
-                cars={cars}
-                bikes={bikes}
-                packages={allPackages}
-                bookings={liveBookings}
-                onRefresh={loadAllAdminData}
-              />
-            </div>
+          <div className="p-3 p-xl-4 w-100" style={{ boxSizing: 'border-box' }}>
+            <AdminAvailabilityCalendar
+              currentUser={currentUser}
+              hotels={hotels}
+              cars={cars}
+              bikes={bikes}
+              packages={allPackages}
+              vehicleUnits={liveVehicleUnits}
+              bookings={liveBookings}
+              onRefresh={loadAllAdminData}
+            />
           </div>
         );
       }

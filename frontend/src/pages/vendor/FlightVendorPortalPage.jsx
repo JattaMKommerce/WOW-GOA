@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import {
   Compass, LogOut, LayoutDashboard, Plane, PlusCircle, Calendar,
   BookOpen, BarChart2, Settings, UserCircle, Activity,
@@ -256,7 +256,7 @@ export default function FlightVendorPortalPage({ currentUser, triggerOpenLogin, 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [editingFlight, setEditingFlight] = useState(null);
 
-  if (!currentUser || currentUser.role !== 'flight_vendor') {
+  if (!currentUser || (currentUser.role !== 'flight_vendor' && currentUser.role !== 'admin' && currentUser.role !== 'superadmin')) {
     return (
       <div className="d-flex align-items-center justify-content-center" style={{ minHeight:'100vh',background:'linear-gradient(135deg,#0D1B2E 0%,#1a3050 100%)' }}>
         <div className="text-center p-5">
@@ -269,7 +269,9 @@ export default function FlightVendorPortalPage({ currentUser, triggerOpenLogin, 
     );
   }
 
-  const myFlights = flights.filter(f => f.vendor_id === currentUser.id || f.vendor_id === String(currentUser.id));
+  const myFlights = (currentUser.role === 'admin' || currentUser.role === 'superadmin')
+    ? flights
+    : flights.filter(f => f.vendor_id === currentUser.id || f.vendor_id === String(currentUser.id) || !f.vendor_id);
   const handleEditClick = (flight) => { setEditingFlight(flight); setActiveTab('add_flight'); };
   const handleCancelEdit = () => { setEditingFlight(null); setActiveTab('flights'); };
   const handleSelect = (id) => { if (id !== 'add_flight') setEditingFlight(null); setActiveTab(id); };

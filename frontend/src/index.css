@@ -32,16 +32,58 @@
   padding: 0;
 }
 
+html {
+  overflow-x: hidden;
+  width: 100%;
+  max-width: 100vw;
+  overscroll-behavior-x: none;
+  scroll-behavior: smooth;
+}
+
 body {
   font-family: var(--font-body);
   background-color: var(--light-bg);
   color: var(--text-dark);
   overflow-x: hidden;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  position: relative;
   line-height: 1.6;
+  overscroll-behavior-x: none;
   user-select: none;
   -webkit-user-select: none;
   -moz-user-select: none;
   -ms-user-select: none;
+}
+
+#root {
+  overflow-x: clip;
+  width: 100%;
+  max-width: 100%;
+  min-height: 100vh;
+  position: relative;
+}
+
+
+/* Universal scroll containment for horizontal scrollable components:
+   If a component needs horizontal scrolling, only that component scrolls,
+   and it never causes the website or background to move! */
+.overflow-x-auto,
+.overflow-auto,
+.table-responsive,
+.custom-scrollbar,
+.no-scrollbar,
+.cmt-step-indicator,
+.sd-cards-scroll-track,
+.b2b-scrollable-tabs,
+[class*="horizontal-scroll"],
+[class*="scroll-x"] {
+  overscroll-behavior-x: contain !important;
+  overscroll-behavior-y: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
 }
 
 .filter-checkbox-row:hover .text-dark {

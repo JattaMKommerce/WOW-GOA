@@ -153,6 +153,22 @@ export async function fetchBikes(params = {}) {
   }
 }
 
+export async function fetchVehicleUnits(params = {}) {
+  try {
+    let url = `${API_BASE}?resource=vehicle_units`;
+    if (params.vehicle_id) url += `&vehicle_id=${encodeURIComponent(params.vehicle_id)}`;
+    if (params.vendor_id) url += `&vendor_id=${encodeURIComponent(params.vendor_id)}`;
+    if (params.status) url += `&status=${encodeURIComponent(params.status)}`;
+    const res = await apiFetch(url);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch (err) {
+    console.warn('[API] Vehicle units fetch error:', err.message);
+    return [];
+  }
+}
+
 export async function fetchHotels(params = {}) {
   try {
     let url = `${API_BASE}?resource=hotels`;
@@ -2694,6 +2710,39 @@ export async function deleteBike(id) {
   });
   const data = await res.json();
   if (!data.success) throw new Error(data.message || data.error || 'Failed to delete bike');
+  return data;
+}
+
+export async function addVehicleUnit(unitData) {
+  const res = await apiFetch(API_BASE, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'add_vehicle_unit', ...unitData })
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message || data.error || 'Failed to add vehicle unit');
+  return data;
+}
+
+export async function updateVehicleUnit(unitData) {
+  const res = await apiFetch(API_BASE, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'update_vehicle_unit', ...unitData })
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message || data.error || 'Failed to update vehicle unit');
+  return data;
+}
+
+export async function deleteVehicleUnit(id) {
+  const res = await apiFetch(API_BASE, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'delete_vehicle_unit', id })
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message || data.error || 'Failed to delete vehicle unit');
   return data;
 }
 

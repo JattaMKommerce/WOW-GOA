@@ -68,7 +68,8 @@ import {
   exploreDestinations as defaultDestinations,
   usersData as defaultUsers,
   bookingsData as defaultBookings,
-  vendorsData as defaultVendors
+  vendorsData as defaultVendors,
+  vehicleUnitsData as defaultVehicleUnits
 } from './data/mockData';
 import * as api from './services/api';
 import { getTodayDateStr, addDays, validateBookingDates } from './utils/dateUtils';
@@ -263,6 +264,7 @@ export default function App() {
   const [cars, setCars] = useState(defaultCars);
   const [bikes, setBikes] = useState(defaultBikes);
   const [bookings, setBookingsList] = useState(defaultBookings);
+  const [vehicleUnits, setVehicleUnits] = useState(defaultVehicleUnits);
   const [flights, setFlights] = useState([]);
   const [markups, setMarkups] = useState([]);
   const [activities, setActivities] = useState([]);
@@ -293,10 +295,11 @@ export default function App() {
           api.fetchBookings(),
           api.fetchFlights(),
           api.fetchMarkups(),
-          api.fetchActivities()
+          api.fetchActivities(),
+          api.fetchVehicleUnits()
         ]);
         
-        const [hRes, dRes, pRes, vRes, uRes, cRes, bRes, bkRes, fRes, mRes, actRes] = results;
+        const [hRes, dRes, pRes, vRes, uRes, cRes, bRes, bkRes, fRes, mRes, actRes, vuRes] = results;
         if (hRes.status === 'fulfilled' && Array.isArray(hRes.value) && hRes.value.length > 0) setHotels(hRes.value);
         if (dRes.status === 'fulfilled' && Array.isArray(dRes.value) && dRes.value.length > 0) setDestinations(dRes.value);
         if (pRes.status === 'fulfilled' && Array.isArray(pRes.value) && pRes.value.length > 0) setPackages(pRes.value);
@@ -308,6 +311,7 @@ export default function App() {
         if (fRes.status === 'fulfilled' && fRes.value) setFlights(fRes.value);
         if (mRes.status === 'fulfilled' && mRes.value) setMarkups(mRes.value);
         if (actRes.status === 'fulfilled' && Array.isArray(actRes.value)) setActivities(actRes.value);
+        if (vuRes.status === 'fulfilled' && Array.isArray(vuRes.value) && vuRes.value.length > 0) setVehicleUnits(vuRes.value);
       } catch (err) {
         console.warn("Using fallback inventory data:", err);
       } finally {
@@ -1141,8 +1145,16 @@ export default function App() {
         try { sessionStorage.setItem('tg_activeTab', targetTab); } catch (e) {}
 
         try {
-          const userBookings = await api.fetchBookings();
+          const [userBookings, userCars, userBikes, userUnits] = await Promise.all([
+            api.fetchBookings().catch(() => []),
+            api.fetchCars().catch(() => []),
+            api.fetchBikes().catch(() => []),
+            api.fetchVehicleUnits().catch(() => [])
+          ]);
           if (Array.isArray(userBookings)) setBookingsList(userBookings);
+          if (Array.isArray(userCars) && userCars.length > 0) setCars(userCars);
+          if (Array.isArray(userBikes) && userBikes.length > 0) setBikes(userBikes);
+          if (Array.isArray(userUnits) && userUnits.length > 0) setVehicleUnits(userUnits);
         } catch (be) {}
         return true;
       }
@@ -1152,7 +1164,7 @@ export default function App() {
     return false;
   };
 
-  const handleVendorLoginSuccess = (user, destination) => {
+  const handleVendorLoginSuccess = async (user, destination) => {
     setCurrentUser(user);
     try {
       localStorage.setItem('currentUser', JSON.stringify(user));
@@ -1162,6 +1174,17 @@ export default function App() {
     window.history.pushState(null, '', destination);
     setCurrentPath(destination.toLowerCase());
     try { sessionStorage.setItem('tg_activeTab', 'portal'); } catch (e) {}
+
+    try {
+      const [freshCars, freshBikes, freshUnits] = await Promise.all([
+        api.fetchCars().catch(() => []),
+        api.fetchBikes().catch(() => []),
+        api.fetchVehicleUnits().catch(() => [])
+      ]);
+      if (Array.isArray(freshCars) && freshCars.length > 0) setCars(freshCars);
+      if (Array.isArray(freshBikes) && freshBikes.length > 0) setBikes(freshBikes);
+      if (Array.isArray(freshUnits) && freshUnits.length > 0) setVehicleUnits(freshUnits);
+    } catch (e) {}
   };
 
   const handleLogout = () => {
@@ -1220,40 +1243,50 @@ export default function App() {
     setHotels(fresh);
   };
 
+  const refreshVehicleInventory = async () => {
+    try {
+      const [freshCars, freshBikes, freshUnits] = await Promise.all([
+        api.fetchCars().catch(() => []),
+        api.fetchBikes().catch(() => []),
+        api.fetchVehicleUnits().catch(() => [])
+      ]);
+      if (Array.isArray(freshCars)) setCars(freshCars);
+      if (Array.isArray(freshBikes)) setBikes(freshBikes);
+      if (Array.isArray(freshUnits)) setVehicleUnits(freshUnits);
+      window.dispatchEvent(new CustomEvent('tripgalileo-booking-sync'));
+    } catch (e) {
+      console.warn('[Sync] Vehicle refresh failed:', e);
+    }
+  };
+
   const handleAddCar = async (carData) => {
     await api.addCar(carData);
-    const fresh = await api.fetchCars();
-    setCars(fresh);
+    await refreshVehicleInventory();
   };
 
   const handleUpdateCar = async (carData) => {
     await api.updateCar(carData);
-    const fresh = await api.fetchCars();
-    setCars(fresh);
+    await refreshVehicleInventory();
   };
 
   const handleDeleteCar = async (carId) => {
     await api.deleteCar(carId);
-    const fresh = await api.fetchCars();
-    setCars(fresh);
+    await refreshVehicleInventory();
   };
 
   const handleAddBike = async (bikeData) => {
     await api.addBike(bikeData);
-    const fresh = await api.fetchBikes();
-    setBikes(fresh);
+    await refreshVehicleInventory();
   };
 
   const handleUpdateBike = async (bikeData) => {
     await api.updateBike(bikeData);
-    const fresh = await api.fetchBikes();
-    setBikes(fresh);
+    await refreshVehicleInventory();
   };
 
   const handleDeleteBike = async (bikeId) => {
     await api.deleteBike(bikeId);
-    const fresh = await api.fetchBikes();
-    setBikes(fresh);
+    await refreshVehicleInventory();
   };
 
   const handleAddVendor = async (v) => {
@@ -1284,8 +1317,9 @@ export default function App() {
     setFlights(fresh);
   };
 
-  const handleUpdateFlight = async (f) => {
-    await api.updateFlight(f);
+  const handleUpdateFlight = async (flightData, extraData) => {
+    const payload = (extraData && typeof extraData === 'object') ? { ...extraData, id: flightData } : flightData;
+    await api.updateFlight(payload);
     const fresh = await api.fetchFlights();
     setFlights(fresh);
   };
@@ -1668,6 +1702,7 @@ export default function App() {
             bikes={bikes}
             hotels={hotels}
             bookings={bookings}
+            vehicleUnits={vehicleUnits}
             onAddUser={handleAddUser}
             onUpdateUser={handleUpdateUser}
             onDeleteUser={handleDeleteUser}
@@ -1820,7 +1855,9 @@ export default function App() {
             onDeleteBike={handleDeleteBike}
             onLogout={handleLogout}
             bookings={bookings}
+            vehicleUnits={vehicleUnits}
             setBookingsList={setBookingsList}
+            onRefreshVehicles={refreshVehicleInventory}
           />
           <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLogin={handleLogin} />
         </>
@@ -1893,6 +1930,7 @@ export default function App() {
           onSaveMarkup={handleSaveMarkup}
           bookings={bookings}
           usersList={usersList}
+          vehicleUnits={vehicleUnits}
         />
         <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLogin={handleLogin} />
       </>
@@ -1940,6 +1978,8 @@ export default function App() {
           allActivities={activities}
           pickupDate={pickupDate}
           dropDate={dropDate}
+          setPickupDate={setPickupDate}
+          setDropDate={setDropDate}
           bookings={bookings}
           onBack={() => handleTabChange('selfdrive')}
           appliedFilters={appliedFilters}

@@ -1188,8 +1188,8 @@ export default function HotelDetailsPage({
             left: 0, 
             right: 0, 
             bottom: 0, 
-            width: '100vw', 
-            height: '100vh', 
+            width: '100%', 
+            height: '100%', 
             backgroundColor: 'rgba(15, 23, 42, 0.97)', 
             backdropFilter: 'blur(10px)' 
           }}
@@ -1294,8 +1294,8 @@ export default function HotelDetailsPage({
             left: 0, 
             right: 0, 
             bottom: 0, 
-            width: '100vw', 
-            height: '100vh', 
+            width: '100%', 
+            height: '100%', 
             backgroundColor: 'rgba(0, 0, 0, 0.96)', 
             backdropFilter: 'blur(12px)' 
           }}

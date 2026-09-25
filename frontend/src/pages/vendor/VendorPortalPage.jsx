@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Compass, LogOut, Car, Shield, LayoutDashboard, Calendar,
   Wallet, BarChart2, Settings, CreditCard, Users, DollarSign,
@@ -94,12 +94,24 @@ export default function VendorPortalPage({
   onDeleteBike,
   onLogout,
   bookings = [],
-  setBookingsList
+  setBookingsList,
+  onRefreshVehicles
 }) {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [tabParams, setTabParams] = useState({});
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  useEffect(() => {
+    if (onRefreshVehicles) {
+      onRefreshVehicles();
+    }
+    const handleSync = () => {
+      if (onRefreshVehicles) onRefreshVehicles();
+    };
+    window.addEventListener('tripgalileo-booking-sync', handleSync);
+    return () => window.removeEventListener('tripgalileo-booking-sync', handleSync);
+  }, [onRefreshVehicles]);
 
   const handleNavigate = (tab, params = {}) => {
     setActiveTab(tab);
@@ -123,16 +135,28 @@ export default function VendorPortalPage({
     );
   }
 
-  // Strict Vehicle Vendor Inventory Isolation (Defense-in-depth)
-  const vendorCars = (cars || []).filter(c => {
-    const vId = c.vendor_id || c.vendorId;
-    return String(vId) === String(currentUser?.id) || String(vId) === String(currentUser?.username);
-  });
+  // Flexible Vehicle Vendor Inventory Isolation
+  const isVehicleOwner = (v) => {
+    if (!currentUser) return true;
+    if (currentUser.role === 'admin' || currentUser.role === 'superadmin') return true;
+    const vId = String(v?.vendor_id || v?.vendorId || '').trim().toLowerCase();
+    const uId = String(currentUser?.id || '').trim().toLowerCase();
+    const uName = String(currentUser?.username || '').trim().toLowerCase();
+    const uVendorId = String(currentUser?.vendor_id || '').trim().toLowerCase();
+    
+    // Direct match with user ID, username, or vendor_id attribute
+    if (vId && (vId === uId || vId === uName || (uVendorId && vId === uVendorId))) return true;
+    
+    // Primary vehicle vendor mapping: user 'u-4' or 'vendor' owns default fleet + added vehicles
+    const isMainVendor = uId === 'u-4' || uName === 'vendor';
+    if (isMainVendor) {
+      if (vId === 'u-4' || vId === 'vendor' || vId === 'vendor-1' || vId === 'vendor-2' || !vId) return true;
+    }
+    return false;
+  };
 
-  const vendorBikes = (bikes || []).filter(b => {
-    const vId = b.vendor_id || b.vendorId;
-    return String(vId) === String(currentUser?.id) || String(vId) === String(currentUser?.username);
-  });
+  const vendorCars = (cars || []).filter(isVehicleOwner);
+  const vendorBikes = (bikes || []).filter(isVehicleOwner);
 
   const renderContent = () => {
     switch (activeTab) {

@@ -184,6 +184,53 @@ export default function B2BCustomerInvoiceModal({
     return Math.round((num + Number.EPSILON) * 100) / 100;
   }
 
+  // Service type & formatted duration resolution
+  const isVehicleBooking = (booking.type === 'vehicle' || booking.type === 'car' || booking.type === 'bike' || (!booking.type && (booking.vehicle_name || booking.pickup_loc)));
+  const isHotelBooking = (booking.type === 'hotel');
+  const isFlightBooking = (booking.type === 'flight');
+
+  const formattedDuration = (() => {
+    const days = parseInt(booking.booking_days || booking.days || 1, 10);
+    if (isVehicleBooking) {
+      return `${days} ${days === 1 ? 'Day' : 'Days'}`;
+    }
+    if (isHotelBooking) {
+      return `${days} ${days === 1 ? 'Night' : 'Nights'}`;
+    }
+    if (isFlightBooking) {
+      return booking.duration || 'One Way Flight';
+    }
+    const nights = Math.max(1, days - 1);
+    return `${days} Days / ${nights} Nights`;
+  })();
+
+  // Driver details resolution
+  const hasDriverService = Boolean(
+    booking.driver_required == 1 ||
+    booking.driver_service_type ||
+    parseFloat(booking.driver_charge || 0) > 0 ||
+    customs?.driver_required ||
+    customs?.driver_service_type
+  );
+
+  const rawDriverType = String(booking.driver_service_type || customs?.driver_service_type || 'CHAUFFEUR').toUpperCase();
+  const driverServiceTitle = rawDriverType === 'PICKUP'
+    ? 'Airport Pickup Chauffeur Service'
+    : rawDriverType === 'DROP'
+    ? 'Airport Drop Chauffeur Service'
+    : rawDriverType === 'FULL'
+    ? 'Full-Day Verified Chauffeur Service'
+    : 'Verified Chauffeur Service';
+
+  const driverChargeAmount = hasDriverService ? parseFloat(booking.driver_charge || customs?.driver_charge || 400) : 0;
+  const driverDaysCount = parseInt(booking.driver_days || customs?.driver_days || 1, 10);
+  const driverName = booking.assigned_driver_name || customs?.assigned_driver_name || '';
+  const driverPhone = booking.assigned_driver_phone || customs?.assigned_driver_phone || '';
+
+  // Split baseBeforeTax cleanly between Main Service and Driver Service
+  const driverLineAmount = hasDriverService ? Math.min(driverChargeAmount, baseBeforeTax) : 0;
+  const mainServiceLineAmount = Math.max(0, round2(baseBeforeTax - driverLineAmount));
+
   // Passenger list resolution
   const passengerList = Array.isArray(travellers) && travellers.length > 0
     ? travellers
@@ -202,8 +249,9 @@ export default function B2BCustomerInvoiceModal({
       `Invoice #: ${invoiceNumber}\n` +
       `Booking Ref: ${booking.id || bookingId}\n` +
       `Guest Name: ${guestName}\n` +
-      `Service: ${booking.item_name || 'Travel Reservation'}\n` +
+      `Service: ${booking.item_name || 'Travel Reservation'}${hasDriverService ? ` (with ${driverServiceTitle})` : ''}\n` +
       `Dates: ${booking.pickup_date || 'Scheduled'} to ${booking.drop_date || 'Scheduled'}\n` +
+      `Duration: ${formattedDuration}\n` +
       `Total Amount: ₹${customerPrice.toLocaleString('en-IN')}\n` +
       `Status: ${booking.status || 'Confirmed'}\n\n` +
       `Thank you for booking with us!`;
@@ -222,8 +270,10 @@ export default function B2BCustomerInvoiceModal({
       position: 'fixed',
       top: 0,
       left: 0,
-      width: '100vw',
-      height: '100vh',
+      right: 0,
+      bottom: 0,
+      width: '100%',
+      height: '100%',
       backgroundColor: 'rgba(15, 23, 42, 0.75)',
       backdropFilter: 'blur(6px)',
       zIndex: 99999,
@@ -504,10 +554,11 @@ export default function B2BCustomerInvoiceModal({
                     <span className={`badge ${
                       (booking.status || '').toLowerCase() === 'completed' ? 'bg-success text-white' :
                       (booking.status || '').toLowerCase() === 'confirmed' ? 'bg-primary text-white' :
+                      (booking.status || '').toLowerCase() === 'pickup' ? 'bg-info text-dark' :
                       (booking.status || '').toLowerCase() === 'cancelled' || (booking.status || '').toLowerCase() === 'rejected' ? 'bg-danger text-white' :
                       'bg-warning text-dark'
                     } text-3xs px-2.5 py-0.5 rounded-pill text-capitalize fw-bold`}>
-                      {booking.status || 'Pending'}
+                      {(booking.status || '').toLowerCase() === 'pickup' ? 'Vehicle Picked Up' : (booking.status || 'Pending')}
                     </span>
                   </div>
                 </div>
@@ -549,11 +600,22 @@ export default function B2BCustomerInvoiceModal({
                       <Calendar size={12} /> Dates: {booking.pickup_date || booking.departure_date || 'Scheduled'} to {booking.drop_date || booking.return_date || 'Scheduled'}
                     </div>
                     <div className="text-muted text-xs d-flex align-items-center gap-1.5 mb-0.5">
-                      <Clock size={12} /> Duration: {booking.booking_days || 1} Days / {Math.max(1, (booking.booking_days || 1) - 1)} Nights
+                      <Clock size={12} /> Duration: {formattedDuration}
                     </div>
                     {customs.room_type_name && (
                       <div className="text-muted text-xs">
                         Room Type: <strong>{customs.room_type_name}</strong>
+                      </div>
+                    )}
+                    {hasDriverService && (
+                      <div className="text-muted text-xs d-flex align-items-center gap-1.5 mt-1" style={{ wordBreak: 'break-word' }}>
+                        <span style={{ fontSize: '12px' }}>🚗</span>
+                        <span>
+                          Driver: <strong className="text-dark">{driverName || 'Verified Chauffeur'}</strong>
+                          {driverPhone ? (
+                            <span> · <span className="font-monospace text-dark fw-semibold">{driverPhone}</span></span>
+                          ) : null}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -611,19 +673,42 @@ export default function B2BCustomerInvoiceModal({
                       <td className="ps-3 py-3">
                         <strong className="text-dark d-block mb-0.5">{booking.item_name || 'Travel Reservation'}</strong>
                         <span className="text-muted text-xxs">
-                          Includes scheduled reservation, local taxes, verified service delivery, and 24/7 Goa operations support.
+                          {isVehicleBooking
+                            ? 'Scheduled vehicle reservation with verified delivery, sanitization, and 24/7 Goa operations support.'
+                            : 'Includes scheduled reservation, local taxes, verified service delivery, and 24/7 Goa operations support.'}
                         </span>
                       </td>
                       <td className="text-center text-muted">
-                        {booking.booking_days || 1} {booking.type === 'hotel' ? 'Nights' : 'Days'}
+                        {booking.booking_days || 1} {isHotelBooking ? 'Nights' : 'Days'}
                       </td>
                       <td className="text-end text-muted font-monospace">
-                        ₹{baseBeforeTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        ₹{mainServiceLineAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </td>
                       <td className="pe-3 text-end fw-bold text-dark font-monospace">
-                        ₹{baseBeforeTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        ₹{mainServiceLineAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </td>
                     </tr>
+                    {hasDriverService && driverLineAmount > 0 && (
+                      <tr style={{ backgroundColor: '#fcfbf7' }}>
+                        <td className="ps-3 py-2">
+                          <strong className="text-dark d-block mb-0.5 d-flex align-items-center gap-1.5">
+                            <span>🚗</span> {driverServiceTitle}
+                          </strong>
+                          <span className="text-muted text-xxs">
+                            {rawDriverType === 'DROP' || rawDriverType === 'PICKUP' ? 'Airport transfer chauffeur service.' : 'Dedicated verified chauffeur assistance.'}
+                          </span>
+                        </td>
+                        <td className="text-center text-muted">
+                          {driverDaysCount} {driverDaysCount === 1 ? 'Trip' : 'Days'}
+                        </td>
+                        <td className="text-end text-muted font-monospace">
+                          ₹{driverLineAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="pe-3 text-end fw-bold text-dark font-monospace">
+                          ₹{driverLineAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -783,6 +868,18 @@ export default function B2BCustomerInvoiceModal({
             color: #0f172a !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
+          }
+          .driver-service-badge {
+            background-color: #fef3c7 !important;
+            border: 1px solid #f59e0b !important;
+            color: #78350f !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .driver-details-line {
+            font-size: 10.5px !important;
+            line-height: 1.3 !important;
+            color: #334155 !important;
           }
           .d-print-none,
           .d-print-none * {

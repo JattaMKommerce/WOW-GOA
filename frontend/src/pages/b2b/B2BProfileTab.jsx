@@ -170,7 +170,7 @@ export default function B2BProfileTab({ partnerUser, onLogout, onPartnerRefresh 
 
       {/* Edit Company Profile & Branding Modal */}
       {editProfileOpen && (
-        <div className="modal-backdrop-custom d-flex align-items-center justify-content-center p-3" style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.6)', zIndex: 99999 }}>
+        <div className="modal-backdrop-custom d-flex align-items-center justify-content-center p-3" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.6)', zIndex: 99999 }}>
           <div className="card border-0 rounded-4 shadow-2xl p-4 bg-white" style={{ maxWidth: '580px', width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
             <div className="d-flex justify-content-between align-items-center pb-2 mb-3 border-bottom">
               <h6 className="fw-bold mb-0 font-heading text-dark">Edit Agency Profile &amp; Invoice Branding</h6>

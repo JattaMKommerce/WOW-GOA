@@ -14,7 +14,7 @@ import BikeDetailsPage from './BikeDetailsPage';
 import HotelDetailsPage from './HotelDetailsPage';
 import ActivityDetailsPage from './ActivityDetailsPage';
 import FlightDetailsPage from './FlightDetailsPage';
-import { getTodayDateStr, getNextDayDateStr, validateVehicleBookingEligibility } from '../../utils/dateUtils';
+import { getTodayDateStr, getNextDayDateStr, addDays, validateVehicleBookingEligibility } from '../../utils/dateUtils';
 import { isBikeVehicle } from '../../utils/vehicleHelper';
 import DobPicker from '../../components/common/DobPicker';
 
@@ -1213,6 +1213,12 @@ function Step4Flight({ selectedFlight, setSelectedFlight, withFlight, setWithFli
   const [error, setError] = useState('');
   const [searched, setSearched] = useState(false);
 
+  useEffect(() => {
+    if (pickupDate) {
+      setFlightDate(pickupDate);
+    }
+  }, [pickupDate]);
+
   const handleSearch = async () => {
     if (!fromAirport || !toAirport || !flightDate) {
       setError('Please fill From, To, and Date fields.');
@@ -2060,7 +2066,9 @@ export default function CraftMyTripPage({
   setSearchQuery,
   currentUser = null,
   isPortal = false,
-  onConfirm = null
+  onConfirm = null,
+  setPickupDate,
+  setDropDate
 }) {
   const [step, setStep] = useState(1);
   const [selectedVehicle, setSelectedVehicle] = useState(null);
@@ -2075,6 +2083,89 @@ export default function CraftMyTripPage({
   const [viewingFlightDetails, setViewingFlightDetails] = useState(null);
   const [showOverwriteConfirmModal, setShowOverwriteConfirmModal] = useState(false);
 
+  // 0. Internal Date State with automatic draft restoration and parent sync
+  const [internalPickupDate, setInternalPickupDate] = useState(() => {
+    try {
+      const savedDraft = sessionStorage.getItem('tg_craft_draft');
+      if (savedDraft) {
+        const draft = JSON.parse(savedDraft);
+        if (draft.pickupDate) return draft.pickupDate;
+      }
+    } catch (e) {}
+    return pickupDate || getTodayDateStr();
+  });
+
+  const [internalDropDate, setInternalDropDate] = useState(() => {
+    try {
+      const savedDraft = sessionStorage.getItem('tg_craft_draft');
+      if (savedDraft) {
+        const draft = JSON.parse(savedDraft);
+        if (draft.dropDate) return draft.dropDate;
+      }
+    } catch (e) {}
+    if (dropDate) return dropDate;
+    const start = pickupDate || getTodayDateStr();
+    return addDays(start, 3);
+  });
+
+  // Keep internal dates in sync if parent props change from outside
+  useEffect(() => {
+    if (pickupDate && pickupDate !== internalPickupDate) {
+      setInternalPickupDate(pickupDate);
+    }
+  }, [pickupDate]);
+
+  useEffect(() => {
+    if (dropDate && dropDate !== internalDropDate) {
+      setInternalDropDate(dropDate);
+    }
+  }, [dropDate]);
+
+  // Trip duration calculations
+  const tripNights = Math.max(1, Math.ceil((new Date(internalDropDate) - new Date(internalPickupDate)) / (1000 * 60 * 60 * 24)));
+  const tripDays = tripNights + 1;
+
+  const handlePickupDateChange = (newPickup) => {
+    if (!newPickup) return;
+    setInternalPickupDate(newPickup);
+    setPickupDate?.(newPickup);
+
+    let nextDrop = internalDropDate;
+    if (!nextDrop || new Date(newPickup) >= new Date(nextDrop)) {
+      nextDrop = addDays(newPickup, 3);
+      setInternalDropDate(nextDrop);
+      setDropDate?.(nextDrop);
+    }
+
+    const nights = Math.max(1, Math.ceil((new Date(nextDrop) - new Date(newPickup)) / (1000 * 60 * 60 * 24)));
+    if (selectedHotel) {
+      const nightPrice = selectedHotel._nightPrice || (selectedHotel.preselected_rate_plan?.base_price ? parseFloat(selectedHotel.preselected_rate_plan.base_price) : (parseFloat(selectedHotel.price_per_night || selectedHotel.price || selectedHotel.rate || 0) || 2500));
+      setSelectedHotel(prev => ({
+        ...prev,
+        _nights: nights,
+        _nightPrice: nightPrice,
+        _totalPrice: nightPrice * nights
+      }));
+    }
+  };
+
+  const handleDropDateChange = (newDrop) => {
+    if (!newDrop || new Date(newDrop) <= new Date(internalPickupDate)) return;
+    setInternalDropDate(newDrop);
+    setDropDate?.(newDrop);
+
+    const nights = Math.max(1, Math.ceil((new Date(newDrop) - new Date(internalPickupDate)) / (1000 * 60 * 60 * 24)));
+    if (selectedHotel) {
+      const nightPrice = selectedHotel._nightPrice || (selectedHotel.preselected_rate_plan?.base_price ? parseFloat(selectedHotel.preselected_rate_plan.base_price) : (parseFloat(selectedHotel.price_per_night || selectedHotel.price || selectedHotel.rate || 0) || 2500));
+      setSelectedHotel(prev => ({
+        ...prev,
+        _nights: nights,
+        _nightPrice: nightPrice,
+        _totalPrice: nightPrice * nights
+      }));
+    }
+  };
+
   // 1. Restore draft state from sessionStorage on mount
   useEffect(() => {
     try {
@@ -2088,6 +2179,14 @@ export default function CraftMyTripPage({
         if (draft.selectedActivities) setSelectedActivities(draft.selectedActivities);
         if (draft.withFlight !== undefined) setWithFlight(draft.withFlight);
         if (draft.selectedFlight) setSelectedFlight(draft.selectedFlight);
+        if (draft.pickupDate) {
+          setInternalPickupDate(draft.pickupDate);
+          setPickupDate?.(draft.pickupDate);
+        }
+        if (draft.dropDate) {
+          setInternalDropDate(draft.dropDate);
+          setDropDate?.(draft.dropDate);
+        }
       }
     } catch (e) {}
   }, []);
@@ -2106,6 +2205,14 @@ export default function CraftMyTripPage({
           if (draft.selectedActivities !== undefined) setSelectedActivities(draft.selectedActivities || []);
           if (draft.withFlight !== undefined) setWithFlight(draft.withFlight);
           if (draft.selectedFlight !== undefined) setSelectedFlight(draft.selectedFlight);
+          if (draft.pickupDate) {
+            setInternalPickupDate(draft.pickupDate);
+            setPickupDate?.(draft.pickupDate);
+          }
+          if (draft.dropDate) {
+            setInternalDropDate(draft.dropDate);
+            setDropDate?.(draft.dropDate);
+          }
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }
       } catch (e) {}
@@ -2152,12 +2259,12 @@ export default function CraftMyTripPage({
         selectedActivities,
         withFlight,
         selectedFlight,
-        pickupDate,
-        dropDate
+        pickupDate: internalPickupDate,
+        dropDate: internalDropDate
       };
       sessionStorage.setItem('tg_craft_draft', JSON.stringify(draft));
     } catch (e) {}
-  }, [step, selectedVehicle, memberCount, selectedHotel, selectedActivities, withFlight, selectedFlight, pickupDate, dropDate]);
+  }, [step, selectedVehicle, memberCount, selectedHotel, selectedActivities, withFlight, selectedFlight, internalPickupDate, internalDropDate]);
 
   // 3. Hydrate viewingVehicleDetails or viewingHotelDetails on mount or URL change
   useEffect(() => {
@@ -2494,8 +2601,8 @@ export default function CraftMyTripPage({
     const item = hotelItem || viewingHotelDetails;
     if (!item) return;
 
-    const validPickup = pickupDate || getTodayDateStr();
-    const validDrop = dropDate || getNextDayDateStr(validPickup);
+    const validPickup = internalPickupDate || pickupDate || getTodayDateStr();
+    const validDrop = internalDropDate || dropDate || getNextDayDateStr(validPickup);
     const nights = Math.max(1, Math.ceil((new Date(validDrop) - new Date(validPickup)) / (1000 * 60 * 60 * 24)));
 
     const nightPrice = plan?.base_price 
@@ -2624,16 +2731,16 @@ export default function CraftMyTripPage({
   // ─── FULL-PAGE VEHICLE DETAILS VIEW ──────────────────────────────────────
   if (viewingVehicleDetails) {
     const isBike = isBikeVehicle(viewingVehicleDetails);
-    const bookingDays = (pickupDate && dropDate)
-      ? Math.max(1, Math.round((new Date(dropDate) - new Date(pickupDate)) / (1000 * 60 * 60 * 24)))
+    const bookingDays = (internalPickupDate && internalDropDate)
+      ? Math.max(1, Math.round((new Date(internalDropDate) - new Date(internalPickupDate)) / (1000 * 60 * 60 * 24)))
       : 2;
 
     if (isBike) {
       return (
         <BikeDetailsPage
           bike={viewingVehicleDetails}
-          pickupDate={pickupDate}
-          dropDate={dropDate}
+          pickupDate={internalPickupDate}
+          dropDate={internalDropDate}
           bookingDays={bookingDays}
           isCraftMyTrip={true}
           backLabel="← Back to Craft My Trip"
@@ -2650,8 +2757,8 @@ export default function CraftMyTripPage({
     return (
       <CarDetailsPage
         car={viewingVehicleDetails}
-        pickupDate={pickupDate}
-        dropDate={dropDate}
+        pickupDate={internalPickupDate}
+        dropDate={internalDropDate}
         bookingDays={bookingDays}
         isCraftMyTrip={true}
         backLabel="← Back to Craft My Trip"
@@ -2667,15 +2774,15 @@ export default function CraftMyTripPage({
 
   // ─── FULL-PAGE HOTEL DETAILS VIEW ────────────────────────────────────────
   if (viewingHotelDetails) {
-    const validPickup = pickupDate || getTodayDateStr();
-    const validDrop = dropDate || getNextDayDateStr(validPickup);
+    const validPickup = internalPickupDate || getTodayDateStr();
+    const validDrop = internalDropDate || getNextDayDateStr(validPickup);
     const calculatedNights = Math.max(1, Math.ceil((new Date(validDrop) - new Date(validPickup)) / (1000 * 60 * 60 * 24)));
 
     return (
       <HotelDetailsPage
         hotel={viewingHotelDetails}
-        pickupDate={pickupDate}
-        dropDate={dropDate}
+        pickupDate={internalPickupDate}
+        dropDate={internalDropDate}
         nights={calculatedNights}
         isCraftMyTrip={true}
         backLabel="← Back to Craft My Trip"
@@ -2693,7 +2800,7 @@ export default function CraftMyTripPage({
     return (
       <ActivityDetailsPage
         activity={viewingActivityDetails}
-        pickupDate={pickupDate}
+        pickupDate={internalPickupDate}
         adultsCount={memberCount}
         memberCount={memberCount}
         isCraftMyTrip={true}
@@ -2715,7 +2822,7 @@ export default function CraftMyTripPage({
         flight={viewingFlightDetails}
         flightAdults={memberCount}
         memberCount={memberCount}
-        pickupDate={pickupDate}
+        pickupDate={internalPickupDate}
         isCraftMyTrip={true}
         isSelected={isAlreadySelected}
         backLabel="← Back to Craft My Trip"
@@ -2773,6 +2880,131 @@ export default function CraftMyTripPage({
 
       <div className="cmt-content">
         <StepIndicator currentStep={step} />
+
+        {/* ─── TRIP DATES & TRAVEL SCHEDULE BAR ─── */}
+        <div className="cmt-schedule-bar mb-4 p-3 p-md-3.5 bg-white rounded-4 shadow-sm border animate-fade-in">
+          {/* Header Row: Title & Computed Duration */}
+          <div className="d-flex align-items-center justify-content-between mb-2.5 flex-wrap gap-2">
+            <div className="d-flex align-items-center gap-2">
+              <div
+                className="rounded-circle text-white d-flex align-items-center justify-content-center shadow-xs flex-shrink-0"
+                style={{ background: 'linear-gradient(135deg, #0052ff, #3b82f6)', width: '32px', height: '32px' }}
+              >
+                <Calendar size={16} />
+              </div>
+              <div className="d-flex align-items-center gap-2 flex-wrap">
+                <span className="fw-bold text-dark" style={{ fontSize: '13.5px' }}>Trip Schedule & Dates</span>
+                <span className="badge rounded-pill fw-bold text-xxs px-2.5 py-1" style={{ background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd' }}>
+                  {tripNights} Night{tripNights > 1 ? 's' : ''} • {tripDays} Days
+                </span>
+              </div>
+            </div>
+            <div className="text-muted text-3xs">
+              {internalPickupDate ? new Date(internalPickupDate + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) : ''} — {internalDropDate ? new Date(internalDropDate + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : ''}
+            </div>
+          </div>
+
+          {/* Controls Row: Compact Dates & Travelers */}
+          <div className="d-flex flex-wrap align-items-center justify-content-between gap-2.5">
+            {/* Start / Pickup & Return / Drop */}
+            <div className="d-flex align-items-center gap-2 flex-wrap">
+              {/* Start / Pickup Date Field */}
+              <div className="cmt-date-field d-flex align-items-center px-2.5 py-1">
+                <div className="d-flex flex-column">
+                  <span className="text-muted text-3xs fw-bold text-uppercase" style={{ fontSize: '9px', letterSpacing: '0.4px', lineHeight: '1.2' }}>Start / Pickup</span>
+                  <input
+                    type="date"
+                    id="cmt-pickup-date-input"
+                    className="border-0 bg-transparent fw-bold text-dark p-0 m-0"
+                    style={{ outline: 'none', cursor: 'pointer', fontSize: '12px', width: '118px' }}
+                    value={internalPickupDate}
+                    min={getTodayDateStr()}
+                    onChange={e => handlePickupDateChange(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="text-muted fw-bold text-xs d-none d-sm-block px-0.5">→</div>
+              <div className="text-muted fw-bold text-xs d-block d-sm-none w-100 text-center py-0.5">↓</div>
+
+              {/* Return / Drop Date Field */}
+              <div className="cmt-date-field d-flex align-items-center px-2.5 py-1">
+                <div className="d-flex flex-column">
+                  <span className="text-muted text-3xs fw-bold text-uppercase" style={{ fontSize: '9px', letterSpacing: '0.4px', lineHeight: '1.2' }}>Return / Drop</span>
+                  <input
+                    type="date"
+                    id="cmt-drop-date-input"
+                    className="border-0 bg-transparent fw-bold text-dark p-0 m-0"
+                    style={{ outline: 'none', cursor: 'pointer', fontSize: '12px', width: '118px' }}
+                    value={internalDropDate}
+                    min={getNextDayDateStr(internalPickupDate)}
+                    onChange={e => handleDropDateChange(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Right: Travelers Guest Counter */}
+            <div className="cmt-date-field cmt-travelers-field d-flex align-items-center gap-2 px-2.5 py-1">
+              <Users size={15} className="text-primary flex-shrink-0" />
+              <div className="d-flex flex-column">
+                <span className="text-muted text-3xs fw-bold text-uppercase" style={{ fontSize: '9px', letterSpacing: '0.4px', lineHeight: '1.2' }}>Travelers</span>
+                <div className="d-flex align-items-center gap-2">
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-light border rounded-circle p-0 d-flex align-items-center justify-content-center"
+                    style={{ width: '20px', height: '20px', fontSize: '12px', lineHeight: 1 }}
+                    disabled={memberCount <= 1}
+                    onClick={() => setMemberCount(prev => Math.max(1, prev - 1))}
+                    title="Decrease guests"
+                  >
+                    -
+                  </button>
+                  <span className="fw-bold text-xs text-dark" style={{ minWidth: '16px', textAlign: 'center', fontSize: '12px' }}>
+                    {memberCount}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-light border rounded-circle p-0 d-flex align-items-center justify-content-center"
+                    style={{ width: '20px', height: '20px', fontSize: '12px', lineHeight: 1 }}
+                    disabled={memberCount >= 20}
+                    onClick={() => setMemberCount(prev => Math.min(20, prev + 1))}
+                    title="Increase guests"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Selection Summary Pills */}
+          {(selectedVehicle || selectedHotel || (selectedActivities && selectedActivities.length > 0) || (withFlight && selectedFlight)) && (
+            <div className="d-flex align-items-center gap-2 flex-wrap pt-2.5 mt-2.5 border-top text-xxs">
+              <span className="text-muted fw-semibold">Crafted Itinerary:</span>
+              {selectedVehicle && (
+                <span className="badge bg-light text-dark border rounded-pill px-2.5 py-1 fw-medium d-flex align-items-center gap-1">
+                  🚗 {selectedVehicle.name} ({tripDays} Days)
+                </span>
+              )}
+              {selectedHotel && (
+                <span className="badge bg-light text-dark border rounded-pill px-2.5 py-1 fw-medium d-flex align-items-center gap-1">
+                  🏨 {selectedHotel.name} ({tripNights} Nights)
+                </span>
+              )}
+              {selectedActivities && selectedActivities.length > 0 && (
+                <span className="badge bg-light text-dark border rounded-pill px-2.5 py-1 fw-medium d-flex align-items-center gap-1">
+                  🎯 {selectedActivities.length} Experience{selectedActivities.length > 1 ? 's' : ''}
+                </span>
+              )}
+              {withFlight && selectedFlight && (
+                <span className="badge bg-light text-dark border rounded-pill px-2.5 py-1 fw-medium d-flex align-items-center gap-1">
+                  ✈️ {selectedFlight.airline || selectedFlight.name || 'Flight'}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* ─── DUAL CHOICE HERO BANNER (STEP 1) ─── */}
         {step === 1 && (
@@ -2852,8 +3084,8 @@ export default function CraftMyTripPage({
             allCars={allCars}
             allBikes={allBikes}
             bookings={bookings}
-            pickupDate={pickupDate}
-            dropDate={dropDate}
+            pickupDate={internalPickupDate}
+            dropDate={internalDropDate}
             selectedVehicle={selectedVehicle}
             setSelectedVehicle={setSelectedVehicle}
             memberCount={memberCount}
@@ -2868,8 +3100,8 @@ export default function CraftMyTripPage({
         {step === 2 && (
           <Step2Hotel
             allHotels={allHotels}
-            pickupDate={pickupDate}
-            dropDate={dropDate}
+            pickupDate={internalPickupDate}
+            dropDate={internalDropDate}
             selectedHotel={selectedHotel}
             setSelectedHotel={setSelectedHotel}
             memberCount={memberCount}
@@ -2899,7 +3131,7 @@ export default function CraftMyTripPage({
             setSelectedFlight={setSelectedFlight}
             withFlight={withFlight}
             setWithFlight={setWithFlight}
-            pickupDate={pickupDate}
+            pickupDate={internalPickupDate}
             memberCount={memberCount}
             onNext={goNext}
             onBack={goBack}
@@ -2914,8 +3146,8 @@ export default function CraftMyTripPage({
             selectedFlight={selectedFlight}
             withFlight={withFlight}
             memberCount={memberCount}
-            pickupDate={pickupDate}
-            dropDate={dropDate}
+            pickupDate={internalPickupDate}
+            dropDate={internalDropDate}
             onBack={goBack}
             onConfirm={onConfirm}
             currentUser={currentUser}

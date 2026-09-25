@@ -1,5 +1,5 @@
 import React, { useRef, useMemo, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Bike, Car, Crown, Sparkles, Star } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Bike, Car, Crown, Sparkles, Star, Camera } from 'lucide-react';
 
 // ─── CURATED VEHICLE FLEET DATA (Matching Reference Layout & Fallbacks) ────────
 const DEFAULT_TWO_WHEELERS = [
@@ -505,18 +505,28 @@ function CategoryRow({
               }}
             >
               {/* Vehicle Image */}
-              <div className="sd-card-img-wrap">
-                <img 
-                  src={v.image || (isBike(v) ? 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=500' : 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=500')} 
-                  alt={v.name}
-                  className="sd-card-img"
-                  loading="lazy"
-                  draggable={false}
-                  onError={(e) => {
-                    e.target.onerror = null;
-                    e.target.src = isBike(v) ? 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=500' : 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=500';
-                  }}
-                />
+              <div className="sd-card-img-wrap" style={{ position: 'relative', overflow: 'hidden' }}>
+                {v.image ? (
+                  <img 
+                    src={v.image} 
+                    alt={v.name}
+                    className="sd-card-img"
+                    loading="lazy"
+                    draggable={false}
+                    onError={(e) => {
+                      e.target.style.display = 'none';
+                      const fallbackEl = e.target.parentElement.querySelector('.no-photo-wrap');
+                      if (fallbackEl) fallbackEl.style.display = 'flex';
+                    }}
+                  />
+                ) : null}
+                <div 
+                  className="no-photo-wrap flex-column align-items-center justify-content-center w-100 h-100 text-muted p-2" 
+                  style={{ display: v.image ? 'none' : 'flex', background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)', minHeight: '120px' }}
+                >
+                  <Camera size={22} className="text-secondary opacity-50 mb-1" />
+                  <span style={{ fontSize: '0.68rem', fontWeight: 600, color: '#64748b' }}>No photo uploaded</span>
+                </div>
               </div>
 
               {/* Vehicle Name */}

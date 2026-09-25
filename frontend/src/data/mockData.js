@@ -980,3 +980,457 @@ export const plannerStays = [];
 export const plannerVehicles = [];
 export const plannerExperiences = [];
 export const plannerComparison = [];
+
+
+export const vehicleUnitsData = [
+    {
+        "id": "U-F86F09BF-01",
+        "vehicle_id": "bike-1",
+        "vendor_id": "vendor-2",
+        "unit_name": "Royal Enfield Classic 350 (Reborn) Unit 1",
+        "registration_no": "GA-01-BIKE-184",
+        "status": "Active",
+        "vehicle_name": "Royal Enfield Classic 350 (Reborn)",
+        "category": "Cruiser"
+    },
+    {
+        "id": "U-761A4D98-01",
+        "vehicle_id": "bike-2",
+        "vendor_id": "vendor-2",
+        "unit_name": "Honda Activa 6G Unit 1",
+        "registration_no": "GA-01-BIKE-881",
+        "status": "Active",
+        "vehicle_name": "Honda Activa 6G",
+        "category": "Scooter"
+    },
+    {
+        "id": "U-CC8FE7DF-01",
+        "vehicle_id": "bike-3",
+        "vendor_id": "vendor-2",
+        "unit_name": "Yamaha FZ-S V3 Unit 1",
+        "registration_no": "GA-01-BIKE-422",
+        "status": "Active",
+        "vehicle_name": "Yamaha FZ-S V3",
+        "category": "Sports"
+    },
+    {
+        "id": "U-891247B9-01",
+        "vehicle_id": "bike-4",
+        "vendor_id": "vendor-2",
+        "unit_name": "Royal Enfield Himalayan 450 Unit 1",
+        "registration_no": "GA-01-BIKE-683",
+        "status": "Active",
+        "vehicle_name": "Royal Enfield Himalayan 450",
+        "category": "Adventure"
+    },
+    {
+        "id": "GT-001",
+        "vehicle_id": "bike-6a945e35e27c1",
+        "vendor_id": "u-4",
+        "unit_name": "GT Unit #1",
+        "registration_no": "GA-01-GT-0001",
+        "status": "Active",
+        "vehicle_name": "GT",
+        "category": "Scooter / Moped"
+    },
+    {
+        "id": "GT-002",
+        "vehicle_id": "bike-6a945e35e27c1",
+        "vendor_id": "u-4",
+        "unit_name": "GT Unit #2",
+        "registration_no": "GA-01-GT-0002",
+        "status": "Active",
+        "vehicle_name": "GT",
+        "category": "Scooter / Moped"
+    },
+    {
+        "id": "GT-003",
+        "vehicle_id": "bike-6a945e35e27c1",
+        "vendor_id": "u-4",
+        "unit_name": "GT Unit #3",
+        "registration_no": "GA-01-GT-0003",
+        "status": "Active",
+        "vehicle_name": "GT",
+        "category": "Scooter / Moped"
+    },
+    {
+        "id": "GT-004",
+        "vehicle_id": "bike-6a945e35e27c1",
+        "vendor_id": "u-4",
+        "unit_name": "GT Unit #4",
+        "registration_no": "GA-01-GT-0004",
+        "status": "Active",
+        "vehicle_name": "GT",
+        "category": "Scooter / Moped"
+    },
+    {
+        "id": "U-8F27FB4F-01",
+        "vehicle_id": "bike-6a945e65c98f9",
+        "vendor_id": "u-4",
+        "unit_name": "kavasaki ninja H2R Unit 1",
+        "registration_no": "GA-01-BIKE-827",
+        "status": "Active",
+        "vehicle_name": "kavasaki ninja H2R",
+        "category": "Sports Bike"
+    },
+    {
+        "id": "U-4221C4BC-01",
+        "vehicle_id": "car-1",
+        "vendor_id": "vendor-1",
+        "unit_name": "Mahindra Thar 4x4 Soft Top Unit 1",
+        "registration_no": "GA-01-CAR-965",
+        "status": "Active",
+        "vehicle_name": "Mahindra Thar 4x4 Soft Top",
+        "category": "SUV / 4x4"
+    },
+    {
+        "id": "U-4221C4BC-02",
+        "vehicle_id": "car-1",
+        "vendor_id": "vendor-1",
+        "unit_name": "Mahindra Thar 4x4 Soft Top (Fleet Unit #2)",
+        "registration_no": "GA-01-MAH-2808",
+        "status": "Active",
+        "vehicle_name": "Mahindra Thar 4x4 Soft Top",
+        "category": "SUV / 4x4"
+    },
+    {
+        "id": "U-4221C4BC-03",
+        "vehicle_id": "car-1",
+        "vendor_id": "vendor-1",
+        "unit_name": "Mahindra Thar 4x4 Soft Top (Fleet Unit #3)",
+        "registration_no": "GA-01-MAH-5255",
+        "status": "Active",
+        "vehicle_name": "Mahindra Thar 4x4 Soft Top",
+        "category": "SUV / 4x4"
+    },
+    {
+        "id": "U-4221C4BC-04",
+        "vehicle_id": "car-1",
+        "vendor_id": "vendor-1",
+        "unit_name": "Mahindra Thar 4x4 Soft Top (Fleet Unit #4)",
+        "registration_no": "GA-01-MAH-1042",
+        "status": "Active",
+        "vehicle_name": "Mahindra Thar 4x4 Soft Top",
+        "category": "SUV / 4x4"
+    },
+    {
+        "id": "U-4221C4BC-05",
+        "vehicle_id": "car-1",
+        "vendor_id": "vendor-1",
+        "unit_name": "Mahindra Thar 4x4 Soft Top (Fleet Unit #5)",
+        "registration_no": "GA-01-MAH-8082",
+        "status": "Active",
+        "vehicle_name": "Mahindra Thar 4x4 Soft Top",
+        "category": "SUV / 4x4"
+    },
+    {
+        "id": "U-2B5500AD-01",
+        "vehicle_id": "car-2",
+        "vendor_id": "vendor-1",
+        "unit_name": "Maruti Suzuki Swift VXi Unit 1",
+        "registration_no": "GA-01-CAR-519",
+        "status": "Active",
+        "vehicle_name": "Maruti Suzuki Swift VXi",
+        "category": "Hatchback"
+    },
+    {
+        "id": "U-2B5500AD-02",
+        "vehicle_id": "car-2",
+        "vendor_id": "vendor-1",
+        "unit_name": "Maruti Suzuki Swift VXi (Fleet Unit #2)",
+        "registration_no": "GA-01-MAR-8989",
+        "status": "Active",
+        "vehicle_name": "Maruti Suzuki Swift VXi",
+        "category": "Hatchback"
+    },
+    {
+        "id": "U-2B5500AD-03",
+        "vehicle_id": "car-2",
+        "vendor_id": "vendor-1",
+        "unit_name": "Maruti Suzuki Swift VXi (Fleet Unit #3)",
+        "registration_no": "GA-01-MAR-5117",
+        "status": "Active",
+        "vehicle_name": "Maruti Suzuki Swift VXi",
+        "category": "Hatchback"
+    },
+    {
+        "id": "U-2B5500AD-04",
+        "vehicle_id": "car-2",
+        "vendor_id": "vendor-1",
+        "unit_name": "Maruti Suzuki Swift VXi (Fleet Unit #4)",
+        "registration_no": "GA-01-MAR-1663",
+        "status": "Active",
+        "vehicle_name": "Maruti Suzuki Swift VXi",
+        "category": "Hatchback"
+    },
+    {
+        "id": "U-2B5500AD-05",
+        "vehicle_id": "car-2",
+        "vendor_id": "vendor-1",
+        "unit_name": "Maruti Suzuki Swift VXi (Fleet Unit #5)",
+        "registration_no": "GA-01-MAR-4203",
+        "status": "Active",
+        "vehicle_name": "Maruti Suzuki Swift VXi",
+        "category": "Hatchback"
+    },
+    {
+        "id": "U-B01BC6E6-01",
+        "vehicle_id": "car-3",
+        "vendor_id": "vendor-1",
+        "unit_name": "Hyundai Creta SX Automatic Unit 1",
+        "registration_no": "GA-01-CAR-156",
+        "status": "Active",
+        "vehicle_name": "Hyundai Creta SX Automatic",
+        "category": "SUV"
+    },
+    {
+        "id": "U-B01BC6E6-02",
+        "vehicle_id": "car-3",
+        "vendor_id": "vendor-1",
+        "unit_name": "Hyundai Creta SX Automatic (Fleet Unit #2)",
+        "registration_no": "GA-01-HYU-2731",
+        "status": "Active",
+        "vehicle_name": "Hyundai Creta SX Automatic",
+        "category": "SUV"
+    },
+    {
+        "id": "U-B01BC6E6-03",
+        "vehicle_id": "car-3",
+        "vendor_id": "vendor-1",
+        "unit_name": "Hyundai Creta SX Automatic (Fleet Unit #3)",
+        "registration_no": "GA-01-HYU-2156",
+        "status": "Active",
+        "vehicle_name": "Hyundai Creta SX Automatic",
+        "category": "SUV"
+    },
+    {
+        "id": "U-B01BC6E6-04",
+        "vehicle_id": "car-3",
+        "vendor_id": "vendor-1",
+        "unit_name": "Hyundai Creta SX Automatic (Fleet Unit #4)",
+        "registration_no": "GA-01-HYU-6819",
+        "status": "Active",
+        "vehicle_name": "Hyundai Creta SX Automatic",
+        "category": "SUV"
+    },
+    {
+        "id": "U-B01BC6E6-05",
+        "vehicle_id": "car-3",
+        "vendor_id": "vendor-1",
+        "unit_name": "Hyundai Creta SX Automatic (Fleet Unit #5)",
+        "registration_no": "GA-01-HYU-2076",
+        "status": "Active",
+        "vehicle_name": "Hyundai Creta SX Automatic",
+        "category": "SUV"
+    },
+    {
+        "id": "U-554CF6B8-01",
+        "vehicle_id": "car-4",
+        "vendor_id": "vendor-1",
+        "unit_name": "Maruti Suzuki Ertiga (7 Seater) Unit 1",
+        "registration_no": "GA-01-CAR-403",
+        "status": "Active",
+        "vehicle_name": "Maruti Suzuki Ertiga (7 Seater)",
+        "category": "MUV / 7-Seater"
+    },
+    {
+        "id": "U-554CF6B8-02",
+        "vehicle_id": "car-4",
+        "vendor_id": "vendor-1",
+        "unit_name": "Maruti Suzuki Ertiga (7 Seater) (Fleet Unit #2)",
+        "registration_no": "GA-01-MAR-2357",
+        "status": "Active",
+        "vehicle_name": "Maruti Suzuki Ertiga (7 Seater)",
+        "category": "MUV / 7-Seater"
+    },
+    {
+        "id": "U-554CF6B8-03",
+        "vehicle_id": "car-4",
+        "vendor_id": "vendor-1",
+        "unit_name": "Maruti Suzuki Ertiga (7 Seater) (Fleet Unit #3)",
+        "registration_no": "GA-01-MAR-1102",
+        "status": "Active",
+        "vehicle_name": "Maruti Suzuki Ertiga (7 Seater)",
+        "category": "MUV / 7-Seater"
+    },
+    {
+        "id": "U-554CF6B8-04",
+        "vehicle_id": "car-4",
+        "vendor_id": "vendor-1",
+        "unit_name": "Maruti Suzuki Ertiga (7 Seater) (Fleet Unit #4)",
+        "registration_no": "GA-01-MAR-6016",
+        "status": "Active",
+        "vehicle_name": "Maruti Suzuki Ertiga (7 Seater)",
+        "category": "MUV / 7-Seater"
+    },
+    {
+        "id": "U-554CF6B8-05",
+        "vehicle_id": "car-4",
+        "vendor_id": "vendor-1",
+        "unit_name": "Maruti Suzuki Ertiga (7 Seater) (Fleet Unit #5)",
+        "registration_no": "GA-01-MAR-5212",
+        "status": "Active",
+        "vehicle_name": "Maruti Suzuki Ertiga (7 Seater)",
+        "category": "MUV / 7-Seater"
+    },
+    {
+        "id": "U-FD5DCB77-01",
+        "vehicle_id": "car-5",
+        "vendor_id": "vendor-1",
+        "unit_name": "Toyota Fortuner 4x4 AT Unit 1",
+        "registration_no": "GA-01-CAR-617",
+        "status": "Active",
+        "vehicle_name": "Toyota Fortuner 4x4 AT",
+        "category": "Luxury SUV"
+    },
+    {
+        "id": "U-FD5DCB77-02",
+        "vehicle_id": "car-5",
+        "vendor_id": "vendor-1",
+        "unit_name": "Toyota Fortuner 4x4 AT (Fleet Unit #2)",
+        "registration_no": "GA-01-TOY-2169",
+        "status": "Active",
+        "vehicle_name": "Toyota Fortuner 4x4 AT",
+        "category": "Luxury SUV"
+    },
+    {
+        "id": "U-FD5DCB77-03",
+        "vehicle_id": "car-5",
+        "vendor_id": "vendor-1",
+        "unit_name": "Toyota Fortuner 4x4 AT (Fleet Unit #3)",
+        "registration_no": "GA-01-TOY-7142",
+        "status": "Active",
+        "vehicle_name": "Toyota Fortuner 4x4 AT",
+        "category": "Luxury SUV"
+    },
+    {
+        "id": "U-FD5DCB77-04",
+        "vehicle_id": "car-5",
+        "vendor_id": "vendor-1",
+        "unit_name": "Toyota Fortuner 4x4 AT (Fleet Unit #4)",
+        "registration_no": "GA-01-TOY-8966",
+        "status": "Active",
+        "vehicle_name": "Toyota Fortuner 4x4 AT",
+        "category": "Luxury SUV"
+    },
+    {
+        "id": "U-FD5DCB77-05",
+        "vehicle_id": "car-5",
+        "vendor_id": "vendor-1",
+        "unit_name": "Toyota Fortuner 4x4 AT (Fleet Unit #5)",
+        "registration_no": "GA-01-TOY-5937",
+        "status": "Active",
+        "vehicle_name": "Toyota Fortuner 4x4 AT",
+        "category": "Luxury SUV"
+    },
+    {
+        "id": "U-B5B4D98C-01",
+        "vehicle_id": "car-6a945db651fa0",
+        "vendor_id": "u-4",
+        "unit_name": "DEFENDAR Unit 1",
+        "registration_no": "GA-01-CAR-613",
+        "status": "Active",
+        "vehicle_name": "DEFENDAR",
+        "category": "Hatchback"
+    },
+    {
+        "id": "U-B5B4D98C-02",
+        "vehicle_id": "car-6a945db651fa0",
+        "vendor_id": "u-4",
+        "unit_name": "DEFENDAR (Fleet Unit #2)",
+        "registration_no": "GA-01-DEF-5190",
+        "status": "Active",
+        "vehicle_name": "DEFENDAR",
+        "category": "Hatchback"
+    },
+    {
+        "id": "U-B5B4D98C-03",
+        "vehicle_id": "car-6a945db651fa0",
+        "vendor_id": "u-4",
+        "unit_name": "DEFENDAR (Fleet Unit #3)",
+        "registration_no": "GA-01-DEF-7971",
+        "status": "Active",
+        "vehicle_name": "DEFENDAR",
+        "category": "Hatchback"
+    },
+    {
+        "id": "U-B5B4D98C-04",
+        "vehicle_id": "car-6a945db651fa0",
+        "vendor_id": "u-4",
+        "unit_name": "DEFENDAR (Fleet Unit #4)",
+        "registration_no": "GA-01-DEF-3069",
+        "status": "Active",
+        "vehicle_name": "DEFENDAR",
+        "category": "Hatchback"
+    },
+    {
+        "id": "U-B5B4D98C-05",
+        "vehicle_id": "car-6a945db651fa0",
+        "vendor_id": "u-4",
+        "unit_name": "DEFENDAR (Fleet Unit #5)",
+        "registration_no": "GA-01-DEF-7845",
+        "status": "Active",
+        "vehicle_name": "DEFENDAR",
+        "category": "Hatchback"
+    },
+    {
+        "id": "U-EF9C028C-01",
+        "vehicle_id": "car-6a945e0c3ffbc",
+        "vendor_id": "u-4",
+        "unit_name": "swift Unit 1",
+        "registration_no": "GA-01-CAR-405",
+        "status": "Active",
+        "vehicle_name": "swift",
+        "category": "Hatchback"
+    },
+    {
+        "id": "U-EF9C028C-02",
+        "vehicle_id": "car-6a945e0c3ffbc",
+        "vendor_id": "u-4",
+        "unit_name": "swift (Fleet Unit #2)",
+        "registration_no": "GA-01-SWI-8437",
+        "status": "Active",
+        "vehicle_name": "swift",
+        "category": "Hatchback"
+    },
+    {
+        "id": "U-EF9C028C-03",
+        "vehicle_id": "car-6a945e0c3ffbc",
+        "vendor_id": "u-4",
+        "unit_name": "swift (Fleet Unit #3)",
+        "registration_no": "GA-01-SWI-5695",
+        "status": "Active",
+        "vehicle_name": "swift",
+        "category": "Hatchback"
+    },
+    {
+        "id": "U-EF9C028C-04",
+        "vehicle_id": "car-6a945e0c3ffbc",
+        "vendor_id": "u-4",
+        "unit_name": "swift (Fleet Unit #4)",
+        "registration_no": "GA-01-SWI-5559",
+        "status": "Active",
+        "vehicle_name": "swift",
+        "category": "Hatchback"
+    },
+    {
+        "id": "U-EF9C028C-05",
+        "vehicle_id": "car-6a945e0c3ffbc",
+        "vendor_id": "u-4",
+        "unit_name": "swift (Fleet Unit #5)",
+        "registration_no": "GA-01-SWI-8995",
+        "status": "Active",
+        "vehicle_name": "swift",
+        "category": "Hatchback"
+    },
+    {
+        "id": "U-6A9BEB-01",
+        "vehicle_id": "car-6a9beb7db0b38",
+        "vendor_id": "u-4",
+        "unit_name": "dcdssdd Unit 1",
+        "registration_no": "GA-01-DCD-1001",
+        "status": "Active",
+        "vehicle_name": "dcdssdd",
+        "category": "Hatchback"
+    }
+];

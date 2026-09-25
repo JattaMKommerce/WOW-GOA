@@ -44,6 +44,7 @@ export default function AIChatbot() {
 
   const avatarVideoRef = useRef(null);
   const canvasRef = useRef(null);
+  const chatWindowRef = useRef(null);
   const chatBodyRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -329,6 +330,161 @@ export default function AIChatbot() {
       focusInput();
     }
   }, [isLoading, isOpen, showLeadForm, focusInput]);
+
+  // ─── SCROLL ISOLATION FOR CHATBOT ─────────────────────────────────────────
+  // When user interacts or scrolls inside the chatbot, the website/background behind it must NOT scroll.
+  useEffect(() => {
+    const windowEl = chatWindowRef.current;
+    if (!windowEl || !isOpen) return;
+
+    // 1. Wheel Event Interceptor with passive: false
+    const handleWheel = (e) => {
+      const bodyEl = chatBodyRef.current;
+      if (!bodyEl) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+
+      // Check if wheel event target is inside horizontal suggestions bar
+      const suggestionsEl = e.target.closest?.('.ai-chatbot-suggestions') || e.target.closest?.('.custom-scrollbar');
+      if (suggestionsEl) {
+        if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+          // Horizontal scrolling inside suggestions chip track
+          const { scrollLeft, scrollWidth, clientWidth } = suggestionsEl;
+          const atLeft = scrollLeft <= 0 && e.deltaX < 0;
+          const atRight = scrollLeft + clientWidth >= scrollWidth - 1 && e.deltaX > 0;
+          if (atLeft || atRight) {
+            e.preventDefault();
+          }
+        } else {
+          // Vertical mousewheel over suggestions: forward scroll to message body and stop background page scroll
+          e.preventDefault();
+          bodyEl.scrollTop += e.deltaY;
+        }
+        e.stopPropagation();
+        return;
+      }
+
+      // Check if wheel event originated inside the scrollable message body
+      const isInsideBody = bodyEl.contains(e.target);
+      if (isInsideBody) {
+        const { scrollTop, scrollHeight, clientHeight } = bodyEl;
+        const isScrollable = scrollHeight > clientHeight;
+
+        if (!isScrollable) {
+          // If messages don't overflow, prevent background page from scrolling
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+
+        const delta = e.deltaY;
+        const atTop = scrollTop <= 0 && delta < 0;
+        const atBottom = scrollTop + clientHeight >= scrollHeight - 1 && delta > 0;
+
+        if (atTop || atBottom) {
+          // Boundary reached inside chat messages: prevent scroll chaining to underlying website
+          e.preventDefault();
+        }
+        // Stop event from bubbling to parent document
+        e.stopPropagation();
+        return;
+      }
+
+      // Wheel event is over header, footer, lead form, or borders:
+      // Completely prevent background page scrolling, and forward delta to messages body
+      e.preventDefault();
+      e.stopPropagation();
+      bodyEl.scrollTop += e.deltaY;
+    };
+
+    // 2. Touch Event Interceptor for mobile & touchscreen devices
+    let touchStartY = 0;
+    let touchStartX = 0;
+
+    const handleTouchStart = (e) => {
+      if (e.touches.length === 1) {
+        touchStartY = e.touches[0].clientY;
+        touchStartX = e.touches[0].clientX;
+      }
+    };
+
+    const handleTouchMove = (e) => {
+      if (e.touches.length !== 1) return;
+      const bodyEl = chatBodyRef.current;
+      const currentY = e.touches[0].clientY;
+      const currentX = e.touches[0].clientX;
+      const deltaY = touchStartY - currentY;
+      const deltaX = touchStartX - currentX;
+
+      const suggestionsEl = e.target.closest?.('.ai-chatbot-suggestions') || e.target.closest?.('.custom-scrollbar');
+      if (suggestionsEl && Math.abs(deltaX) > Math.abs(deltaY)) {
+        const { scrollLeft, scrollWidth, clientWidth } = suggestionsEl;
+        const atLeft = scrollLeft <= 0 && deltaX < 0;
+        const atRight = scrollLeft + clientWidth >= scrollWidth - 1 && deltaX > 0;
+        if (atLeft || atRight) {
+          e.preventDefault();
+        }
+        return;
+      }
+
+      if (!bodyEl || !bodyEl.contains(e.target)) {
+        // Dragging over header, footer, etc.: lock background
+        e.preventDefault();
+        return;
+      }
+
+      const { scrollTop, scrollHeight, clientHeight } = bodyEl;
+      const isScrollable = scrollHeight > clientHeight;
+      if (!isScrollable) {
+        e.preventDefault();
+        return;
+      }
+
+      const atTop = scrollTop <= 0 && deltaY < 0;
+      const atBottom = scrollTop + clientHeight >= scrollHeight - 1 && deltaY > 0;
+      if (atTop || atBottom) {
+        e.preventDefault();
+      }
+    };
+
+    // 3. Keyboard scroll isolation (PageUp, PageDown, Arrows, Space)
+    const handleKeyDown = (e) => {
+      const targetTag = e.target?.tagName?.toLowerCase();
+      const isInput = targetTag === 'input' || targetTag === 'textarea' || targetTag === 'select';
+      const bodyEl = chatBodyRef.current;
+      if (!bodyEl) return;
+
+      if (['PageUp', 'PageDown', 'Home', 'End'].includes(e.key)) {
+        e.preventDefault();
+        if (e.key === 'PageUp') bodyEl.scrollTop -= bodyEl.clientHeight * 0.8;
+        if (e.key === 'PageDown') bodyEl.scrollTop += bodyEl.clientHeight * 0.8;
+        if (e.key === 'Home') bodyEl.scrollTop = 0;
+        if (e.key === 'End') bodyEl.scrollTop = bodyEl.scrollHeight;
+        return;
+      }
+
+      if (!isInput && ['ArrowUp', 'ArrowDown', ' '].includes(e.key)) {
+        e.preventDefault();
+        if (e.key === 'ArrowUp') bodyEl.scrollTop -= 40;
+        if (e.key === 'ArrowDown') bodyEl.scrollTop += 40;
+        if (e.key === ' ') bodyEl.scrollTop += 120;
+      }
+    };
+
+    windowEl.addEventListener('wheel', handleWheel, { passive: false });
+    windowEl.addEventListener('touchstart', handleTouchStart, { passive: true });
+    windowEl.addEventListener('touchmove', handleTouchMove, { passive: false });
+    windowEl.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      windowEl.removeEventListener('wheel', handleWheel);
+      windowEl.removeEventListener('touchstart', handleTouchStart);
+      windowEl.removeEventListener('touchmove', handleTouchMove);
+      windowEl.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen]);
 
   // Tiered Natural Female Voice Selection
   const getBestFemaleEnglishVoice = (voices) => {
@@ -1129,8 +1285,41 @@ export default function AIChatbot() {
         .custom-scrollbar::-webkit-scrollbar { height: 4px; width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
 
+        /* Chatbot Scroll Isolation & Smooth Touch */
+        .ai-chatbot-window {
+          overscroll-behavior: contain !important;
+          overscroll-behavior-y: contain !important;
+          touch-action: pan-y;
+          isolation: isolate;
+        }
+        .ai-chatbot-body {
+          overscroll-behavior: contain !important;
+          overscroll-behavior-y: contain !important;
+          overflow-y: auto !important;
+          overflow-x: hidden !important;
+          -webkit-overflow-scrolling: touch;
+          touch-action: pan-y;
+        }
+        .ai-chatbot-suggestions {
+          overscroll-behavior-x: contain !important;
+          overscroll-behavior-y: contain !important;
+          touch-action: pan-x;
+          -webkit-overflow-scrolling: touch;
+        }
+
         /* Mobile Responsiveness */
         @media (max-width: 600px) {
+          .ai-chatbot-window {
+            bottom: 0 !important;
+            right: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            height: 90vh !important;
+            max-height: 90vh !important;
+            border-bottom-left-radius: 0 !important;
+            border-bottom-right-radius: 0 !important;
+          }
           .sophia-floating-trigger,
           .ai-floating-trigger {
             bottom: 8px;
@@ -1159,7 +1348,8 @@ export default function AIChatbot() {
 
       {/* ─── CHATBOT WINDOW ───────────────────────────────────────────── */}
       <div
-        className="position-fixed shadow-2xl rounded-4 overflow-hidden transition-all bg-white d-flex flex-column"
+        ref={chatWindowRef}
+        className="ai-chatbot-window position-fixed shadow-2xl rounded-4 overflow-hidden transition-all bg-white d-flex flex-column"
         style={{
           bottom: isOpen ? '24px' : '-660px',
           right: '24px',
@@ -1172,6 +1362,9 @@ export default function AIChatbot() {
           pointerEvents: isOpen ? 'all' : 'none',
           boxShadow: '0 20px 40px -15px rgba(0,0,0,0.3), 0 0 0 1px rgba(0,0,0,0.08)',
           borderRadius: '24px',
+          overscrollBehavior: 'contain',
+          touchAction: 'pan-y',
+          isolation: 'isolate'
         }}
       >
         {/* Header */}
@@ -1224,7 +1417,18 @@ export default function AIChatbot() {
         {/* ─── SINGLE SOPHIA: Native chat for all modes ─── */}
         <>
           {/* Chat Body */}
-          <div ref={chatBodyRef} className="flex-grow-1 p-3 overflow-auto" style={{ background: '#f8fafc', position: 'relative' }}>
+          <div
+            ref={chatBodyRef}
+            className="ai-chatbot-body flex-grow-1 p-3 overflow-auto"
+            style={{
+              background: '#f8fafc',
+              position: 'relative',
+              overscrollBehavior: 'contain',
+              overscrollBehaviorY: 'contain',
+              touchAction: 'pan-y',
+              WebkitOverflowScrolling: 'touch'
+            }}
+          >
             {showLeadForm ? (
               <div
                 className="d-flex align-items-center justify-content-center h-100 position-absolute top-0 start-0 w-100 px-3"
@@ -1608,7 +1812,15 @@ export default function AIChatbot() {
                 </div>
               )}
               {/* Suggestion Chips */}
-              <div className="d-flex gap-2 overflow-auto pb-2 mb-2 custom-scrollbar">
+              <div
+                className="ai-chatbot-suggestions d-flex gap-2 overflow-auto pb-2 mb-2 custom-scrollbar"
+                style={{
+                  overscrollBehaviorX: 'contain',
+                  overscrollBehaviorY: 'contain',
+                  touchAction: 'pan-x',
+                  WebkitOverflowScrolling: 'touch'
+                }}
+              >
                 {suggestions.map(s => (
                   <button
                     key={s}

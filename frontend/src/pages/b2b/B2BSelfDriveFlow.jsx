@@ -3,7 +3,7 @@ import {
   Car, Calendar, Clock, MapPin, Fuel, Gauge, Users, Shield, 
   CheckCircle2, AlertCircle, ArrowRight, ChevronRight, User, Phone, 
   Mail, FileText, Check, DollarSign, Percent, Sparkles, Navigation, X, Wallet, UserCheck,
-  Eye
+  Eye, Camera
 } from 'lucide-react';
 import * as api from '../../services/api';
 import ImageCarousel from '../../components/common/ImageCarousel';
@@ -667,12 +667,25 @@ export default function B2BSelfDriveFlow({ partner, activeMode, onBookingSuccess
                 <div className="card h-100 border-0 shadow-sm rounded-4 overflow-hidden d-flex flex-column transition-all hover-shadow-lg" style={{ background: '#ffffff' }}>
                   {/* Vehicle Image */}
                   <div className="position-relative" style={{ height: '190px', background: '#F8F9FA', cursor: 'pointer' }} onClick={() => setDetailVehicle(veh)}>
-                    <img 
-                      src={veh.image || (isBike ? 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=600&q=80' : 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=600&q=80')} 
-                      alt={veh.name}
-                      className="w-100 h-100 object-fit-cover"
-                      onError={(e) => { e.target.src = isBike ? 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=600&q=80' : 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=600&q=80'; }}
-                    />
+                    {veh.image ? (
+                      <img 
+                        src={veh.image} 
+                        alt={veh.name}
+                        className="w-100 h-100 object-fit-cover"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          const fallbackEl = e.target.parentElement.querySelector('.b2b-no-photo-wrap');
+                          if (fallbackEl) fallbackEl.style.display = 'flex';
+                        }}
+                      />
+                    ) : null}
+                    <div 
+                      className="b2b-no-photo-wrap flex-column align-items-center justify-content-center w-100 h-100 text-muted p-2" 
+                      style={{ display: veh.image ? 'none' : 'flex', background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)' }}
+                    >
+                      <Camera size={24} className="text-secondary opacity-50 mb-1" />
+                      <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#64748b' }}>No photo uploaded</span>
+                    </div>
                     <div className="position-absolute top-0 start-0 m-2.5 d-flex gap-1.5 flex-wrap">
                       <span className={`badge ${isBike ? 'bg-primary' : isLuxury ? 'bg-warning text-dark' : 'bg-dark bg-opacity-75'} backdrop-blur text-white text-xxs px-2 py-1 rounded-pill`}>
                         {isBike ? 'Two Wheeler / Bike' : isLuxury ? 'Luxury Fleet' : (veh.category || 'Standard')}
